@@ -123,6 +123,15 @@ proxy.select_set(True)
 prig.select_set(True)
 bpy.context.view_layer.objects.active = prig
 bpy.ops.object.parent_set(type="ARMATURE_AUTO")
+SMOOTH = int(job.get("smooth", 6))
+if SMOOTH:  # heat weights change sharply at shoulders/hips: a few smoothing passes along the surface
+    bpy.ops.object.select_all(action="DESELECT")
+    proxy.select_set(True)
+    bpy.context.view_layer.objects.active = proxy
+    bpy.ops.object.mode_set(mode="WEIGHT_PAINT")
+    bpy.ops.object.vertex_group_smooth(group_select_mode="ALL", factor=0.5, repeat=SMOOTH)
+    bpy.ops.object.vertex_group_normalize_all(group_select_mode="ALL", lock_active=False)
+    bpy.ops.object.mode_set(mode="OBJECT")
 
 pv = proxy.data.vertices
 tree = KDTree(len(pv))
@@ -253,13 +262,19 @@ def bend(jid, toward, deg):
 
 
 FWD, UP = (0, -1, 0), (0, 0, 1)                             # Blender: the character faces -Y
-bend("arm_L", UP, 140); bend("forearm_L", FWD, 35)          # left arm over the head, elbow flexed forward
+clav = job.get("clavicle", 25)                               # the collarbone takes part of an overhead raise
+bend("shoulder_L", UP, clav); bend("arm_L", UP, 140 - clav); bend("forearm_L", FWD, 35)  # left arm over the head
 bend("arm_R", FWD, 75); bend("forearm_R", UP, 80)           # right arm forward, elbow flexed up (guard)
 bend("upleg_L", FWD, 60); bend("leg_L", (0, 1, 0), 90)      # left knee up, shin folded back
 bend("upleg_R", (0, 1, 0), 20)                              # right leg back
 turn("spine1", "Z", 20)                                     # torso twist
 shot("pose_front.png")
 shot("pose_side.png", side=True)
+if job.get("closeup"):
+    sh = rig.matrix_world @ rig.pose.bones[NAMES["arm_L"]].head
+    cam.data.ortho_scale = size.z * 0.35
+    cam.location = (sh.x, mid.y - far, sh.z); cam.rotation_euler = (math.radians(90), 0, 0)
+    scene.render.filepath = str(OUT / "shoulder.png"); bpy.ops.render.render(write_still=True)
 
 (OUT / "rig_report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
 print("LANDMARK_RIG_OK", json.dumps(report), flush=True)
