@@ -135,7 +135,26 @@ def plate_point(params, u, v):
     return h[0] + h[1] * SURFACE_OFFSET
 
 
-basis = {(i, j): plate_point(SHAPES["Basis"], u, v) for i, u in enumerate(us) for j, v in enumerate(vs)}
+def smooth_front(pts, passes=6):
+    """Sculpted lips have a crease: neighbouring rays alternate between the lip and the crease, so the plate's edge
+    goes ragged. Smooth the depth (Blender y) over the grid, never letting a point sink behind its own skin hit
+    (y = min(original, smoothed): forward is -y)."""
+    y0 = {k: p.y for k, p in pts.items()}
+    y = dict(y0)
+    for _ in range(passes):
+        ny = {}
+        for (i, j), yy in y.items():
+            nb = [y[k] for k in ((i - 1, j), (i + 1, j), (i, j - 1), (i, j + 1)) if k in y]
+            ny[(i, j)] = min(y0[(i, j)], 0.5 * yy + 0.5 * sum(nb) / len(nb))
+        y = ny
+    return {k: Vector((p.x, y[k], p.z)) for k, p in pts.items()}
+
+
+def shape_grid(params):
+    return smooth_front({(i, j): plate_point(params, u, v) for i, u in enumerate(us) for j, v in enumerate(vs)})
+
+
+basis = shape_grid(SHAPES["Basis"])
 bm = bmesh.new()
 inv = fw.inverted()
 grid = {key: bm.verts.new(inv @ p) for key, p in basis.items()}
@@ -164,8 +183,9 @@ for name, params in SHAPES.items():
     if name == "Basis":
         continue
     sk = mouth.shape_key_add(name=name, from_mix=False)
+    grid_k = shape_grid(params)
     for n, (i, j) in enumerate(order):
-        sk.data[n].co = inv @ plate_point(params, us[i], vs[j])
+        sk.data[n].co = inv @ grid_k[(i, j)]
 # the skin's own weights under each plate vertex (barycentric): the plate follows head, neck and Jaw like the skin
 group_names = {g.index: g.name for g in face.vertex_groups}
 for n, (i, j) in enumerate(order):

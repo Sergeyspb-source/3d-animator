@@ -1353,7 +1353,14 @@ function setMorph(name, v) {
 $('pMorph').onchange = () => { const n = $('pMorph').value; const m = poseMeshes.find((x) => x.morphTargetDictionary && n in x.morphTargetDictionary);
   $('pMorphV').value = m ? m.morphTargetInfluences[m.morphTargetDictionary[n]] : 0; };
 $('pMorphV').oninput = () => setMorph($('pMorph').value, +$('pMorphV').value);
-$('pJaw').onclick = () => { stopClip(); setHinge('jaw', 12); setMorph('jawOpen', .8); for (const s of SIDES) poseBend('eye_' + s, UPV, 15); poseHighlight(); };
+// with a mouth plate the jawOpen key opens the mouth (as lip sync does); turning the Jaw bone as well would open it
+// twice and leave the plate floating in front of the chin. Without a plate the Jaw bone opens it.
+$('pJaw').onclick = () => {
+  stopClip(); poseReset();
+  const plate = poseMeshes.some((m) => m.morphTargetDictionary && 'jawOpen' in m.morphTargetDictionary && m.name.startsWith('Mouth'));
+  if (plate) setMorph('jawOpen', .8); else setHinge('jaw', 20);
+  for (const s of SIDES) poseBend('eye_' + s, UPV, 15); poseHighlight();
+};
 $('pFist').onclick = () => {
   stopClip();
   for (const s of SIDES) for (const f of FINGERS) (f === 'thumb' ? [25, 40, 50] : [80, 95, 70]).forEach((a, i) => setHinge(`${f}${i + 1}_${s}`, a));
