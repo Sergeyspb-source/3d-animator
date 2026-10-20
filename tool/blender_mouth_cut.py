@@ -161,6 +161,40 @@ for f in list(bm.faces):
         for e in r["edges"]:
             line_edges.add(e)
 report["line_edges"] = len(line_edges)
+# second pass: faces that still span the slit (one of their on-line points was missed, near the corners) are cut
+# through their own on-line vertices
+second = 0
+for f in list(bm.faces):
+    if not f.is_valid:
+        continue
+    ps = [P(v) for v in f.verts]
+    sd = [side(q) for q in ps]
+    if not (max(sd) > W * 0.004 and min(sd) < -W * 0.004 and all(q.y < front_limit for q in ps)
+            and x0 < sum(q.x for q in ps) / len(ps) < x1):
+        continue
+    on = [v for v, d in zip(f.verts, sd) if abs(d) < W * 0.004]
+    for v in on:
+        new_verts.add(v)
+    if len(on) == 1:   # the line goes through one vertex and crosses the opposite edge: split that edge too
+        for e in list(f.edges):
+            if on[0] in e.verts:
+                continue
+            sa_, sb_ = side(P(e.verts[0])), side(P(e.verts[1]))
+            if sa_ * sb_ < 0:
+                _, nv_ = bmesh.utils.edge_split(e, e.verts[0], sa_ / (sa_ - sb_))
+                new_verts.add(nv_)
+                on.append(nv_)
+                break
+    if len(on) >= 2:
+        a_, b_ = on[0], on[-1]
+        shared = next((e for e in a_.link_edges if b_ in e.verts), None)
+        if shared is not None:
+            line_edges.add(shared)
+        else:
+            for e in bmesh.ops.connect_verts(bm, verts=[a_, b_])["edges"]:
+                line_edges.add(e)
+        second += 1
+report["second_pass_faces"] = second
 for e in bm.edges:
     if all(v in new_verts for v in e.verts) and all(abs(side(P(v))) < W * 0.004 for v in e.verts):
         line_edges.add(e)
@@ -256,7 +290,9 @@ if HEAD != JAW:
         p = P(v); d = -side(p)
         if v not in upper_set and 0 <= d < 0.6 * W and abs(p.x - cx) < 0.5 * (x1 - x0) and p.y < front_limit:
             u = abs(p.x - cx) / (0.5 * (x1 - x0))
-            target = (1.0 - max(0.0, (d - 0.35 * W) / (0.25 * W))) * (1 - u ** 4)
+            dc = min((p - CL).length, (p - CR).length) / (0.35 * W)            # near a corner: soft, the corner stretches
+            corner = min(1.0, dc) ** 2 * (3 - 2 * min(1.0, dc))
+            target = (1.0 - max(0.0, (d - 0.35 * W) / (0.25 * W))) * (1 - u ** 2) * corner
             old = v[dl].get(jj, 0.0)
             if target > old:
                 v[dl][jj] = target
