@@ -1,5 +1,6 @@
 """Gradio panel: skeleton from hand-placed landmarks (the editor page writes its JSON into a textbox here)."""
 import html as _html
+import json
 from pathlib import Path
 
 import gradio as gr
@@ -47,27 +48,31 @@ def mount(config_loader, asset, upload):
             src = LM.source_path(up, name, cfg["export_dir"])
             if not src or not src.exists():
                 return '<div style="padding:16px">Сначала выберите модель в блоке «1. Модель» или загрузите GLB.</div>'
-            return _frame(LM.editor_page(src, LM.initial_state(src, cfg["export_dir"], text)))
+            return _frame(LM.editor_page(src, LM.initial_state(src, cfg["export_dir"], text),
+                                         LM.output_paths(src, cfg["export_dir"])[0]))
 
         def run(up, name, text, nm, do_weld):
             cfg = config_loader()
             src = LM.source_path(up, name, cfg["export_dir"])
             lines = []
             if not src or not src.exists():
-                yield "Сначала выберите модель.", None, None, None
+                yield "Сначала выберите модель.", None, None, None, gr.update()
                 return
             try:
                 marks = LM.parse(text)
                 for step in LM.build(src, marks, NAMINGS[nm], cfg, do_weld):
-                    if isinstance(step, dict):
-                        yield "\n".join(lines), step["glb"], [step["glb"], step["landmarks"]], step["images"]
+                    if isinstance(step, dict):  # reopen the editor in the pose mode on the fresh build
+                        lines.append("Редактор открыт в режиме «Поза»: тяните мышью руки и ноги, чтобы проверить сгибы.")
+                        state = json.loads(Path(step["landmarks"]).read_text(encoding="utf-8"))
+                        yield ("\n".join(lines), step["glb"], [step["glb"], step["landmarks"]], step["images"],
+                               _frame(LM.editor_page(src, state, Path(step["glb"]), mode="pose")))
                     else:
                         lines.append(step)
-                        yield "\n".join(lines), None, None, None
+                        yield "\n".join(lines), None, None, None, gr.update()
             except Exception as e:  # shown to the user; details are in work/landmark_rig/*/blender.log
                 lines.append("Ошибка: " + str(e))
-                yield "\n".join(lines), None, None, None
+                yield "\n".join(lines), None, None, None, gr.update()
 
         open_btn.click(open_editor, [upload, asset, data], editor)
-        go.click(run, [upload, asset, data, naming, weld], [log, view, files, shots], concurrency_id="landmark_rig",
+        go.click(run, [upload, asset, data, naming, weld], [log, view, files, shots, editor], concurrency_id="landmark_rig",
                  concurrency_limit=1)

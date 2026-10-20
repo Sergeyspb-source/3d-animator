@@ -70,9 +70,14 @@ def parse(text):
     return data
 
 
-def editor_page(src: Path, state: dict | None):
+def editor_page(src: Path, state: dict | None, rigged: Path | None = None, mode: str | None = None):
+    """rigged: built GLB for the pose mode (fetched by the page through Gradio's /file= route, so it must lie in
+    an allowed path such as export_dir); mode='pose' opens the page straight in the pose mode."""
     page = EDITOR.read_text(encoding="utf-8")
-    data = {"state": state, "target": TARGET_ID, "source": str(src)}
+    data = {"state": state, "target": TARGET_ID, "source": str(src), "mode": mode,
+            "rigged": Path(rigged).resolve().as_posix() if rigged and Path(rigged).exists() else None,
+            "rigged_v": int(Path(rigged).stat().st_mtime) if rigged and Path(rigged).exists() else 0,
+            "names": {"mixamo": bone_names("mixamo"), "godot": bone_names("godot")}}
     # </script> inside JSON would end the tag early
     return (page.replace("@@DATA@@", json.dumps(data, ensure_ascii=False).replace("</", "<\\/"))
                 .replace("@@GLB@@", base64.b64encode(src.read_bytes()).decode("ascii")))

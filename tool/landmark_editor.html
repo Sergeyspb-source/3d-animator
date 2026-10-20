@@ -67,6 +67,12 @@
   .gm { fill:#ff7a2f; } .gd { fill:#3f8fe6; } .ge { fill:#8a8f98; }
   .gh { fill:none; stroke:#e0a800; stroke-width:2.2; }
   @media (max-width: 760px) { .guide { width:150px; } #gFront { width:70px; height:140px; } #gSide { width:42px; height:140px; } }
+  .posebar { position:absolute; left:10px; bottom:10px; right:10px; display:flex; flex-wrap:wrap; gap:6px; align-items:center;
+    pointer-events:none; }
+  .posebar > * { pointer-events:auto; }
+  .posebar button { background:var(--panel); }
+  .pinfo { background:color-mix(in srgb,var(--panel) 90%,transparent); border-radius:6px; padding:4px 8px; font:12px var(--mono); }
+  .pinfo.stop { color:#e5484d; }
   kbd { font:11px var(--mono); border:1px solid var(--line); border-radius:4px; padding:0 4px; }
 </style>
 </head>
@@ -77,6 +83,10 @@
     <div class="badge" id="badge">вид спереди</div>
     <div class="hint" id="hint" hidden></div>
     <div class="msg" id="msg">Загрузка модели…</div>
+    <div class="posebar" id="poseBar" hidden>
+      <button id="pReset">Сбросить позу</button><button id="pCheck">Поза проверки</button><button id="pSquat">Присед</button>
+      <span class="pinfo" id="pInfo">Наведите на руку, ногу, голову или корпус и тяните мышью. Правая кнопка — повернуть камеру.</span>
+    </div>
     <div class="guide" id="guide">
       <div class="ghead"><span>Подсказка</span><button id="gHide" title="Свернуть">−</button></div>
       <div id="gBody">
@@ -95,6 +105,7 @@
         <button id="vSide" title="Клавиша 3">Сбоку</button>
         <button id="vFree" title="Вращение левой кнопкой">Свободно</button>
         <button id="xray" title="Alt+Z">Рентген</button>
+        <button id="mPose" title="Проверить сгибы на собранной модели">Поза</button>
       </div>
       <div class="row" style="margin-top:6px">
         <button id="yawL" title="Если модель стоит боком или спиной">↺ 90°</button>
@@ -314,14 +325,19 @@ const LIMITS = {
   leg: { child: 'foot', zero: 'parent', flex: 'back', min: -5, max: 150, what: 'Колено сгибается назад' },
   hand: { child: 'hand_end', zero: 'parent', flex: 'palm', min: -60, max: 75, what: 'Кисть сгибается к ладони' },
   foot: { child: 'toe', zero: 'foot', flex: 'up', min: -45, max: 25, what: 'Стопа: носок вверх до 25°, вниз до 45°' },
+  toe: { child: 'toe_end', zero: 'parent', flex: 'up', min: -30, max: 80, what: 'Пальцы стопы сгибаются вверх' },
 };
-const limitOf = (id) => { const m = /^(forearm|leg|hand|foot)_([LR])$/.exec(id || ''); return m ? { ...LIMITS[m[1]], s: m[2] } : null; };
+const limitOf = (id) => { const m = /^(forearm|leg|hand|foot|toe)_([LR])$/.exec(id || ''); return m ? { ...LIMITS[m[1]], s: m[2] } : null; };
+function flexVec(L, id) {
+  return { fwd: new THREE.Vector3(0, 0, 1), back: new THREE.Vector3(0, 0, -1), up: new THREE.Vector3(0, 1, 0),
+           palm: new THREE.Vector3(L.s === 'L' ? -1 : 1, 0, 0) }[L.flex].multiplyScalar(S.bend[id] || 1);
+}
+const FOOT_ZERO = () => new THREE.Vector3(0, -Math.sin(.7), Math.cos(.7));
 function hingeFrame(id) {   // z: zero direction, p: bend direction perpendicular to z, angle: current bend in degrees
   const L = limitOf(id); if (!L || !S.pos[id]) return null;
   const j = V(S.pos[id]), par = V(S.pos[JMAP[id].parent]), ch = V(S.pos[L.child + '_' + L.s]);
-  const z = L.zero === 'parent' ? j.clone().sub(par).normalize() : new THREE.Vector3(0, -Math.sin(.7), Math.cos(.7));
-  const f = { fwd: new THREE.Vector3(0, 0, 1), back: new THREE.Vector3(0, 0, -1), up: new THREE.Vector3(0, 1, 0),
-              palm: new THREE.Vector3(L.s === 'L' ? -1 : 1, 0, 0) }[L.flex].multiplyScalar(S.bend[id] || 1);
+  const z = L.zero === 'parent' ? j.clone().sub(par).normalize() : FOOT_ZERO();
+  const f = flexVec(L, id);
   const p = f.clone().sub(z.clone().multiplyScalar(f.dot(z)));
   if (p.lengthSq() < 1e-8) return null; p.normalize();
   const c = ch.clone().sub(j); const len = c.length(); c.normalize();
@@ -396,7 +412,7 @@ const COL = { mark: mat(0xff7a2f), derived: mat(0x3f8fe6), end: mat(0x8a8f98), s
 const fanGroup = new THREE.Group(); scene.add(fanGroup);
 const fanMat = (c, o) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: o, depthTest: false, depthWrite: false, side: THREE.DoubleSide });
 const FAN = { ok: fanMat(0x3fbf6a, .3), okSel: fanMat(0x3fbf6a, .45), bad: fanMat(0xe5484d, .16), badSel: fanMat(0xe5484d, .3) };
-function fan(h, a0, a1, r, material) {   // sector at the joint in the bend plane; angles measured from the zero direction
+function fan(h, a0, a1, r, material, group = fanGroup) {   // sector at the joint in the bend plane; angles measured from the zero direction
   const n = Math.max(2, Math.ceil(Math.abs(a1 - a0) / 6)), pos = [h.j.x, h.j.y, h.j.z], idx = [];
   for (let i = 0; i <= n; i++) {
     const a = THREE.MathUtils.degToRad(a0 + (a1 - a0) * i / n);
@@ -404,7 +420,7 @@ function fan(h, a0, a1, r, material) {   // sector at the joint in the bend plan
     pos.push(v.x, v.y, v.z); if (i) idx.push(0, i, i + 1);
   }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx);
-  const m = new THREE.Mesh(g, material); m.renderOrder = 997; fanGroup.add(m);
+  const m = new THREE.Mesh(g, material); m.renderOrder = 997; group.add(m);
 }
 const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true, opacity: .8 });
 let lines = null; const spheres = {};
@@ -438,7 +454,7 @@ function draw() {
       if (j.parent) seg.push(...S.pos[j.parent], ...S.pos[j.id]);
     }
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(seg, 3));
-    lines = new THREE.LineSegments(g, lineMat); lines.renderOrder = 998; scene.add(lines);
+    lines = new THREE.LineSegments(g, lineMat); lines.renderOrder = 998; lines.visible = !poseOn; scene.add(lines);
   }
 }
 
@@ -628,6 +644,7 @@ function setXray(on) {
 let down = null; const ndc = new THREE.Vector2();
 canvas.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY, axis: tc.axis, b: e.button }; });
 canvas.addEventListener('pointerup', (e) => {
+  if (poseOn) { down = null; return; }
   if (!down || down.b !== 0 || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 4 || down.axis || tc.dragging) { down = null; return; }
   down = null; const rc = canvas.getBoundingClientRect();
   ndc.set(((e.clientX - rc.left) / rc.width) * 2 - 1, -((e.clientY - rc.top) / rc.height) * 2 + 1);
@@ -702,6 +719,177 @@ $('gFile').onchange = (e) => {
   $('gImg').src = URL.createObjectURL(f); $('gImg').hidden = false; $('gFig').hidden = true;
 };
 
+// ---------------------------------------------------------------- pose mode: bend the built model with its real weights
+const V3 = THREE.Vector3, Q = THREE.Quaternion, rad = THREE.MathUtils.degToRad, deg = THREE.MathUtils.radToDeg;
+const TAILOF = { spine: 'spine1', spine1: 'spine2', spine2: 'neck', neck: 'head', head: 'head_top' };
+for (const s of SIDES) Object.assign(TAILOF, { ['shoulder_' + s]: 'arm_' + s, ['arm_' + s]: 'forearm_' + s, ['forearm_' + s]: 'hand_' + s,
+  ['hand_' + s]: 'hand_end_' + s, ['upleg_' + s]: 'leg_' + s, ['leg_' + s]: 'foot_' + s, ['foot_' + s]: 'toe_' + s, ['toe_' + s]: 'toe_end_' + s });
+const BALL = { spine: 30, spine1: 30, spine2: 30, neck: 45, head: 50, shoulder: 30, arm: 175, upleg: 120 };   // max swing from rest, °
+let poseRoot = null, skelHelp = null, poseOn = false, hoverId = null, dragId = null;
+const poseMeshes = [], PB = {}, PINFO = {}, REST = new Map(), BONE2ID = new Map();
+const poseHelp = new THREE.Group(); scene.add(poseHelp);
+const hlMat = new THREE.MeshBasicMaterial({ color: 0xffd31a, transparent: true, opacity: .85, depthTest: false });
+
+async function loadRigged() {
+  const url = new URL('/file=' + DATA.rigged + '?v=' + (DATA.rigged_v || 0), window.parent.location.href).href;   // ?v: no stale cache after a rebuild
+  const gltf = await new GLTFLoader().loadAsync(url);
+  poseRoot = gltf.scene; scene.add(poseRoot); poseRoot.updateMatrixWorld(true);
+  const byName = {};
+  poseRoot.traverse((o) => {
+    if (o.isBone) { byName[o.name] = o; REST.set(o, o.quaternion.clone()); }
+    if (o.isMesh) { poseMeshes.push(o); for (const mt of [].concat(o.material)) mt.side = THREE.DoubleSide; }
+  });
+  for (const tbl of Object.values(DATA.names || {})) for (const [id, n] of Object.entries(tbl)) {
+    const b = byName[THREE.PropertyBinding.sanitizeNodeName(n)]; if (b && !PB[id]) { PB[id] = b; BONE2ID.set(b, id); }
+  }
+  for (const [id, t] of Object.entries(TAILOF)) {
+    const b = PB[id]; if (!b) continue;
+    const J = b.getWorldPosition(new V3);
+    const T = PB[t] ? PB[t].getWorldPosition(new V3) : S.pos[t] ? V(S.pos[t]) : null; if (!T) continue;
+    const pqi = b.parent.getWorldQuaternion(new Q).invert();
+    const info = { tailLocal: b.worldToLocal(T.clone()), len: T.distanceTo(J) };
+    const L = limitOf(id);
+    if (L) {
+      const z = L.zero === 'parent' ? J.clone().sub(b.parent.getWorldPosition(new V3)).normalize() : FOOT_ZERO();
+      const f = flexVec(L, id), pp = f.clone().sub(z.clone().multiplyScalar(f.dot(z))).normalize();
+      info.hinge = { L, zL: z.clone().applyQuaternion(pqi), pL: pp.applyQuaternion(pqi) };
+    } else if (BALL[id.replace(/_[LR]$/, '')]) info.ball = { max: BALL[id.replace(/_[LR]$/, '')], dL: T.clone().sub(J).normalize().applyQuaternion(pqi) };
+    PINFO[id] = info;
+  }
+  skelHelp = new THREE.SkeletonHelper(poseRoot); skelHelp.material.depthTest = false; skelHelp.material.transparent = true;
+  skelHelp.material.opacity = .5; skelHelp.renderOrder = 996; scene.add(skelHelp);
+}
+const tailWorld = (id) => PB[id].localToWorld(PINFO[id].tailLocal.clone());
+function frameNow(id) {
+  const b = PB[id], i = PINFO[id], pq = b.parent.getWorldQuaternion(new Q);
+  return { j: b.getWorldPosition(new V3), z: i.hinge && i.hinge.zL.clone().applyQuaternion(pq), p: i.hinge && i.hinge.pL.clone().applyQuaternion(pq),
+           d: i.ball && i.ball.dL.clone().applyQuaternion(pq) };
+}
+// Swing a bone so its tip points along dir, within the joint's range; returns the resulting angle and whether it hit the stop.
+function aimBone(id, dir) {
+  const b = PB[id], i = PINFO[id], F = frameNow(id); let d = dir.clone().normalize(), stop = false, angle = 0;
+  if (i.hinge) {
+    const L = i.hinge.L, a = deg(Math.atan2(d.dot(F.p), d.dot(F.z))), c = Math.min(L.max, Math.max(L.min, a));
+    stop = Math.abs(c - a) > .5; angle = c;
+    d = F.z.clone().multiplyScalar(Math.cos(rad(c))).add(F.p.clone().multiplyScalar(Math.sin(rad(c))));
+  } else if (i.ball) {
+    angle = deg(d.angleTo(F.d));
+    if (angle > i.ball.max) {
+      const ax = F.d.clone().cross(d); if (ax.lengthSq() > 1e-12) d = F.d.clone().applyAxisAngle(ax.normalize(), rad(i.ball.max));
+      stop = true; angle = i.ball.max;
+    }
+  }
+  const cur = tailWorld(id).sub(F.j).normalize();
+  const q = new Q().setFromUnitVectors(cur, d), wq = b.getWorldQuaternion(new Q), pqi = b.parent.getWorldQuaternion(new Q).invert();
+  b.quaternion.copy(pqi.multiply(q.multiply(wq))); b.updateMatrixWorld(true);
+  return { angle, stop };
+}
+function poseBend(id, toward, a) {
+  if (!PINFO[id]) return;
+  const F = frameNow(id), cur = tailWorld(id).sub(F.j).normalize(), ax = cur.clone().cross(toward);
+  if (ax.lengthSq() < 1e-10) return;
+  aimBone(id, cur.applyAxisAngle(ax.normalize(), rad(a)));
+}
+function poseReset() { for (const [b, q] of REST) b.quaternion.copy(q); poseRoot.updateMatrixWorld(true); }
+function poseHighlight(info) {
+  for (const c of [...poseHelp.children]) { poseHelp.remove(c); if (c.geometry) c.geometry.dispose(); }
+  const id = dragId || hoverId; if (!id || !PINFO[id]) { if (!dragId) $('pInfo').textContent = 'Наведите на руку, ногу, голову или корпус и тяните мышью. Правая кнопка — повернуть камеру.'; $('pInfo').className = 'pinfo'; return; }
+  const F = frameNow(id), T = tailWorld(id), len = T.distanceTo(F.j);
+  const cyl = new THREE.Mesh(new THREE.CylinderGeometry(.012 * H, .006 * H, len, 10), hlMat);
+  cyl.position.copy(F.j).lerp(T, .5); cyl.quaternion.setFromUnitVectors(new V3(0, 1, 0), T.clone().sub(F.j).normalize());
+  cyl.renderOrder = 999; poseHelp.add(cyl);
+  const i = PINFO[id];
+  if (i.hinge) {
+    const h = { j: F.j, z: F.z, p: F.p }, L = i.hinge.L, r = len * .9;
+    fan(h, L.min, L.max, r, FAN.okSel, poseHelp);
+    fan(h, L.max, Math.min(L.max + 50, 180), r, FAN.badSel, poseHelp); fan(h, Math.max(L.min - 50, -180), L.min, r, FAN.badSel, poseHelp);
+  }
+  const name = JMAP[id].label, cur = i.hinge ? deg(Math.atan2(T.clone().sub(F.j).normalize().dot(F.p), T.clone().sub(F.j).normalize().dot(F.z))) : i.ball ? deg(T.clone().sub(F.j).normalize().angleTo(F.d)) : 0;
+  const lim = i.hinge ? `норма ${i.hinge.L.min}…${i.hinge.L.max}°` : i.ball ? `до ${i.ball.max}° от покоя` : '';
+  $('pInfo').textContent = `${name}: ${cur.toFixed(0)}° (${lim})` + (info && info.stop ? ' — упор' : '') + (dragId ? '' : ' — тяните мышью');
+  $('pInfo').className = 'pinfo' + (info && info.stop ? ' stop' : '');
+}
+function pickBone(e) {
+  const rc = canvas.getBoundingClientRect();
+  ndc.set(((e.clientX - rc.left) / rc.width) * 2 - 1, -((e.clientY - rc.top) / rc.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  const hit = ray.intersectObjects(poseMeshes, false)[0]; if (!hit || !hit.object.isSkinnedMesh || !hit.face) return null;
+  const m = hit.object, si = m.geometry.attributes.skinIndex, sw = m.geometry.attributes.skinWeight;
+  const acc = new Map();
+  for (const v of [hit.face.a, hit.face.b, hit.face.c]) for (let k = 0; k < 4; k++) {
+    const b = m.skeleton.bones[si.getComponent(v, k)], w = sw.getComponent(v, k); if (w > 0) acc.set(b, (acc.get(b) || 0) + w);
+  }
+  let best = null, bw = 0; for (const [b, w] of acc) if (w > bw) { best = b; bw = w; }
+  let id = best ? BONE2ID.get(best) : null;
+  if (id === 'hips') id = 'spine';
+  return id && PINFO[id] ? id : null;
+}
+let pendingMove = null;
+canvas.addEventListener('pointermove', (e) => {
+  if (!poseOn) return;
+  if (pendingMove) { pendingMove = e; return; }
+  pendingMove = e;
+  requestAnimationFrame(() => {
+    const ev = pendingMove; pendingMove = null;
+    if (dragId) {
+      const rc = canvas.getBoundingClientRect();
+      ndc.set(((ev.clientX - rc.left) / rc.width) * 2 - 1, -((ev.clientY - rc.top) / rc.height) * 2 + 1);
+      ray.setFromCamera(ndc, camera);
+      const F = frameNow(dragId), view = camera.getWorldDirection(new V3);
+      let normal = view.clone().negate();
+      if (F.z) { const ax = F.z.clone().cross(F.p).normalize(); if (Math.abs(ax.dot(view)) > .3) normal = ax; }
+      const X = ray.ray.intersectPlane(new THREE.Plane().setFromNormalAndCoplanarPoint(normal, F.j), new V3);
+      if (!X) return;
+      let d = X.sub(F.j); if (d.lengthSq() < 1e-12) return;
+      if (F.z) { const ax = F.z.clone().cross(F.p).normalize(); d.sub(ax.multiplyScalar(d.dot(ax))); }
+      poseHighlight(aimBone(dragId, d));
+    } else {
+      const id = pickBone(ev);
+      if (id !== hoverId) { hoverId = id; poseHighlight(); }
+    }
+  });
+});
+canvas.addEventListener('pointerdown', (e) => {
+  if (!poseOn || e.button !== 0 || !hoverId) return;
+  dragId = hoverId; orbit.enabled = false; canvas.setPointerCapture(e.pointerId);
+});
+addEventListener('pointerup', () => { if (dragId) { dragId = null; orbit.enabled = true; poseHighlight(); } });
+
+async function setPose(on) {
+  if (on && !DATA.rigged) { alert('Сначала нажмите «Построить скелет и веса по разметке»: режим позы показывает собранную модель.'); return; }
+  if (on && !poseRoot) {
+    $('msg').hidden = false; $('msg').textContent = 'Загружаю собранную модель…';
+    try { await loadRigged(); } catch (err) { $('msg').textContent = 'Не удалось открыть собранную модель: ' + err.message; return; }
+    $('msg').hidden = true;
+  }
+  poseOn = on; hoverId = dragId = null;
+  model.visible = !on; jointGroup.visible = fanGroup.visible = !on; if (lines) lines.visible = !on;
+  if (poseRoot) { poseRoot.visible = on; skelHelp.visible = on; }
+  if (on) tc.detach(); else if (selected) attach();
+  orbit.mouseButtons = on ? { LEFT: null, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE } : { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.PAN };
+  if (on) orbit.enableRotate = true; else orbit.enableRotate = view === 'free';
+  $('guide').hidden = on; $('poseBar').hidden = !on; $('mPose').classList.toggle('on', on);
+  $('mPose').textContent = on ? 'К разметке' : 'Поза';
+  poseHighlight();
+}
+$('mPose').onclick = () => setPose(!poseOn);
+window.sf3dPose = { PB, PINFO, REST, poseMeshes, pickBone, camera, ray };   // for debugging from the browser console
+$('pReset').onclick = () => { poseReset(); poseHighlight(); };
+const FW = new V3(0, 0, 1), UPV = new V3(0, 1, 0), BK = new V3(0, 0, -1);
+$('pCheck').onclick = () => {
+  poseReset();
+  poseBend('shoulder_L', UPV, 25); poseBend('arm_L', UPV, 115); poseBend('forearm_L', FW, 35);
+  poseBend('arm_R', FW, 75); poseBend('forearm_R', UPV, 80);
+  poseBend('upleg_L', FW, 60); poseBend('leg_L', BK, 90); poseBend('upleg_R', BK, 20);
+  poseHighlight();
+};
+$('pSquat').onclick = () => {
+  poseReset();
+  for (const s of SIDES) { poseBend('upleg_' + s, FW, 95); poseBend('leg_' + s, BK, 115); poseBend('arm_' + s, FW, 80); poseBend('forearm_' + s, UPV, 20); }
+  poseBend('spine1', FW, 15);
+  poseHighlight();
+};
+
 // ---------------------------------------------------------------- start
 (async () => {
   try {
@@ -718,6 +906,7 @@ $('gFile').onchange = (e) => {
     applyYaw(); $('msg').hidden = true;
     if (S.phase === 'place') current = nextMark().id;
     resize(); setView('front'); sync();
+    if (DATA.mode === 'pose' && DATA.rigged) await setPose(true);
   } catch (e) { $('msg').textContent = 'Не удалось открыть модель: ' + e.message; }
 })();
 new ResizeObserver(resize).observe(canvas);
