@@ -261,6 +261,9 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=T
             yield "Рот для речи не получился, модель сохранена без него: " + fail
     rim = {s: [face.get(f"{k}_{s}") for k in ("eye_in", "eye_top", "eye_out", "eye_bot")] for s in "LR"}
     rim = {s: pts for s, pts in rim.items() if all(pts)}
+    if eyes and not rim and face:
+        yield ("Глаза-шары не вставлены: в разметке лица нет контура глаз. Нажмите «Разметить лицо» с галочкой "
+               "«и контур глаз» и кликните 4 точки по краю век.")
     if eyes and rim:
         yield "Вырезаю нарисованные глаза и ставлю глаза-шары…"
         names = bone_names(naming)

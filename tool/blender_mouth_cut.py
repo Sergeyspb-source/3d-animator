@@ -123,6 +123,10 @@ for e, t in cross:
     v0 = e.verts[0]
     ne, nv = bmesh.utils.edge_split(e, v0, t)
     new_verts.add(nv)
+for v in bm.verts:   # original vertices lying on the line itself are cut points too (else their faces bridge the slit)
+    p = P(v)
+    if abs(side(p)) < W * 0.004 and in_zone(p):
+        new_verts.add(v)
 report["crossed_edges"] = len(cross)
 if len(new_verts) < 6:
     fail(f"линия рта пересекла только {len(new_verts)} рёбер: точки рта не на губах?")
@@ -130,12 +134,18 @@ bm.faces.ensure_lookup_table()
 line_edges = set()
 for f in list(bm.faces):
     nv = [v for v in f.verts if v in new_verts]
-    if len(nv) == 2:
+    if len(nv) > 2:
+        nv = max(((x, y) for i, x in enumerate(nv) for y in nv[i + 1:]), key=lambda ab: (P(ab[0]) - P(ab[1])).length)
+        nv = list(nv)
+    if len(nv) == 2 and not any(nv[1] in e.verts for e in nv[0].link_edges):
         r = bmesh.ops.connect_verts(bm, verts=nv)
         for e in r["edges"]:
             line_edges.add(e)
 report["line_edges"] = len(line_edges)
-res = bmesh.ops.split_edges(bm, edges=list(line_edges))
+for e in bm.edges:
+    if all(v in new_verts for v in e.verts) and all(abs(side(P(v))) < W * 0.004 for v in e.verts):
+        line_edges.add(e)
+res = bmesh.ops.split_edges(bm, edges=[e for e in line_edges if e.is_valid])
 # classify the copies on the line: upper lip or lower lip, from their faces
 bm.verts.ensure_lookup_table()
 on_line = [v for v in bm.verts if (abs(side(P(v))) < W * 0.004 and in_zone(P(v))) or v in new_verts]
@@ -221,6 +231,19 @@ if HEAD != JAW:
             v[dl][jj] = w
             v[dl][hj] = max(0.0, v[dl].get(hj, 0.0) - (w - old))
     report["jaw_smoothed_verts"] = len(zone)
+    # the lower lip itself goes fully with the jaw (fading over 0.35 W below the slit), so the mouth opens wide
+    lips = 0
+    for v in bm.verts:
+        p = P(v); d = -side(p)
+        if v not in upper_set and 0 <= d < 0.6 * W and abs(p.x - cx) < 0.5 * (x1 - x0) and p.y < front_limit:
+            u = abs(p.x - cx) / (0.5 * (x1 - x0))
+            target = (1.0 - max(0.0, (d - 0.35 * W) / (0.25 * W))) * (1 - u ** 4)
+            old = v[dl].get(jj, 0.0)
+            if target > old:
+                v[dl][jj] = target
+                v[dl][hj] = max(0.0, v[dl].get(hj, 0.0) - (target - old))
+                lips += 1
+    report["lower_lip_full_jaw"] = lips
 
 # ------------------------------------------------------------------ 2. roll the lips inward
 lip_mat = bpy.data.materials.new("lip_inner"); lip_mat.use_nodes = True
@@ -302,7 +325,7 @@ _jg = face.vertex_groups.get(JAW)
 _ws = [next((g.weight for g in v.groups if _jg is not None and g.group == _jg.index), 0.0)
        for v in face.data.vertices
        if abs((fw @ v.co).x - cx) < 0.3 * W and -0.35 * W < side(fw @ v.co) < -0.03 * W and (fw @ v.co).y < front_limit]
-JAW_IN = 0.8 * ((sum(_ws) / len(_ws)) if _ws else 1.0)   # a little less than the lip: lower teeth stay inside the chin
+JAW_IN = 0.95 * ((sum(_ws) / len(_ws)) if _ws else 1.0)   # with the lower lip, a touch less so the teeth stay inside the chin
 report["lower_lip_jaw_weight"] = round(JAW_IN, 3)
 skin(cav, lambda p: JAW_IN * jaw_blend(p.z, line_z(cx), 0.08 * W))
 
@@ -338,12 +361,13 @@ for o in parts:
             need = max(need, sy + 0.05 * W - p.y)
 need = min(need, 1.5 * W)
 for o in parts:
-    o.data.transform(Matrix.Translation(Vector((0, need, 0))))
+    lift = 0.07 * W if o.name.startswith(("Teeth_Lower", "Gum_Lower")) else 0.0   # lower tips just over the lip edge
+    o.data.transform(Matrix.Translation(Vector((0, need, lift))))
 report["inserted"] = [o.name for o in parts]
 report["parts_pushed_back"] = round(need, 4)
 
 # ------------------------------------------------------------------ 5. shape keys
-theta = math.radians(float(job.get("open_deg", 22)))
+theta = math.radians(float(job.get("open_deg", 26)))
 jaw_objs = [face, cav] + [o for o in parts]
 
 
