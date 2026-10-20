@@ -221,6 +221,7 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=T
         cj = {"source": str(model), "out": str(work / "model_cut.glb"), "mouth_c": face["mouth_c"],
               "corner_L": face["mouth_corner_L"], "corner_R": face["mouth_corner_R"],
               "mid_L": face.get("mouth_mid_L"), "mid_R": face.get("mouth_mid_R"),
+              "lip_top": face.get("lip_top"), "lip_bot": face.get("lip_bot"), "limit_top": face.get("mouth_limit_top"),
               "hinge": landmarks["joints"].get("jaw"), "head_bone": names["head"],
               "jaw_bone": names["jaw"] if "jaw" in landmarks["joints"] else "",
               "teeth_glb": str(kd / "teeth.glb"), "tongue_glb": str(kd / "tongue.glb"),
