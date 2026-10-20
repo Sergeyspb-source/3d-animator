@@ -217,14 +217,17 @@ cam.data.type = "ORTHO"
 cam.data.ortho_scale = max(size.x, size.z, size.y) * 1.45
 
 
+far = max(size.x, size.y, size.z) * 3  # camera outside the model at any unit scale (m or cm)
+
+
 def shot(name, side=False):
     if side:
-        cam.location = (mid.x + 10, mid.y, mid.z)
+        cam.location = (mid.x + far, mid.y, mid.z)
         cam.rotation_euler = (math.radians(90), 0, math.radians(90))
     else:
-        cam.location = (mid.x, mid.y - 10, mid.z)
+        cam.location = (mid.x, mid.y - far, mid.z)
         cam.rotation_euler = (math.radians(90), 0, 0)
-    cam.data.clip_end = 30
+    cam.data.clip_end = far * 3
     scene.render.filepath = str(OUT / name)
     bpy.ops.render.render(write_still=True)
 
