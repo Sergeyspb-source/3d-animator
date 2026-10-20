@@ -358,7 +358,7 @@ cam.location = (0, -0.3, 0.12); cam.rotation_euler = (math.radians(68), 0, 0)
 scene.render.filepath = str(OUT / "preview.png")
 bpy.ops.render.render(write_still=True)
 
-info = {"eye_radius": eye_r, "teeth_per_side": per, "teeth_upper": len(tu.data.polygons) if tu else 0,
+info = {"eye_radius": eye_r, "arch_width": arch_w, "teeth_per_side": per, "teeth_upper": len(tu.data.polygons) if tu else 0,
         "missing": sorted(f"{a}{b}" for a, b in missing), "yellow": yellow, "crooked": crooked, "fangs": fangs,
         "tongue_length": tlen, "files": ["eyes.glb", "teeth.glb", "tongue.glb", "preview.png"]}
 (OUT / "parts.json").write_text(json.dumps(info, indent=1), encoding="utf-8")
