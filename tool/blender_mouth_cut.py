@@ -80,6 +80,20 @@ face = max((o for o in bpy.data.objects if o.type == "MESH" and o.vertex_groups)
 fw, finv = face.matrix_world, face.matrix_world.inverted()
 report = {"mouth_width": round(W, 4)}
 
+# the skin before cutting: everything put inside the mouth must stay behind it
+from mathutils.bvhtree import BVHTree
+face.data.calc_loop_triangles()
+_wv = [fw @ v.co for v in face.data.vertices]
+skin_bvh = BVHTree.FromPolygons(_wv, [tuple(t.vertices) for t in face.data.loop_triangles])
+_ymin = min(v.y for v in _wv)
+
+
+def skin_y(x, z):
+    """depth (Blender y) of the outer skin seen from the front at (x, z), or None"""
+    h = skin_bvh.ray_cast(Vector((x, _ymin - W * 20, z)), Vector((0, 1, 0)), W * 80)
+    return None if h[0] is None else h[0].y
+
+
 # ------------------------------------------------------------------ 1. cut along the line
 bm = bmesh.new(); bm.from_mesh(face.data)
 dl = bm.verts.layers.deform.verify()
@@ -149,11 +163,64 @@ def copy_weights(v, from_side):
             v[dl][k] = w
 
 
+# faces the line crossed through a vertex stay joined across the slit and stretch into a rod when the jaw opens
+bridge = []
+for f in bm.faces:
+    ps = [P(v) for v in f.verts]
+    if all(in_zone(p) for p in ps) and max(side(p) for p in ps) > W * 0.004 and min(side(p) for p in ps) < -W * 0.004             and abs(sum(p.x for p in ps) / len(ps) - cx) < (x1 - x0) / 2 - 0.08 * W:
+        bridge.append(f)
+bmesh.ops.delete(bm, geom=bridge, context="FACES")
+report["bridge_faces_removed"] = len(bridge)
+upper = [v for v in upper if v.is_valid]; lower = [v for v in lower if v.is_valid]
 for v in upper:
     copy_weights(v, 1)
 for v in lower:
     copy_weights(v, -1)
 report["lip_verts"] = {"upper": len(upper), "lower": len(lower)}
+# the upper lip belongs to the head: any jaw weight above the slit (seen on UV-seam twins) goes to the head
+hj, jj = gi[HEAD], gi[JAW]
+upper_set = set(upper)   # the upper copies on the slit too: on a UV seam they may have no upper neighbour to copy
+fixed = 0
+if HEAD != JAW:
+    for v in bm.verts:
+        p = P(v)
+        if (v in upper_set) or (side(p) > W * 0.004 and abs(p.x - cx) < 0.55 * (x1 - x0) and p.y < front_limit and side(p) < 0.6 * W):
+            w = v[dl].get(jj, 0.0)
+            if w > 0:
+                v[dl][hj] = v[dl].get(hj, 0.0) + w
+                del v[dl][jj]
+                fixed += 1
+report["upper_lip_jaw_cleared"] = fixed
+# smooth the jaw weight below the lower lip and beside the corners (the chin underside sheared into fins when the
+# weight dropped fast toward the neck); the slit copies keep theirs. Neighbours include UV-seam twins.
+if HEAD != JAW:
+    from collections import defaultdict
+    twins = defaultdict(list)
+    q = W * 1e-3
+    for v in bm.verts:
+        twins[tuple(round(c / q) for c in v.co)].append(v)
+    keep = set(upper) | set(lower)
+    zone = [v for v in bm.verts if v not in keep and (P(v) - M).length < 2.2 * W and side(P(v)) < 0.6 * W]
+    for _ in range(12):
+        new = {}
+        for v in zone:
+            nb = [e.other_vert(v) for e in v.link_edges]
+            for t in twins[tuple(round(c / q) for c in v.co)]:
+                if t is not v:
+                    nb += [e.other_vert(t) for e in t.link_edges]
+            if not nb:
+                continue
+            avg = sum(n[dl].get(jj, 0.0) for n in nb) / len(nb)
+            new[v] = 0.5 * v[dl].get(jj, 0.0) + 0.5 * avg
+        for v, w in new.items():
+            if side(P(v)) > 0 and abs(P(v).x - cx) < 0.55 * (x1 - x0):
+                continue     # never give the upper lip a jaw weight
+            old = v[dl].get(jj, 0.0)
+            if abs(w - old) < 1e-6:
+                continue
+            v[dl][jj] = w
+            v[dl][hj] = max(0.0, v[dl].get(hj, 0.0) - (w - old))
+    report["jaw_smoothed_verts"] = len(zone)
 
 # ------------------------------------------------------------------ 2. roll the lips inward
 lip_mat = bpy.data.materials.new("lip_inner"); lip_mat.use_nodes = True
@@ -179,7 +246,11 @@ for verts_side, sgn in ((set(upper), 1), (set(lower), -1)):
             prof = math.sin(math.pi * max(0.0, min(1.0, u))) ** 0.6     # flat at the corners
             step_back = (0.16 if ring == 0 else 0.14) * W * prof
             step_curl = (0.05 if ring == 0 else 0.05) * W * prof * sgn
-            v.co = finv @ (p + Vector((0, step_back, step_curl)))
+            q = p + Vector((0, step_back, step_curl))
+            sy = skin_y(q.x, q.z)          # thin, back-sloping lips: keep the roll under the skin
+            if sy is not None and q.y < sy + 0.04 * W:
+                q.y = sy + 0.04 * W
+            v.co = finv @ q
         for f in nf:
             f.material_index = lip_idx
             roll_faces.append(f)
@@ -216,17 +287,28 @@ bmesh.ops.reverse_faces(bm, faces=bm.faces[:])
 bm.to_mesh(cav.data); bm.free()
 cav.location = cav_c
 bpy.ops.object.transform_apply(location=True)
+for v in cav.data.vertices:          # the cup must not poke out through the (recessed) skin around the lips
+    sy = skin_y(v.co.x, v.co.z)
+    if sy is not None and v.co.y < sy + 0.04 * W:
+        v.co.y = sy + 0.04 * W
 cmat = bpy.data.materials.new("mouth_cavity"); cmat.use_nodes = True
 cb = next(n for n in cmat.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
 cb.inputs["Base Color"].default_value = (0.08, 0.025, 0.025, 1); cb.inputs["Roughness"].default_value = 0.35
 cav.data.materials.append(cmat)
 for p_ in cav.data.polygons:
     p_.use_smooth = True
-skin(cav, lambda p: jaw_blend(p.z, line_z(cx), 0.08 * W))
+# what the lower lip skin really gets from the jaw: inner parts on the jaw use the same, so they open together
+_jg = face.vertex_groups.get(JAW)
+_ws = [next((g.weight for g in v.groups if _jg is not None and g.group == _jg.index), 0.0)
+       for v in face.data.vertices
+       if abs((fw @ v.co).x - cx) < 0.3 * W and -0.35 * W < side(fw @ v.co) < -0.03 * W and (fw @ v.co).y < front_limit]
+JAW_IN = 0.8 * ((sum(_ws) / len(_ws)) if _ws else 1.0)   # a little less than the lip: lower teeth stay inside the chin
+report["lower_lip_jaw_weight"] = round(JAW_IN, 3)
+skin(cav, lambda p: JAW_IN * jaw_blend(p.z, line_z(cx), 0.08 * W))
 
 # ------------------------------------------------------------------ 4. teeth and tongue
 kit_w = float(job.get("kit", {}).get("arch_width", 0.05))
-s = W * 1.0 / kit_w
+s = W * 0.95 / kit_w
 anchor = Vector((cx, M.y + 0.30 * W, line_z(cx)))
 parts = []
 for path in (job.get("teeth_glb"), job.get("tongue_glb")):
@@ -245,8 +327,20 @@ for path in (job.get("teeth_glb"), job.get("tongue_glb")):
         parts.append(o)
 for o in parts:
     on_jaw = o.name.startswith(("Teeth_Lower", "Gum_Lower", "Tongue"))
-    skin(o, lambda p, j=on_jaw: 1.0 if j else 0.0)
+    skin(o, lambda p, j=on_jaw: JAW_IN if j else 0.0)
+# push the whole set back until no vertex is in front of the skin (recessed chins, sloping lips)
+need = 0.0
+for o in parts:
+    for v in list(o.data.vertices)[::3]:
+        p = o.matrix_world @ v.co
+        sy = skin_y(p.x, p.z)
+        if sy is not None:
+            need = max(need, sy + 0.05 * W - p.y)
+need = min(need, 1.5 * W)
+for o in parts:
+    o.data.transform(Matrix.Translation(Vector((0, need, 0))))
 report["inserted"] = [o.name for o in parts]
+report["parts_pushed_back"] = round(need, 4)
 
 # ------------------------------------------------------------------ 5. shape keys
 theta = math.radians(float(job.get("open_deg", 22)))
@@ -303,7 +397,7 @@ def k_smile(o, v, p):
     if w <= 0:
         return None
     sx = 1 if p.x > cx else -1
-    return p + Vector((sx * 0.07 * W, 0.02 * W, 0.08 * W)) * w * w
+    return p + Vector((sx * 0.12 * W, 0.04 * W, 0.14 * W)) * w
 
 
 def k_stretch(o, v, p):

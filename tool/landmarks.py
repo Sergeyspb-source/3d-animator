@@ -145,6 +145,18 @@ def initial_state(src: Path, export_dir, textbox: str):
     return None
 
 
+def face_kit(cfg, kit, work):
+    """(folder, parts.json) of a face-parts set (export/face_parts/<kit>); a default set is generated when there is none."""
+    if kit and (Path(cfg["export_dir"]) / "face_parts" / kit / "eyes.glb").exists():
+        d = Path(cfg["export_dir"]) / "face_parts" / kit
+    else:
+        d = work / "face_parts_default"
+        if not (d / "eyes.glb").exists():
+            face_kit_eyes(cfg, "", work)
+    info = json.loads((d / "parts.json").read_text(encoding="utf-8")) if (d / "parts.json").exists() else {}
+    return d, info
+
+
 def face_kit_eyes(cfg, kit, work):
     """eyes.glb of a face-parts set (export/face_parts/<kit>); a default set is generated when there is none."""
     if kit:
@@ -200,7 +212,34 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=T
             yield "Стыков между частями нет."
     face = landmarks.get("face") or {}
     images_extra = []
-    if mouth and all(face.get(k) for k in ("mouth_c", "mouth_corner_L", "mouth_corner_R")):
+    mouth = "plate" if mouth is True else (mouth or "none")
+    has_mouth = all(face.get(k) for k in ("mouth_c", "mouth_corner_L", "mouth_corner_R"))
+    if mouth == "cut" and has_mouth:
+        yield "Режу рот по линии губ, ставлю полость, зубы и язык из набора деталей лица…"
+        names = bone_names(naming)
+        kd, kinfo = face_kit(cfg, kit, work)
+        cj = {"source": str(model), "out": str(work / "model_cut.glb"), "mouth_c": face["mouth_c"],
+              "corner_L": face["mouth_corner_L"], "corner_R": face["mouth_corner_R"],
+              "hinge": landmarks["joints"].get("jaw"), "head_bone": names["head"],
+              "jaw_bone": names["jaw"] if "jaw" in landmarks["joints"] else "",
+              "teeth_glb": str(kd / "teeth.glb"), "tongue_glb": str(kd / "tongue.glb"),
+              "kit": {"arch_width": kinfo.get("arch_width", 0.05)}, "report": str(work / "cut_report.json"),
+              "preview": str(work / "mouth_cut.png")}
+        (work / "cut_job.json").write_text(json.dumps(cj, ensure_ascii=False), encoding="utf-8")
+        r = subprocess.run([blender, "-b", "--factory-startup", "-P", str(ROOT / "blender_mouth_cut.py"), "--",
+                            str(work / "cut_job.json")], capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=900, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        line = next((x for x in r.stdout.splitlines() if x.startswith("CUT_OK")), None)
+        if line:
+            model = work / "model_cut.glb"
+            cr = json.loads(line.split(" ", 1)[1])
+            images_extra += cr.get("previews", [])
+            yield (f"Рот разрезан: губы подвёрнуты, полость, {', '.join(cr.get('inserted', []))}; ключи jawOpen, "
+                   "mouthSmile, mouthFunnel и др. (липсинк работает так же).")
+        else:
+            fail = next((x for x in r.stdout.splitlines() if x.startswith("CUT_FAIL")), (r.stdout + r.stderr)[-600:])
+            yield "Разрез рта не получился, модель без него: " + fail
+    if mouth == "plate" and has_mouth:
         yield "Кладу рот для речи: пластина с ключами jawOpen, mouthSmile, mouthFunnel и др. (для липсинка)…"
         names = bone_names(naming)
         mj = {"source": str(model), "out": str(work / "model_mouth.glb"), "mouth_c": face["mouth_c"],

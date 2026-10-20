@@ -1357,7 +1357,7 @@ $('pMorphV').oninput = () => setMorph($('pMorph').value, +$('pMorphV').value);
 // twice and leave the plate floating in front of the chin. Without a plate the Jaw bone opens it.
 $('pJaw').onclick = () => {
   stopClip(); poseReset();
-  const plate = poseMeshes.some((m) => m.morphTargetDictionary && 'jawOpen' in m.morphTargetDictionary && m.name.startsWith('Mouth'));
+  const plate = poseMeshes.some((m) => m.morphTargetDictionary && 'jawOpen' in m.morphTargetDictionary);   // plate or cut mouth
   if (plate) setMorph('jawOpen', .8); else setHinge('jaw', 20);
   for (const s of SIDES) poseBend('eye_' + s, UPV, 15); poseHighlight();
 };
