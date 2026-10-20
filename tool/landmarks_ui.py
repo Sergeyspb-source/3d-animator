@@ -1,0 +1,71 @@
+"""Gradio panel: skeleton from hand-placed landmarks (the editor page writes its JSON into a textbox here)."""
+import html as _html
+from pathlib import Path
+
+import gradio as gr
+
+import landmarks as LM
+
+NAMINGS = {"Mixamo (под анимации из Mixamo)": "mixamo", "Godot (профиль Humanoid)": "godot"}
+
+
+def _frame(page):
+    return ('<iframe srcdoc="%s" style="width:100%%;height:720px;border:0;border-radius:10px"></iframe>'
+            % _html.escape(page, quote=True))
+
+
+def mount(config_loader, asset, upload):
+    """asset / upload: the model pickers of the rigging tab, reused here."""
+    with gr.Accordion("Скелет по ориентирам (вручную, как в Mixamo)", open=False):
+        gr.Markdown(
+            "Модель выбирается выше, в блоке **1. Модель**. Нажмите «Открыть разметку» и кликайте по модели на виде "
+            "спереди: подбородок, пах, плечо, локоть, запястье, колено, щиколотка (при симметрии — только левая "
+            "сторона персонажа, она справа на экране). Глубину узла программа находит сама, по толщине модели. "
+            "Затем таз, позвоночник, шея, ключицы, бёдра и стопы рассчитываются автоматически, и любой узел можно "
+            "выделить мышкой и сдвинуть или повернуть: стрелками в окне (G — перемещение, R — поворот) или "
+            "числами, как в Blender.")
+        with gr.Row():
+            open_btn = gr.Button("Открыть разметку", variant="secondary")
+            naming = gr.Radio(list(NAMINGS), value=list(NAMINGS)[0], label="Имена костей")
+            weld = gr.Checkbox(value=True, label="Сшить стыки между частями")
+        editor = gr.HTML()
+        data = gr.Textbox(label="Разметка (заполняется редактором автоматически; можно вставить сохранённую)",
+                          lines=2, max_lines=4, elem_id=LM.TARGET_ID)
+        go = gr.Button("Построить скелет и веса по разметке (около минуты, без видеокарты)", variant="primary")
+        with gr.Row():
+            with gr.Column():
+                log = gr.Textbox(label="Ход работы", lines=7, interactive=False)
+                files = gr.File(label="Результат", file_count="multiple", interactive=False)
+            with gr.Column():
+                view = gr.Model3D(label="Модель со скелетом", height=380, clear_color=(0.9, 0.9, 0.9, 1))
+        shots = gr.Gallery(label="Проверка: покой, поза спереди, поза сбоку", columns=3, height=300)
+
+        def open_editor(up, name, text):
+            cfg = config_loader()
+            src = LM.source_path(up, name, cfg["export_dir"])
+            if not src or not src.exists():
+                return '<div style="padding:16px">Сначала выберите модель в блоке «1. Модель» или загрузите GLB.</div>'
+            return _frame(LM.editor_page(src, LM.initial_state(src, cfg["export_dir"], text)))
+
+        def run(up, name, text, nm, do_weld):
+            cfg = config_loader()
+            src = LM.source_path(up, name, cfg["export_dir"])
+            lines = []
+            if not src or not src.exists():
+                yield "Сначала выберите модель.", None, None, None
+                return
+            try:
+                marks = LM.parse(text)
+                for step in LM.build(src, marks, NAMINGS[nm], cfg, do_weld):
+                    if isinstance(step, dict):
+                        yield "\n".join(lines), step["glb"], [step["glb"], step["landmarks"]], step["images"]
+                    else:
+                        lines.append(step)
+                        yield "\n".join(lines), None, None, None
+            except Exception as e:  # shown to the user; details are in work/landmark_rig/*/blender.log
+                lines.append("Ошибка: " + str(e))
+                yield "\n".join(lines), None, None, None
+
+        open_btn.click(open_editor, [upload, asset, data], editor)
+        go.click(run, [upload, asset, data, naming, weld], [log, view, files, shots], concurrency_id="landmark_rig",
+                 concurrency_limit=1)

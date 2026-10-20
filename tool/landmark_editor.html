@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Разметка скелета</title>
+<style>
+  /* Embedded in the SF3D app (iframe srcdoc). Stage left, landmark list and transform fields right. */
+  :root { --bg:#ece8e1; --panel:#f6f3ee; --stage:#cfc8bc; --fg:#231d17; --muted:#6b6258; --line:#d0c9bd; --accent:#a8451d;
+          --accent-fg:#fff6ec; --ok:#2f7d4f; --ui:"Segoe UI",system-ui,sans-serif; --mono:ui-monospace,Consolas,monospace; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#15110d; --panel:#1e1913; --stage:#0f0c09;
+    --fg:#eadfca; --muted:#a39580; --line:#352d23; --accent:#d9622f; --accent-fg:#1a0e06; --ok:#5fbf86; color-scheme:dark; } }
+  :root[data-theme="dark"] { --bg:#15110d; --panel:#1e1913; --stage:#0f0c09; --fg:#eadfca; --muted:#a39580; --line:#352d23;
+    --accent:#d9622f; --accent-fg:#1a0e06; --ok:#5fbf86; color-scheme:dark; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; }
+  body { background:var(--bg); color:var(--fg); font:13px/1.4 var(--ui); padding:10px; }
+  .wrap { display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:10px; height:100%; min-height:520px; }
+  @media (max-width: 760px) { .wrap { grid-template-columns:minmax(0,1fr); grid-template-rows:60vh auto; height:auto; } }
+  .stage { position:relative; background:var(--stage); border:1px solid var(--line); border-radius:10px; overflow:hidden; min-height:320px; }
+  canvas { position:absolute; inset:0; width:100%; height:100%; display:block; touch-action:none; }
+  .badge { position:absolute; left:10px; top:8px; font:12px var(--mono); color:var(--muted); background:color-mix(in srgb,var(--panel) 85%,transparent);
+    padding:3px 8px; border-radius:6px; pointer-events:none; }
+  .hint { position:absolute; left:50%; bottom:10px; transform:translateX(-50%); max-width:92%; background:var(--accent); color:var(--accent-fg);
+    padding:6px 12px; border-radius:8px; font-weight:600; pointer-events:none; text-align:center; }
+  .msg { position:absolute; inset:0; display:grid; place-items:center; color:var(--muted); padding:16px; text-align:center; }
+  [hidden] { display:none !important; }
+  .rail { display:flex; flex-direction:column; gap:8px; min-height:0; overflow:auto; }
+  .box { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:9px; min-width:0; }
+  .grp { font:11px var(--mono); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:2px 0 6px; }
+  .row { display:flex; flex-wrap:wrap; gap:5px; align-items:center; }
+  button { font:inherit; color:var(--fg); background:transparent; border:1px solid var(--line); border-radius:7px; padding:5px 8px; cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  button.on { background:var(--accent); color:var(--accent-fg); border-color:var(--accent); }
+  button:disabled { opacity:.45; cursor:default; }
+  label.chk { display:flex; gap:6px; align-items:center; cursor:pointer; }
+  .list { display:grid; gap:3px; max-height:260px; overflow:auto; }
+  .item { display:flex; justify-content:space-between; gap:6px; text-align:left; padding:4px 8px; }
+  .item .st { font:11px var(--mono); color:var(--muted); }
+  .item.done .st { color:var(--ok); }
+  .item.cur { border-color:var(--accent); }
+  .item.sel { background:color-mix(in srgb,var(--accent) 22%,transparent); }
+  .fields { display:grid; grid-template-columns:auto 1fr 1fr 1fr; gap:4px 6px; align-items:center; }
+  .fields span { color:var(--muted); font:11px var(--mono); }
+  input[type=number] { width:100%; min-width:0; font:12px var(--mono); color:var(--fg); background:var(--bg); border:1px solid var(--line);
+    border-radius:6px; padding:3px 5px; }
+  .ax { text-align:center; font:11px var(--mono); }
+  .ax.x { color:#d9534f; } .ax.y { color:#5cb85c; } .ax.z { color:#4a8fdc; }
+  .small { color:var(--muted); font-size:12px; }
+  .sync { font:12px var(--mono); }
+  .sync.ok { color:var(--ok); }
+  kbd { font:11px var(--mono); border:1px solid var(--line); border-radius:4px; padding:0 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="stage">
+    <canvas id="cv"></canvas>
+    <div class="badge" id="badge">вид спереди</div>
+    <div class="hint" id="hint" hidden></div>
+    <div class="msg" id="msg">Загрузка модели…</div>
+  </div>
+  <div class="rail">
+    <div class="box">
+      <div class="grp">Вид</div>
+      <div class="row">
+        <button id="vFront" title="Клавиша 1">Спереди</button>
+        <button id="vSide" title="Клавиша 3">Сбоку</button>
+        <button id="vFree" title="Вращение левой кнопкой">Свободно</button>
+        <button id="xray" title="Alt+Z">Рентген</button>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <button id="yawL" title="Если модель стоит боком или спиной">↺ 90°</button>
+        <button id="yawR">↻ 90°</button>
+        <span class="small" id="yawTxt"></span>
+      </div>
+    </div>
+    <div class="box">
+      <div class="grp" id="listTitle">Ориентиры</div>
+      <label class="chk" style="margin-bottom:6px"><input type="checkbox" id="sym" checked> Симметрия (правая сторона повторяет левую)</label>
+      <div class="list" id="list"></div>
+    </div>
+    <div class="box" id="selBox">
+      <div class="grp">Выбранный узел</div>
+      <div id="selName" class="small">Ничего не выбрано. Кликните по узлу.</div>
+      <div class="row" style="margin:6px 0">
+        <button id="mMove" title="G">Перемещение <kbd>G</kbd></button>
+        <button id="mRot" title="R">Поворот <kbd>R</kbd></button>
+      </div>
+      <div class="fields" id="fields">
+        <span></span><div class="ax x">X</div><div class="ax y">Y</div><div class="ax z">Z</div>
+        <span>Позиция, м</span><input type="number" step="0.005" id="px"><input type="number" step="0.005" id="py"><input type="number" step="0.005" id="pz">
+        <span>Поворот, °</span><input type="number" step="1" id="rx"><input type="number" step="1" id="ry"><input type="number" step="1" id="rz">
+      </div>
+      <div class="small" style="margin-top:6px">Оси как в Blender (Z вверх, −Y вперёд). Перемещение двигает только узел; поворот вращает узел вместе со всеми дочерними.</div>
+    </div>
+    <div class="box">
+      <div class="row">
+        <button id="undo" title="Ctrl+Z">Отменить</button>
+        <button id="rebuild" title="Пересчитать таз, позвоночник, шею, ключицы, бёдра и стопы по ориентирам">Пересчитать производные</button>
+        <button id="reset">Начать заново</button>
+      </div>
+      <div class="sync" id="sync" style="margin-top:6px"></div>
+    </div>
+  </div>
+</div>
+<script id="d-data" type="application/json">@@DATA@@</script>
+<script id="d-glb" type="text/plain">@@GLB@@</script>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+               "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
+
+const $ = (id) => document.getElementById(id);
+const DATA = JSON.parse($('d-data').textContent);   // { state: saved landmarks JSON or null, target: textbox elem id }
+const V = (a) => new THREE.Vector3(a[0], a[1], a[2]);
+const arr = (v) => [+v.x.toFixed(5), +v.y.toFixed(5), +v.z.toFixed(5)];
+
+// ---------------------------------------------------------------- skeleton definition (glTF space: Y up, model faces +Z)
+// Character's left side is +X on screen-right in the front view.
+const SIDES = ['L', 'R'];
+const JOINTS = [];   // {id, parent, label, end}
+const add = (id, parent, label, end = false) => JOINTS.push({ id, parent, label, end });
+add('hips', null, 'Таз'); add('spine', 'hips', 'Позвоночник 1'); add('spine1', 'spine', 'Позвоночник 2');
+add('spine2', 'spine1', 'Грудь'); add('neck', 'spine2', 'Шея'); add('head', 'neck', 'Голова'); add('head_top', 'head', 'Макушка', true);
+for (const s of SIDES) {
+  const w = s === 'L' ? 'левая' : 'правая', m = s === 'L' ? 'левое' : 'правое', k = s === 'L' ? 'левый' : 'правый';
+  add('shoulder_' + s, 'spine2', 'Ключица ' + w); add('arm_' + s, 'shoulder_' + s, 'Плечо ' + m);
+  add('forearm_' + s, 'arm_' + s, 'Локоть ' + k); add('hand_' + s, 'forearm_' + s, 'Запястье ' + m);
+  add('hand_end_' + s, 'hand_' + s, 'Конец кисти ' + w, true);
+  add('upleg_' + s, 'hips', 'Бедро ' + m); add('leg_' + s, 'upleg_' + s, 'Колено ' + m);
+  add('foot_' + s, 'leg_' + s, 'Щиколотка ' + w); add('toe_' + s, 'foot_' + s, 'Носок ' + k);
+  add('toe_end_' + s, 'toe_' + s, 'Кончик стопы ' + w, true);
+}
+const JMAP = Object.fromEntries(JOINTS.map((j) => [j.id, j]));
+const CHILDREN = {}; for (const j of JOINTS) if (j.parent) (CHILDREN[j.parent] ||= []).push(j.id);
+const descendants = (id) => { const out = []; const st = [...(CHILDREN[id] || [])];
+  while (st.length) { const c = st.pop(); out.push(c); st.push(...(CHILDREN[c] || [])); } return out; };
+const partner = (id) => id.endsWith('_L') ? id.slice(0, -1) + 'R' : id.endsWith('_R') ? id.slice(0, -1) + 'L' : null;
+
+// Landmarks placed by clicks in the front view (like Mixamo). Depth comes from a ray through the mesh:
+// t = 0 front surface, 1 back surface of the first body part hit.
+const MARKS = [
+  { id: 'chin', label: 'Подбородок', t: .5, full: true },
+  { id: 'groin', label: 'Пах', t: .5, full: true },
+  ...SIDES.flatMap((s) => {
+    const scr = s === 'L' ? ' (справа на экране)' : ' (слева на экране)';
+    return [{ id: 'arm_' + s, label: JMAP['arm_' + s].label + scr, t: .5 },
+            { id: 'forearm_' + s, label: JMAP['forearm_' + s].label + scr, t: .55 },
+            { id: 'hand_' + s, label: JMAP['hand_' + s].label + scr, t: .5 },
+            { id: 'leg_' + s, label: JMAP['leg_' + s].label + scr, t: .42 },
+            { id: 'foot_' + s, label: JMAP['foot_' + s].label + scr, t: .5 }];
+  }),
+];
+const MMAP = Object.fromEntries(MARKS.map((m) => [m.id, m]));
+
+// ---------------------------------------------------------------- scene
+const canvas = $('cv');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const scene = new THREE.Scene();
+scene.add(new THREE.HemisphereLight(0xffffff, 0x554433, 1.6));
+const sun = new THREE.DirectionalLight(0xffffff, 1.6); sun.position.set(1, 2, 3); scene.add(sun);
+const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -100, 100);
+const orbit = new OrbitControls(camera, canvas);
+orbit.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.PAN };
+const tc = new TransformControls(camera, canvas);
+tc.setSpace('world'); tc.setSize(.8); scene.add(tc);
+const handle = new THREE.Object3D(); scene.add(handle);
+tc.addEventListener('dragging-changed', (e) => { orbit.enabled = !e.value; });
+
+const model = new THREE.Group(); scene.add(model);
+const meshes = [];
+let bbox = new THREE.Box3(), H = 1, cx = 0;
+let worldVerts = new Float32Array(0);
+
+const S = {   // editor state (serialised)
+  phase: 'place', yaw: 0, sym: true, marks: {}, pos: {}, rot: {},
+};
+let current = null;       // landmark being placed
+let selected = null;      // joint selected in edit phase
+let view = 'front', xray = false;
+const undoStack = [];
+
+// ---------------------------------------------------------------- helpers
+function measure() {
+  model.updateMatrixWorld(true);
+  bbox = new THREE.Box3().setFromObject(model); H = Math.max(bbox.max.y - bbox.min.y, 1e-3);
+  const pts = []; const v = new THREE.Vector3();
+  for (const m of meshes) { const p = m.geometry.attributes.position;
+    for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i).applyMatrix4(m.matrixWorld); pts.push(v.x, v.y, v.z); } }
+  worldVerts = new Float32Array(pts);
+}
+const ray = new THREE.Raycaster();
+function hitsAt(x, y) {
+  ray.set(new THREE.Vector3(x, y, bbox.max.z + 1), new THREE.Vector3(0, 0, -1));
+  const out = []; for (const h of ray.intersectObjects(meshes, false)) if (!out.length || h.distance - out[out.length - 1] > 1e-4) out.push(h.distance);
+  return out.map((d) => bbox.max.z + 1 - d);
+}
+// Depth along the front ray, looking around a little when the click misses the mesh. Limbs use the first body
+// part hit (entry..next exit); centre-line joints use the whole thickness (first..last hit), so a beard,
+// shorts or a belt in front does not pull the spine and head forward.
+function depthAt(x, y, t, full = false) {
+  const r = .015 * H;
+  for (const [dx, dy] of [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r], [2 * r, 0], [-2 * r, 0], [0, 2 * r], [0, -2 * r]]) {
+    const z = hitsAt(x + dx, y + dy);
+    if (z.length) { const f = z[0], b = z.length > 1 ? (full ? z[z.length - 1] : z[1]) : f - .03 * H; return f + (b - f) * t; }
+  }
+  return (bbox.min.z + bbox.max.z) / 2;
+}
+const mirror = (v) => new THREE.Vector3(2 * cx - v.x, v.y, v.z);
+const lerp = (a, b, t) => a + (b - a) * t;
+const activeMarks = () => MARKS.filter((m) => !(S.sym && m.id.endsWith('_R')));
+
+// glTF (Y up, +Z forward) <-> Blender (Z up, -Y forward): Blender = Rx(+90) * glTF
+const C = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2), Ci = C.clone().invert();
+const toB = (v) => new THREE.Vector3(v.x, -v.z, v.y);
+const fromB = (b) => new THREE.Vector3(b.x, b.z, -b.y);
+
+// ---------------------------------------------------------------- derived skeleton from landmarks
+function rightMarks() {   // mirror left landmarks when symmetry is on
+  if (!S.sym) return;
+  for (const m of MARKS) if (m.id.endsWith('_L') && S.marks[m.id]) S.marks[partner(m.id)] = arr(mirror(V(S.marks[m.id])));
+}
+function footToe(ankle) {
+  const out = { tip: null }; const rx = .07 * H; let best = -Infinity;
+  for (let i = 0; i < worldVerts.length; i += 3) {
+    const x = worldVerts[i], y = worldVerts[i + 1], z = worldVerts[i + 2];
+    if (y < ankle.y && Math.abs(x - ankle.x) < rx && z > best) { best = z; out.tip = new THREE.Vector3(x, y, z); }
+  }
+  return out.tip;
+}
+function derive() {
+  const M = (id) => V(S.marks[id]);
+  const P = {}; const ground = bbox.min.y, top = bbox.max.y;
+  const chin = M('chin'), groin = M('groin');
+  cx = (chin.x + groin.x) / 2;
+  for (const s of SIDES) for (const k of ['arm', 'forearm', 'hand', 'leg', 'foot']) P[k + '_' + s] = M(k + '_' + s);
+  const armY = (P.arm_L.y + P.arm_R.y) / 2;
+  const at = (x, y, t, full = true) => new THREE.Vector3(x, y, depthAt(x, y, t, full));
+  P.hips = at(groin.x, groin.y + .04 * H, .55);
+  // hunched characters (goblins) can have the chin below the shoulders: keep neck and head bones a sane length
+  P.neck = at(chin.x, Math.max(lerp(armY, chin.y, .45), armY + .02 * H), .55);
+  P.spine = at(lerp(P.hips.x, P.neck.x, .2), lerp(P.hips.y, P.neck.y, .2), .6);
+  P.spine1 = at(lerp(P.hips.x, P.neck.x, .45), lerp(P.hips.y, P.neck.y, .45), .6);
+  P.spine2 = at(lerp(P.hips.x, P.neck.x, .7), lerp(P.hips.y, P.neck.y, .7), .6);
+  const headY = Math.max(chin.y + .01 * H, P.neck.y + .035 * H);
+  P.head = new THREE.Vector3(chin.x, headY, depthAt(chin.x, headY + .04 * H, .55, true));
+  P.head_top = new THREE.Vector3(chin.x, top, P.head.z);
+  for (const s of SIDES) {
+    const arm = P['arm_' + s], fore = P['forearm_' + s], hand = P['hand_' + s];
+    P['shoulder_' + s] = at(lerp(P.neck.x, arm.x, .18), arm.y - .005 * H, .45);
+    P['hand_end_' + s] = hand.clone().add(hand.clone().sub(fore).multiplyScalar(.45));
+    const knee = P['leg_' + s], ankle = P['foot_' + s];
+    P['upleg_' + s] = at(lerp(groin.x, knee.x, .9), groin.y + .035 * H, .5, false);
+    const tip = footToe(ankle);
+    if (tip) {
+      P['toe_' + s] = new THREE.Vector3(lerp(ankle.x, tip.x, .7), lerp(ground, ankle.y, .3), lerp(ankle.z, tip.z, .65));
+      P['toe_end_' + s] = new THREE.Vector3(tip.x, P['toe_' + s].y, tip.z);
+    } else {
+      P['toe_' + s] = new THREE.Vector3(ankle.x, lerp(ground, ankle.y, .3), ankle.z + .06 * H);
+      P['toe_end_' + s] = P['toe_' + s].clone().add(new THREE.Vector3(0, 0, .04 * H));
+    }
+  }
+  if (S.sym) for (const j of JOINTS) if (j.id.endsWith('_R')) P[j.id] = mirror(P[partner(j.id)]);
+  S.pos = Object.fromEntries(JOINTS.map((j) => [j.id, arr(P[j.id])]));
+  S.rot = {};
+}
+
+// ---------------------------------------------------------------- drawing
+const jointGroup = new THREE.Group(); scene.add(jointGroup);
+const sphereGeo = new THREE.SphereGeometry(1, 16, 12);
+const mat = (c) => new THREE.MeshBasicMaterial({ color: c, depthTest: false, transparent: true, opacity: .95 });
+const COL = { mark: mat(0xff7a2f), derived: mat(0x3f8fe6), end: mat(0x8a8f98), sel: mat(0xffd31a), place: mat(0xff7a2f) };
+const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true, opacity: .8 });
+let lines = null; const spheres = {};
+function draw() {
+  for (const k in spheres) { jointGroup.remove(spheres[k]); delete spheres[k]; }
+  if (lines) { scene.remove(lines); lines.geometry.dispose(); lines = null; }
+  const r = .011 * H;
+  if (S.phase === 'place') {
+    for (const m of MARKS) if (S.marks[m.id]) {
+      const s = new THREE.Mesh(sphereGeo, m.id === current ? COL.sel : COL.place); s.scale.setScalar(r);
+      s.position.copy(V(S.marks[m.id])); s.renderOrder = 999; jointGroup.add(s); spheres[m.id] = s;
+    }
+  } else {
+    const seg = [];
+    for (const j of JOINTS) {
+      const p = V(S.pos[j.id]);
+      const s = new THREE.Mesh(sphereGeo, j.id === selected ? COL.sel : j.end ? COL.end : MMAP[j.id] ? COL.mark : COL.derived);
+      s.scale.setScalar(j.end ? r * .7 : r); s.position.copy(p); s.renderOrder = 999; s.userData.id = j.id;
+      jointGroup.add(s); spheres[j.id] = s;
+      if (j.parent) seg.push(...S.pos[j.parent], ...S.pos[j.id]);
+    }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(seg, 3));
+    lines = new THREE.LineSegments(g, lineMat); lines.renderOrder = 998; scene.add(lines);
+  }
+}
+
+// ---------------------------------------------------------------- panel
+function nextMark() { return activeMarks().find((m) => !S.marks[m.id]) || null; }
+function refreshList() {
+  const list = $('list'); list.innerHTML = '';
+  if (S.phase === 'place') {
+    $('listTitle').textContent = 'Ориентиры: кликните по модели';
+    for (const m of activeMarks()) {
+      const b = document.createElement('button'); b.className = 'item' + (S.marks[m.id] ? ' done' : '') + (m.id === current ? ' cur' : '');
+      b.innerHTML = `<span>${m.label}</span><span class="st">${S.marks[m.id] ? 'готово' : '—'}</span>`;
+      b.onclick = () => { current = m.id; refreshAll(); };
+      list.appendChild(b);
+    }
+  } else {
+    $('listTitle').textContent = 'Узлы скелета';
+    for (const j of JOINTS) {
+      if (S.sym && j.id.endsWith('_R')) continue;
+      const b = document.createElement('button'); b.className = 'item' + (j.id === selected ? ' sel' : '');
+      const kind = j.end ? 'конец' : MMAP[j.id] ? 'ориентир' : 'расчёт';
+      b.innerHTML = `<span>${j.label}</span><span class="st">${kind}</span>`;
+      b.onclick = () => select(j.id);
+      list.appendChild(b);
+    }
+  }
+}
+function refreshHint() {
+  const h = $('hint');
+  if (S.phase === 'place') {
+    const m = current ? MMAP[current] : null;
+    h.hidden = !m; if (m) h.textContent = (S.marks[m.id] ? 'Переставить: ' : 'Кликните: ') + m.label;
+  } else h.hidden = true;
+}
+function refreshFields() {
+  const ids = ['px', 'py', 'pz', 'rx', 'ry', 'rz'];
+  const on = S.phase === 'edit' && selected;
+  for (const k of ids) $(k).disabled = !on;
+  $('mMove').disabled = $('mRot').disabled = !on;
+  $('selName').textContent = on ? JMAP[selected].label + (S.sym && partner(selected) ? ' (симметрично)' : '') :
+    (S.phase === 'place' ? 'Сначала расставьте ориентиры.' : 'Ничего не выбрано. Кликните по узлу.');
+  $('mMove').classList.toggle('on', tc.getMode() === 'translate'); $('mRot').classList.toggle('on', tc.getMode() === 'rotate');
+  if (!on) { for (const k of ids) $(k).value = ''; return; }
+  const b = toB(V(S.pos[selected]));
+  $('px').value = b.x.toFixed(3); $('py').value = b.y.toFixed(3); $('pz').value = b.z.toFixed(3);
+  const e = new THREE.Euler().setFromQuaternion(C.clone().multiply(getRot(selected)).multiply(Ci), 'XYZ');
+  $('rx').value = THREE.MathUtils.radToDeg(e.x).toFixed(1); $('ry').value = THREE.MathUtils.radToDeg(e.y).toFixed(1);
+  $('rz').value = THREE.MathUtils.radToDeg(e.z).toFixed(1);
+}
+function refreshAll() {
+  refreshList(); refreshHint(); refreshFields(); draw();
+  $('sym').checked = S.sym; $('xray').classList.toggle('on', xray);
+  $('yawTxt').textContent = S.yaw ? `модель повёрнута на ${S.yaw}°` : '';
+  $('rebuild').disabled = S.phase !== 'edit'; $('undo').disabled = !undoStack.length;
+  for (const [id, v] of [['vFront', 'front'], ['vSide', 'side'], ['vFree', 'free']]) $(id).classList.toggle('on', view === v);
+  $('badge').textContent = { front: 'вид спереди', side: 'вид сбоку (слева от персонажа)', free: 'свободный вид' }[view];
+}
+
+// ---------------------------------------------------------------- state changes
+const snap = () => JSON.stringify(S);
+function pushUndo() { undoStack.push(snap()); if (undoStack.length > 100) undoStack.shift(); }
+function undo() {
+  if (!undoStack.length) return; Object.assign(S, JSON.parse(undoStack.pop()));
+  if (selected && S.phase !== 'edit') select(null); else if (selected) attach();
+  applyYaw(); refreshAll(); sync();
+}
+const getRot = (id) => S.rot[id] ? new THREE.Quaternion(...S.rot[id]) : new THREE.Quaternion();
+
+function setPos(id, p) {
+  S.pos[id] = arr(p);
+  const o = S.sym && partner(id); if (o) S.pos[o] = arr(mirror(p));
+}
+// Rotate a joint's whole subtree about the joint; the mirrored side gets the reflected rotation.
+function rotateSubtree(id, dq, base) {
+  const apply = (jid, q) => {
+    const pivot = V(base.pos[jid]);
+    for (const d of descendants(jid)) S.pos[d] = arr(V(base.pos[d]).sub(pivot).applyQuaternion(q).add(pivot));
+    const r0 = base.rot[jid] ? new THREE.Quaternion(...base.rot[jid]) : new THREE.Quaternion();
+    const r = q.clone().multiply(r0); S.rot[jid] = [r.x, r.y, r.z, r.w];
+  };
+  apply(id, dq);
+  const o = S.sym && partner(id); if (o) apply(o, new THREE.Quaternion(dq.x, -dq.y, -dq.z, dq.w));
+}
+
+function select(id) {
+  selected = id;
+  if (id) attach(); else tc.detach();
+  refreshAll();
+}
+function attach() {
+  handle.position.copy(V(S.pos[selected])); handle.quaternion.copy(getRot(selected)); handle.updateMatrixWorld();
+  tc.attach(handle);
+}
+let dragBase = null;
+tc.addEventListener('mouseDown', () => { pushUndo(); dragBase = JSON.parse(snap()); });
+tc.addEventListener('objectChange', () => {
+  if (!selected || !dragBase) return;
+  if (tc.getMode() === 'translate') setPos(selected, handle.position);
+  else {
+    const q0 = dragBase.rot[selected] ? new THREE.Quaternion(...dragBase.rot[selected]) : new THREE.Quaternion();
+    rotateSubtree(selected, handle.quaternion.clone().multiply(q0.invert()), dragBase);
+  }
+  refreshFields(); draw();
+});
+tc.addEventListener('mouseUp', () => { dragBase = null; refreshAll(); sync(); });
+
+function fieldChange() {
+  if (!selected) return; pushUndo();
+  const num = (k) => parseFloat($(k).value) || 0;
+  const p = fromB(new THREE.Vector3(num('px'), num('py'), num('pz')));
+  if (p.distanceTo(V(S.pos[selected])) > 1e-6) setPos(selected, p);
+  const qb = new THREE.Quaternion().setFromEuler(new THREE.Euler(...['rx', 'ry', 'rz'].map((k) => THREE.MathUtils.degToRad(num(k))), 'XYZ'));
+  const q = Ci.clone().multiply(qb).multiply(C);
+  const dq = q.clone().multiply(getRot(selected).invert());
+  if (Math.abs(dq.w) < 1 - 1e-9) rotateSubtree(selected, dq, JSON.parse(snap()));
+  attach(); refreshAll(); sync();
+}
+for (const k of ['px', 'py', 'pz', 'rx', 'ry', 'rz']) $(k).addEventListener('change', fieldChange);
+
+function placeAt(x, y) {
+  if (!current) return;
+  pushUndo();
+  const m = MMAP[current]; S.marks[current] = arr(new THREE.Vector3(x, y, depthAt(x, y, m.t, !!m.full)));
+  if (S.sym && (current === 'chin' || current === 'groin') && S.marks.chin && S.marks.groin) cx = (S.marks.chin[0] + S.marks.groin[0]) / 2;
+  current = nextMark()?.id || null;
+  if (!current) finishPlacing(); else refreshAll();
+}
+function finishPlacing() {
+  rightMarks(); derive(); S.phase = 'edit'; current = null; selected = null;
+  refreshAll(); sync();
+}
+
+// ---------------------------------------------------------------- sync to the SF3D textbox
+let syncTimer = 0;
+function sync() {
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => {
+    const el = $('sync');
+    if (S.phase !== 'edit') { el.textContent = 'Разметка ещё не закончена.'; el.className = 'sync'; return; }
+    const out = { version: 1, source: DATA.source, yaw: S.yaw, sym: S.sym, height: +H.toFixed(4), center_x: +cx.toFixed(5),
+                  marks: S.marks, joints: S.pos, rot: S.rot, parents: Object.fromEntries(JOINTS.map((j) => [j.id, j.parent])),
+                  ends: JOINTS.filter((j) => j.end).map((j) => j.id) };
+    const text = JSON.stringify(out);
+    try {
+      const ta = window.parent.document.querySelector('#' + DATA.target + ' textarea');
+      if (!ta) throw new Error('no textbox');
+      ta.value = text; ta.dispatchEvent(new Event('input', { bubbles: true }));
+      el.textContent = 'Разметка передана в SF3D ✓'; el.className = 'sync ok';
+    } catch (e) {
+      el.textContent = 'Не удалось передать в SF3D: скопируйте JSON из консоли.'; el.className = 'sync'; console.log(text);
+    }
+  }, 150);
+}
+
+// ---------------------------------------------------------------- view
+function setView(v) {
+  view = v; const c = bbox.getCenter(new THREE.Vector3());
+  if (v === 'front') camera.position.set(c.x, c.y, c.z + 10); else if (v === 'side') camera.position.set(c.x + 10, c.y, c.z);
+  if (v !== 'free') { orbit.target.copy(c); camera.zoom = 1; camera.up.set(0, 1, 0); camera.lookAt(c); }
+  orbit.enableRotate = v === 'free'; orbit.update(); camera.updateProjectionMatrix(); refreshAll();
+}
+function resize() {
+  const w = canvas.clientWidth, h = canvas.clientHeight; if (!w || !h) return;
+  renderer.setSize(w, h, false); const half = H * .6, a = w / h;
+  camera.left = -half * a; camera.right = half * a; camera.top = half; camera.bottom = -half; camera.updateProjectionMatrix();
+}
+function applyYaw() {
+  model.rotation.y = THREE.MathUtils.degToRad(S.yaw); measure();
+}
+function setXray(on) {
+  xray = on;
+  for (const m of meshes) for (const mt of [].concat(m.material)) { mt.transparent = on; mt.opacity = on ? .35 : 1; mt.depthWrite = !on; mt.needsUpdate = true; }
+  refreshAll();
+}
+
+// ---------------------------------------------------------------- input
+let down = null; const ndc = new THREE.Vector2();
+canvas.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY, axis: tc.axis, b: e.button }; });
+canvas.addEventListener('pointerup', (e) => {
+  if (!down || down.b !== 0 || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 4 || down.axis || tc.dragging) { down = null; return; }
+  down = null; const rc = canvas.getBoundingClientRect();
+  ndc.set(((e.clientX - rc.left) / rc.width) * 2 - 1, -((e.clientY - rc.top) / rc.height) * 2 + 1);
+  if (S.phase === 'place') {
+    if (view !== 'front') { setView('front'); return; }
+    const p = new THREE.Vector3(ndc.x, ndc.y, 0).unproject(camera); placeAt(p.x, p.y);
+  } else {
+    ray.setFromCamera(ndc, camera);
+    const hit = ray.intersectObjects(Object.values(spheres), false)[0];
+    let id = hit ? hit.object.userData.id : null;
+    if (id && S.sym && id.endsWith('_R')) id = partner(id);
+    select(id);
+  }
+});
+addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT') return;
+  const k = e.key.toLowerCase();
+  if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); undo(); }
+  else if (k === 'g' || k === 'п') { tc.setMode('translate'); refreshFields(); }
+  else if (k === 'r' || k === 'к') { tc.setMode('rotate'); refreshFields(); }
+  else if (e.key === 'Escape') select(null);
+  else if (e.key === '1') setView('front'); else if (e.key === '3') setView('side');
+  else if (e.altKey && k === 'z') setXray(!xray);
+});
+$('vFront').onclick = () => setView('front'); $('vSide').onclick = () => setView('side'); $('vFree').onclick = () => setView('free');
+$('xray').onclick = () => setXray(!xray);
+$('mMove').onclick = () => { tc.setMode('translate'); refreshFields(); };
+$('mRot').onclick = () => { tc.setMode('rotate'); refreshFields(); };
+$('undo').onclick = undo;
+$('sym').onchange = () => {
+  pushUndo(); S.sym = $('sym').checked;
+  if (S.sym) { rightMarks(); if (S.phase === 'edit') for (const j of JOINTS) if (j.id.endsWith('_L')) setPos(j.id, V(S.pos[j.id])); }
+  if (S.phase === 'place') current = nextMark()?.id || null;
+  if (selected && S.sym && selected.endsWith('_R')) select(partner(selected));
+  refreshAll(); sync();
+};
+$('rebuild').onclick = () => {
+  if (!confirm('Пересчитать таз, позвоночник, шею, ключицы, бёдра и стопы? Ручные правки этих узлов пропадут, ориентиры останутся.')) return;
+  pushUndo();
+  for (const m of MARKS) if (m.id !== 'chin' && m.id !== 'groin' && S.pos[m.id]) S.marks[m.id] = S.pos[m.id];
+  derive(); select(null); sync();
+};
+$('reset').onclick = () => {
+  if (!confirm('Удалить всю разметку и начать заново?')) return;
+  pushUndo(); S.phase = 'place'; S.marks = {}; S.pos = {}; S.rot = {}; select(null); current = nextMark().id; setView('front'); sync();
+};
+const turn = (d) => {
+  if (S.phase === 'edit' && !confirm('Поворот модели сбросит разметку. Продолжить?')) return;
+  pushUndo(); S.yaw = ((S.yaw + d) % 360 + 360) % 360; S.phase = 'place'; S.marks = {}; S.pos = {}; S.rot = {};
+  select(null); applyYaw(); current = nextMark().id; resize(); setView('front'); sync();
+};
+$('yawL').onclick = () => turn(90); $('yawR').onclick = () => turn(-90);
+
+// ---------------------------------------------------------------- start
+(async () => {
+  try {
+    const s = atob($('d-glb').textContent.trim()); const u = new Uint8Array(s.length);
+    for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i);
+    const gltf = await new Promise((res, rej) => new GLTFLoader().parse(u.buffer, '', res, rej));
+    model.add(gltf.scene);
+    gltf.scene.traverse((o) => { if (o.isMesh) { meshes.push(o); for (const mt of [].concat(o.material)) mt.side = THREE.DoubleSide; } });
+    if (DATA.state && DATA.state.joints) {
+      Object.assign(S, { phase: 'edit', yaw: DATA.state.yaw || 0, sym: DATA.state.sym !== false, marks: DATA.state.marks || {},
+                         pos: DATA.state.joints, rot: DATA.state.rot || {} });
+      cx = DATA.state.center_x || 0;
+    }
+    applyYaw(); $('msg').hidden = true;
+    if (S.phase === 'place') current = nextMark().id;
+    resize(); setView('front'); sync();
+  } catch (e) { $('msg').textContent = 'Не удалось открыть модель: ' + e.message; }
+})();
+new ResizeObserver(resize).observe(canvas);
+renderer.setAnimationLoop(() => renderer.render(scene, camera));
+</script>
+</body>
+</html>

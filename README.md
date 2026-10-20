@@ -184,6 +184,7 @@ tool/
   hy_*.py                     Hunyuan3D workers (run in the hunyuan env)
   rigging.py, outfit.py, hanim.py, fbxanim.py, materials.py, surfaces.py,
   fx_flipbook.py, modkit.py, destruct.py, refgen.py, rwt_*.py   feature modules
+  landmarks*.py, landmark_editor.html   skeleton from hand-placed landmarks (three.js editor)
   blender_*.py                headless Blender scripts (blender -b -P tool\blender_x.py -- args)
   godot/                      Godot scripts and shaders used by generated scenes
   rig_scripts/                Git-Bash wrappers for UniRig
