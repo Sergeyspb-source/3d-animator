@@ -121,7 +121,7 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True):
     if weld:
         from rigging import weld_seams
         yield "Сшиваю стыки между частями модели…"
-        st = weld_seams(model, work / "model_seams.glb", blender)
+        st = weld_seams(model, work / "model_seams.glb", blender, eps=0.0005 * max(report.get("height", 1.0), 1e-6))
         if st:
             model = work / "model_seams.glb"
             yield f"Стыков найдено: {st['clusters']}, веса на них выровнены."

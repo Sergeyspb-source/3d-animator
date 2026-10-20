@@ -89,7 +89,7 @@
       </div>
       <div class="fields" id="fields">
         <span></span><div class="ax x">X</div><div class="ax y">Y</div><div class="ax z">Z</div>
-        <span>Позиция, м</span><input type="number" step="0.005" id="px"><input type="number" step="0.005" id="py"><input type="number" step="0.005" id="pz">
+        <span id="punit">Позиция, м</span><input type="number" step="0.005" id="px"><input type="number" step="0.005" id="py"><input type="number" step="0.005" id="pz">
         <span>Поворот, °</span><input type="number" step="1" id="rx"><input type="number" step="1" id="ry"><input type="number" step="1" id="rz">
       </div>
       <div class="small" style="margin-top:6px">Оси как в Blender (Z вверх, −Y вперёд). Перемещение двигает только узел; поворот вращает узел вместе со всеми дочерними.</div>
@@ -467,6 +467,10 @@ function resize() {
 }
 function applyYaw() {
   model.rotation.y = THREE.MathUtils.degToRad(S.yaw); measure();
+  // GLBs come in metres or centimetres: label and step follow the model height
+  const metres = H > .3 && H < 3, step = +(H * .005).toPrecision(2);
+  $('punit').textContent = metres ? 'Позиция, м' : 'Позиция, ед.';
+  for (const k of ['px', 'py', 'pz']) $(k).step = step;
 }
 function setXray(on) {
   xray = on;

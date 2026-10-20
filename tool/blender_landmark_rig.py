@@ -87,7 +87,10 @@ bpy.ops.object.mode_set(mode="OBJECT")
 # Tripo models come in parts split along seams; heat weighting fails on many separate open parts and on small
 # models. So: join copies of all parts, weld the seams, scale x10, heat-weight that proxy against a scaled copy of
 # the rig, and copy the weights back to every original vertex from the nearest proxy vertex.
-SCALE = 10.0
+# models arrive in metres or in centimetres (Tripo exports ~1 or ~100 units tall): bring the proxy to ~10 units
+lows = [(o.matrix_world @ Vector(c)).z for o in meshes for c in o.bound_box]
+height = max(lows) - min(lows)
+SCALE = 10.0 / max(height, 1e-6)
 bpy.ops.object.select_all(action="DESELECT")
 copies = []
 for o in meshes:
@@ -105,7 +108,7 @@ proxy.matrix_world = Matrix.Scale(SCALE, 4) @ proxy.matrix_world
 bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
 bpy.ops.object.mode_set(mode="EDIT")
 bpy.ops.mesh.select_all(action="SELECT")
-bpy.ops.mesh.remove_doubles(threshold=0.0005 * SCALE)
+bpy.ops.mesh.remove_doubles(threshold=0.005)  # 0.05 % of the height
 bpy.ops.object.mode_set(mode="OBJECT")
 prig = rig.copy()
 prig.data = rig.data.copy()
@@ -155,7 +158,7 @@ def seg_dist(p, a, c):
     return (p - (a + ab * t)).length
 
 
-report = {"meshes": {}, "bones": len(segs), "proxy_vertices": len(pv), "proxy_heat_failed": proxy_heat_failed}
+report = {"meshes": {}, "bones": len(segs), "height": height, "proxy_vertices": len(pv), "proxy_heat_failed": proxy_heat_failed}
 for o in meshes:
     groups = {g.index for g in o.vertex_groups}
     missing = [v.index for v in o.data.vertices if not any(g.group in groups and g.weight > 1e-4 for g in v.groups)]
