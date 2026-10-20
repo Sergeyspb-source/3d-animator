@@ -129,6 +129,17 @@ cd ..
 D:\conda\envs\sf3d\python.exe -m pip install --target tool\vendor\rwt\deps libigl==2.6.1 robust_laplacian==1.0.0
 ```
 
+### 4b. Lip sync (optional, rigging tab → «Липсинк реплики»)
+
+Self-contained: `toolendor\lipsync	ranscribe.py` (local Whisper) and `lipsync.py` (ARKit face curves) run in the
+`sf3d` env (numpy, scipy, torch, transformers; `soundfile` or ffmpeg for mp3/ogg). The `openai/whisper-small` model
+(~1 GB) is downloaded on the first run into `hf_home` from `tool\config.json` (default `D:/conda/hf`); an existing
+Hugging Face cache is reused. Output: `<model folder>\<voice>.face.json` + the audio copy.
+
+In Godot: copy `tool\godotace_curves_clip.gd` and `face_curves_player.gd` into your project, add a
+`FaceCurvesPlayer` node (`audio` = the voice `AudioStreamPlayer3D`, `face_root` = the character, `clip_path` = the
+`.face.json`). It drives the blend shapes of the character's mouth plate (`jawOpen`, `mouthSmile`, …) from the audio clock.
+
 ### 5. Hunyuan3D-2 environment (`hunyuan`): multi-view models and texturing
 
 ```powershell
@@ -186,9 +197,10 @@ tool/
   fx_flipbook.py, modkit.py, destruct.py, refgen.py, rwt_*.py   feature modules
   landmarks*.py, landmark_editor.html   skeleton from hand-placed landmarks (three.js editor)
   blender_*.py                headless Blender scripts (blender -b -P tool\blender_x.py -- args)
-  godot/                      Godot scripts and shaders used by generated scenes
+  godot/                      Godot scripts and shaders used by generated scenes (incl. FaceCurvesPlayer for lip sync)
   rig_scripts/                Git-Bash wrappers for UniRig
   vendor/rwt/                 Robust Weight Transfer (GPL-3.0)
+  vendor/lipsync/             Whisper word timings + lip-sync curves (vendored, see its README)
   config.example.json         settings template
 ```
 

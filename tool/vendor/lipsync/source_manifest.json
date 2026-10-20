@@ -1,0 +1,12 @@
+[
+ {
+  "file": "transcribe.py",
+  "from": "game-project-godot/.claude/skills/whisper-transcribe/scripts/transcribe.py",
+  "sha256": "1fca288d9794ce4cde6be7c4b943b2b55bc89819c6ebcfb21be3d976152553fe"
+ },
+ {
+  "file": "lipsync.py",
+  "from": "game-project-godot/.claude/skills/3d-animator/scripts/lipsync.py",
+  "sha256": "b3f1bbf9d1ccfbacaca7cf8fbaf07a7fa02113ae17b740028c4856926af1519b"
+ }
+]

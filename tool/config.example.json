@@ -44,5 +44,6 @@
                                       }
                    },
     "godot_exe":  "D:/Godot_v4.7.2-stable_win64.exe/Godot_v4.7.2-stable_win64_console.exe",
-    "lipsync_skills_dir": "D:/My projects/game-project-godot/.claude/skills"
+    "lipsync_skills_dir": "",
+    "hf_home": "D:/conda/hf"
 }

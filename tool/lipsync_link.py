@@ -1,21 +1,46 @@
 """Lip-sync clip for a rigged character: voice + script line -> <model folder>/<stem>.face.json (+ the audio copy).
 
-Uses the game project's own tools instead of copies (paths from config.json, key "lipsync_skills_dir", default the
-game's .claude/skills): whisper-transcribe/scripts/transcribe.py for word timings, 3d-animator/scripts/lipsync.py for
-the 52 ARKit curves ("face-curves/1"). The curves are then reduced to the shape keys the model really has (read from
+Self-contained: runs the vendored copies in tool/vendor/lipsync (transcribe.py = local Whisper word timings,
+lipsync.py = the 52 ARKit curves, "face-curves/1"); config key "lipsync_skills_dir" can point at another copy laid out
+as whisper-transcribe/scripts/transcribe.py + 3d-animator/scripts/lipsync.py. The Whisper model is taken from an
+existing Hugging Face cache, otherwise downloaded once (~1 GB) into config "hf_home" (default D:/conda/hf). The curves are then reduced to the shape keys the model really has (read from
 the GLB), Left/Right pairs averaged and every opening key scaled by (1 - mouthClose) so p/b/m closures show, exactly
 like the game's make_face_clip.py for the beggar. The output is what game/characters/face_curves_player.gd plays.
 """
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import struct
 import subprocess
 from pathlib import Path
 
-PY = r"D:\conda\envs\sf3d\python.exe"
-DEFAULT_SKILLS = r"D:\My projects\game-project-godot\.claude\skills"
+import sys
+
+PY = sys.executable if sys.executable.lower().endswith("python.exe") else r"D:\conda\envs\sf3d\python.exe"
+VENDOR = Path(__file__).resolve().parent / "vendor" / "lipsync"
+WHISPER = "models--openai--whisper-small"
+
+
+def tools(cfg):
+    """(transcribe.py, lipsync.py): an explicit lipsync_skills_dir from config, else the vendored copies."""
+    d = (cfg.get("lipsync_skills_dir") or "").strip()
+    if d:
+        return Path(d) / "whisper-transcribe" / "scripts" / "transcribe.py", Path(d) / "3d-animator" / "scripts" / "lipsync.py"
+    return VENDOR / "transcribe.py", VENDOR / "lipsync.py"
+
+
+def whisper_env(cfg):
+    """(env, online): reuse a Hugging Face cache that already has whisper-small, else allow one download."""
+    env = dict(os.environ)
+    homes = [os.environ.get("HF_HOME"), cfg.get("hf_home"), r"D:\conda\hf", str(Path.home() / ".cache" / "huggingface")]
+    for h in [h for h in homes if h]:
+        if (Path(h) / "hub" / WHISPER).exists():
+            env["HF_HOME"] = h
+            return env, False
+    env["HF_HOME"] = cfg.get("hf_home") or r"D:\conda\hf"
+    return env, True
 
 
 def shape_keys(glb: Path) -> list[str]:
@@ -30,9 +55,9 @@ def shape_keys(glb: Path) -> list[str]:
     return names
 
 
-def _run(args, timeout):
+def _run(args, timeout, env=None):
     r = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout,
-                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                       env=env, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     return r.returncode, r.stdout + r.stderr
 
 
@@ -57,11 +82,11 @@ def reduce_curves(d: dict, keys: list[str]) -> dict:
 
 def make_clip(audio: Path, text: str, lang: str, model_glb: Path, cfg: dict):
     """Generator of log lines; the last item is a dict {clip, audio, keys, qa}."""
-    skills = Path(cfg.get("lipsync_skills_dir") or DEFAULT_SKILLS)
-    tr, ls = skills / "whisper-transcribe" / "scripts" / "transcribe.py", skills / "3d-animator" / "scripts" / "lipsync.py"
+    tr, ls = tools(cfg)
     for f in (tr, ls):
         if not f.exists():
-            raise RuntimeError(f"Не найден скрипт липсинка: {f}. Укажите папку в config.json (lipsync_skills_dir).")
+            raise RuntimeError(f"Не найден скрипт липсинка: {f}. Проверьте tool/vendor/lipsync или lipsync_skills_dir в config.json.")
+    env, online = whisper_env(cfg)
     keys = shape_keys(model_glb)
     if not keys:
         raise RuntimeError("В модели нет ключей формы: соберите скелет с размеченным лицом и галочкой «Рот для речи».")
@@ -72,8 +97,10 @@ def make_clip(audio: Path, text: str, lang: str, model_glb: Path, cfg: dict):
     audio_copy = out_dir / Path(audio).name
     if Path(audio).resolve() != audio_copy.resolve():
         shutil.copyfile(audio, audio_copy)
-    yield "Whisper: тайминги слов (видеокарта, около 1 ГБ)…"
-    code, log = _run([PY, "-I", "-X", "utf8", str(tr), str(audio_copy), "--lang", lang, "--out-dir", str(work)], 900)
+    yield ("Whisper: первый запуск — скачиваю модель whisper-small (~1 ГБ) в " + env["HF_HOME"] + "…" if online
+           else "Whisper: тайминги слов (видеокарта, около 1 ГБ)…")
+    code, log = _run([PY, "-I", "-X", "utf8", str(tr), str(audio_copy), "--lang", lang, "--out-dir", str(work)]
+                     + (["--online"] if online else []), 1800, env)
     words = work / f"{stem}.words.json"
     if code != 0 or not words.exists():
         raise RuntimeError("Whisper не распознал запись:\n" + log[-1500:])

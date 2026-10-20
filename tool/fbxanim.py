@@ -153,12 +153,18 @@ WEAPON_SETS = {
 
 
 def _weapon_glb(name):
-    for base in (Path(r"D:/My projects/game-project-godot/assets/models/weapons"),
-                 ROOT.parent / "export" / "item" / name):
-        f = base / f"{name}.glb" if base.name != name else base / f"{name}.glb"
+    """Weapon model for the viewer: SF3D's own export/item first, then an optional game folder (config
+    "game_weapons_dir"); None when neither has it (the viewer then shows the clip without that weapon)."""
+    import sf3d_tool as T  # noqa: PLC0415
+    bases = [ROOT.parent / "export" / "item" / name]
+    extra = (T.load_config().get("game_weapons_dir") or "").strip()
+    if extra:
+        bases.append(Path(extra))
+    for base in bases:
+        f = base / f"{name}.glb"
         if f.exists():
             return f
-    raise FileNotFoundError(name)
+    return None
 
 
 def _weapons_json(weapon_set):
@@ -167,6 +173,8 @@ def _weapons_json(weapon_set):
         from glbfix import set_metallic  # noqa: PLC0415  (the exported item GLBs lack metallicFactor: they render as mirrors)
         import tempfile  # noqa: PLC0415
         src = _weapon_glb(w["model"])
+        if src is None:
+            continue
         tmp = Path(tempfile.gettempdir()) / f"viewer_{src.name}"
         tmp.write_bytes(src.read_bytes())
         set_metallic(tmp, 0.25, 0.85)
