@@ -243,10 +243,20 @@ def turn(jid, axis, deg):
     bpy.context.view_layer.update()
 
 
-turn("arm_L", "Y", -115); turn("forearm_L", "Y", -30)      # left arm raised over the head, elbow bent
-turn("arm_R", "X", 70); turn("forearm_R", "Z", -60)        # right arm forward, elbow bent
-turn("upleg_L", "X", -55); turn("leg_L", "X", 80)          # left knee up
-turn("upleg_R", "X", 20)                                    # right leg back
+def bend(jid, toward, deg):
+    """Swing a bone's tip toward a world direction (anatomical flexion), whatever its roll or rest direction."""
+    pb = rig.pose.bones[NAMES[jid]]
+    d = ((rig.matrix_world @ pb.tail) - (rig.matrix_world @ pb.head)).normalized()
+    axis = d.cross(Vector(toward))
+    if axis.length > 1e-6:
+        turn(jid, axis.normalized(), deg)
+
+
+FWD, UP = (0, -1, 0), (0, 0, 1)                             # Blender: the character faces -Y
+bend("arm_L", UP, 140); bend("forearm_L", FWD, 35)          # left arm over the head, elbow flexed forward
+bend("arm_R", FWD, 75); bend("forearm_R", UP, 80)           # right arm forward, elbow flexed up (guard)
+bend("upleg_L", FWD, 60); bend("leg_L", (0, 1, 0), 90)      # left knee up, shin folded back
+bend("upleg_R", (0, 1, 0), 20)                              # right leg back
 turn("spine1", "Z", 20)                                     # torso twist
 shot("pose_front.png")
 shot("pose_side.png", side=True)
