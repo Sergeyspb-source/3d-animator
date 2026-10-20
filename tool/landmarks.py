@@ -33,6 +33,15 @@ def bone_names(naming="mixamo"):
         for jid, role in (("shoulder", "shoulder"), ("arm", "arm"), ("forearm", "forearm"), ("hand", "hand"),
                           ("upleg", "upleg"), ("leg", "leg"), ("foot", "foot"), ("toe", "toe")):
             out[f"{jid}_{s}"] = p + cfg[role].replace("{S}", side)
+        for f in ("thumb", "index", "middle", "ring", "pinky"):
+            F = f.capitalize()
+            if naming == "mixamo":   # LeftHandIndex1..3, plus the Mixamo end bone 4 for reading FBX rigs
+                for k in range(1, 5):
+                    out[f"{f}{k}_{s}"] = p + f"{side}Hand{F}{k}"
+            else:                    # Godot humanoid profile
+                parts = ["Metacarpal", "Proximal", "Distal"] if f == "thumb" else ["Proximal", "Intermediate", "Distal"]
+                for k, part in enumerate(parts, 1):
+                    out[f"{f}{k}_{s}"] = p + f"{side}{F}{part}"
     return out
 
 
@@ -160,4 +169,5 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True):
                      encoding="utf-8")
     yield f"Готово: {final}\nРазметка сохранена: {saved.name} (откроется в редакторе в следующий раз)."
     yield {"glb": str(final), "landmarks": str(saved), "work": str(work),
-           "images": [str(work / n) for n in ("rest.png", "pose_front.png", "pose_side.png") if (work / n).exists()]}
+           "images": [str(work / n) for n in ("rest.png", "pose_front.png", "pose_side.png", "hand_fist.png")
+                      if (work / n).exists()]}

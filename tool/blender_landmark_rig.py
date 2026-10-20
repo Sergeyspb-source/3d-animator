@@ -29,6 +29,15 @@ for s in "LR":
                  f"foot_{s}": f"toe_{s}", f"toe_{s}": f"toe_end_{s}"})
 
 
+import re
+
+FINGER = re.compile(r"^(thumb|index|middle|ring|pinky)([123])_([LR])$")
+for jid in L["joints"]:   # optional finger chains: 1 -> 2 -> 3 -> 4 (tip, no bone)
+    m = FINGER.match(jid)
+    if m and f"{m[1]}{int(m[2]) + 1}_{m[3]}" in L["joints"]:
+        TAIL[jid] = f"{m[1]}{int(m[2]) + 1}_{m[3]}"
+
+
 def bl(p):  # glTF (x, y, z) -> Blender (x, -z, y)
     return Vector((p[0], -p[2], p[1]))
 
@@ -275,6 +284,28 @@ if job.get("closeup"):
     cam.data.ortho_scale = size.z * 0.35
     cam.location = (sh.x, mid.y - far, sh.z); cam.rotation_euler = (math.radians(90), 0, 0)
     scene.render.filepath = str(OUT / "shoulder.png"); bpy.ops.render.render(write_still=True)
+
+# ---- fist close-up of the left hand when fingers are rigged
+if "middle1_L" in TAIL:
+    for pb in rig.pose.bones:
+        pb.matrix_basis = Matrix()
+    bpy.context.view_layer.update()
+    W, M = bl(J["hand_L"]), bl(J["middle1_L"])
+    I, P5 = bl(J.get("index1_L", J["middle1_L"])), bl(J.get("pinky1_L", J.get("ring1_L", J["middle1_L"])))
+    palm = (M - W).normalized().cross(I - P5)
+    palm = palm.normalized() if palm.length > 1e-9 else Vector((-1, 0, 0))
+    for f in ("thumb", "index", "middle", "ring", "pinky"):
+        for k, a in enumerate((25, 40, 50) if f == "thumb" else (80, 95, 70), 1):
+            if f"{f}{k}_L" in TAIL:
+                bend(f"{f}{k}_L", palm, a)
+    pts = [bl(v) for k, v in J.items() if k.endswith("_L") and (FINGER.match(k) or k.startswith(("thumb4", "index4", "middle4", "ring4", "pinky4")))]
+    c = sum(pts, Vector()) / len(pts)
+    span = max((p - c).length for p in pts)
+    cam.data.ortho_scale = span * 3.2
+    cam.location = (c.x + far, c.y, c.z); cam.rotation_euler = (math.radians(90), 0, math.radians(90))
+    scene.render.filepath = str(OUT / "hand_fist.png")
+    bpy.ops.render.render(write_still=True)
+    report["finger_bones"] = sum(1 for k in TAIL if FINGER.match(k))
 
 (OUT / "rig_report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
 print("LANDMARK_RIG_OK", json.dumps(report), flush=True)
