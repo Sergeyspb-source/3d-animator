@@ -212,6 +212,7 @@ for (const s of SIDES) {
   add('upleg_' + s, 'hips', 'Бедро ' + m); add('leg_' + s, 'upleg_' + s, 'Колено ' + m);
   add('foot_' + s, 'leg_' + s, 'Щиколотка ' + w); add('toe_' + s, 'foot_' + s, 'Носок ' + k);
   add('toe_end_' + s, 'toe_' + s, 'Кончик стопы ' + w, true);
+  add('heel_' + s, 'foot_' + s, 'Пятка ' + w, true);
 }
 const FINGERS = ['thumb', 'index', 'middle', 'ring', 'pinky'];
 const FN = { thumb: 'Большой', index: 'Указательный', middle: 'Средний', ring: 'Безымянный', pinky: 'Мизинец' };
@@ -317,13 +318,27 @@ function rightMarks() {   // mirror left landmarks when symmetry is on
   if (!S.sym) return;
   for (const m of MARKS) if (m.id.endsWith('_L') && S.marks[m.id]) S.marks[partner(m.id)] = arr(mirror(V(S.marks[m.id])));
 }
-function footToe(ankle) {
-  const out = { tip: null }; const rx = .07 * H; let best = -Infinity;
+function footFit(ankle) {
+  const rx = .07 * H, pts = [];
   for (let i = 0; i < worldVerts.length; i += 3) {
     const x = worldVerts[i], y = worldVerts[i + 1], z = worldVerts[i + 2];
-    if (y < ankle.y && Math.abs(x - ankle.x) < rx && z > best) { best = z; out.tip = new THREE.Vector3(x, y, z); }
+    if (y < ankle.y && Math.abs(x - ankle.x) < rx) pts.push([x, y, z]);
   }
-  return out.tip;
+  if (pts.length < 20) return null;
+  let heelZ = Infinity, tipZ = -Infinity, ground = Infinity;
+  for (const [, y, z] of pts) { heelZ = Math.min(heelZ, z); tipZ = Math.max(tipZ, z); ground = Math.min(ground, y); }
+  const L = tipZ - heelZ; if (L <= 0) return null;
+  const section = (z0, w) => {   // centre of the vertices in a slab across the foot
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, n = 0;
+    for (const [x, y, z] of pts) if (Math.abs(z - z0) < w) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); n++; }
+    return n ? { x: (x0 + x1) / 2, y: (y0 + y1) / 2, top: y1 } : null;
+  };
+  const ballZ = heelZ + .73 * L, b = section(ballZ, .05 * L), t = section(tipZ - .04 * L, .04 * L), h = section(heelZ + .06 * L, .06 * L);
+  if (!b) return null;
+  return { ground,
+           ball: new THREE.Vector3(b.x, b.y, ballZ),
+           tip: new THREE.Vector3(t ? t.x : b.x, t ? t.y : b.y, tipZ - .02 * L),
+           heel: new THREE.Vector3(h ? h.x : ankle.x, ground + .02 * L, heelZ + .02 * L) };
 }
 function derive() {
   const M = (id) => V(S.marks[id]);
@@ -350,16 +365,16 @@ function derive() {
     P['hand_end_' + s] = hand.clone().add(hand.clone().sub(fore).multiplyScalar(.45));
     const knee = P['leg_' + s], ankle = P['foot_' + s];
     P['upleg_' + s] = at(lerp(groin.x, knee.x, .9), groin.y + .035 * H, .5, false);
-    const tip = footToe(ankle);
-    if (tip) {
-      P['toe_' + s] = new THREE.Vector3(lerp(ankle.x, tip.x, .7), lerp(ground, ankle.y, .3), lerp(ankle.z, tip.z, .65));
-      P['toe_end_' + s] = new THREE.Vector3(tip.x, P['toe_' + s].y, tip.z);
+    const ft = footFit(ankle);
+    if (ft) {
+      P['toe_' + s] = ft.ball; P['toe_end_' + s] = ft.tip; P['heel_' + s] = ft.heel;
     } else {
       P['toe_' + s] = new THREE.Vector3(ankle.x, lerp(ground, ankle.y, .3), ankle.z + .06 * H);
       P['toe_end_' + s] = P['toe_' + s].clone().add(new THREE.Vector3(0, 0, .04 * H));
+      P['heel_' + s] = new THREE.Vector3(ankle.x, ground, ankle.z - .03 * H);
     }
   }
-  if (S.sym) for (const j of JOINTS) if (j.id.endsWith('_R')) P[j.id] = mirror(P[partner(j.id)]);
+  if (S.sym) for (const j of JOINTS) if (j.id.endsWith('_R') && P[partner(j.id)]) P[j.id] = mirror(P[partner(j.id)]);
   const fingers = Object.fromEntries(Object.entries(S.pos || {}).filter(([k]) => FINGER_RE.test(k)));
   S.pos = { ...Object.fromEntries(JOINTS.filter((j) => P[j.id]).map((j) => [j.id, arr(P[j.id])])), ...fingers };
   for (const s of SIDES) if (S.pos['middle1_' + s]) S.pos['hand_end_' + s] = S.pos['middle1_' + s];
@@ -425,10 +440,10 @@ function bendWarnings() {
 // Reference figure for the guide panel (front: character's left on screen-right; side: facing left)
 const GF = { head_top: [50, 6], head: [50, 32], chin: [50, 30], neck: [50, 40], spine2: [50, 60], spine1: [50, 76], spine: [50, 88],
   hips: [50, 98], groin: [50, 104], shoulder_L: [56, 45], arm_L: [68, 46], forearm_L: [76, 72], hand_L: [82, 96], hand_end_L: [85, 109],
-  upleg_L: [58, 101], leg_L: [60, 140], foot_L: [61, 178], toe_L: [62, 190], toe_end_L: [62, 195] };
+  upleg_L: [58, 101], leg_L: [60, 140], foot_L: [61, 178], toe_L: [62, 190], toe_end_L: [62, 195], heel_L: [60, 196] };
 const GS = { head_top: [27, 6], head: [30, 32], chin: [21, 30], neck: [32, 40], spine2: [34, 60], spine1: [34, 76], spine: [33, 88],
   hips: [32, 98], groin: [29, 104], shoulder_L: [31, 45], arm_L: [33, 46], forearm_L: [36, 72], hand_L: [31, 96], hand_end_L: [29, 109],
-  upleg_L: [31, 101], leg_L: [27, 140], foot_L: [32, 178], toe_L: [22, 190], toe_end_L: [16, 193] };
+  upleg_L: [31, 101], leg_L: [27, 140], foot_L: [32, 178], toe_L: [22, 190], toe_end_L: [16, 193], heel_L: [36, 195] };
 for (const k of Object.keys(GF)) if (k.endsWith('_L')) GF[partner(k)] = [100 - GF[k][0], GF[k][1]];
 const DESC = {
   chin: 'нижняя точка подбородка (под бородой, если она есть), по центру лица',
@@ -439,7 +454,7 @@ const DESC = {
   hips: 'чуть выше паха, в центре корпуса', spine: 'поясница', spine1: 'середина живота', spine2: 'грудь, под ключицами',
   neck: 'основание шеи', head: 'основание черепа, на уровне подбородка', head_top: 'макушка',
   shoulder: 'ключица: начинается у основания шеи', upleg: 'тазобедренный сустав, над серединой бедра',
-  toe: 'подушечка стопы, у основания пальцев', hand_end: 'конец кисти (пальцы — следующим этапом)', toe_end: 'кончик стопы',
+  toe: 'подушечка стопы, у основания пальцев', hand_end: 'конец кисти (пальцы — следующим этапом)', toe_end: 'кончик стопы', heel: 'пятка: задняя точка стопы у пола (кость без весов, для IK)',
 };
 function guideSVG(map, sideOnly, hl) {
   const use = (id) => map[id] && !(sideOnly && id.endsWith('_R'));
@@ -926,7 +941,7 @@ $('sym').onchange = () => {
   refreshAll(); sync();
 };
 $('rebuild').onclick = () => {
-  if (!confirm('Пересчитать таз, позвоночник, шею, ключицы, бёдра и стопы? Ручные правки этих узлов пропадут, ориентиры останутся.')) return;
+  if (!confirm('Пересчитать таз, позвоночник, шею, ключицы, бёдра, стопы и пятки? Ручные правки этих узлов пропадут, ориентиры останутся.')) return;
   pushUndo();
   for (const m of MARKS) if (m.id !== 'chin' && m.id !== 'groin' && S.pos[m.id]) S.marks[m.id] = S.pos[m.id];
   derive(); select(null); sync();

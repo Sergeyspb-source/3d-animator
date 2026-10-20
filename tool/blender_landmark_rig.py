@@ -68,7 +68,24 @@ bpy.ops.object.make_single_user(object=True, obdata=True)
 bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
 
 # ------------------------------------------------------------------ armature
-J = L["joints"]
+J = {k: list(v) for k, v in L["joints"].items()}
+# IK-friendly rest: a nearly straight elbow/knee gets a small bend toward its flex side (elbow joint a little behind
+# the shoulder-wrist line, knee a little in front of the hip-ankle line), so Godot's IK always bends it correctly.
+prebend = {}
+for up, mid, low, flex in [(f"arm_{s}", f"forearm_{s}", f"hand_{s}", (0, 0, 1)) for s in "LR"] + \
+                          [(f"upleg_{s}", f"leg_{s}", f"foot_{s}", (0, 0, -1)) for s in "LR"]:
+    a, m, c = (Vector(J[k]) for k in (up, mid, low))
+    u = (c - a).normalized()
+    f = Vector(flex) * float(L.get("bend", {}).get(mid, 1))
+    fp = f - u * f.dot(u)
+    if fp.length < 1e-6:
+        continue
+    fp.normalize()
+    want = -(c - a).length * 0.5 * math.tan(math.radians(4))   # ~8 deg total bend
+    off = (m - a).dot(fp)
+    if off > want:
+        J[mid] = list(m + fp * (want - off))
+        prebend[mid] = round((want - off), 4)
 arm_data = bpy.data.armatures.new("Armature")
 rig = bpy.data.objects.new("Armature", arm_data)
 scene.collection.objects.link(rig)
@@ -87,6 +104,7 @@ for jid, b in eb.items():
     par = L["parents"].get(jid)
     if par:
         b.parent = eb[par]
+
 # a consistent roll: bones' local Z points backwards (+Y in Blender) for limbs/spine, like most humanoid rigs
 for b in arm_data.edit_bones:
     b.align_roll(Vector((0, 1, 0)) if abs((b.tail - b.head).normalized().y) < 0.9 else Vector((0, 0, 1)))
@@ -167,6 +185,8 @@ for ob in (proxy, prig):
 
 segs = []
 for b in arm_data.bones:
+    if not b.use_deform:
+        continue
     segs.append((b.name, rig.matrix_world @ b.head_local, rig.matrix_world @ b.tail_local))
 
 
@@ -176,7 +196,7 @@ def seg_dist(p, a, c):
     return (p - (a + ab * t)).length
 
 
-report = {"meshes": {}, "bones": len(segs), "height": height, "proxy_vertices": len(pv), "proxy_heat_failed": proxy_heat_failed}
+report = {"meshes": {}, "bones": len(arm_data.bones), "deform_bones": len(segs), "prebend": prebend, "height": height, "proxy_vertices": len(pv), "proxy_heat_failed": proxy_heat_failed}
 for o in meshes:
     groups = {g.index for g in o.vertex_groups}
     missing = [v.index for v in o.data.vertices if not any(g.group in groups and g.weight > 1e-4 for g in v.groups)]
@@ -199,6 +219,23 @@ for o in meshes:
     report["meshes"][o.name] = {"vertices": len(o.data.vertices), "fallback_vertices": len(missing)}
 report["fallback_vertices"] = sum(m["fallback_vertices"] for m in report["meshes"].values())
 report["vertices"] = sum(m["vertices"] for m in report["meshes"].values())
+
+# ---- heel helpers, added after skinning so they get no weights; kept as deform bones so glTF lists them in the
+# skin and Godot imports them as real skeleton bones (for foot IK / roll)
+heels = [s for s in "LR" if f"heel_{s}" in J]
+if heels:
+    bpy.ops.object.select_all(action="DESELECT")
+    rig.select_set(True)
+    bpy.context.view_layer.objects.active = rig
+    bpy.ops.object.mode_set(mode="EDIT")
+    for s in heels:
+        foot = arm_data.edit_bones[NAMES[f"foot_{s}"]]
+        hb = arm_data.edit_bones.new(NAMES[f"heel_{s}"])
+        hb.head = bl(J[f"heel_{s}"])
+        hb.tail = hb.head + Vector((0, 0, max(foot.length * 0.3, 1e-4)))
+        hb.parent = foot
+    bpy.ops.object.mode_set(mode="OBJECT")
+    report["heel_bones"] = len(heels)
 
 # ------------------------------------------------------------------ export (rest pose)
 bpy.ops.object.select_all(action="DESELECT")

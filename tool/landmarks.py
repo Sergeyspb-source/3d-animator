@@ -33,6 +33,7 @@ def bone_names(naming="mixamo"):
         for jid, role in (("shoulder", "shoulder"), ("arm", "arm"), ("forearm", "forearm"), ("hand", "hand"),
                           ("upleg", "upleg"), ("leg", "leg"), ("foot", "foot"), ("toe", "toe")):
             out[f"{jid}_{s}"] = p + cfg[role].replace("{S}", side)
+        out[f"heel_{s}"] = p + f"{side}Heel"   # helper, no weights
         for f in ("thumb", "index", "middle", "ring", "pinky"):
             F = f.capitalize()
             if naming == "mixamo":   # LeftHandIndex1..3, plus the Mixamo end bone 4 for reading FBX rigs
@@ -150,7 +151,13 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True):
         raise RuntimeError("Blender не построил скелет:\n" + text[-2500:])
     report = json.loads(line.split(" ", 1)[1])
     fb = report["fallback_vertices"]
-    yield (f"Скелет: {report['bones']} костей, вершин {report['vertices']}. "
+    extra = []
+    if report.get("heel_bones"):
+        extra.append(f"+{report['heel_bones']} кости пяток без весов (для IK стопы)")
+    if report.get("prebend"):
+        extra.append("почти прямые локти/колени чуть согнуты для IK: " + ", ".join(report["prebend"]))
+    yield (f"Скелет: {report['bones'] + report.get('heel_bones', 0)} костей, вершин {report['vertices']}. "
+           + ("; ".join(extra) + ". " if extra else "")
            + (f"Автовеса Blender не справились с {fb} вершинами — им веса даны по ближайшим костям."
               if fb else "Автовеса Blender сработали на всех частях."))
     model = work / "model.glb"
