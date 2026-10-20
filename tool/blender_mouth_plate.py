@@ -39,6 +39,11 @@ def bl(p):  # glTF -> Blender
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.gltf(filepath=job["source"])
 arm = next(o for o in bpy.data.objects if o.type == "ARMATURE")
+for o in list(bpy.data.objects):   # a re-run replaces an earlier plate
+    if o.type == "MESH" and o.name.startswith("Mouth"):
+        data = o.data
+        bpy.data.objects.remove(o, do_unlink=True)
+        bpy.data.meshes.remove(data)
 meshes = [o for o in bpy.data.objects if o.type == "MESH" and o.vertex_groups]
 for o in list(bpy.data.objects):
     if o.type == "MESH" and not o.vertex_groups:
@@ -208,6 +213,9 @@ z_line = line_z(cx)
 moved, max_drop = 0, 0.0
 if face.data.shape_keys is None:
     face.shape_key_add(name="Basis")
+old = face.data.shape_keys.key_blocks.get("jawOpen")   # a re-run replaces the earlier chin key
+if old is not None:
+    face.shape_key_remove(old)
 fk = face.shape_key_add(name="jawOpen", from_mix=False)
 d_full, d_end = 0.036 * k, 0.054 * k
 for v in me.vertices:
@@ -228,6 +236,10 @@ for v in me.vertices:
         moved += 1
         max_drop = max(max_drop, drop)
 
+for o in bpy.data.objects:   # rest = every shape key at 0 (Blender 5 adds new keys at 1; glTF stores these as default weights)
+    if o.type == "MESH" and o.data.shape_keys:
+        for kb in o.data.shape_keys.key_blocks[1:]:
+            kb.value = 0.0
 arm.data.pose_position = "POSE"
 for o in bpy.data.objects:
     o.select_set(o.type in ("ARMATURE", "MESH"))
