@@ -503,7 +503,7 @@ function refreshGuide() {
 const jointGroup = new THREE.Group(); scene.add(jointGroup);
 const sphereGeo = new THREE.SphereGeometry(1, 16, 12);
 const mat = (c) => new THREE.MeshBasicMaterial({ color: c, depthTest: false, transparent: true, opacity: .95 });
-const COL = { mark: mat(0xff7a2f), derived: mat(0x3f8fe6), end: mat(0x8a8f98), sel: mat(0xffd31a), place: mat(0xff7a2f), bad: mat(0xe5484d) };
+const COL = { mark: mat(0xff7a2f), derived: mat(0x3f8fe6), end: mat(0x8a8f98), sel: mat(0xffd31a), place: mat(0xff7a2f), bad: mat(0xe5484d), mouth: mat(0xff5fa2) };
 const fanGroup = new THREE.Group(); scene.add(fanGroup);
 const fanMat = (c, o) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: o, depthTest: false, depthWrite: false, side: THREE.DoubleSide });
 const FAN = { ok: fanMat(0x3fbf6a, .3), okSel: fanMat(0x3fbf6a, .45), bad: fanMat(0xe5484d, .16), badSel: fanMat(0xe5484d, .3) };
@@ -534,6 +534,8 @@ function draw() {
     fan(h, h.L.max, Math.min(h.L.max + 50, 180), rr, sel ? FAN.badSel : FAN.bad);
     fan(h, Math.max(h.L.min - 50, -180), h.L.min, rr, sel ? FAN.badSel : FAN.bad);
   }
+  if (!faceMode && S.phase === 'edit' && !poseOn) for (const [k, v] of Object.entries(S.face || {}))   // placed face points, for checking
+    if (v && k.startsWith('mouth')) { const sp = new THREE.Mesh(sphereGeo, COL.mouth); sp.scale.setScalar(r * .35); sp.position.copy(V(v)); sp.renderOrder = 999; jointGroup.add(sp); spheres['fm_face_' + k] = sp; }
   if (faceMode) for (const [k, v] of Object.entries(S.face)) if (v) {
     const sp = new THREE.Mesh(sphereGeo, k === faceMode.cur ? COL.sel : COL.place); sp.scale.setScalar(r * .5);
     sp.position.copy(V(v)); sp.renderOrder = 999; jointGroup.add(sp); spheres['fc_' + k] = sp;
@@ -776,7 +778,25 @@ function placeFace(n) {
   pushUndo(); S.face[faceMode.cur] = arr(hit.point);
   const left = faceKeys().find((k) => !S.face[k]);
   if (left) { faceMode.cur = left; refreshAll(); return; }
+  const bad = faceProblem();
+  if (bad) { delete S.face[bad.key]; faceMode.cur = bad.key; refreshAll(); $('hint').textContent = bad.text; return; }
   deriveFace(); faceMode = null; refreshAll(); sync();
+}
+// the mouth points must form a mouth: corners at the lips' height, well below the eyes, on both sides of the centre
+function faceProblem() {
+  const F = S.face, e = V(F.eye_L), M = V(F.mouth_c);
+  for (const k of ['mouth_corner_L', 'mouth_corner_R']) {
+    if (!F[k]) continue;
+    const c = V(F[k]), w = Math.abs(c.x - M.x) * 2;
+    if (c.y > M.y + (e.y - M.y) * .4)
+      return { key: k, text: 'Уголок рта слишком высоко (почти у глаза). Кликните край губ, на высоте рта.' };
+    if (Math.abs(c.y - M.y) > Math.max(w * .6, 1e-6))
+      return { key: k, text: 'Уголок рта далеко от линии губ. Кликните край губ рядом со щелью рта.' };
+    if (w < Math.abs(e.x - M.x) * .3)
+      return { key: k, text: 'Уголок рта почти в середине рта. Кликните край губ сбоку.' };
+  }
+  if (M.y > e.y) return { key: 'mouth_c', text: 'Середина рта выше глаз. Кликните щель между губами.' };
+  return null;
 }
 // eye centre one eyeball radius behind the cornea; jaw hinge in front of the ear, between mouth and eye height
 function deriveFace() {

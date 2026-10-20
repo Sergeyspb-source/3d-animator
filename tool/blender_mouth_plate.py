@@ -27,6 +27,11 @@ from mathutils.bvhtree import BVHTree
 job = json.loads(open(sys.argv[sys.argv.index("--") + 1], encoding="utf-8").read())
 
 
+def fail(msg):   # the build step reads MOUTH_FAIL from stdout
+    print("MOUTH_FAIL " + msg, flush=True)
+    sys.exit(1)
+
+
 def bl(p):  # glTF -> Blender
     return Vector((p[0], -p[2], p[1]))
 
@@ -43,6 +48,10 @@ bpy.context.view_layer.update()
 
 M, CL, CR = bl(job["mouth_c"]), bl(job["corner_L"]), bl(job["corner_R"])
 W = (CL - CR).length                       # mouth width
+for c in (CL, CR):   # corners must sit on the lip line (a stray click near the eye folds the plate into a spike)
+    if abs(c.z - M.z) > 0.6 * W:
+        fail(f"уголок рта на {abs(c.z - M.z):.2f} выше/ниже середины рта при ширине рта {W:.2f}: "
+                         "переразметьте лицо («Разметить лицо»), уголки — на краях губ")
 k = W / 0.033                              # the beggar's sizes were tuned on a 3.3 cm mouth
 SURFACE_OFFSET = 0.0012 * k
 OPEN_HEIGHT = 0.017 * k
@@ -117,7 +126,7 @@ def plate_point(params, u, v):
     x, z = outline(params, u, v)
     h = surface(x, z)
     if h is None:
-        raise SystemExit(f"MOUTH_FAIL no skin under mouth point {(x, z)}: check the mouth points of the face markup")
+        fail(f"no skin under mouth point {(x, z)}: check the mouth points of the face markup")
     return h[0] + h[1] * SURFACE_OFFSET
 
 
