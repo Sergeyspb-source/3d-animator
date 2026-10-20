@@ -35,6 +35,8 @@ def mount(config_loader, asset, upload):
             naming = gr.Radio(list(NAMINGS), value=list(NAMINGS)[0], label="Имена костей")
             weld = gr.Checkbox(value=True, label="Сшить стыки между частями")
             mouth = gr.Checkbox(value=True, label="Рот для речи (если размечено лицо)")
+            eyes = gr.Checkbox(value=True, label="Вставить глаза-шары (если обведены глаза)")
+            kit = gr.Dropdown(choices=[""], value="", label="Набор деталей лица (пусто — стандартный)", allow_custom_value=True)
         editor = gr.HTML()
         data = gr.Textbox(label="Разметка (заполняется редактором автоматически; можно вставить сохранённую)",
                           lines=2, max_lines=4, elem_id=LM.TARGET_ID)
@@ -70,7 +72,7 @@ def mount(config_loader, asset, upload):
             return _frame(LM.editor_page(src, LM.initial_state(src, cfg["export_dir"], text),
                                          LM.output_paths(src, cfg["export_dir"])[0]))
 
-        def run(up, name, text, nm, do_weld, do_mouth):
+        def run(up, name, text, nm, do_weld, do_mouth, do_eyes, kit_name):
             cfg = config_loader()
             src = LM.source_path(up, name, cfg["export_dir"])
             lines = []
@@ -79,7 +81,7 @@ def mount(config_loader, asset, upload):
                 return
             try:
                 marks = LM.parse(text)
-                for step in LM.build(src, marks, NAMINGS[nm], cfg, do_weld, do_mouth):
+                for step in LM.build(src, marks, NAMINGS[nm], cfg, do_weld, do_mouth, do_eyes, (kit_name or "").strip()):
                     if isinstance(step, dict):  # reopen the editor in the pose mode on the fresh build
                         lines.append("Редактор открыт в режиме «Поза»: тяните мышью руки и ноги, чтобы проверить сгибы.")
                         state = json.loads(Path(step["landmarks"]).read_text(encoding="utf-8"))
@@ -126,9 +128,15 @@ def mount(config_loader, asset, upload):
                 lines.append("Ошибка: " + str(e))
                 yield "\n".join(lines), gr.update()
 
+        def kits():
+            d = Path(config_loader()["export_dir"]) / "face_parts"
+            names = sorted(p.name for p in d.iterdir() if (p / "eyes.glb").exists()) if d.exists() else []
+            return gr.update(choices=[""] + names)
+
         open_btn.click(open_editor, [upload, asset, data], editor)
+        open_btn.click(kits, None, kit)
         ls_btn.click(lipsync, [upload, asset, ls_audio, ls_text, ls_lang, data], [ls_log, editor], concurrency_id="lipsync",
                      concurrency_limit=1)
         ref_btn.click(open_view, ref_file, editor)
-        go.click(run, [upload, asset, data, naming, weld, mouth], [log, view, files, shots, editor], concurrency_id="landmark_rig",
+        go.click(run, [upload, asset, data, naming, weld, mouth, eyes, kit], [log, view, files, shots, editor], concurrency_id="landmark_rig",
                  concurrency_limit=1)

@@ -148,6 +148,7 @@
         <label class="chk" title="Два клика на палец: кончик и костяшка; точнее на необычных кистях"><input type="checkbox" id="fBase"> и основания</label>
         <button id="fClear">Убрать пальцы</button>
         <button id="faceStart" title="Глаза и челюсть: три клика по лицу">Разметить лицо</button>
+        <label class="chk" title="Ещё 4 клика по краю век: глаза вырежутся и заменятся шарами"><input type="checkbox" id="faceEyes"> и контур глаз</label>
         <button id="faceClear">Убрать лицо</button>
       </div>
       <label class="chk" style="margin-bottom:4px"><input type="checkbox" id="showBends" checked> Сектора сгиба суставов</label>
@@ -535,7 +536,7 @@ function draw() {
     fan(h, Math.max(h.L.min - 50, -180), h.L.min, rr, sel ? FAN.badSel : FAN.bad);
   }
   if (!faceMode && S.phase === 'edit' && !poseOn) for (const [k, v] of Object.entries(S.face || {}))   // placed face points, for checking
-    if (v && k.startsWith('mouth')) { const sp = new THREE.Mesh(sphereGeo, COL.mouth); sp.scale.setScalar(r * .35); sp.position.copy(V(v)); sp.renderOrder = 999; jointGroup.add(sp); spheres['fm_face_' + k] = sp; }
+    if (v && (k.startsWith('mouth') || (k.startsWith('eye_') && k !== 'eye_L' && k !== 'eye_R'))) { const sp = new THREE.Mesh(sphereGeo, COL.mouth); sp.scale.setScalar(r * .35); sp.position.copy(V(v)); sp.renderOrder = 999; jointGroup.add(sp); spheres['fm_face_' + k] = sp; }
   if (faceMode) for (const [k, v] of Object.entries(S.face)) if (v) {
     const sp = new THREE.Mesh(sphereGeo, k === faceMode.cur ? COL.sel : COL.place); sp.scale.setScalar(r * .5);
     sp.position.copy(V(v)); sp.renderOrder = 999; jointGroup.add(sp); spheres['fc_' + k] = sp;
@@ -763,8 +764,14 @@ function sync() {
 // ---------------------------------------------------------------- fingers: click the tips in a close hand view
 let faceMode = null;     // { cur }
 const FACE_MARKS = { eye_L: 'центр левого глаза (зрачок; справа на экране)', eye_R: 'центр правого глаза (зрачок)',
-  mouth_corner_L: 'левый уголок рта (справа на экране)', mouth_corner_R: 'правый уголок рта', mouth_c: 'середина рта — щель между губами (не верхняя губа)' };
-const faceKeys = () => (S.sym ? ['eye_L', 'mouth_corner_L', 'mouth_c'] : ['eye_L', 'eye_R', 'mouth_corner_L', 'mouth_corner_R', 'mouth_c']);
+  mouth_corner_L: 'левый уголок рта (справа на экране)', mouth_corner_R: 'правый уголок рта', mouth_c: 'середина рта — щель между губами (не верхняя губа)',
+  eye_in_L: 'левый глаз: внутренний уголок (у носа)', eye_top_L: 'левый глаз: край верхнего века, середина',
+  eye_out_L: 'левый глаз: внешний уголок', eye_bot_L: 'левый глаз: край нижнего века, середина',
+  eye_in_R: 'правый глаз: внутренний уголок', eye_top_R: 'правый глаз: верхнее веко', eye_out_R: 'правый глаз: внешний уголок',
+  eye_bot_R: 'правый глаз: нижнее веко' };
+const EYE_RIM = ['eye_in', 'eye_top', 'eye_out', 'eye_bot'];
+const faceKeys = () => (S.sym ? ['eye_L', 'mouth_corner_L', 'mouth_c'] : ['eye_L', 'eye_R', 'mouth_corner_L', 'mouth_corner_R', 'mouth_c'])
+  .concat(faceMode && faceMode.eyes ? EYE_RIM.map((k) => k + '_L').concat(S.sym ? [] : EYE_RIM.map((k) => k + '_R')) : []);
 function faceView() {
   const hd = V(S.pos.head), top = V(S.pos.head_top), chin = S.marks.chin ? V(S.marks.chin) : hd;
   const c = new THREE.Vector3(hd.x, (top.y + chin.y) / 2 - (top.y - chin.y) * .1, hd.z), len = (top.y - chin.y) * 1.5;
@@ -796,12 +803,20 @@ function faceProblem() {
       return { key: k, text: 'Уголок рта почти в середине рта. Кликните край губ сбоку.' };
   }
   if (M.y > e.y) return { key: 'mouth_c', text: 'Середина рта выше глаз. Кликните щель между губами.' };
+  for (const sd of ['L', 'R']) for (const k of EYE_RIM) {   // eyelid points belong to that eye
+    const p = F[k + '_' + sd], c = sd === 'L' ? F.eye_L : (F.eye_R || (F.eye_L ? arr(mirror(V(F.eye_L))) : null));
+    if (!p || !c) continue;
+    if (V(p).distanceTo(V(c)) > Math.abs(e.x - M.x) * 1.6 + 1e-6) return { key: k + '_' + sd, text: 'Точка века далеко от глаза. Кликните по краю века этого глаза.' };
+  }
   return null;
 }
 // eye centre one eyeball radius behind the cornea; jaw hinge in front of the ear, between mouth and eye height
 function deriveFace() {
   const F = S.face;
-  if (S.sym) { F.eye_R = arr(mirror(V(F.eye_L))); F.mouth_corner_R = arr(mirror(V(F.mouth_corner_L))); }
+  if (S.sym) {
+    F.eye_R = arr(mirror(V(F.eye_L))); F.mouth_corner_R = arr(mirror(V(F.mouth_corner_L)));
+    for (const k of EYE_RIM) if (F[k + '_L']) F[k + '_R'] = arr(mirror(V(F[k + '_L'])));
+  }
   const eL = V(F.eye_L), eR = V(F.eye_R), M = V(F.mouth_c);
   const ipd = eL.distanceTo(eR), rEye = .2 * ipd;
   for (const [sd, e] of [['L', eL], ['R', eR]]) {
@@ -815,7 +830,7 @@ function deriveFace() {
 }
 $('faceStart').onclick = () => {
   if (S.phase !== 'edit') return;
-  S.face = {}; faceMode = { cur: 'eye_L' }; select(null); faceView();
+  S.face = {}; faceMode = { cur: 'eye_L', eyes: $('faceEyes').checked }; select(null); faceView();
 };
 $('faceClear').onclick = () => {
   pushUndo(); for (const k of ['jaw', 'jaw_end', 'eye_L', 'eye_R', 'eye_end_L', 'eye_end_R']) delete S.pos[k];

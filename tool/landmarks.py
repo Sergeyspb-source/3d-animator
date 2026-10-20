@@ -145,7 +145,22 @@ def initial_state(src: Path, export_dir, textbox: str):
     return None
 
 
-def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True):
+def face_kit_eyes(cfg, kit, work):
+    """eyes.glb of a face-parts set (export/face_parts/<kit>); a default set is generated when there is none."""
+    if kit:
+        f = Path(cfg["export_dir"]) / "face_parts" / kit / "eyes.glb"
+        if f.exists():
+            return f, json.loads((f.parent / "parts.json").read_text(encoding="utf-8")).get("eye_radius", 0.012)
+    out = work / "face_parts_default"
+    (work / "face_parts_job.json").write_text(json.dumps({"out_dir": str(out), "seed": 1}), encoding="utf-8")
+    blender = cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe"
+    subprocess.run([blender, "-b", "--factory-startup", "-P", str(ROOT / "blender_face_parts.py"), "--",
+                    str(work / "face_parts_job.json")], capture_output=True, timeout=600,
+                   creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    return out / "eyes.glb", 0.012
+
+
+def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=True, kit=""):
     """Generator of log lines; the last item is a dict with the result paths."""
     blender = cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe"
     final, saved = output_paths(src, cfg["export_dir"])
@@ -205,6 +220,30 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True):
         else:
             fail = next((x for x in r.stdout.splitlines() if x.startswith("MOUTH_FAIL")), (r.stdout + r.stderr)[-600:])
             yield "Рот для речи не получился, модель сохранена без него: " + fail
+    rim = {s: [face.get(f"{k}_{s}") for k in ("eye_in", "eye_top", "eye_out", "eye_bot")] for s in "LR"}
+    rim = {s: pts for s, pts in rim.items() if all(pts)}
+    if eyes and rim:
+        yield "Вырезаю нарисованные глаза и ставлю глаза-шары…"
+        names = bone_names(naming)
+        eyes_glb, kit_r = face_kit_eyes(cfg, kit, work)
+        ej = {"source": str(model), "out": str(work / "model_eyes.glb"), "eyes_glb": str(eyes_glb), "kit_r": kit_r,
+              "head_bone": names["head"], "sym": bool(landmarks.get("sym", True)), "report": str(work / "eyes_report.json"),
+              "preview": str(work / "eyes.png"),
+              "sides": {s: {"outline": pts, "bone": names[f"eye_{s}"] if f"eye_{s}" in landmarks["joints"] else ""}
+                        for s, pts in rim.items()}}
+        (work / "eyes_job.json").write_text(json.dumps(ej, ensure_ascii=False), encoding="utf-8")
+        r = subprocess.run([blender, "-b", "--factory-startup", "-P", str(ROOT / "blender_eye_insert.py"), "--",
+                            str(work / "eyes_job.json")], capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=900, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        line = next((x for x in r.stdout.splitlines() if x.startswith("EYES_OK")), None)
+        if line:
+            model = work / "model_eyes.glb"
+            er = json.loads(line.split(" ", 1)[1])
+            images_extra += er.get("previews", [])
+            yield "Глаза-шары: " + ", ".join(f"{s} радиус {v['radius']:.3g}" for s, v in er["eyes"].items()) + "."
+        else:
+            fail = next((x for x in r.stdout.splitlines() if x.startswith("EYES_FAIL")), (r.stdout + r.stderr)[-600:])
+            yield "Глаза-шары не получились, модель без них: " + fail
     final.parent.mkdir(parents=True, exist_ok=True)
     final.write_bytes(model.read_bytes())
     saved.write_text(json.dumps({**landmarks, "source": str(src), "naming": naming}, ensure_ascii=False, indent=1),
