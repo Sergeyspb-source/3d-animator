@@ -106,6 +106,7 @@
     <div class="msg" id="msg">Загрузка модели…</div>
     <div class="posebar" id="poseBar" hidden>
       <button id="pReset">Сбросить позу</button><button id="pCheck">Поза проверки</button><button id="pSquat">Присед</button><button id="pFist">Кулак</button><button id="pJaw">Открыть рот</button>
+      <select id="pMorph" hidden title="Ключи формы модели (рот для речи)"></select><input type="range" id="pMorphV" min="0" max="1" step="0.01" value="0" hidden style="width:110px">
       <button id="pWeights" title="Раскрасить модель по весам кости под курсором (как Weight Paint в Blender)">Веса</button>
       <span class="legend" id="pLegend" hidden>0 <i></i> 1</span>
       <select id="pClip" hidden></select><button id="pPlay" hidden>▶ Анимация</button>
@@ -759,7 +760,7 @@ function sync() {
 // ---------------------------------------------------------------- fingers: click the tips in a close hand view
 let faceMode = null;     // { cur }
 const FACE_MARKS = { eye_L: 'центр левого глаза (зрачок; справа на экране)', eye_R: 'центр правого глаза (зрачок)',
-  mouth_corner_L: 'левый уголок рта (справа на экране)', mouth_corner_R: 'правый уголок рта', mouth_c: 'середина рта, между губами' };
+  mouth_corner_L: 'левый уголок рта (справа на экране)', mouth_corner_R: 'правый уголок рта', mouth_c: 'середина рта — щель между губами (не верхняя губа)' };
 const faceKeys = () => (S.sym ? ['eye_L', 'mouth_corner_L', 'mouth_c'] : ['eye_L', 'eye_R', 'mouth_corner_L', 'mouth_corner_R', 'mouth_c']);
 function faceView() {
   const hd = V(S.pos.head), top = V(S.pos.head_top), chin = S.marks.chin ? V(S.marks.chin) : hd;
@@ -1099,6 +1100,12 @@ async function loadRigged() {
     PINFO[id] = info;
   }
   posGetter = keepGetter;
+  const morphs = new Set();
+  for (const m of poseMeshes) if (m.morphTargetDictionary) for (const k of Object.keys(m.morphTargetDictionary)) morphs.add(k);
+  if (morphs.size) {
+    $('pMorph').innerHTML = [...morphs].map((k) => `<option>${k}</option>`).join('');
+    $('pMorph').hidden = $('pMorphV').hidden = false;
+  }
   skelHelp = new THREE.SkeletonHelper(poseRoot); skelHelp.material.depthTest = false; skelHelp.material.transparent = true;
   skelHelp.material.opacity = .5; skelHelp.renderOrder = 996; scene.add(skelHelp);
 }
@@ -1135,6 +1142,8 @@ function poseBend(id, toward, a) {
 }
 function poseReset() {
   stopClip(); if (mixer) mixer.stopAllAction();
+  for (const m of poseMeshes) if (m.morphTargetInfluences) m.morphTargetInfluences.fill(0);
+  if ($('pMorphV')) $('pMorphV').value = 0;
   for (const [b, q] of REST) b.quaternion.copy(q); poseRoot.updateMatrixWorld(true);
 }
 function poseHighlight(info) {
@@ -1280,7 +1289,13 @@ function setHinge(id, a) {
   const i = PINFO[id]; if (!i || !i.hinge) return;
   const F = frameNow(id); aimBone(id, F.z.clone().multiplyScalar(Math.cos(rad(a))).add(F.p.clone().multiplyScalar(Math.sin(rad(a)))));
 }
-$('pJaw').onclick = () => { stopClip(); setHinge('jaw', 25); for (const s of SIDES) poseBend('eye_' + s, UPV, 15); poseHighlight(); };
+function setMorph(name, v) {
+  for (const m of poseMeshes) if (m.morphTargetDictionary && name in m.morphTargetDictionary) m.morphTargetInfluences[m.morphTargetDictionary[name]] = v;
+}
+$('pMorph').onchange = () => { const n = $('pMorph').value; const m = poseMeshes.find((x) => x.morphTargetDictionary && n in x.morphTargetDictionary);
+  $('pMorphV').value = m ? m.morphTargetInfluences[m.morphTargetDictionary[n]] : 0; };
+$('pMorphV').oninput = () => setMorph($('pMorph').value, +$('pMorphV').value);
+$('pJaw').onclick = () => { stopClip(); setHinge('jaw', 12); setMorph('jawOpen', .8); for (const s of SIDES) poseBend('eye_' + s, UPV, 15); poseHighlight(); };
 $('pFist').onclick = () => {
   stopClip();
   for (const s of SIDES) for (const f of FINGERS) (f === 'thumb' ? [25, 40, 50] : [80, 95, 70]).forEach((a, i) => setHinge(`${f}${i + 1}_${s}`, a));

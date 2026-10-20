@@ -133,7 +133,7 @@ def initial_state(src: Path, export_dir, textbox: str):
     return None
 
 
-def build(src: Path, landmarks: dict, naming, cfg, weld=True):
+def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True):
     """Generator of log lines; the last item is a dict with the result paths."""
     blender = cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe"
     final, saved = output_paths(src, cfg["export_dir"])
@@ -171,6 +171,28 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True):
             yield f"Стыков найдено: {st['clusters']}, веса на них выровнены."
         else:
             yield "Стыков между частями нет."
+    face = landmarks.get("face") or {}
+    images_extra = []
+    if mouth and all(face.get(k) for k in ("mouth_c", "mouth_corner_L", "mouth_corner_R")):
+        yield "Кладу рот для речи: пластина с ключами jawOpen, mouthSmile, mouthFunnel и др. (для липсинка)…"
+        names = bone_names(naming)
+        mj = {"source": str(model), "out": str(work / "model_mouth.glb"), "mouth_c": face["mouth_c"],
+              "corner_L": face["mouth_corner_L"], "corner_R": face["mouth_corner_R"], "head_bone": names["head"],
+              "jaw_bone": names["jaw"] if "jaw" in landmarks["joints"] else "", "report": str(work / "mouth_report.json"),
+              "preview": str(work / "mouth.png")}
+        (work / "mouth_job.json").write_text(json.dumps(mj, ensure_ascii=False), encoding="utf-8")
+        r = subprocess.run([blender, "-b", "--factory-startup", "-P", str(ROOT / "blender_mouth_plate.py"), "--",
+                            str(work / "mouth_job.json")], capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=900, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        line = next((x for x in r.stdout.splitlines() if x.startswith("MOUTH_OK")), None)
+        if line:
+            model = work / "model_mouth.glb"
+            mr = json.loads(line.split(" ", 1)[1])
+            images_extra = mr.get("previews", [])
+            yield f"Рот для речи готов: {len(mr['keys'])} ключей формы ({', '.join(mr['keys'])})."
+        else:
+            fail = next((x for x in r.stdout.splitlines() if x.startswith("MOUTH_FAIL")), (r.stdout + r.stderr)[-600:])
+            yield "Рот для речи не получился, модель сохранена без него: " + fail
     final.parent.mkdir(parents=True, exist_ok=True)
     final.write_bytes(model.read_bytes())
     saved.write_text(json.dumps({**landmarks, "source": str(src), "naming": naming}, ensure_ascii=False, indent=1),
@@ -178,4 +200,4 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True):
     yield f"Готово: {final}\nРазметка сохранена: {saved.name} (откроется в редакторе в следующий раз)."
     yield {"glb": str(final), "landmarks": str(saved), "work": str(work),
            "images": [str(work / n) for n in ("rest.png", "pose_front.png", "pose_side.png", "hand_fist.png", "face_jaw.png")
-                      if (work / n).exists()]}
+                      if (work / n).exists()] + [p for p in images_extra if Path(p).exists()]}

@@ -29,11 +29,12 @@ def mount(config_loader, asset, upload):
             "где должен стоять выбранный узел (можно подложить свою картинку). Пальцы: кнопка «Разметить пальцы» — "
             "камера подъедет к кисти, кликните кончики пальцев (лишние отметьте «нет»), суставы рассчитаются сами. "
             "Лицо: «Разметить лицо» — центр глаза, уголок рта, середина рта; появятся челюсть и глаза. "
-            "Рот откроется без разрыва, только если на модели он не сплошной (генерируйте с приоткрытым ртом).")
+            "Для закрытого рта кладётся пластина с ключами ARKit (jawOpen, mouthSmile…) — под липсинк игры.")
         with gr.Row():
             open_btn = gr.Button("Открыть разметку", variant="secondary")
             naming = gr.Radio(list(NAMINGS), value=list(NAMINGS)[0], label="Имена костей")
             weld = gr.Checkbox(value=True, label="Сшить стыки между частями")
+            mouth = gr.Checkbox(value=True, label="Рот для речи (если размечено лицо)")
         editor = gr.HTML()
         data = gr.Textbox(label="Разметка (заполняется редактором автоматически; можно вставить сохранённую)",
                           lines=2, max_lines=4, elem_id=LM.TARGET_ID)
@@ -58,7 +59,7 @@ def mount(config_loader, asset, upload):
             return _frame(LM.editor_page(src, LM.initial_state(src, cfg["export_dir"], text),
                                          LM.output_paths(src, cfg["export_dir"])[0]))
 
-        def run(up, name, text, nm, do_weld):
+        def run(up, name, text, nm, do_weld, do_mouth):
             cfg = config_loader()
             src = LM.source_path(up, name, cfg["export_dir"])
             lines = []
@@ -67,7 +68,7 @@ def mount(config_loader, asset, upload):
                 return
             try:
                 marks = LM.parse(text)
-                for step in LM.build(src, marks, NAMINGS[nm], cfg, do_weld):
+                for step in LM.build(src, marks, NAMINGS[nm], cfg, do_weld, do_mouth):
                     if isinstance(step, dict):  # reopen the editor in the pose mode on the fresh build
                         lines.append("Редактор открыт в режиме «Поза»: тяните мышью руки и ноги, чтобы проверить сгибы.")
                         state = json.loads(Path(step["landmarks"]).read_text(encoding="utf-8"))
@@ -91,5 +92,5 @@ def mount(config_loader, asset, upload):
 
         open_btn.click(open_editor, [upload, asset, data], editor)
         ref_btn.click(open_view, ref_file, editor)
-        go.click(run, [upload, asset, data, naming, weld], [log, view, files, shots, editor], concurrency_id="landmark_rig",
+        go.click(run, [upload, asset, data, naming, weld, mouth], [log, view, files, shots, editor], concurrency_id="landmark_rig",
                  concurrency_limit=1)
