@@ -105,7 +105,7 @@
     <div class="hint" id="hint" hidden></div>
     <div class="msg" id="msg">Загрузка модели…</div>
     <div class="posebar" id="poseBar" hidden>
-      <button id="pReset">Сбросить позу</button><button id="pCheck">Поза проверки</button><button id="pSquat">Присед</button><button id="pFist">Кулак</button>
+      <button id="pReset">Сбросить позу</button><button id="pCheck">Поза проверки</button><button id="pSquat">Присед</button><button id="pFist">Кулак</button><button id="pJaw">Открыть рот</button>
       <button id="pWeights" title="Раскрасить модель по весам кости под курсором (как Weight Paint в Blender)">Веса</button>
       <span class="legend" id="pLegend" hidden>0 <i></i> 1</span>
       <select id="pClip" hidden></select><button id="pPlay" hidden>▶ Анимация</button>
@@ -145,6 +145,8 @@
         <button id="fStart" title="Камера подъедет к кисти; кликайте кончики пальцев">Разметить пальцы</button>
         <label class="chk" title="Два клика на палец: кончик и костяшка; точнее на необычных кистях"><input type="checkbox" id="fBase"> и основания</label>
         <button id="fClear">Убрать пальцы</button>
+        <button id="faceStart" title="Глаза и челюсть: три клика по лицу">Разметить лицо</button>
+        <button id="faceClear">Убрать лицо</button>
       </div>
       <label class="chk" style="margin-bottom:4px"><input type="checkbox" id="showBends" checked> Сектора сгиба суставов</label>
       <label class="chk" style="margin-bottom:6px"><input type="checkbox" id="sym" checked> Симметрия (правая сторона повторяет левую)</label>
@@ -214,10 +216,15 @@ for (const s of SIDES) {
   add('toe_end_' + s, 'toe_' + s, 'Кончик стопы ' + w, true);
   add('heel_' + s, 'foot_' + s, 'Пятка ' + w, true);
 }
+// face (optional): jaw hinge -> chin, eye centres -> front of the eye
+add('jaw', 'head', 'Челюсть (шарнир)'); add('jaw_end', 'jaw', 'Кончик челюсти', true);
+for (const s of SIDES) { add('eye_' + s, 'head', `Глаз ${s === 'L' ? 'левый' : 'правый'}`); add('eye_end_' + s, 'eye_' + s, `Взгляд ${s === 'L' ? 'левого' : 'правого'} глаза`, true); }
+const FACE_RE = /^(jaw|jaw_end|eye_[LR]|eye_end_[LR])$/;
 const FINGERS = ['thumb', 'index', 'middle', 'ring', 'pinky'];
 const FN = { thumb: 'Большой', index: 'Указательный', middle: 'Средний', ring: 'Безымянный', pinky: 'Мизинец' };
 const FN_GEN = { thumb: 'большого', index: 'указательного', middle: 'среднего', ring: 'безымянного', pinky: 'мизинца' };
 const FINGER_RE = /^(thumb|index|middle|ring|pinky)([1-4])_([LR])$/;
+const OPTIONAL = (k) => FINGER_RE.test(k) || /^(jaw|jaw_end|eye_[LR]|eye_end_[LR])$/.test(k);
 for (const s of SIDES) for (const f of FINGERS) for (let k = 1; k <= 4; k++)
   add(`${f}${k}_${s}`, k === 1 ? 'hand_' + s : `${f}${k - 1}_${s}`,
       `${FN[f]}${f === 'pinky' ? '' : ' палец'} ${k === 4 ? 'кончик' : k} ${s === 'L' ? 'лев.' : 'прав.'}`, k === 4);
@@ -270,7 +277,7 @@ let bbox = new THREE.Box3(), H = 1, cx = 0;
 let worldVerts = new Float32Array(0);
 
 const S = {   // editor state (serialised)
-  phase: 'place', yaw: 0, sym: true, marks: {}, pos: {}, rot: {}, bend: {}, fmarks: {},
+  phase: 'place', yaw: 0, sym: true, marks: {}, pos: {}, rot: {}, bend: {}, fmarks: {}, face: {},
 };
 let current = null;       // landmark being placed
 let selected = null;      // joint selected in edit phase
@@ -375,7 +382,7 @@ function derive() {
     }
   }
   if (S.sym) for (const j of JOINTS) if (j.id.endsWith('_R') && P[partner(j.id)]) P[j.id] = mirror(P[partner(j.id)]);
-  const fingers = Object.fromEntries(Object.entries(S.pos || {}).filter(([k]) => FINGER_RE.test(k)));
+  const fingers = Object.fromEntries(Object.entries(S.pos || {}).filter(([k]) => OPTIONAL(k)));
   S.pos = { ...Object.fromEntries(JOINTS.filter((j) => P[j.id]).map((j) => [j.id, arr(P[j.id])])), ...fingers };
   for (const s of SIDES) if (S.pos['middle1_' + s]) S.pos['hand_end_' + s] = S.pos['middle1_' + s];
   S.rot = {};
@@ -393,6 +400,7 @@ const LIMITS = {
 };
 const FLIM = { thumb: [[-45, 60], [-10, 60], [-10, 80]], other: [[-25, 90], [-5, 110], [-5, 80]] };
 function limitOf(id) {
+  if (id === 'jaw') return { child: 'jaw_end', zero: 'self', flex: 'down', min: -3, max: 35, s: '', what: 'Челюсть открывается вниз' };
   let m = /^(forearm|leg|hand|foot|toe)_([LR])$/.exec(id || '');
   if (m) return { ...LIMITS[m[1]], s: m[2] };
   m = FINGER_RE.exec(id || ''); if (!m || m[2] === '4') return null;
@@ -412,14 +420,15 @@ function palmNormal(s) {
   return new THREE.Vector3(s === 'L' ? -1 : 1, 0, 0);
 }
 function flexVec(L, id) {
-  const f = L.flex === 'palm' ? palmNormal(L.s) : { fwd: new THREE.Vector3(0, 0, 1), back: new THREE.Vector3(0, 0, -1), up: new THREE.Vector3(0, 1, 0) }[L.flex];
+  const f = L.flex === 'palm' ? palmNormal(L.s) : { fwd: new THREE.Vector3(0, 0, 1), back: new THREE.Vector3(0, 0, -1), up: new THREE.Vector3(0, 1, 0), down: new THREE.Vector3(0, -1, 0) }[L.flex];
   return f.multiplyScalar(S.bend[id] || 1);
 }
 const FOOT_ZERO = () => new THREE.Vector3(0, -Math.sin(.7), Math.cos(.7));
 function hingeFrame(id) {   // z: zero direction, p: bend direction perpendicular to z, angle: current bend in degrees
-  const L = limitOf(id); if (!L || !S.pos[id] || !S.pos[L.child + '_' + L.s]) return null;
-  const j = V(S.pos[id]), par = V(S.pos[JMAP[id].parent]), ch = V(S.pos[L.child + '_' + L.s]);
-  const z = L.zero === 'parent' ? j.clone().sub(par).normalize() : FOOT_ZERO();
+  const L = limitOf(id), cid = L ? (L.s ? L.child + '_' + L.s : L.child) : null;
+  if (!L || !S.pos[id] || !S.pos[cid]) return null;
+  const j = V(S.pos[id]), par = V(S.pos[JMAP[id].parent]), ch = V(S.pos[cid]);
+  const z = L.zero === 'parent' ? j.clone().sub(par).normalize() : L.zero === 'self' ? ch.clone().sub(j).normalize() : FOOT_ZERO();
   const f = flexVec(L, id);
   const p = f.clone().sub(z.clone().multiplyScalar(f.dot(z)));
   if (p.lengthSq() < 1e-8) return null; p.normalize();
@@ -454,7 +463,8 @@ const DESC = {
   hips: 'чуть выше паха, в центре корпуса', spine: 'поясница', spine1: 'середина живота', spine2: 'грудь, под ключицами',
   neck: 'основание шеи', head: 'основание черепа, на уровне подбородка', head_top: 'макушка',
   shoulder: 'ключица: начинается у основания шеи', upleg: 'тазобедренный сустав, над серединой бедра',
-  toe: 'подушечка стопы, у основания пальцев', hand_end: 'конец кисти (пальцы — следующим этапом)', toe_end: 'кончик стопы', heel: 'пятка: задняя точка стопы у пола (кость без весов, для IK)',
+  toe: 'подушечка стопы, у основания пальцев', hand_end: 'конец кисти (пальцы — следующим этапом)', toe_end: 'кончик стопы', jaw: 'шарнир челюсти: перед ухом, между высотой рта и глаза', jaw_end: 'кончик нижней челюсти, у подбородка',
+  eye: 'центр глазного яблока', eye_end: 'передняя точка глаза (направление взгляда)', heel: 'пятка: задняя точка стопы у пола (кость без весов, для IK)',
 };
 function guideSVG(map, sideOnly, hl) {
   const use = (id) => map[id] && !(sideOnly && id.endsWith('_R'));
@@ -515,12 +525,16 @@ function draw() {
   const bad = new Set(S.phase === 'edit' ? bendWarnings().flatMap((w) => [w.id, S.sym ? partner(w.id) : null]) : []);
   if (S.phase === 'edit' && !fingerMode) for (const j of live()) {
     const sel = selected && (j.id === selected || (S.sym && j.id === partner(selected)));
-    if ((!$('showBends').checked || FINGER_RE.test(j.id)) && !sel) continue;
+    if ((!$('showBends').checked || OPTIONAL(j.id)) && !sel) continue;
     const h = hingeFrame(j.id); if (!h) continue;
     const rr = Math.min(h.len * (sel ? .9 : .4), H * (sel ? .12 : .06) / Math.max(1, camera.zoom));
     fan(h, h.L.min, h.L.max, rr, sel ? FAN.okSel : FAN.ok);
     fan(h, h.L.max, Math.min(h.L.max + 50, 180), rr, sel ? FAN.badSel : FAN.bad);
     fan(h, Math.max(h.L.min - 50, -180), h.L.min, rr, sel ? FAN.badSel : FAN.bad);
+  }
+  if (faceMode) for (const [k, v] of Object.entries(S.face)) if (v) {
+    const sp = new THREE.Mesh(sphereGeo, k === faceMode.cur ? COL.sel : COL.place); sp.scale.setScalar(r * .5);
+    sp.position.copy(V(v)); sp.renderOrder = 999; jointGroup.add(sp); spheres['fc_' + k] = sp;
   }
   if (fingerMode) for (const [k, v] of Object.entries(S.fmarks)) if (v && k.includes('_' + fingerMode.side)) {
     const s = new THREE.Mesh(sphereGeo, k === fingerMode.cur ? COL.sel : COL.place); s.scale.setScalar(r * .5);
@@ -534,7 +548,7 @@ function draw() {
   } else {
     const seg = [];
     for (const j of live()) {
-      const p = V(S.pos[j.id]), fr = FINGER_RE.test(j.id) ? .45 : 1;
+      const p = V(S.pos[j.id]), fr = OPTIONAL(j.id) ? .45 : 1;
       const s = new THREE.Mesh(sphereGeo, j.id === selected ? COL.sel : bad.has(j.id) ? COL.bad : j.end ? COL.end : MMAP[j.id] ? COL.mark : COL.derived);
       s.scale.setScalar((j.end ? r * .7 : r) * fr); s.position.copy(p); s.renderOrder = 999; s.userData.id = j.id;
       jointGroup.add(s); spheres[j.id] = s;
@@ -559,6 +573,18 @@ function refreshList() {
     }
   } else {
     $('listTitle').textContent = 'Узлы скелета';
+    if (faceMode) {
+      $('listTitle').textContent = 'Лицо: кликните по модели';
+      for (const k of faceKeys()) {
+        const b = document.createElement('button'); b.className = 'item' + (S.face[k] ? ' done' : '') + (k === faceMode.cur ? ' cur' : '');
+        b.innerHTML = `<span>${FACE_MARKS[k]}</span><span class="st">${S.face[k] ? 'готово' : '—'}</span>`;
+        b.onclick = () => { faceMode.cur = k; refreshAll(); };
+        list.appendChild(b);
+      }
+      const no = document.createElement('button'); no.textContent = 'Отмена'; no.onclick = () => { faceMode = null; refreshAll(); };
+      list.appendChild(no);
+      return;
+    }
     if (fingerMode) {
       $('listTitle').textContent = `Пальцы: кликните кончики (${fingerMode.side === 'L' ? 'левая' : 'правая'} кисть)`;
       for (const f of FINGERS) {
@@ -590,7 +616,9 @@ function refreshList() {
 }
 function refreshHint() {
   const h = $('hint');
-  if (fingerMode && fingerMode.cur) {
+  if (faceMode && faceMode.cur) {
+    h.hidden = false; h.textContent = 'Кликните: ' + FACE_MARKS[faceMode.cur];
+  } else if (fingerMode && fingerMode.cur) {
     const f = fingerMode.cur.split('_')[0], what = fingerMode.cur.endsWith('_base') ? 'основание (костяшку)' : 'кончик';
     h.hidden = false; h.textContent = `Кликните ${what} ${FN_GEN[f]}${f === 'pinky' ? '' : ' пальца'} (${fingerMode.side === 'L' ? 'левая' : 'правая'} кисть)`;
   } else if (S.phase === 'place' && !poseOn) {
@@ -620,7 +648,8 @@ function refreshFields() {
 function refreshAll() {
   refreshList(); refreshHint(); refreshFields(); draw(); refreshGuide();
   $('mLeft').textContent = poseOn ? 'навести и тянуть: согнуть сустав' : S.phase === 'place' ? 'поставить точку (вид спереди)' : 'выбрать узел, тянуть стрелки';
-  $('fRow').hidden = S.phase !== 'edit' || !!fingerMode;
+  $('fRow').hidden = S.phase !== 'edit' || !!fingerMode || !!faceMode;
+  $('faceClear').hidden = !S.pos.jaw;
   $('fClear').hidden = !Object.keys(S.pos).some((k) => FINGER_RE.test(k));
   const w = S.phase === 'edit' ? bendWarnings() : [];
   $('warn').innerHTML = w.length ? w.map((x) => '⚠ ' + x.text).join('<br>') : (S.phase === 'edit' ? 'Сгибы суставов в норме.' : '');
@@ -714,7 +743,7 @@ function sync() {
     if (S.phase !== 'edit') { el.textContent = 'Разметка ещё не закончена.'; el.className = 'sync'; return; }
     const out = { version: 1, source: DATA.source, yaw: S.yaw, sym: S.sym, height: +H.toFixed(4), center_x: +cx.toFixed(5),
                   marks: S.marks, joints: S.pos, rot: S.rot, bend: S.bend, parents: Object.fromEntries(live().map((j) => [j.id, j.parent])),
-                  ends: live().filter((j) => j.end).map((j) => j.id), fmarks: S.fmarks };
+                  ends: live().filter((j) => j.end).map((j) => j.id), fmarks: S.fmarks, face: S.face };
     const text = JSON.stringify(out);
     try {
       const ta = window.parent.document.querySelector('#' + DATA.target + ' textarea');
@@ -728,6 +757,48 @@ function sync() {
 }
 
 // ---------------------------------------------------------------- fingers: click the tips in a close hand view
+let faceMode = null;     // { cur }
+const FACE_MARKS = { eye_L: 'центр левого глаза (зрачок; справа на экране)', eye_R: 'центр правого глаза (зрачок)',
+  mouth_corner_L: 'левый уголок рта (справа на экране)', mouth_corner_R: 'правый уголок рта', mouth_c: 'середина рта, между губами' };
+const faceKeys = () => (S.sym ? ['eye_L', 'mouth_corner_L', 'mouth_c'] : ['eye_L', 'eye_R', 'mouth_corner_L', 'mouth_corner_R', 'mouth_c']);
+function faceView() {
+  const hd = V(S.pos.head), top = V(S.pos.head_top), chin = S.marks.chin ? V(S.marks.chin) : hd;
+  const c = new THREE.Vector3(hd.x, (top.y + chin.y) / 2 - (top.y - chin.y) * .1, hd.z), len = (top.y - chin.y) * 1.5;
+  camera.position.set(c.x, c.y, c.z + H * 4); camera.up.set(0, 1, 0); orbit.target.copy(c); camera.lookAt(c);
+  camera.zoom = (H * 1.2) / Math.max(len, 1e-6); camera.updateProjectionMatrix(); orbit.update(); view = 'front'; refreshAll();
+}
+function placeFace(n) {
+  ray.setFromCamera(n, camera);
+  const hit = ray.intersectObjects(meshes, false)[0];   // the surface point: eyes and lips are on the surface
+  if (!hit) { $('hint').textContent = 'Мимо модели: кликните по лицу'; return; }
+  pushUndo(); S.face[faceMode.cur] = arr(hit.point);
+  const left = faceKeys().find((k) => !S.face[k]);
+  if (left) { faceMode.cur = left; refreshAll(); return; }
+  deriveFace(); faceMode = null; refreshAll(); sync();
+}
+// eye centre one eyeball radius behind the cornea; jaw hinge in front of the ear, between mouth and eye height
+function deriveFace() {
+  const F = S.face;
+  if (S.sym) { F.eye_R = arr(mirror(V(F.eye_L))); F.mouth_corner_R = arr(mirror(V(F.mouth_corner_L))); }
+  const eL = V(F.eye_L), eR = V(F.eye_R), M = V(F.mouth_c);
+  const ipd = eL.distanceTo(eR), rEye = .2 * ipd;
+  for (const [sd, e] of [['L', eL], ['R', eR]]) {
+    S.pos['eye_' + sd] = arr(e.clone().add(new THREE.Vector3(0, 0, -rEye)));
+    S.pos['eye_end_' + sd] = arr(e);
+  }
+  const hy = lerp(M.y, (eL.y + eR.y) / 2, .45);
+  S.pos.jaw = arr(new THREE.Vector3(cx, hy, depthAt(cx, hy, .45, true)));
+  const chin = S.marks.chin ? V(S.marks.chin) : M.clone().add(new THREE.Vector3(0, -ipd * .6, 0));
+  S.pos.jaw_end = arr(new THREE.Vector3(cx, chin.y, depthAt(cx, chin.y, .2, true)));
+}
+$('faceStart').onclick = () => {
+  if (S.phase !== 'edit') return;
+  S.face = {}; faceMode = { cur: 'eye_L' }; select(null); faceView();
+};
+$('faceClear').onclick = () => {
+  pushUndo(); for (const k of ['jaw', 'jaw_end', 'eye_L', 'eye_R', 'eye_end_L', 'eye_end_R']) delete S.pos[k];
+  S.face = {}; select(null); refreshAll(); sync();
+};
 let fingerMode = null;   // { side, cur }
 function handView(side) {
   const W = V(S.pos['hand_' + side]), E = V(S.pos['hand_end_' + side]), F = V(S.pos['forearm_' + side]);
@@ -905,6 +976,7 @@ canvas.addEventListener('pointerup', (e) => {
   down = null; const rc = canvas.getBoundingClientRect();
   ndc.set(((e.clientX - rc.left) / rc.width) * 2 - 1, -((e.clientY - rc.top) / rc.height) * 2 + 1);
   if (fingerMode) { placeFinger(ndc.clone()); return; }
+  if (faceMode) { placeFace(ndc.clone()); return; }
   if (S.phase === 'place') {
     if (view !== 'front') { setView('front'); return; }
     const p = new THREE.Vector3(ndc.x, ndc.y, 0).unproject(camera); placeAt(p.x, p.y);
@@ -948,7 +1020,7 @@ $('rebuild').onclick = () => {
 };
 $('reset').onclick = () => {
   if (!confirm('Удалить всю разметку и начать заново?')) return;
-  pushUndo(); S.phase = 'place'; S.marks = {}; S.pos = {}; S.rot = {}; S.fmarks = {}; fingerMode = null; select(null); current = nextMark().id; setView('front'); sync();
+  pushUndo(); S.phase = 'place'; S.marks = {}; S.pos = {}; S.rot = {}; S.fmarks = {}; S.face = {}; fingerMode = null; faceMode = null; select(null); current = nextMark().id; setView('front'); sync();
 };
 const turn = (d) => {
   if (S.phase === 'edit' && !confirm('Поворот модели сбросит разметку. Продолжить?')) return;
@@ -984,7 +1056,8 @@ const TAILOF = { spine: 'spine1', spine1: 'spine2', spine2: 'neck', neck: 'head'
 for (const s of SIDES) for (const f of FINGERS) for (let k = 1; k <= 3; k++) TAILOF[`${f}${k}_${s}`] = `${f}${k + 1}_${s}`;
 for (const s of SIDES) Object.assign(TAILOF, { ['shoulder_' + s]: 'arm_' + s, ['arm_' + s]: 'forearm_' + s, ['forearm_' + s]: 'hand_' + s,
   ['hand_' + s]: 'hand_end_' + s, ['upleg_' + s]: 'leg_' + s, ['leg_' + s]: 'foot_' + s, ['foot_' + s]: 'toe_' + s, ['toe_' + s]: 'toe_end_' + s });
-const BALL = { spine: 30, spine1: 30, spine2: 30, neck: 45, head: 50, shoulder: 30, arm: 175, upleg: 120 };   // max swing from rest, °
+const BALL = { spine: 30, spine1: 30, spine2: 30, neck: 45, head: 50, shoulder: 30, arm: 175, upleg: 120, eye: 35 };
+Object.assign(TAILOF, { jaw: 'jaw_end', eye_L: 'eye_end_L', eye_R: 'eye_end_R' });   // max swing from rest, °
 let poseRoot = null, skelHelp = null, poseOn = false, hoverId = null, dragId = null;
 const poseMeshes = [], PB = {}, PINFO = {}, REST = new Map(), BONE2ID = new Map();
 const poseHelp = new THREE.Group(); scene.add(poseHelp);
@@ -1019,7 +1092,7 @@ async function loadRigged() {
     const info = { tailLocal: b.worldToLocal(T.clone()), len: T.distanceTo(J) };
     const L = limitOf(id);
     if (L) {
-      const z = L.zero === 'parent' ? J.clone().sub(b.parent.getWorldPosition(new V3)).normalize() : FOOT_ZERO();
+      const z = L.zero === 'parent' ? J.clone().sub(b.parent.getWorldPosition(new V3)).normalize() : L.zero === 'self' ? T.clone().sub(J).normalize() : FOOT_ZERO();
       const f = flexVec(L, id), pp = f.clone().sub(z.clone().multiplyScalar(f.dot(z))).normalize();
       info.hinge = { L, zL: z.clone().applyQuaternion(pqi), pL: pp.applyQuaternion(pqi) };
     } else if (BALL[id.replace(/_[LR]$/, '')]) info.ball = { max: BALL[id.replace(/_[LR]$/, '')], dL: T.clone().sub(J).normalize().applyQuaternion(pqi) };
@@ -1207,6 +1280,7 @@ function setHinge(id, a) {
   const i = PINFO[id]; if (!i || !i.hinge) return;
   const F = frameNow(id); aimBone(id, F.z.clone().multiplyScalar(Math.cos(rad(a))).add(F.p.clone().multiplyScalar(Math.sin(rad(a)))));
 }
+$('pJaw').onclick = () => { stopClip(); setHinge('jaw', 25); for (const s of SIDES) poseBend('eye_' + s, UPV, 15); poseHighlight(); };
 $('pFist').onclick = () => {
   stopClip();
   for (const s of SIDES) for (const f of FINGERS) (f === 'thumb' ? [25, 40, 50] : [80, 95, 70]).forEach((a, i) => setHinge(`${f}${i + 1}_${s}`, a));
@@ -1229,7 +1303,7 @@ $('pSquat').onclick = () => {
     gltf.scene.traverse((o) => { if (o.isMesh) { meshes.push(o); for (const mt of [].concat(o.material)) mt.side = THREE.DoubleSide; } });
     if (DATA.state && DATA.state.joints) {
       Object.assign(S, { phase: 'edit', yaw: DATA.state.yaw || 0, sym: DATA.state.sym !== false, marks: DATA.state.marks || {},
-                         pos: DATA.state.joints, rot: DATA.state.rot || {}, bend: DATA.state.bend || {}, fmarks: DATA.state.fmarks || {} });
+                         pos: DATA.state.joints, rot: DATA.state.rot || {}, bend: DATA.state.bend || {}, fmarks: DATA.state.fmarks || {}, face: DATA.state.face || {} });
       cx = DATA.state.center_x || 0;
     }
     applyYaw(); $('msg').hidden = true;

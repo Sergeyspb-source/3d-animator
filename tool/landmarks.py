@@ -26,7 +26,7 @@ def bone_names(naming="mixamo"):
     from rigging import NAMINGS
     cfg = NAMINGS[naming]
     p = cfg["prefix"]
-    out = {"hips": p + cfg["hips"], "neck": p + cfg["neck"], "head": p + cfg["head"]}
+    out = {"hips": p + cfg["hips"], "neck": p + cfg["neck"], "head": p + cfg["head"], "jaw": p + "Jaw"}
     for k, jid in enumerate(["spine", "spine1", "spine2"]):
         out[jid] = p + cfg["spine"][k]
     for s, side in (("L", "Left"), ("R", "Right")):
@@ -34,6 +34,7 @@ def bone_names(naming="mixamo"):
                           ("upleg", "upleg"), ("leg", "leg"), ("foot", "foot"), ("toe", "toe")):
             out[f"{jid}_{s}"] = p + cfg[role].replace("{S}", side)
         out[f"heel_{s}"] = p + f"{side}Heel"   # helper, no weights
+        out[f"eye_{s}"] = p + f"{side}Eye"
         for f in ("thumb", "index", "middle", "ring", "pinky"):
             F = f.capitalize()
             if naming == "mixamo":   # LeftHandIndex1..3, plus the Mixamo end bone 4 for reading FBX rigs
@@ -176,5 +177,5 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True):
                      encoding="utf-8")
     yield f"Готово: {final}\nРазметка сохранена: {saved.name} (откроется в редакторе в следующий раз)."
     yield {"glb": str(final), "landmarks": str(saved), "work": str(work),
-           "images": [str(work / n) for n in ("rest.png", "pose_front.png", "pose_side.png", "hand_fist.png")
+           "images": [str(work / n) for n in ("rest.png", "pose_front.png", "pose_side.png", "hand_fist.png", "face_jaw.png")
                       if (work / n).exists()]}

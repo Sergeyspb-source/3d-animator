@@ -38,6 +38,13 @@ for jid in L["joints"]:   # optional finger chains: 1 -> 2 -> 3 -> 4 (tip, no bo
         TAIL[jid] = f"{m[1]}{int(m[2]) + 1}_{m[3]}"
 
 
+if "jaw" in L["joints"] and "jaw_end" in L["joints"]:
+    TAIL["jaw"] = "jaw_end"
+for s_ in "LR":
+    if f"eye_{s_}" in L["joints"] and f"eye_end_{s_}" in L["joints"]:
+        TAIL[f"eye_{s_}"] = f"eye_end_{s_}"
+
+
 def bl(p):  # glTF (x, y, z) -> Blender (x, -z, y)
     return Vector((p[0], -p[2], p[1]))
 
@@ -145,6 +152,9 @@ bpy.ops.object.select_all(action="DESELECT")
 prig.select_set(True)
 bpy.context.view_layer.objects.active = prig
 bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+for k in ("jaw", "eye_L", "eye_R"):   # face bones get their weights from the mouth line / loose eyeballs, not heat
+    if k in TAIL:
+        prig.data.bones[NAMES[k]].use_deform = False
 bpy.ops.object.select_all(action="DESELECT")
 proxy.select_set(True)
 prig.select_set(True)
@@ -219,6 +229,106 @@ for o in meshes:
     report["meshes"][o.name] = {"vertices": len(o.data.vertices), "fallback_vertices": len(missing)}
 report["fallback_vertices"] = sum(m["fallback_vertices"] for m in report["meshes"].values())
 report["vertices"] = sum(m["vertices"] for m in report["meshes"].values())
+
+# ---- face: the jaw takes the head weight below the mouth line (fading out before the hinge); eyes get weights
+# only when they are separate pieces of the mesh (otherwise they are look-at helpers and do not bend the eyelids)
+if "jaw" in TAIL and L.get("face", {}).get("mouth_c"):
+    FCE = L["face"]
+    hinge, front = bl(J["jaw"]), bl(FCE["mouth_c"])
+    corners = [bl(FCE[k]) for k in ("mouth_corner_L", "mouth_corner_R") if FCE.get(k)]
+    corner = sum(corners, Vector()) / len(corners) if corners else (front + hinge) / 2
+    prof = sorted([(front.y, front.z), (corner.y, corner.z), (hinge.y, hinge.z)])
+
+    def mouth_z(y):
+        if y <= prof[0][0]:
+            return prof[0][1]
+        for (y0, z0), (y1, z1) in zip(prof, prof[1:]):
+            if y <= y1:
+                return z0 + (z1 - z0) * (y - y0) / max(y1 - y0, 1e-9)
+        return prof[-1][1]
+
+    eyes = [bl(J[k]) for k in ("eye_L", "eye_R") if k in J]
+    half_w = (abs(eyes[0].x - eyes[1].x) * 1.1 if len(eyes) == 2 else (hinge - front).length)
+    fade = max(abs(hinge.y - front.y) * 0.5, 1e-6)   # wide fade toward the hinge: cheeks and throat stretch smoothly
+    jaw_name = NAMES["jaw"]
+    donors = (NAMES["head"], NAMES["neck"])   # the chin can sit below the head joint and belong to the neck
+    jlen = (hinge - bl(J["jaw_end"])).length
+    floor_z, fz = bl(J["jaw_end"]).z - jlen * 0.5, jlen * 0.3   # soft lower edge under the chin, toward the neck
+    moved = 0
+    for o in meshes:
+        dg = [o.vertex_groups.get(n) for n in donors]
+        dg = [g for g in dg if g is not None]
+        jg = o.vertex_groups.get(jaw_name) or o.vertex_groups.new(name=jaw_name)
+        if not dg:
+            continue
+        idx = {g.index: g for g in dg}
+        mw = o.matrix_world
+        for v in o.data.vertices:
+            ws = {g.group: g.weight for g in v.groups if g.group in idx}
+            total = sum(ws.values())
+            if total <= 0.3:
+                continue   # mostly body/arms (a hand near the face stays put)
+            p = mw @ v.co
+            if p.y > hinge.y or abs(p.x - hinge.x) > half_w or p.z > mouth_z(p.y) or p.z < floor_z:
+                continue
+            w = 1.0 if p.y < hinge.y - fade else (hinge.y - p.y) / fade
+            w *= min(1.0, (p.z - floor_z) / fz) * min(1.0, (half_w - abs(p.x - hinge.x)) / (half_w * 0.3))
+            if w <= 0:
+                continue
+            for gi, gw in ws.items():
+                idx[gi].add([v.index], gw * (1 - w), "REPLACE")
+            jg.add([v.index], total * w, "REPLACE")
+            moved += 1
+    report["jaw_vertices"] = moved
+if any(f"eye_{s_}" in TAIL for s_ in "LR"):
+    eye_hits = 0
+    for o in meshes:
+        # islands of the welded surface: Tripo meshes are cut along UV seams, so copies at one position are joined
+        n = len(o.data.vertices); parent = list(range(n))
+
+        def find(i):
+            while parent[i] != i:
+                parent[i] = parent[parent[i]]; i = parent[i]
+            return i
+        for e in o.data.edges:
+            a, b = find(e.vertices[0]), find(e.vertices[1])
+            if a != b:
+                parent[a] = b
+        key = {}
+        q = max(height * 1e-5, 1e-9)
+        for v in o.data.vertices:
+            k = tuple(round(c / q) for c in v.co)
+            if k in key:
+                a, b = find(v.index), find(key[k])
+                if a != b:
+                    parent[a] = b
+            else:
+                key[k] = v.index
+        groups = {}
+        for i in range(n):
+            groups.setdefault(find(i), []).append(i)
+        mw = o.matrix_world
+        for isl in groups.values():
+            c = sum((mw @ o.data.vertices[i].co for i in isl), Vector()) / len(isl)
+            for s_ in "LR":
+                if f"eye_{s_}" not in TAIL:
+                    continue
+                ec, ee = bl(J[f"eye_{s_}"]), bl(J[f"eye_end_{s_}"])
+                if (c - ec).length < (ee - ec).length * 1.3 and len(isl) < 5000:   # a loose eyeball
+                    eg = o.vertex_groups.get(NAMES[f"eye_{s_}"]) or o.vertex_groups.new(name=NAMES[f"eye_{s_}"])
+                    for i in isl:
+                        for g in list(o.data.vertices[i].groups):
+                            o.vertex_groups[g.group].remove([i])
+                        eg.add([i], 1.0, "REPLACE")
+                    eye_hits += 1
+    report["loose_eyes"] = eye_hits
+if "jaw" in TAIL or any(f"eye_{s_}" in TAIL for s_ in "LR"):
+    for o in meshes:
+        bpy.ops.object.select_all(action="DESELECT")
+        o.select_set(True)
+        bpy.context.view_layer.objects.active = o
+        bpy.ops.object.vertex_group_limit_total(group_select_mode="ALL", limit=4)
+        bpy.ops.object.vertex_group_normalize_all(group_select_mode="ALL", lock_active=False)
 
 # ---- heel helpers, added after skinning so they get no weights; kept as deform bones so glTF lists them in the
 # skin and Godot imports them as real skeleton bones (for foot IK / roll)
@@ -343,6 +453,19 @@ if "middle1_L" in TAIL:
     scene.render.filepath = str(OUT / "hand_fist.png")
     bpy.ops.render.render(write_still=True)
     report["finger_bones"] = sum(1 for k in TAIL if FINGER.match(k))
+
+# ---- open-mouth close-up when the jaw is rigged
+if "jaw" in TAIL:
+    for pb in rig.pose.bones:
+        pb.matrix_basis = Matrix()
+    bpy.context.view_layer.update()
+    bend("jaw", (0, 0, -1), 25)
+    hd, top = bl(J["head"]), bl(J["head_top"])
+    span = (top - bl(J["jaw_end"])).length
+    cam.data.ortho_scale = span * 1.6
+    cam.location = (hd.x, hd.y - far, (top.z + bl(J["jaw_end"]).z) / 2); cam.rotation_euler = (math.radians(90), 0, 0)
+    scene.render.filepath = str(OUT / "face_jaw.png")
+    bpy.ops.render.render(write_still=True)
 
 (OUT / "rig_report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
 print("LANDMARK_RIG_OK", json.dumps(report), flush=True)
