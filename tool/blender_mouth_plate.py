@@ -83,13 +83,31 @@ def surface(x, z):
 
 
 # mouth line: parabola through the right corner, the centre and the left corner (front view x -> z)
-xs = np.array([CR.x, M.x, CL.x]); zs = np.array([CR.z, M.z, CL.z])
-coef = np.polyfit(xs, zs, 2)
+def lip_curve(pts):
+    """front-view lip line z(x) through all given points: parabola for 3, a Catmull-Rom curve (sampled densely, then
+    interpolated) for 4+ points, so mid-lip clicks follow a cupid's bow or a sneer."""
+    pts = sorted(pts, key=lambda p: p.x)
+    xs_, zs_ = [p.x for p in pts], [p.z for p in pts]
+    if len(pts) <= 3:
+        c = np.polyfit(xs_, zs_, 2)
+        return lambda x: float(np.polyval(c, x))
+    ext = [pts[0] * 2 - pts[1]] + pts + [pts[-1] * 2 - pts[-2]]
+    sx, sz = [], []
+    for i in range(1, len(ext) - 2):
+        p0, p1, p2, p3 = ext[i - 1], ext[i], ext[i + 1], ext[i + 2]
+        for k in range(24):
+            t = k / 24
+            q = 0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (-p0 + 3 * p1 - 3 * p2 + p3) * t ** 3)
+            sx.append(q.x); sz.append(q.z)
+    sx.append(pts[-1].x); sz.append(pts[-1].z)
+    order = np.argsort(sx)
+    sx, sz = np.array(sx)[order], np.array(sz)[order]
+    return lambda x: float(np.interp(x, sx, sz))
+
+
+LIP_PTS = [CR, M, CL] + [bl(job[k]) for k in ("mid_L", "mid_R") if job.get(k)]
+line_z = lip_curve(LIP_PTS)
 cx, half_w = float((CL.x + CR.x) / 2), float(abs(CL.x - CR.x) / 2)
-
-
-def line_z(x):
-    return float(np.polyval(coef, x))
 
 
 SHAPES = {   # width scale, upper height, lower height, roundness, corner lift (beggar values, scaled by k)

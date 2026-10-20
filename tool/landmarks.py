@@ -220,6 +220,7 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=T
         kd, kinfo = face_kit(cfg, kit, work)
         cj = {"source": str(model), "out": str(work / "model_cut.glb"), "mouth_c": face["mouth_c"],
               "corner_L": face["mouth_corner_L"], "corner_R": face["mouth_corner_R"],
+              "mid_L": face.get("mouth_mid_L"), "mid_R": face.get("mouth_mid_R"),
               "hinge": landmarks["joints"].get("jaw"), "head_bone": names["head"],
               "jaw_bone": names["jaw"] if "jaw" in landmarks["joints"] else "",
               "teeth_glb": str(kd / "teeth.glb"), "tongue_glb": str(kd / "tongue.glb"),
@@ -244,6 +245,7 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=T
         names = bone_names(naming)
         mj = {"source": str(model), "out": str(work / "model_mouth.glb"), "mouth_c": face["mouth_c"],
               "corner_L": face["mouth_corner_L"], "corner_R": face["mouth_corner_R"], "head_bone": names["head"],
+              "mid_L": face.get("mouth_mid_L"), "mid_R": face.get("mouth_mid_R"),
               "jaw_bone": names["jaw"] if "jaw" in landmarks["joints"] else "", "report": str(work / "mouth_report.json"),
               "preview": str(work / "mouth.png")}
         (work / "mouth_job.json").write_text(json.dumps(mj, ensure_ascii=False), encoding="utf-8")

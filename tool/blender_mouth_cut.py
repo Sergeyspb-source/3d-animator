@@ -60,13 +60,32 @@ for c in (CL, CR):
         fail("уголки рта не на линии губ: переразметьте лицо")
 hinge = bl(job["hinge"]) if job.get("hinge") else Vector((M.x, M.y + 1.2 * W, M.z + 0.5 * W))
 import numpy as np
-coef = np.polyfit([CR.x, M.x, CL.x], [CR.z, M.z, CL.z], 2)
+def lip_curve(pts):
+    """front-view lip line z(x) through all given points: parabola for 3, a Catmull-Rom curve (sampled densely, then
+    interpolated) for 4+ points, so mid-lip clicks follow a cupid's bow or a sneer."""
+    pts = sorted(pts, key=lambda p: p.x)
+    xs_, zs_ = [p.x for p in pts], [p.z for p in pts]
+    if len(pts) <= 3:
+        c = np.polyfit(xs_, zs_, 2)
+        return lambda x: float(np.polyval(c, x))
+    ext = [pts[0] * 2 - pts[1]] + pts + [pts[-1] * 2 - pts[-2]]
+    sx, sz = [], []
+    for i in range(1, len(ext) - 2):
+        p0, p1, p2, p3 = ext[i - 1], ext[i], ext[i + 1], ext[i + 2]
+        for k in range(24):
+            t = k / 24
+            q = 0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (-p0 + 3 * p1 - 3 * p2 + p3) * t ** 3)
+            sx.append(q.x); sz.append(q.z)
+    sx.append(pts[-1].x); sz.append(pts[-1].z)
+    order = np.argsort(sx)
+    sx, sz = np.array(sx)[order], np.array(sz)[order]
+    return lambda x: float(np.interp(x, sx, sz))
+
+
+LIP_PTS = [CR, M, CL] + [bl(job[k]) for k in ("mid_L", "mid_R") if job.get(k)]
+line_z = lip_curve(LIP_PTS)
 x0, x1 = min(CR.x, CL.x), max(CR.x, CL.x)
 cx = (x0 + x1) / 2
-
-
-def line_z(x):
-    return float(np.polyval(coef, x))
 
 
 def side(p):
@@ -332,7 +351,7 @@ skin(cav, lambda p: JAW_IN * jaw_blend(p.z, line_z(cx), 0.08 * W))
 # ------------------------------------------------------------------ 4. teeth and tongue
 kit_w = float(job.get("kit", {}).get("arch_width", 0.05))
 s = W * 0.95 / kit_w
-anchor = Vector((cx, M.y + 0.30 * W, line_z(cx)))
+anchor = Vector((cx, M.y + 0.10 * W, line_z(cx)))
 parts = []
 for path in (job.get("teeth_glb"), job.get("tongue_glb")):
     if not path or not Path(path).exists():
@@ -351,20 +370,31 @@ for path in (job.get("teeth_glb"), job.get("tongue_glb")):
 for o in parts:
     on_jaw = o.name.startswith(("Teeth_Lower", "Gum_Lower", "Tongue"))
     skin(o, lambda p, j=on_jaw: JAW_IN if j else 0.0)
-# push the whole set back until no vertex is in front of the skin (recessed chins, sloping lips)
-need = 0.0
-for o in parts:
-    for v in list(o.data.vertices)[::3]:
-        p = o.matrix_world @ v.co
-        sy = skin_y(p.x, p.z)
-        if sy is not None:
-            need = max(need, sy + 0.05 * W - p.y)
-need = min(need, 1.5 * W)
-for o in parts:
-    lift = 0.07 * W if o.name.startswith(("Teeth_Lower", "Gum_Lower")) else 0.0   # lower tips just over the lip edge
-    o.data.transform(Matrix.Translation(Vector((0, need, lift))))
+# push each row back until no vertex is in front of the skin (recessed chins, sloping lips); upper and lower apart,
+# so a recessed chin does not hide the upper teeth from the side
+groups = {"upper": [o for o in parts if o.name.startswith(("Teeth_Upper", "Gum_Upper"))],
+          "lower": [o for o in parts if not o.name.startswith(("Teeth_Upper", "Gum_Upper"))]}
+pushed = {}
+for gname, objs in groups.items():
+    lift = 0.045 * W if gname == "lower" else 0.0
+    need = 0.0
+    for o in objs:
+        for v in list(o.data.vertices)[::3]:
+            p = o.matrix_world @ v.co + Vector((0, 0, lift if not o.name.startswith("Tongue") else 0.0))
+            # upper row against the skin above the slit, lower row below it: fang tips that hang past the line may
+            # show over the other lip, as on a real fanged mouth
+            if (gname == "upper" and side(p) < 0.02 * W) or (gname == "lower" and side(p) > -0.02 * W):
+                continue
+            sy = skin_y(p.x, p.z)
+            if sy is not None:
+                need = max(need, sy + 0.03 * W - p.y)
+    need = min(need, 1.5 * W)
+    for o in objs:
+        lz = lift if o.name.startswith(("Teeth_Lower", "Gum_Lower")) else 0.0
+        o.data.transform(Matrix.Translation(Vector((0, need, lz))))
+    pushed[gname] = round(need, 4)
 report["inserted"] = [o.name for o in parts]
-report["parts_pushed_back"] = round(need, 4)
+report["parts_pushed_back"] = pushed
 
 # ------------------------------------------------------------------ 5. shape keys
 theta = math.radians(float(job.get("open_deg", 26)))

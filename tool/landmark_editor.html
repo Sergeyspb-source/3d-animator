@@ -764,13 +764,14 @@ function sync() {
 // ---------------------------------------------------------------- fingers: click the tips in a close hand view
 let faceMode = null;     // { cur }
 const FACE_MARKS = { eye_L: 'центр левого глаза (зрачок; справа на экране)', eye_R: 'центр правого глаза (зрачок)',
-  mouth_corner_L: 'левый уголок рта (справа на экране)', mouth_corner_R: 'правый уголок рта', mouth_c: 'середина рта — щель между губами (не верхняя губа)',
+  mouth_corner_L: 'левый уголок рта (справа на экране)', mouth_corner_R: 'правый уголок рта',
+  mouth_mid_L: 'левая половина губ: щель посередине между уголком и центром', mouth_mid_R: 'правая половина губ: середина щели', mouth_c: 'середина рта — щель между губами (не верхняя губа)',
   eye_in_L: 'левый глаз: внутренний уголок (у носа)', eye_top_L: 'левый глаз: край верхнего века, середина',
   eye_out_L: 'левый глаз: внешний уголок', eye_bot_L: 'левый глаз: край нижнего века, середина',
   eye_in_R: 'правый глаз: внутренний уголок', eye_top_R: 'правый глаз: верхнее веко', eye_out_R: 'правый глаз: внешний уголок',
   eye_bot_R: 'правый глаз: нижнее веко' };
 const EYE_RIM = ['eye_in', 'eye_top', 'eye_out', 'eye_bot'];
-const faceKeys = () => (S.sym ? ['eye_L', 'mouth_corner_L', 'mouth_c'] : ['eye_L', 'eye_R', 'mouth_corner_L', 'mouth_corner_R', 'mouth_c'])
+const faceKeys = () => (S.sym ? ['eye_L', 'mouth_corner_L', 'mouth_mid_L', 'mouth_c'] : ['eye_L', 'eye_R', 'mouth_corner_L', 'mouth_mid_L', 'mouth_c', 'mouth_mid_R', 'mouth_corner_R'])
   .concat(faceMode && faceMode.eyes ? EYE_RIM.map((k) => k + '_L').concat(S.sym ? [] : EYE_RIM.map((k) => k + '_R')) : []);
 function faceView() {
   const hd = V(S.pos.head), top = V(S.pos.head_top), chin = S.marks.chin ? V(S.marks.chin) : hd;
@@ -815,6 +816,7 @@ function deriveFace() {
   const F = S.face;
   if (S.sym) {
     F.eye_R = arr(mirror(V(F.eye_L))); F.mouth_corner_R = arr(mirror(V(F.mouth_corner_L)));
+    if (F.mouth_mid_L) F.mouth_mid_R = arr(mirror(V(F.mouth_mid_L)));
     for (const k of EYE_RIM) if (F[k + '_L']) F[k + '_R'] = arr(mirror(V(F[k + '_L'])));
   }
   const eL = V(F.eye_L), eR = V(F.eye_R), M = V(F.mouth_c);
