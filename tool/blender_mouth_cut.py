@@ -396,14 +396,72 @@ for gname, objs in groups.items():
 report["inserted"] = [o.name for o in parts]
 report["parts_pushed_back"] = pushed
 
+# ------------------------------------------------------------------ 4b. lip bones (Rigify-style naming)
+# lip.T / lip.B (centres), lip.T.L/R, lip.B.L/R (halves), lips.L/R (corners). Upper bones and corners are children of
+# the head, lower bones of the jaw, so the jaw still opens the mouth; each bone takes a share of its parent's weight on
+# the lips near it (Gaussian along the lip, fading 0.5 W away from the slit). Lip sync stays on the shape keys.
+LIP_BONES = {}
+if job.get("lip_bones", True):
+    half = (x1 - x0) / 2
+    spots = {"lip.T": (cx, 1), "lip.T.L": (cx + 0.5 * half, 1), "lip.T.R": (cx - 0.5 * half, 1),
+             "lip.B": (cx, -1), "lip.B.L": (cx + 0.5 * half, -1), "lip.B.R": (cx - 0.5 * half, -1),
+             "lips.L": (x1, 0), "lips.R": (x0, 0)}
+    if CL.x < CR.x:   # character's left is +x in Blender here; keep names right if the head was mirrored
+        spots["lips.L"], spots["lips.R"] = (x0, 0), (x1, 0)
+    bpy.ops.object.select_all(action="DESELECT"); arm.select_set(True); bpy.context.view_layer.objects.active = arm
+    bpy.ops.object.mode_set(mode="EDIT")
+    ainv = arm.matrix_world.inverted()
+    for name, (x, sd) in spots.items():
+        z = line_z(x) + sd * 0.06 * W
+        sy = skin_y(x, z)
+        y = (sy if sy is not None else M.y) + 0.12 * W
+        eb = arm.data.edit_bones.new(name)
+        eb.head = ainv @ Vector((x, y, z))
+        eb.tail = ainv @ Vector((x, y - 0.15 * W, z))
+        eb.parent = arm.data.edit_bones[JAW if sd < 0 else HEAD]
+        LIP_BONES[name] = (Vector((x, y, z)), sd)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    groups = {n: face.vertex_groups.new(name=n) for n in LIP_BONES}
+    gh, gj = face.vertex_groups[HEAD], face.vertex_groups.get(JAW)
+    sig = 0.35 * half
+    moved = 0
+    for v in face.data.vertices:
+        p = fw @ v.co
+        if p.y > front_limit + 0.3 * W or abs(side(p)) > 0.5 * W or abs(p.x - cx) > half * 1.25:
+            continue
+        fall = max(0.0, 1.0 - abs(side(p)) / (0.5 * W))
+        up = side(p) >= 0
+        src = gh if (up or gj is None) else gj
+        sw = next((g.weight for g in v.groups if g.group == src.index), 0.0)
+        if sw <= 1e-4:
+            continue
+        cands = {n: math.exp(-((p.x - c.x) / sig) ** 2) for n, (c, sd) in LIP_BONES.items() if sd == 0 or (sd > 0) == up}
+        tot = sum(cands.values())
+        if tot <= 1e-6:
+            continue
+        take = sw * 0.85 * fall
+        src.add([v.index], sw - take, "REPLACE")
+        for n, c in cands.items():
+            if c / tot > 0.02:
+                groups[n].add([v.index], take * c / tot, "REPLACE")
+        moved += 1
+    bpy.ops.object.select_all(action="DESELECT"); face.select_set(True); bpy.context.view_layer.objects.active = face
+    bpy.ops.object.vertex_group_limit_total(group_select_mode="ALL", limit=4)
+    bpy.ops.object.vertex_group_normalize_all(group_select_mode="ALL", lock_active=False)
+    report["lip_bones"] = list(LIP_BONES)
+    report["lip_bone_verts"] = moved
+
 # ------------------------------------------------------------------ 5. shape keys
 theta = math.radians(float(job.get("open_deg", 26)))
 jaw_objs = [face, cav] + [o for o in parts]
 
 
 def jaw_w(o, v):
-    g = o.vertex_groups.get(JAW)
-    return next((x.weight for x in v.groups if g is not None and x.group == g.index), 0.0) if JAW != HEAD else 0.0
+    """jaw weight incl. the lower lip bones (children of the jaw: they follow it when it opens)"""
+    if JAW == HEAD:
+        return 0.0
+    ids = {g.index for g in o.vertex_groups if g.name == JAW or g.name.startswith("lip.B")}
+    return min(1.0, sum(x.weight for x in v.groups if x.group in ids))
 
 
 def add_key(o, name, fn):
@@ -518,6 +576,20 @@ if job.get("preview"):
         else:
             cam.location = (cx + W * 100, M.y + W * 0.6, line_z(cx) - W * 0.2); cam.rotation_euler = (math.radians(90), 0, math.radians(90))
         sc.render.filepath = job["preview"].replace(".png", f"_{key}_{view}.png")
+        bpy.ops.render.render(write_still=True)
+        shots.append(sc.render.filepath)
+    if LIP_BONES:   # lip-bone check: left corner up and out, upper lip middle up (a sneer)
+        for o in keyed:
+            for kb in o.data.shape_keys.key_blocks[1:]:
+                kb.value = 0.0
+        arm.data.pose_position = "POSE"
+        for n, d in (("lips.L", (0.18, 0, 0.22)), ("lip.T.L", (0, 0, 0.16))):
+            pb = arm.pose.bones.get(n)
+            if pb is not None:
+                pb.matrix = Matrix.Translation(Vector(d) * W) @ pb.matrix
+        bpy.context.view_layer.update()
+        cam.location = (cx, M.y - W * 100, line_z(cx) - W * 0.2); cam.rotation_euler = (math.radians(90), 0, 0)
+        sc.render.filepath = job["preview"].replace(".png", "_lipbones_front.png")
         bpy.ops.render.render(write_still=True)
         shots.append(sc.render.filepath)
     report["previews"] = shots
