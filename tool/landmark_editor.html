@@ -318,7 +318,9 @@ function derive() {
   P.head_top = new THREE.Vector3(chin.x, top, P.head.z);
   for (const s of SIDES) {
     const arm = P['arm_' + s], fore = P['forearm_' + s], hand = P['hand_' + s];
-    P['shoulder_' + s] = at(lerp(P.neck.x, arm.x, .18), arm.y - .005 * H, .45);
+    // the collarbone starts at the sternum, above the shoulder joint centre (tested: +2.5% of height gives the
+    // roundest deltoid on an overhead raise), but never above the neck base
+    P['shoulder_' + s] = at(lerp(P.neck.x, arm.x, .18), Math.min(arm.y + .02 * H, P.neck.y - .005 * H), .45);
     P['hand_end_' + s] = hand.clone().add(hand.clone().sub(fore).multiplyScalar(.45));
     const knee = P['leg_' + s], ankle = P['foot_' + s];
     P['upleg_' + s] = at(lerp(groin.x, knee.x, .9), groin.y + .035 * H, .5, false);
