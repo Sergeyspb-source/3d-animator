@@ -73,6 +73,10 @@
   .posebar button { background:var(--panel); }
   .pinfo { background:color-mix(in srgb,var(--panel) 90%,transparent); border-radius:6px; padding:4px 8px; font:12px var(--mono); }
   .pinfo.stop { color:#e5484d; }
+  .mouse { position:absolute; left:10px; top:36px; display:flex; gap:8px; align-items:center; pointer-events:none;
+    background:color-mix(in srgb,var(--panel) 88%,transparent); border-radius:8px; padding:5px 8px; font-size:12px; line-height:1.35; }
+  .mouse svg { width:24px; height:36px; flex:none; }
+  .mouse .l { color:#d9622f; font-weight:600; } .mouse .r { color:#3f8fe6; font-weight:600; } .mouse .w { color:var(--muted); font-weight:600; }
   kbd { font:11px var(--mono); border:1px solid var(--line); border-radius:4px; padding:0 4px; }
 </style>
 </head>
@@ -81,11 +85,22 @@
   <div class="stage">
     <canvas id="cv"></canvas>
     <div class="badge" id="badge">вид спереди</div>
+    <div class="mouse" id="mouseHelp">
+      <svg viewBox="0 0 24 36" aria-hidden="true">
+        <path d="M12 1 C5 1 2 5 2 11 V24 C2 31 6 35 12 35 C18 35 22 31 22 24 V11 C22 5 19 1 12 1 Z" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M12 1 C5 1 2 5 2 11 V14 H12 Z" fill="#d9622f"/>
+        <path d="M12 1 C19 1 22 5 22 11 V14 H12 Z" fill="#3f8fe6"/>
+        <rect x="10.5" y="5" width="3" height="7" rx="1.5" fill="#8a8f98"/>
+      </svg>
+      <div><span class="l">ЛКМ</span> — <span id="mLeft">поставить точку</span><br>
+        <span class="r">ПКМ</span> — вращать вид<br>
+        <span class="w">Колесо</span> — масштаб, зажать — сдвиг · <kbd>F</kbd> — вписать</div>
+    </div>
     <div class="hint" id="hint" hidden></div>
     <div class="msg" id="msg">Загрузка модели…</div>
     <div class="posebar" id="poseBar" hidden>
       <button id="pReset">Сбросить позу</button><button id="pCheck">Поза проверки</button><button id="pSquat">Присед</button>
-      <span class="pinfo" id="pInfo">Наведите на руку, ногу, голову или корпус и тяните мышью. Правая кнопка — повернуть камеру.</span>
+      <span class="pinfo" id="pInfo">Наведите на руку, ногу, голову или корпус и тяните левой кнопкой.</span>
     </div>
     <div class="guide" id="guide">
       <div class="ghead"><span>Подсказка</span><button id="gHide" title="Свернуть">−</button></div>
@@ -103,7 +118,8 @@
       <div class="row">
         <button id="vFront" title="Клавиша 1">Спереди</button>
         <button id="vSide" title="Клавиша 3">Сбоку</button>
-        <button id="vFree" title="Вращение левой кнопкой">Свободно</button>
+        <button id="vFree" title="Вращение правой кнопкой мыши">Свободно</button>
+        <button id="vFit" title="Вернуть модель в кадр (F)">Вписать</button>
         <button id="xray" title="Alt+Z">Рентген</button>
         <button id="mPose" title="Проверить сгибы на собранной модели">Поза</button>
       </div>
@@ -213,7 +229,10 @@ scene.add(new THREE.HemisphereLight(0xffffff, 0x554433, 1.6));
 const sun = new THREE.DirectionalLight(0xffffff, 1.6); sun.position.set(1, 2, 3); scene.add(sun);
 const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -100, 100);
 const orbit = new OrbitControls(camera, canvas);
-orbit.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.PAN };
+orbit.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE };
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+// rotating with the right button leaves the fixed front/side view
+canvas.addEventListener('pointerdown', (e) => { if (e.button === 2 && view !== 'free') { view = 'free'; refreshAll(); } });
 const tc = new TransformControls(camera, canvas);
 tc.setSpace('world'); tc.setSize(.8); scene.add(tc);
 const handle = new THREE.Object3D(); scene.add(handle);
@@ -510,6 +529,7 @@ function refreshFields() {
 }
 function refreshAll() {
   refreshList(); refreshHint(); refreshFields(); draw(); refreshGuide();
+  $('mLeft').textContent = poseOn ? 'навести и тянуть: согнуть сустав' : S.phase === 'place' ? 'поставить точку (вид спереди)' : 'выбрать узел, тянуть стрелки';
   const w = S.phase === 'edit' ? bendWarnings() : [];
   $('warn').innerHTML = w.length ? w.map((x) => '⚠ ' + x.text).join('<br>') : (S.phase === 'edit' ? 'Сгибы суставов в норме.' : '');
   $('sym').checked = S.sym; $('xray').classList.toggle('on', xray);
@@ -617,10 +637,13 @@ function sync() {
 
 // ---------------------------------------------------------------- view
 function setView(v) {
-  view = v; const c = bbox.getCenter(new THREE.Vector3());
-  if (v === 'front') camera.position.set(c.x, c.y, c.z + 10); else if (v === 'side') camera.position.set(c.x + 10, c.y, c.z);
-  if (v !== 'free') { orbit.target.copy(c); camera.zoom = 1; camera.up.set(0, 1, 0); camera.lookAt(c); }
-  orbit.enableRotate = v === 'free'; orbit.update(); camera.updateProjectionMatrix(); refreshAll();
+  const c = bbox.getCenter(new THREE.Vector3());
+  const dist = H * 4;
+  camera.near = -H * 20; camera.far = H * 20;
+  if (v === 'front') camera.position.set(c.x, c.y, c.z + dist); else if (v === 'side') camera.position.set(c.x + dist, c.y, c.z);
+  else if (v === 'fit') { const dir = camera.position.clone().sub(orbit.target).normalize(); camera.position.copy(c).addScaledVector(dir, dist); v = view; }
+  orbit.target.copy(c); camera.zoom = 1; camera.up.set(0, 1, 0); camera.lookAt(c);
+  view = v; orbit.update(); camera.updateProjectionMatrix(); refreshAll();
 }
 function resize() {
   const w = canvas.clientWidth, h = canvas.clientHeight; if (!w || !h) return;
@@ -667,9 +690,10 @@ addEventListener('keydown', (e) => {
   else if (k === 'r' || k === 'к') { tc.setMode('rotate'); refreshFields(); }
   else if (e.key === 'Escape') select(null);
   else if (e.key === '1') setView('front'); else if (e.key === '3') setView('side');
+  else if (k === 'f' || k === 'а') setView('fit');
   else if (e.altKey && k === 'z') setXray(!xray);
 });
-$('vFront').onclick = () => setView('front'); $('vSide').onclick = () => setView('side'); $('vFree').onclick = () => setView('free');
+$('vFront').onclick = () => setView('front'); $('vSide').onclick = () => setView('side'); $('vFree').onclick = () => setView('free'); $('vFit').onclick = () => setView('fit');
 $('xray').onclick = () => setXray(!xray);
 $('mMove').onclick = () => { tc.setMode('translate'); refreshFields(); };
 $('mRot').onclick = () => { tc.setMode('rotate'); refreshFields(); };
@@ -793,7 +817,7 @@ function poseBend(id, toward, a) {
 function poseReset() { for (const [b, q] of REST) b.quaternion.copy(q); poseRoot.updateMatrixWorld(true); }
 function poseHighlight(info) {
   for (const c of [...poseHelp.children]) { poseHelp.remove(c); if (c.geometry) c.geometry.dispose(); }
-  const id = dragId || hoverId; if (!id || !PINFO[id]) { if (!dragId) $('pInfo').textContent = 'Наведите на руку, ногу, голову или корпус и тяните мышью. Правая кнопка — повернуть камеру.'; $('pInfo').className = 'pinfo'; return; }
+  const id = dragId || hoverId; if (!id || !PINFO[id]) { if (!dragId) $('pInfo').textContent = 'Наведите на руку, ногу, голову или корпус и тяните левой кнопкой.'; $('pInfo').className = 'pinfo'; return; }
   const F = frameNow(id), T = tailWorld(id), len = T.distanceTo(F.j);
   const cyl = new THREE.Mesh(new THREE.CylinderGeometry(.012 * H, .006 * H, len, 10), hlMat);
   cyl.position.copy(F.j).lerp(T, .5); cyl.quaternion.setFromUnitVectors(new V3(0, 1, 0), T.clone().sub(F.j).normalize());
@@ -866,10 +890,9 @@ async function setPose(on) {
   model.visible = !on; jointGroup.visible = fanGroup.visible = !on; if (lines) lines.visible = !on;
   if (poseRoot) { poseRoot.visible = on; skelHelp.visible = on; }
   if (on) tc.detach(); else if (selected) attach();
-  orbit.mouseButtons = on ? { LEFT: null, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE } : { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.PAN };
-  if (on) orbit.enableRotate = true; else orbit.enableRotate = view === 'free';
   $('guide').hidden = on; $('poseBar').hidden = !on; $('mPose').classList.toggle('on', on);
   $('mPose').textContent = on ? 'К разметке' : 'Поза';
+  refreshAll();
   poseHighlight();
 }
 $('mPose').onclick = () => setPose(!poseOn);
