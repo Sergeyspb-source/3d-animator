@@ -49,6 +49,24 @@
   .small { color:var(--muted); font-size:12px; }
   .sync { font:12px var(--mono); }
   .sync.ok { color:var(--ok); }
+  .warn { color:var(--accent); margin-top:6px; }
+  .guide { position:absolute; right:10px; top:8px; width:196px; background:color-mix(in srgb,var(--panel) 92%,transparent);
+    border:1px solid var(--line); border-radius:10px; padding:6px 8px; font-size:12px; }
+  .ghead { display:flex; justify-content:space-between; align-items:center; font:11px var(--mono); letter-spacing:.08em;
+    text-transform:uppercase; color:var(--muted); }
+  .ghead button { padding:0 7px; }
+  .gfig { display:flex; gap:4px; justify-content:center; margin-top:4px; }
+  #gFront { width:92px; height:184px; } #gSide { width:56px; height:184px; }
+  #gImg { display:block; max-width:100%; max-height:280px; margin:4px auto 0; border-radius:6px; }
+  .gtext { margin:4px 0 6px; line-height:1.35; }
+  .gtext b { color:var(--accent); }
+  label.filebtn { border:1px solid var(--line); border-radius:7px; padding:5px 8px; cursor:pointer; }
+  .gb { stroke:color-mix(in srgb,var(--muted) 40%,transparent); stroke-linecap:round; stroke-linejoin:round; fill:none; }
+  .ghd { fill:color-mix(in srgb,var(--muted) 40%,transparent); }
+  .gl { stroke:var(--muted); stroke-width:.8; }
+  .gm { fill:#ff7a2f; } .gd { fill:#3f8fe6; } .ge { fill:#8a8f98; }
+  .gh { fill:none; stroke:#e0a800; stroke-width:2.2; }
+  @media (max-width: 760px) { .guide { width:150px; } #gFront { width:70px; height:140px; } #gSide { width:42px; height:140px; } }
   kbd { font:11px var(--mono); border:1px solid var(--line); border-radius:4px; padding:0 4px; }
 </style>
 </head>
@@ -59,6 +77,15 @@
     <div class="badge" id="badge">вид спереди</div>
     <div class="hint" id="hint" hidden></div>
     <div class="msg" id="msg">Загрузка модели…</div>
+    <div class="guide" id="guide">
+      <div class="ghead"><span>Подсказка</span><button id="gHide" title="Свернуть">−</button></div>
+      <div id="gBody">
+        <div class="gfig" id="gFig"><svg id="gFront" viewBox="0 0 100 200"></svg><svg id="gSide" viewBox="0 0 60 200"></svg></div>
+        <img id="gImg" hidden alt="Своя картинка-референс">
+        <div class="gtext" id="gText"></div>
+        <div class="row"><button id="gScheme">Схема</button><label class="filebtn">Своя картинка<input type="file" id="gFile" accept="image/*" hidden></label></div>
+      </div>
+    </div>
   </div>
   <div class="rail">
     <div class="box">
@@ -77,6 +104,7 @@
     </div>
     <div class="box">
       <div class="grp" id="listTitle">Ориентиры</div>
+      <label class="chk" style="margin-bottom:4px"><input type="checkbox" id="showBends" checked> Сектора сгиба суставов</label>
       <label class="chk" style="margin-bottom:6px"><input type="checkbox" id="sym" checked> Симметрия (правая сторона повторяет левую)</label>
       <div class="list" id="list"></div>
     </div>
@@ -92,6 +120,11 @@
         <span id="punit">Позиция, м</span><input type="number" step="0.005" id="px"><input type="number" step="0.005" id="py"><input type="number" step="0.005" id="pz">
         <span>Поворот, °</span><input type="number" step="1" id="rx"><input type="number" step="1" id="ry"><input type="number" step="1" id="rz">
       </div>
+      <div class="row" id="bendRow" style="margin-top:6px" hidden>
+        <span class="small">Сгиб, °</span><input type="number" step="1" id="bendVal" style="width:72px">
+        <button id="flip" title="Для обратных коленей (гарпии, оборотни на цифровой стопе)">Развернуть сгиб</button>
+      </div>
+      <div class="small" id="bendInfo"></div>
       <div class="small" style="margin-top:6px">Оси как в Blender (Z вверх, −Y вперёд). Перемещение двигает только узел; поворот вращает узел вместе со всеми дочерними.</div>
     </div>
     <div class="box">
@@ -100,6 +133,7 @@
         <button id="rebuild" title="Пересчитать таз, позвоночник, шею, ключицы, бёдра и стопы по ориентирам">Пересчитать производные</button>
         <button id="reset">Начать заново</button>
       </div>
+      <div class="small warn" id="warn"></div>
       <div class="sync" id="sync" style="margin-top:6px"></div>
     </div>
   </div>
@@ -180,7 +214,7 @@ let bbox = new THREE.Box3(), H = 1, cx = 0;
 let worldVerts = new Float32Array(0);
 
 const S = {   // editor state (serialised)
-  phase: 'place', yaw: 0, sym: true, marks: {}, pos: {}, rot: {},
+  phase: 'place', yaw: 0, sym: true, marks: {}, pos: {}, rot: {}, bend: {},
 };
 let current = null;       // landmark being placed
 let selected = null;      // joint selected in edit phase
@@ -272,17 +306,123 @@ function derive() {
   S.rot = {};
 }
 
+// ---------------------------------------------------------------- bend ranges (human anatomy)
+// zero: 'parent' = straight continuation of the parent bone, 'foot' = neutral foot line (down-forward 40°).
+// flex: where the joint bends to; S.bend[id] = -1 flips it (reverse knees of creatures).
+const LIMITS = {
+  forearm: { child: 'hand', zero: 'parent', flex: 'fwd', min: -5, max: 150, what: 'Локоть сгибается вперёд' },
+  leg: { child: 'foot', zero: 'parent', flex: 'back', min: -5, max: 150, what: 'Колено сгибается назад' },
+  hand: { child: 'hand_end', zero: 'parent', flex: 'palm', min: -60, max: 75, what: 'Кисть сгибается к ладони' },
+  foot: { child: 'toe', zero: 'foot', flex: 'up', min: -45, max: 25, what: 'Стопа: носок вверх до 25°, вниз до 45°' },
+};
+const limitOf = (id) => { const m = /^(forearm|leg|hand|foot)_([LR])$/.exec(id || ''); return m ? { ...LIMITS[m[1]], s: m[2] } : null; };
+function hingeFrame(id) {   // z: zero direction, p: bend direction perpendicular to z, angle: current bend in degrees
+  const L = limitOf(id); if (!L || !S.pos[id]) return null;
+  const j = V(S.pos[id]), par = V(S.pos[JMAP[id].parent]), ch = V(S.pos[L.child + '_' + L.s]);
+  const z = L.zero === 'parent' ? j.clone().sub(par).normalize() : new THREE.Vector3(0, -Math.sin(.7), Math.cos(.7));
+  const f = { fwd: new THREE.Vector3(0, 0, 1), back: new THREE.Vector3(0, 0, -1), up: new THREE.Vector3(0, 1, 0),
+              palm: new THREE.Vector3(L.s === 'L' ? -1 : 1, 0, 0) }[L.flex].multiplyScalar(S.bend[id] || 1);
+  const p = f.clone().sub(z.clone().multiplyScalar(f.dot(z)));
+  if (p.lengthSq() < 1e-8) return null; p.normalize();
+  const c = ch.clone().sub(j); const len = c.length(); c.normalize();
+  return { L, j, z, p, len, angle: THREE.MathUtils.radToDeg(Math.atan2(c.dot(p), c.dot(z))) };
+}
+function bendWarnings() {
+  const out = [];
+  for (const jt of JOINTS) {
+    if (S.sym && jt.id.endsWith('_R')) continue;
+    const h = hingeFrame(jt.id); if (!h) continue;
+    if (h.angle < h.L.min - .5 || h.angle > h.L.max + .5)
+      out.push({ id: jt.id, text: `${jt.label}: ${h.angle.toFixed(0)}° — ${h.angle < h.L.min ? 'выгнут против сгиба' : 'согнут сильнее нормы'} (норма ${h.L.min}…${h.L.max}°)` });
+  }
+  return out;
+}
+
+// Reference figure for the guide panel (front: character's left on screen-right; side: facing left)
+const GF = { head_top: [50, 6], head: [50, 32], chin: [50, 30], neck: [50, 40], spine2: [50, 60], spine1: [50, 76], spine: [50, 88],
+  hips: [50, 98], groin: [50, 104], shoulder_L: [56, 45], arm_L: [68, 46], forearm_L: [76, 72], hand_L: [82, 96], hand_end_L: [85, 109],
+  upleg_L: [58, 101], leg_L: [60, 140], foot_L: [61, 178], toe_L: [62, 190], toe_end_L: [62, 195] };
+const GS = { head_top: [27, 6], head: [30, 32], chin: [21, 30], neck: [32, 40], spine2: [34, 60], spine1: [34, 76], spine: [33, 88],
+  hips: [32, 98], groin: [29, 104], shoulder_L: [31, 45], arm_L: [33, 46], forearm_L: [36, 72], hand_L: [31, 96], hand_end_L: [29, 109],
+  upleg_L: [31, 101], leg_L: [27, 140], foot_L: [32, 178], toe_L: [22, 190], toe_end_L: [16, 193] };
+for (const k of Object.keys(GF)) if (k.endsWith('_L')) GF[partner(k)] = [100 - GF[k][0], GF[k][1]];
+const DESC = {
+  chin: 'нижняя точка подбородка (под бородой, если она есть), по центру лица',
+  groin: 'пах — точка между ног, где сходятся бёдра',
+  arm: 'центр плечевого сустава: под округлостью плеча, не на краю',
+  forearm: 'центр локтя, на сгибе руки', hand: 'центр запястья, где кисть переходит в предплечье',
+  leg: 'центр колена, по середине коленной чашечки', foot: 'центр щиколотки, на уровне косточек',
+  hips: 'чуть выше паха, в центре корпуса', spine: 'поясница', spine1: 'середина живота', spine2: 'грудь, под ключицами',
+  neck: 'основание шеи', head: 'основание черепа, на уровне подбородка', head_top: 'макушка',
+  shoulder: 'ключица: начинается у основания шеи', upleg: 'тазобедренный сустав, над серединой бедра',
+  toe: 'подушечка стопы, у основания пальцев', hand_end: 'конец кисти (пальцы — следующим этапом)', toe_end: 'кончик стопы',
+};
+function guideSVG(map, sideOnly, hl) {
+  const use = (id) => map[id] && !(sideOnly && id.endsWith('_R'));
+  const torso = ['neck', 'spine2', 'spine1', 'spine', 'hips'];
+  let s = `<polyline class="gb" stroke-width="${sideOnly ? 16 : 22}" points="${torso.map((k) => map[k].join(',')).join(' ')}"/>`;
+  const hc = sideOnly ? [26, 19] : [50, 18];
+  s += `<circle class="ghd" cx="${hc[0]}" cy="${hc[1]}" r="12"/>`;
+  const seg = (a, b, cls, w) => `<line class="${cls}"${w ? ` stroke-width="${w}"` : ''} x1="${map[a][0]}" y1="${map[a][1]}" x2="${map[b][0]}" y2="${map[b][1]}"/>`;
+  for (const j of JOINTS) if (j.parent && use(j.id) && use(j.parent) && !torso.includes(j.id) && j.id !== 'head' && j.id !== 'head_top')
+    s += seg(j.parent, j.id, 'gb', 7);
+  for (const j of JOINTS) if (j.parent && use(j.id) && use(j.parent)) s += seg(j.parent, j.id, 'gl');
+  const placing = S.phase === 'place';
+  const marks = activeMarks().map((m) => m.id);
+  const ids = placing ? marks.concat(S.sym ? marks.filter((k) => k.endsWith('_L')).map(partner) : []).filter(use)
+                      : JOINTS.map((j) => j.id).filter(use);
+  for (const id of ids) {
+    const cls = MMAP[id] ? 'gm' : JMAP[id] && JMAP[id].end ? 'ge' : 'gd';
+    s += `<circle class="${cls}" cx="${map[id][0]}" cy="${map[id][1]}" r="${placing ? 2.8 : 2.2}"/>`;
+  }
+  let h = hl; if (h && sideOnly && h.endsWith('_R')) h = partner(h);
+  if (h && map[h]) s += `<circle class="gh" cx="${map[h][0]}" cy="${map[h][1]}" r="6"/>`;
+  return s;
+}
+function refreshGuide() {
+  const hl = S.phase === 'place' ? current : selected;
+  $('gFront').innerHTML = guideSVG(GF, false, hl); $('gSide').innerHTML = guideSVG(GS, true, hl);
+  const key = hl ? hl.replace(/_[LR]$/, '') : null;
+  const name = hl ? (MMAP[hl] ? MMAP[hl].label : JMAP[hl].label) : '';
+  $('gText').innerHTML = hl ? `<b>${name}</b>: ${DESC[key] || ''}.` :
+    (S.phase === 'place' ? 'Все ориентиры расставлены.' : 'Выберите узел — он подсветится на схеме. Оранжевые — ориентиры, синие — рассчитанные.');
+}
+
 // ---------------------------------------------------------------- drawing
 const jointGroup = new THREE.Group(); scene.add(jointGroup);
 const sphereGeo = new THREE.SphereGeometry(1, 16, 12);
 const mat = (c) => new THREE.MeshBasicMaterial({ color: c, depthTest: false, transparent: true, opacity: .95 });
-const COL = { mark: mat(0xff7a2f), derived: mat(0x3f8fe6), end: mat(0x8a8f98), sel: mat(0xffd31a), place: mat(0xff7a2f) };
+const COL = { mark: mat(0xff7a2f), derived: mat(0x3f8fe6), end: mat(0x8a8f98), sel: mat(0xffd31a), place: mat(0xff7a2f), bad: mat(0xe5484d) };
+const fanGroup = new THREE.Group(); scene.add(fanGroup);
+const fanMat = (c, o) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: o, depthTest: false, depthWrite: false, side: THREE.DoubleSide });
+const FAN = { ok: fanMat(0x3fbf6a, .3), okSel: fanMat(0x3fbf6a, .45), bad: fanMat(0xe5484d, .16), badSel: fanMat(0xe5484d, .3) };
+function fan(h, a0, a1, r, material) {   // sector at the joint in the bend plane; angles measured from the zero direction
+  const n = Math.max(2, Math.ceil(Math.abs(a1 - a0) / 6)), pos = [h.j.x, h.j.y, h.j.z], idx = [];
+  for (let i = 0; i <= n; i++) {
+    const a = THREE.MathUtils.degToRad(a0 + (a1 - a0) * i / n);
+    const v = h.j.clone().add(h.z.clone().multiplyScalar(Math.cos(a) * r)).add(h.p.clone().multiplyScalar(Math.sin(a) * r));
+    pos.push(v.x, v.y, v.z); if (i) idx.push(0, i, i + 1);
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx);
+  const m = new THREE.Mesh(g, material); m.renderOrder = 997; fanGroup.add(m);
+}
 const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true, opacity: .8 });
 let lines = null; const spheres = {};
 function draw() {
   for (const k in spheres) { jointGroup.remove(spheres[k]); delete spheres[k]; }
   if (lines) { scene.remove(lines); lines.geometry.dispose(); lines = null; }
+  for (const c of [...fanGroup.children]) { fanGroup.remove(c); c.geometry.dispose(); }
   const r = .011 * H;
+  const bad = new Set(S.phase === 'edit' ? bendWarnings().flatMap((w) => [w.id, S.sym ? partner(w.id) : null]) : []);
+  if (S.phase === 'edit') for (const j of JOINTS) {
+    const sel = selected && (j.id === selected || (S.sym && j.id === partner(selected)));
+    if (!$('showBends').checked && !sel) continue;
+    const h = hingeFrame(j.id); if (!h) continue;
+    const rr = h.len * (sel ? .9 : .4);
+    fan(h, h.L.min, h.L.max, rr, sel ? FAN.okSel : FAN.ok);
+    fan(h, h.L.max, Math.min(h.L.max + 50, 180), rr, sel ? FAN.badSel : FAN.bad);
+    fan(h, Math.max(h.L.min - 50, -180), h.L.min, rr, sel ? FAN.badSel : FAN.bad);
+  }
   if (S.phase === 'place') {
     for (const m of MARKS) if (S.marks[m.id]) {
       const s = new THREE.Mesh(sphereGeo, m.id === current ? COL.sel : COL.place); s.scale.setScalar(r);
@@ -292,7 +432,7 @@ function draw() {
     const seg = [];
     for (const j of JOINTS) {
       const p = V(S.pos[j.id]);
-      const s = new THREE.Mesh(sphereGeo, j.id === selected ? COL.sel : j.end ? COL.end : MMAP[j.id] ? COL.mark : COL.derived);
+      const s = new THREE.Mesh(sphereGeo, j.id === selected ? COL.sel : bad.has(j.id) ? COL.bad : j.end ? COL.end : MMAP[j.id] ? COL.mark : COL.derived);
       s.scale.setScalar(j.end ? r * .7 : r); s.position.copy(p); s.renderOrder = 999; s.userData.id = j.id;
       jointGroup.add(s); spheres[j.id] = s;
       if (j.parent) seg.push(...S.pos[j.parent], ...S.pos[j.id]);
@@ -341,6 +481,10 @@ function refreshFields() {
   $('selName').textContent = on ? JMAP[selected].label + (S.sym && partner(selected) ? ' (симметрично)' : '') :
     (S.phase === 'place' ? 'Сначала расставьте ориентиры.' : 'Ничего не выбрано. Кликните по узлу.');
   $('mMove').classList.toggle('on', tc.getMode() === 'translate'); $('mRot').classList.toggle('on', tc.getMode() === 'rotate');
+  const hf = on ? hingeFrame(selected) : null;
+  $('bendRow').hidden = !hf;
+  $('bendInfo').textContent = hf ? `${hf.L.what}: норма ${hf.L.min}…${hf.L.max}°. Зелёный сектор — куда сустав гнётся, красный — куда нет.` : '';
+  if (hf) $('bendVal').value = hf.angle.toFixed(0);
   if (!on) { for (const k of ids) $(k).value = ''; return; }
   const b = toB(V(S.pos[selected]));
   $('px').value = b.x.toFixed(3); $('py').value = b.y.toFixed(3); $('pz').value = b.z.toFixed(3);
@@ -349,7 +493,9 @@ function refreshFields() {
   $('rz').value = THREE.MathUtils.radToDeg(e.z).toFixed(1);
 }
 function refreshAll() {
-  refreshList(); refreshHint(); refreshFields(); draw();
+  refreshList(); refreshHint(); refreshFields(); draw(); refreshGuide();
+  const w = S.phase === 'edit' ? bendWarnings() : [];
+  $('warn').innerHTML = w.length ? w.map((x) => '⚠ ' + x.text).join('<br>') : (S.phase === 'edit' ? 'Сгибы суставов в норме.' : '');
   $('sym').checked = S.sym; $('xray').classList.toggle('on', xray);
   $('yawTxt').textContent = S.yaw ? `модель повёрнута на ${S.yaw}°` : '';
   $('rebuild').disabled = S.phase !== 'edit'; $('undo').disabled = !undoStack.length;
@@ -439,7 +585,7 @@ function sync() {
     const el = $('sync');
     if (S.phase !== 'edit') { el.textContent = 'Разметка ещё не закончена.'; el.className = 'sync'; return; }
     const out = { version: 1, source: DATA.source, yaw: S.yaw, sym: S.sym, height: +H.toFixed(4), center_x: +cx.toFixed(5),
-                  marks: S.marks, joints: S.pos, rot: S.rot, parents: Object.fromEntries(JOINTS.map((j) => [j.id, j.parent])),
+                  marks: S.marks, joints: S.pos, rot: S.rot, bend: S.bend, parents: Object.fromEntries(JOINTS.map((j) => [j.id, j.parent])),
                   ends: JOINTS.filter((j) => j.end).map((j) => j.id) };
     const text = JSON.stringify(out);
     try {
@@ -535,6 +681,27 @@ const turn = (d) => {
 };
 $('yawL').onclick = () => turn(90); $('yawR').onclick = () => turn(-90);
 
+$('showBends').onchange = () => draw();
+$('bendVal').addEventListener('change', () => {
+  const h = selected && hingeFrame(selected); if (!h) return;
+  const delta = (parseFloat($('bendVal').value) || 0) - h.angle; if (Math.abs(delta) < 1e-3) return;
+  pushUndo();
+  const axis = h.z.clone().cross(h.p).normalize();       // rotation about z×p swings the child from z toward p
+  rotateSubtree(selected, new THREE.Quaternion().setFromAxisAngle(axis, THREE.MathUtils.degToRad(delta)), JSON.parse(snap()));
+  attach(); refreshAll(); sync();
+});
+$('flip').onclick = () => {
+  if (!selected) return; pushUndo();
+  for (const id of [selected, S.sym ? partner(selected) : null]) if (id) S.bend[id] = -(S.bend[id] || 1);
+  refreshAll(); sync();
+};
+$('gHide').onclick = () => { const b = $('gBody'); b.hidden = !b.hidden; $('gHide').textContent = b.hidden ? '+' : '−'; };
+$('gScheme').onclick = () => { $('gFig').hidden = false; $('gImg').hidden = true; };
+$('gFile').onchange = (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  $('gImg').src = URL.createObjectURL(f); $('gImg').hidden = false; $('gFig').hidden = true;
+};
+
 // ---------------------------------------------------------------- start
 (async () => {
   try {
@@ -545,7 +712,7 @@ $('yawL').onclick = () => turn(90); $('yawR').onclick = () => turn(-90);
     gltf.scene.traverse((o) => { if (o.isMesh) { meshes.push(o); for (const mt of [].concat(o.material)) mt.side = THREE.DoubleSide; } });
     if (DATA.state && DATA.state.joints) {
       Object.assign(S, { phase: 'edit', yaw: DATA.state.yaw || 0, sym: DATA.state.sym !== false, marks: DATA.state.marks || {},
-                         pos: DATA.state.joints, rot: DATA.state.rot || {} });
+                         pos: DATA.state.joints, rot: DATA.state.rot || {}, bend: DATA.state.bend || {} });
       cx = DATA.state.center_x || 0;
     }
     applyYaw(); $('msg').hidden = true;
