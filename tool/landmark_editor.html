@@ -143,6 +143,7 @@
       <div class="grp" id="listTitle">Ориентиры</div>
       <div class="row" id="fRow" style="margin-bottom:6px" hidden>
         <button id="fStart" title="Камера подъедет к кисти; кликайте кончики пальцев">Разметить пальцы</button>
+        <label class="chk" title="Два клика на палец: кончик и костяшка; точнее на необычных кистях"><input type="checkbox" id="fBase"> и основания</label>
         <button id="fClear">Убрать пальцы</button>
       </div>
       <label class="chk" style="margin-bottom:4px"><input type="checkbox" id="showBends" checked> Сектора сгиба суставов</label>
@@ -506,7 +507,7 @@ function draw() {
     fan(h, h.L.max, Math.min(h.L.max + 50, 180), rr, sel ? FAN.badSel : FAN.bad);
     fan(h, Math.max(h.L.min - 50, -180), h.L.min, rr, sel ? FAN.badSel : FAN.bad);
   }
-  if (fingerMode) for (const [k, v] of Object.entries(S.fmarks)) if (v) {
+  if (fingerMode) for (const [k, v] of Object.entries(S.fmarks)) if (v && k.includes('_' + fingerMode.side)) {
     const s = new THREE.Mesh(sphereGeo, k === fingerMode.cur ? COL.sel : COL.place); s.scale.setScalar(r * .5);
     s.position.copy(V(v)); s.renderOrder = 999; jointGroup.add(s); spheres['fm_' + k] = s;
   }
@@ -550,10 +551,12 @@ function refreshList() {
         const row = document.createElement('div'); row.className = 'row';
         const b = document.createElement('button'); b.className = 'item' + (v ? ' done' : '') + (id === fingerMode.cur ? ' cur' : '');
         b.style.flex = '1';
-        b.innerHTML = `<span>Кончик ${FN_GEN[f]}${f === 'pinky' ? '' : ' пальца'}</span><span class="st">${v ? 'готово' : v === null ? 'нет' : '—'}</span>`;
+        const bv = S.fmarks[id + '_base'];
+        const st = v === null ? 'нет' : (v ? 'кончик ✓' : '—') + (fingerMode.base ? (bv ? ' · осн. ✓' : ' · осн. —') : '');
+        b.innerHTML = `<span>${FN[f]}${f === 'pinky' ? '' : ' палец'}</span><span class="st">${st}</span>`;
         b.onclick = () => { fingerMode.cur = id; refreshAll(); };
         const no = document.createElement('button'); no.textContent = 'нет'; no.title = 'У персонажа нет этого пальца';
-        no.onclick = () => { S.fmarks[id] = null; nextFinger(); };
+        no.onclick = () => { S.fmarks[id] = null; if (fingerMode.base) S.fmarks[id + '_base'] = null; nextFinger(); };
         row.append(b, no); list.appendChild(row);
       }
       const done = document.createElement('button'); done.textContent = 'Отмена'; done.onclick = () => { fingerMode = null; refreshAll(); };
@@ -573,8 +576,8 @@ function refreshList() {
 function refreshHint() {
   const h = $('hint');
   if (fingerMode && fingerMode.cur) {
-    const f = fingerMode.cur.split('_')[0];
-    h.hidden = false; h.textContent = `Кликните кончик ${FN_GEN[f]}${f === 'pinky' ? '' : ' пальца'} (${fingerMode.side === 'L' ? 'левая' : 'правая'} кисть)`;
+    const f = fingerMode.cur.split('_')[0], what = fingerMode.cur.endsWith('_base') ? 'основание (костяшку)' : 'кончик';
+    h.hidden = false; h.textContent = `Кликните ${what} ${FN_GEN[f]}${f === 'pinky' ? '' : ' пальца'} (${fingerMode.side === 'L' ? 'левая' : 'правая'} кисть)`;
   } else if (S.phase === 'place' && !poseOn) {
     const m = current ? MMAP[current] : null;
     h.hidden = !m; if (m) h.textContent = (S.marks[m.id] ? 'Переставить: ' : 'Кликните: ') + m.label;
@@ -719,15 +722,16 @@ function handView(side) {
   orbit.target.copy(c); camera.lookAt(c); camera.zoom = (H * 1.2) / len;
   camera.updateProjectionMatrix(); orbit.update(); view = 'free'; refreshAll();
 }
+const fingerKeys = (side) => FINGERS.flatMap((f) => (fingerMode && fingerMode.base ? [`${f}_${side}`, `${f}_${side}_base`] : [`${f}_${side}`]));
 function startFingers(side) {
   if (S.phase !== 'edit') return;
-  fingerMode = { side, cur: `thumb_${side}` }; select(null); handView(side); refreshAll();
+  fingerMode = { side, cur: `thumb_${side}`, base: $('fBase').checked }; select(null); handView(side); refreshAll();
 }
 function nextFinger() {
-  const s = fingerMode.side, left = FINGERS.map((f) => `${f}_${s}`).find((k) => S.fmarks[k] === undefined);
+  const s = fingerMode.side, left = fingerKeys(s).find((k) => S.fmarks[k] === undefined);
   if (left) { fingerMode.cur = left; refreshAll(); return; }
   pushUndo(); deriveFingers(s);
-  if (!S.sym && s === 'L' && FINGERS.some((f) => S.fmarks[`${f}_R`] === undefined)) { fingerMode = null; startFingers('R'); return; }
+  if (!S.sym && s === 'L' && FINGERS.some((f) => S.fmarks[`${f}_R`] === undefined)) { const b = fingerMode.base; fingerMode = null; startFingers('R'); fingerMode.base = b; return; }
   fingerMode = null; refreshAll(); sync();
 }
 // depth along the view ray: middle of the first body part the ray goes through
@@ -741,29 +745,104 @@ function placeFinger(n) {
   const p = hitAlongView(n);
   if (!p) { $('hint').textContent = 'Мимо модели: кликните точно по кончику пальца'; return; }
   pushUndo(); S.fmarks[fingerMode.cur] = arr(p);
-  for (const f of FINGERS) if (S.fmarks[`${f}_${fingerMode.side}`] === undefined && `${f}_${fingerMode.side}` !== fingerMode.cur) { fingerMode.cur = `${f}_${fingerMode.side}`; break; }
-  if (FINGERS.every((f) => S.fmarks[`${f}_${fingerMode.side}`] !== undefined)) nextFinger(); else refreshAll();
+  nextFinger();
 }
-// joints along the wrist→tip line with human proportions; the right hand mirrors the left when symmetric
+// ---- finger centreline: cross-sections along the finger, each centred between the mesh walls
+// (pairs of opposite rays = a circle through two surface points; the bone goes through its centre)
+function handTarget(s, R) {   // triangles around the hand only, so the rays stay fast
+  const W = V(S.pos['hand_' + s]), pos = [], a = new V3(), b = new V3(), c = new V3();
+  for (const m of meshes) {
+    const g = m.geometry, idx = g.index, n = idx ? idx.count : g.attributes.position.count;
+    for (let i = 0; i < n; i += 3) {
+      const ia = idx ? idx.getX(i) : i, ib = idx ? idx.getX(i + 1) : i + 1, ic = idx ? idx.getX(i + 2) : i + 2;
+      m.getVertexPosition(ia, a).applyMatrix4(m.matrixWorld); m.getVertexPosition(ib, b).applyMatrix4(m.matrixWorld);
+      m.getVertexPosition(ic, c).applyMatrix4(m.matrixWorld);
+      if (a.distanceTo(W) < R || b.distanceTo(W) < R || c.distanceTo(W) < R) pos.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+    }
+  }
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })); mesh.updateMatrixWorld(true);
+  return mesh;
+}
+const fray = new THREE.Raycaster();
+function wallDist(target, o, dir, maxR) {
+  fray.set(o, dir); fray.far = maxR;
+  const h = fray.intersectObject(target, false).find((x) => x.distance > 1e-7 * H);
+  return h ? h.distance : null;
+}
+function crossSection(target, q, d, maxR) {   // centre q inside the finger in the plane perpendicular to d
+  let u = Math.abs(d.y) < .9 ? new V3(0, 1, 0) : new V3(1, 0, 0);
+  u = u.sub(d.clone().multiplyScalar(u.dot(d))).normalize(); const v = d.clone().cross(u).normalize();
+  let c = q.clone(), r = [], pairs = 0;
+  for (let it = 0; it < 2; it++) {
+    const off = new V3(); pairs = 0; r = [];
+    for (let k = 0; k < 4; k++) {
+      const ang = k * Math.PI / 4, e = u.clone().multiplyScalar(Math.cos(ang)).add(v.clone().multiplyScalar(Math.sin(ang)));
+      const a = wallDist(target, c, e, maxR), b = wallDist(target, c, e.clone().negate(), maxR);
+      r.push(a ?? maxR, b ?? maxR);
+      if (a != null && b != null) { off.addScaledVector(e, (a - b) / 2); pairs++; }
+    }
+    if (pairs < 2) break;
+    c.add(off.multiplyScalar(1 / pairs));
+  }
+  return { c, ok: pairs >= 2, rmax: Math.max(...r), rmed: r.slice().sort((x, y) => x - y)[3] };
+}
+// walk from the tip toward the base; stop at the base, or where the section widens into the palm
+function traceFinger(target, T, K0, knownBase) {
+  const len = T.distanceTo(K0), steps = 12, step = len / steps, maxR = len * .45;
+  const pts = [T.clone()], widths = [];
+  let p = T.clone(), d = K0.clone().sub(T).normalize(), web = null;
+  for (let i = 1; i <= (knownBase ? steps - 1 : steps * 1.5); i++) {
+    const q = knownBase ? T.clone().lerp(K0, i / steps) : p.clone().addScaledVector(d, step);
+    if (knownBase) d = K0.clone().sub(q).normalize();
+    const cs = crossSection(target, q, d, maxR);
+    if (!cs.ok) break;
+    if (!knownBase && widths.length >= 3) {
+      const ref = widths.slice(0, 3).sort((x, y) => x - y)[1];
+      if (cs.rmax > ref * 2.4) { web = cs.c; break; }   // the section opens into the palm
+    }
+    widths.push(cs.rmed);
+    d = cs.c.clone().sub(p).normalize().lerp(d, .3).normalize(); p = cs.c; pts.push(p.clone());
+  }
+  return { pts, web, dir: d };
+}
+function along(pts, u) {   // point at arc-length fraction u of a polyline
+  const L = []; let tot = 0; for (let i = 1; i < pts.length; i++) { tot += pts[i].distanceTo(pts[i - 1]); L.push(tot); }
+  const want = u * tot; let i = 0; while (i < L.length - 1 && L[i] < want) i++;
+  const s0 = i ? L[i - 1] : 0, seg = (L[i] - s0) || 1;
+  return pts[i].clone().lerp(pts[i + 1], (want - s0) / seg);
+}
+// joints along the fitted centreline with human proportions; the right hand mirrors the left when symmetric
 function deriveFingers(s) {
   const W = V(S.pos['hand_' + s]);
   for (const k of Object.keys(S.pos)) if (FINGER_RE.test(k) && k.endsWith('_' + s)) delete S.pos[k];
+  const tips = FINGERS.map((f) => S.fmarks[`${f}_${s}`]).filter(Boolean).map(V);
+  const target = tips.length ? handTarget(s, Math.max(...tips.map((t) => t.distanceTo(W))) * 1.4) : null;
   for (const f of FINGERS) {
     const t = S.fmarks[`${f}_${s}`]; if (!t) continue;
-    const T = V(t), at = (a, b, u) => a.clone().lerp(b, u);
-    const pts = f === 'thumb' ? [at(W, T, .2), at(W, T, .5), at(W, T, .77), T]
-                              : (() => { const K = at(W, T, .47); return [K, at(K, T, .5), at(K, T, .78), T]; })();
+    const T = V(t), bm = S.fmarks[`${f}_${s}_base`], at = (a, b, u) => a.clone().lerp(b, u);
+    const K0 = bm ? V(bm) : at(W, T, f === 'thumb' ? .5 : .47);
+    const tr = traceFinger(target, T, K0, !!bm);
+    let K = K0;
+    if (!bm && tr.web) {   // the knuckle sits a bit deeper than the web between the fingers
+      const vis = along([...tr.pts].reverse(), 0).distanceTo(T);
+      K = tr.web.clone().addScaledVector(tr.dir, (f === 'thumb' ? .1 : .3) * Math.max(vis, T.distanceTo(tr.web)));
+    } else if (!bm && tr.pts.length > 2) K = K0;
+    const curve = [K, ...(tr.web ? [tr.web] : []), ...tr.pts.slice(1).reverse(), T];
+    const pts = f === 'thumb' ? [W.clone().lerp(K, .4), K, along(curve, .55), T]
+                              : [K, along(curve, .5), along(curve, .78), T];
     pts.forEach((v, i) => { S.pos[`${f}${i + 1}_${s}`] = arr(v); });
   }
+  if (target) target.geometry.dispose();
   if (S.pos['middle1_' + s]) S.pos['hand_end_' + s] = S.pos['middle1_' + s];
   if (S.sym && s === 'L') {
     for (const k of Object.keys(S.pos)) if (FINGER_RE.test(k) && k.endsWith('_R')) delete S.pos[k];
     for (const k of Object.keys(S.pos)) if ((FINGER_RE.test(k) || k === 'hand_end_L') && k.endsWith('_L')) S.pos[partner(k)] = arr(mirror(V(S.pos[k])));
-    for (const f of FINGERS) S.fmarks[`${f}_R`] = S.fmarks[`${f}_L`] ? arr(mirror(V(S.fmarks[`${f}_L`]))) : S.fmarks[`${f}_L`];
+    for (const k of Object.keys(S.fmarks)) if (k.includes('_L')) { const r = k.replace('_L', '_R'); S.fmarks[r] = S.fmarks[k] ? arr(mirror(V(S.fmarks[k]))) : S.fmarks[k]; }
   }
 }
 $('fStart').onclick = () => {
-  for (const f of FINGERS) for (const s of SIDES) delete S.fmarks[`${f}_${s}`];
+  S.fmarks = {};
   startFingers('L');
 };
 $('fClear').onclick = () => {
