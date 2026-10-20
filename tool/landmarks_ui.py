@@ -42,6 +42,17 @@ def mount(config_loader, asset, upload):
             ref_file = gr.File(label="Посмотреть готовую модель со скелетом: FBX (Mixamo, With Skin) или GLB",
                                file_types=[".fbx", ".glb"], type="filepath", scale=3)
             ref_btn = gr.Button("Открыть в просмотре: кости, веса, анимация", scale=1)
+        with gr.Accordion("Липсинк реплики (для модели с ртом для речи)", open=False):
+            gr.Markdown("Аудио реплики + её точный текст (из субтитров: Whisper путает имена) → клип `<имя>.face.json` "
+                        "рядом с моделью. В игре его проигрывает `FaceCurvesPlayer`; здесь — кнопка «▶ Реплика» в режиме "
+                        "«Поза». Инструменты берутся из игрового проекта (`lipsync_skills_dir` в config.json).")
+            with gr.Row():
+                ls_audio = gr.File(label="Голос (mp3, wav, ogg)", file_types=[".mp3", ".wav", ".ogg"], type="filepath")
+                with gr.Column():
+                    ls_text = gr.Textbox(label="Точный текст реплики (пусто — как услышит Whisper)", lines=2)
+                    ls_lang = gr.Radio(["ru", "en"], value="ru", label="Язык")
+                    ls_btn = gr.Button("Сделать клип липсинка")
+            ls_log = gr.Textbox(label="Липсинк: ход работы", lines=5, interactive=False)
         go = gr.Button("Построить скелет и веса по разметке (около минуты, без видеокарты)", variant="primary")
         with gr.Row():
             with gr.Column():
@@ -90,7 +101,34 @@ def mount(config_loader, asset, upload):
                 return f'<div style="padding:16px">Не удалось открыть: {_html.escape(str(e))}</div>'
             return _frame(LM.editor_page(glb, None, glb, mode="view"))
 
+        def lipsync(up, name, audio, text, lang, state_text):
+            import lipsync_link as LL
+            cfg = config_loader()
+            src = LM.source_path(up, name, cfg["export_dir"])
+            if not src or not src.exists() or not audio:
+                yield "Нужны модель (блок «1. Модель») и аудио.", gr.update()
+                return
+            rigged = LM.output_paths(src, cfg["export_dir"])[0]
+            if not rigged.exists():
+                yield "Сначала соберите скелет по разметке (с лицом и «Рот для речи»).", gr.update()
+                return
+            lines = []
+            try:
+                for step in LL.make_clip(Path(audio), text.strip(), lang, rigged, cfg):
+                    if isinstance(step, dict):
+                        lines.append(f"Готово: {step['clip']}. Откройте «Поза» → «▶ Реплика».")
+                        yield "\n".join(lines), _frame(LM.editor_page(
+                            src, LM.initial_state(src, cfg["export_dir"], state_text), rigged, mode="pose"))
+                    else:
+                        lines.append(step)
+                        yield "\n".join(lines), gr.update()
+            except Exception as e:
+                lines.append("Ошибка: " + str(e))
+                yield "\n".join(lines), gr.update()
+
         open_btn.click(open_editor, [upload, asset, data], editor)
+        ls_btn.click(lipsync, [upload, asset, ls_audio, ls_text, ls_lang, data], [ls_log, editor], concurrency_id="lipsync",
+                     concurrency_limit=1)
         ref_btn.click(open_view, ref_file, editor)
         go.click(run, [upload, asset, data, naming, weld, mouth], [log, view, files, shots, editor], concurrency_id="landmark_rig",
                  concurrency_limit=1)

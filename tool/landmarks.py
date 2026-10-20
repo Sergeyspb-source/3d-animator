@@ -88,7 +88,8 @@ def editor_page(src: Path, state: dict | None, rigged: Path | None = None, mode:
     data = {"state": state, "target": TARGET_ID, "source": str(src), "mode": mode,
             "rigged": Path(rigged).resolve().as_posix() if rigged and Path(rigged).exists() else None,
             "rigged_v": int(Path(rigged).stat().st_mtime) if rigged and Path(rigged).exists() else 0,
-            "names": {"mixamo": bone_names("mixamo"), "godot": bone_names("godot")}}
+            "names": {"mixamo": bone_names("mixamo"), "godot": bone_names("godot")},
+            "clips": face_clips(rigged) if rigged and Path(rigged).exists() else []}
     # </script> inside JSON would end the tag early
     return (page.replace("@@DATA@@", json.dumps(data, ensure_ascii=False).replace("</", "<\\/"))
                 .replace("@@GLB@@", base64.b64encode(src.read_bytes()).decode("ascii")))
@@ -114,6 +115,17 @@ def viewable(src: Path, cfg) -> tuple[Path, dict]:
     if not info["meshes"]:
         raise RuntimeError("В FBX только скелет и анимация, модели нет. В Mixamo скачайте с параметром With Skin.")
     return dst, info
+
+
+def face_clips(rigged: Path):
+    """Lip-sync clips next to a built model: <stem>.face.json with its audio <stem>.(mp3|wav|ogg)."""
+    out = []
+    for f in sorted(Path(rigged).parent.glob("*.face.json")):
+        stem = f.name[:-len(".face.json")]
+        audio = next((f.with_name(stem + e) for e in (".mp3", ".wav", ".ogg") if f.with_name(stem + e).exists()), None)
+        if audio:
+            out.append({"name": stem, "clip": f.resolve().as_posix(), "audio": audio.resolve().as_posix()})
+    return out
 
 
 def initial_state(src: Path, export_dir, textbox: str):

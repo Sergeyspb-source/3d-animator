@@ -106,6 +106,7 @@
     <div class="msg" id="msg">Загрузка модели…</div>
     <div class="posebar" id="poseBar" hidden>
       <button id="pReset">Сбросить позу</button><button id="pCheck">Поза проверки</button><button id="pSquat">Присед</button><button id="pFist">Кулак</button><button id="pJaw">Открыть рот</button>
+      <select id="pClipFace" hidden title="Реплики липсинка рядом с моделью"></select><button id="pSay" hidden>▶ Реплика</button>
       <select id="pMorph" hidden title="Ключи формы модели (рот для речи)"></select><input type="range" id="pMorphV" min="0" max="1" step="0.01" value="0" hidden style="width:110px">
       <button id="pWeights" title="Раскрасить модель по весам кости под курсором (как Weight Paint в Blender)">Веса</button>
       <span class="legend" id="pLegend" hidden>0 <i></i> 1</span>
@@ -1100,6 +1101,10 @@ async function loadRigged() {
     PINFO[id] = info;
   }
   posGetter = keepGetter;
+  if ((DATA.clips || []).length) {
+    $('pClipFace').innerHTML = DATA.clips.map((c, i) => `<option value="${i}">${c.name}</option>`).join('');
+    $('pClipFace').hidden = DATA.clips.length < 2; $('pSay').hidden = false;
+  }
   const morphs = new Set();
   for (const m of poseMeshes) if (m.morphTargetDictionary) for (const k of Object.keys(m.morphTargetDictionary)) morphs.add(k);
   if (morphs.size) {
@@ -1289,6 +1294,24 @@ function setHinge(id, a) {
   const i = PINFO[id]; if (!i || !i.hinge) return;
   const F = frameNow(id); aimBone(id, F.z.clone().multiplyScalar(Math.cos(rad(a))).add(F.p.clone().multiplyScalar(Math.sin(rad(a)))));
 }
+// ---- lip-sync clip playback: the audio drives the frame, the curves drive the shape keys
+let say = null;   // { audio, clip }
+const fileUrl = (p) => new URL('/file=' + p, window.parent.location.href).href;
+async function playLine() {
+  if (say) { say.audio.pause(); say = null; $('pSay').textContent = '▶ Реплика'; for (const m of poseMeshes) if (m.morphTargetInfluences) m.morphTargetInfluences.fill(0); return; }
+  const c = DATA.clips[+$('pClipFace').value || 0];
+  const clip = await (await fetch(fileUrl(c.clip))).json();
+  const audio = new Audio(fileUrl(c.audio));
+  say = { audio, clip }; $('pSay').textContent = '■ Стоп';
+  audio.onended = () => { if (say && say.audio === audio) playLine(); };
+  await audio.play();
+}
+function sayFrame() {
+  if (!say) return;
+  const { clip, audio } = say, f = Math.max(0, Math.min(clip.frames - 1, Math.round((audio.currentTime + clip.lead_in) * clip.fps)));
+  for (const [k, arr] of Object.entries(clip.curves)) setMorph(k, arr[f]);
+}
+$('pSay').onclick = () => playLine();
 function setMorph(name, v) {
   for (const m of poseMeshes) if (m.morphTargetDictionary && name in m.morphTargetDictionary) m.morphTargetInfluences[m.morphTargetDictionary[name]] = v;
 }
@@ -1332,6 +1355,7 @@ new ResizeObserver(resize).observe(canvas);
 renderer.setAnimationLoop(() => {
   const dt = clock.getDelta();
   if (mixer && playing && poseOn) { mixer.update(dt); if (hoverId) poseHighlight(); }
+  if (poseOn) sayFrame();
   renderer.render(scene, camera);
 });
 </script>
