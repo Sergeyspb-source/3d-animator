@@ -20,6 +20,7 @@ import materials as MT  # noqa: E402
 import sf3d_tool as T  # noqa: E402  (заодно добавляет sf3d-src в sys.path)
 import rwt_ui  # GPT: Mount isolated weight repair without extending rig generation.
 import landmarks_ui  # hand-placed landmark skeleton (Mixamo-like)
+import face_parts_ui  # procedural eyes, teeth, tongue
 PORT = 7861
 _state = {"model": None, "rembg": None, "on_gpu": False}
 
@@ -2109,6 +2110,7 @@ def build():
                         jaw_gallery = gr.Gallery(label="Челюсть: закрыта и открыта", columns=4, height=220)
                 creature_state = gr.State(None)
                 landmarks_ui.mount(T.load_config, rig_asset, rig_upload)
+                face_parts_ui.mount(T.load_config)
                 rwt_ui.mount(T.load_config)  # GPT: Optional repair retains the skeleton.
             # ---------------------------------------------------------------- humanoid animation library
             with gr.Tab("Анимации (человекоподобные)", id="hanim"):
