@@ -34,6 +34,10 @@ def mount(config_loader, asset, upload):
         editor = gr.HTML()
         data = gr.Textbox(label="Разметка (заполняется редактором автоматически; можно вставить сохранённую)",
                           lines=2, max_lines=4, elem_id=LM.TARGET_ID)
+        with gr.Row():
+            ref_file = gr.File(label="Посмотреть готовую модель со скелетом: FBX (Mixamo, With Skin) или GLB",
+                               file_types=[".fbx", ".glb"], type="filepath", scale=3)
+            ref_btn = gr.Button("Открыть в просмотре: кости, веса, анимация", scale=1)
         go = gr.Button("Построить скелет и веса по разметке (около минуты, без видеокарты)", variant="primary")
         with gr.Row():
             with gr.Column():
@@ -73,6 +77,16 @@ def mount(config_loader, asset, upload):
                 lines.append("Ошибка: " + str(e))
                 yield "\n".join(lines), None, None, None, gr.update()
 
+        def open_view(path):
+            if not path:
+                return '<div style="padding:16px">Загрузите FBX или GLB со скелетом.</div>'
+            try:
+                glb, info = LM.viewable(Path(path), config_loader())
+            except Exception as e:
+                return f'<div style="padding:16px">Не удалось открыть: {_html.escape(str(e))}</div>'
+            return _frame(LM.editor_page(glb, None, glb, mode="view"))
+
         open_btn.click(open_editor, [upload, asset, data], editor)
+        ref_btn.click(open_view, ref_file, editor)
         go.click(run, [upload, asset, data, naming, weld], [log, view, files, shots, editor], concurrency_id="landmark_rig",
                  concurrency_limit=1)

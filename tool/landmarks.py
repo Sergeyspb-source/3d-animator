@@ -83,6 +83,28 @@ def editor_page(src: Path, state: dict | None, rigged: Path | None = None, mode:
                 .replace("@@GLB@@", base64.b64encode(src.read_bytes()).decode("ascii")))
 
 
+def viewable(src: Path, cfg) -> tuple[Path, dict]:
+    """Copy a rigged GLB, or convert a rigged FBX with Blender, into work_dir/rig_view so the browser viewer can
+    fetch it through Gradio's /file= route (work_dir is an allowed path). Returns (glb, summary)."""
+    out_dir = Path(cfg["work_dir"]) / "rig_view"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    dst = out_dir / (re.sub(r"[^\w.-]+", "_", src.stem) + "_" + datetime.now().strftime("%H%M%S") + ".glb")
+    if src.suffix.lower() == ".glb":
+        dst.write_bytes(src.read_bytes())
+        return dst, {}
+    blender = cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe"
+    r = subprocess.run([blender, "-b", "--factory-startup", "-P", str(ROOT / "blender_fbx_to_glb.py"), "--", str(src), str(dst)],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    line = next((x for x in r.stdout.splitlines() if x.startswith("FBX2GLB_OK")), None)
+    if line is None:
+        raise RuntimeError("Blender не прочитал FBX:\n" + (r.stdout + r.stderr)[-1500:])
+    info = json.loads(line.split(" ", 1)[1])
+    if not info["meshes"]:
+        raise RuntimeError("В FBX только скелет и анимация, модели нет. В Mixamo скачайте с параметром With Skin.")
+    return dst, info
+
+
 def initial_state(src: Path, export_dir, textbox: str):
     """Editor start state: unsaved edits for the same model, else the saved landmarks next to the export."""
     try:

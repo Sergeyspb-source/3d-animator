@@ -71,12 +71,18 @@
     pointer-events:none; }
   .posebar > * { pointer-events:auto; }
   .posebar button { background:var(--panel); }
+  .posebar button.on { background:var(--accent); color:var(--accent-fg); }
   .pinfo { background:color-mix(in srgb,var(--panel) 90%,transparent); border-radius:6px; padding:4px 8px; font:12px var(--mono); }
   .pinfo.stop { color:#e5484d; }
   .mouse { position:absolute; left:10px; top:36px; display:flex; gap:8px; align-items:center; pointer-events:none;
     background:color-mix(in srgb,var(--panel) 88%,transparent); border-radius:8px; padding:5px 8px; font-size:12px; line-height:1.35; }
   .mouse svg { width:24px; height:36px; flex:none; }
   .mouse .l { color:#d9622f; font-weight:600; } .mouse .r { color:#3f8fe6; font-weight:600; } .mouse .w { color:var(--muted); font-weight:600; }
+  body.viewonly .rail > .box:not(:first-child), body.viewonly #mPose, body.viewonly #yawL, body.viewonly #yawR { display:none; }
+  .posebar select { font:inherit; color:var(--fg); background:var(--panel); border:1px solid var(--line); border-radius:7px; padding:5px 6px; max-width:180px; }
+  .legend { display:inline-flex; align-items:center; gap:4px; font:11px var(--mono); }
+  .legend i { display:inline-block; width:70px; height:8px; border-radius:4px;
+    background:linear-gradient(90deg,#1a33cc,#19c2c2,#2fbf3a,#e8d21d,#e5484d); }
   kbd { font:11px var(--mono); border:1px solid var(--line); border-radius:4px; padding:0 4px; }
 </style>
 </head>
@@ -100,6 +106,9 @@
     <div class="msg" id="msg">Загрузка модели…</div>
     <div class="posebar" id="poseBar" hidden>
       <button id="pReset">Сбросить позу</button><button id="pCheck">Поза проверки</button><button id="pSquat">Присед</button>
+      <button id="pWeights" title="Раскрасить модель по весам кости под курсором (как Weight Paint в Blender)">Веса</button>
+      <span class="legend" id="pLegend" hidden>0 <i></i> 1</span>
+      <select id="pClip" hidden></select><button id="pPlay" hidden>▶ Анимация</button>
       <span class="pinfo" id="pInfo">Наведите на руку, ногу, голову или корпус и тяните левой кнопкой.</span>
     </div>
     <div class="guide" id="guide">
@@ -254,10 +263,11 @@ const undoStack = [];
 // ---------------------------------------------------------------- helpers
 function measure() {
   model.updateMatrixWorld(true);
-  bbox = new THREE.Box3().setFromObject(model); H = Math.max(bbox.max.y - bbox.min.y, 1e-3);
+  // precise: skinned meshes (FBX from Mixamo: cm geometry under a 0.01 armature) are measured as displayed
+  bbox = new THREE.Box3().setFromObject(model, true); H = Math.max(bbox.max.y - bbox.min.y, 1e-3);
   const pts = []; const v = new THREE.Vector3();
   for (const m of meshes) { const p = m.geometry.attributes.position;
-    for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i).applyMatrix4(m.matrixWorld); pts.push(v.x, v.y, v.z); } }
+    for (let i = 0; i < p.count; i++) { m.getVertexPosition(i, v); v.applyMatrix4(m.matrixWorld); pts.push(v.x, v.y, v.z); } }
   worldVerts = new Float32Array(pts);
 }
 const ray = new THREE.Raycaster();
@@ -505,7 +515,7 @@ function refreshList() {
 }
 function refreshHint() {
   const h = $('hint');
-  if (S.phase === 'place') {
+  if (S.phase === 'place' && !poseOn) {
     const m = current ? MMAP[current] : null;
     h.hidden = !m; if (m) h.textContent = (S.marks[m.id] ? 'Переставить: ' : 'Кликните: ') + m.label;
   } else h.hidden = true;
@@ -760,6 +770,12 @@ async function loadRigged() {
   const url = new URL('/file=' + DATA.rigged + '?v=' + (DATA.rigged_v || 0), window.parent.location.href).href;   // ?v: no stale cache after a rebuild
   const gltf = await new GLTFLoader().loadAsync(url);
   poseRoot = gltf.scene; scene.add(poseRoot); poseRoot.updateMatrixWorld(true);
+  clips = gltf.animations || [];
+  if (clips.length) {
+    mixer = new THREE.AnimationMixer(poseRoot);
+    $('pClip').innerHTML = clips.map((c, i) => `<option value="${i}">${c.name.replace(/^.*\|/, '') || 'клип ' + (i + 1)}</option>`).join('');
+    $('pClip').hidden = clips.length < 2; $('pPlay').hidden = false;
+  }
   const byName = {};
   poseRoot.traverse((o) => {
     if (o.isBone) { byName[o.name] = o; REST.set(o, o.quaternion.clone()); }
@@ -771,7 +787,8 @@ async function loadRigged() {
   for (const [id, t] of Object.entries(TAILOF)) {
     const b = PB[id]; if (!b) continue;
     const J = b.getWorldPosition(new V3);
-    const T = PB[t] ? PB[t].getWorldPosition(new V3) : S.pos[t] ? V(S.pos[t]) : null; if (!T) continue;
+    const kid = b.children.find((c) => c.isBone);
+    const T = PB[t] ? PB[t].getWorldPosition(new V3) : S.pos[t] ? V(S.pos[t]) : kid ? kid.getWorldPosition(new V3) : null; if (!T) continue;
     const pqi = b.parent.getWorldQuaternion(new Q).invert();
     const info = { tailLocal: b.worldToLocal(T.clone()), len: T.distanceTo(J) };
     const L = limitOf(id);
@@ -816,7 +833,10 @@ function poseBend(id, toward, a) {
   if (ax.lengthSq() < 1e-10) return;
   aimBone(id, cur.applyAxisAngle(ax.normalize(), rad(a)));
 }
-function poseReset() { for (const [b, q] of REST) b.quaternion.copy(q); poseRoot.updateMatrixWorld(true); }
+function poseReset() {
+  stopClip(); if (mixer) mixer.stopAllAction();
+  for (const [b, q] of REST) b.quaternion.copy(q); poseRoot.updateMatrixWorld(true);
+}
 function poseHighlight(info) {
   for (const c of [...poseHelp.children]) { poseHelp.remove(c); if (c.geometry) c.geometry.dispose(); }
   const id = dragId || hoverId; if (!id || !PINFO[id]) { if (!dragId) $('pInfo').textContent = 'Наведите на руку, ногу, голову или корпус и тяните левой кнопкой.'; $('pInfo').className = 'pinfo'; return; }
@@ -832,7 +852,7 @@ function poseHighlight(info) {
   }
   const name = JMAP[id].label, cur = i.hinge ? deg(Math.atan2(T.clone().sub(F.j).normalize().dot(F.p), T.clone().sub(F.j).normalize().dot(F.z))) : i.ball ? deg(T.clone().sub(F.j).normalize().angleTo(F.d)) : 0;
   const lim = i.hinge ? `норма ${i.hinge.L.min}…${i.hinge.L.max}°` : i.ball ? `до ${i.ball.max}° от покоя` : '';
-  $('pInfo').textContent = `${name}: ${cur.toFixed(0)}° (${lim})` + (info && info.stop ? ' — упор' : '') + (dragId ? '' : ' — тяните мышью');
+  $('pInfo').textContent = (weightsOn ? `Веса: ${boneLabel(weightBone)} · ` : '') + `${name}: ${cur.toFixed(0)}° (${lim})` + (info && info.stop ? ' — упор' : '') + (dragId ? '' : ' — тяните мышью');
   $('pInfo').className = 'pinfo' + (info && info.stop ? ' stop' : '');
 }
 function pickBone(e) {
@@ -848,8 +868,44 @@ function pickBone(e) {
   let best = null, bw = 0; for (const [b, w] of acc) if (w > bw) { best = b; bw = w; }
   let id = best ? BONE2ID.get(best) : null;
   if (id === 'hips') id = 'spine';
+  lastBone = best;
   return id && PINFO[id] ? id : null;
 }
+// ---- weight view: colour the skin by the weights of the bone under the cursor (blue 0 ... red 1)
+let lastBone = null, weightsOn = false, weightBone = null;
+const wMat = new THREE.MeshLambertMaterial({ vertexColors: true }), origMat = new Map();
+const HEAT = [[.1, .2, .8], [.1, .76, .76], [.18, .75, .23], [.91, .82, .11], [.9, .28, .3]];
+function heat(w) {
+  const x = Math.min(1, Math.max(0, w)) * (HEAT.length - 1), i = Math.min(HEAT.length - 2, Math.floor(x)), f = x - i;
+  return HEAT[i].map((c, k) => c + (HEAT[i + 1][k] - c) * f);
+}
+function paintWeights(bone) {
+  for (const m of poseMeshes) {
+    if (!m.isSkinnedMesh) continue;
+    const g = m.geometry, si = g.attributes.skinIndex, sw = g.attributes.skinWeight, n = si.count;
+    let col = g.attributes.color;
+    if (!col || col.itemSize !== 3) { col = new THREE.BufferAttribute(new Float32Array(n * 3), 3); g.setAttribute('color', col); }
+    const bi = bone ? m.skeleton.bones.indexOf(bone) : -1;
+    for (let i = 0; i < n; i++) {
+      let w = 0; if (bi >= 0) for (let k = 0; k < 4; k++) if (si.getComponent(i, k) === bi) w += sw.getComponent(i, k);
+      const c = heat(w); col.setXYZ(i, c[0], c[1], c[2]);
+    }
+    col.needsUpdate = true;
+  }
+}
+function setWeights(on) {
+  weightsOn = on;
+  for (const m of poseMeshes) {
+    if (on) { if (!origMat.has(m)) origMat.set(m, m.material); m.material = wMat; }
+    else if (origMat.has(m)) m.material = origMat.get(m);
+  }
+  if (on) paintWeights(weightBone);
+  $('pWeights').classList.toggle('on', on); $('pLegend').hidden = !on;
+}
+const boneLabel = (b) => b ? (BONE2ID.has(b) ? JMAP[BONE2ID.get(b)].label : b.name.replace(/^mixamorig/, '')) : '';
+// ---- animations stored in the file
+let mixer = null, clips = [], action = null, playing = false; const clock = new THREE.Clock();
+function stopClip() { if (action) action.stop(); action = null; playing = false; $('pPlay').textContent = '▶ Анимация'; }
 let pendingMove = null;
 canvas.addEventListener('pointermove', (e) => {
   if (!poseOn) return;
@@ -871,12 +927,16 @@ canvas.addEventListener('pointermove', (e) => {
       poseHighlight(aimBone(dragId, d));
     } else {
       const id = pickBone(ev);
+      if (weightsOn && lastBone && lastBone !== weightBone) {
+        weightBone = lastBone; paintWeights(weightBone);
+        if (!id) { $('pInfo').textContent = `Веса кости: ${boneLabel(weightBone)}`; $('pInfo').className = 'pinfo'; }
+      }
       if (id !== hoverId) { hoverId = id; poseHighlight(); }
     }
   });
 });
 canvas.addEventListener('pointerdown', (e) => {
-  if (!poseOn || e.button !== 0 || !hoverId) return;
+  if (!poseOn || e.button !== 0 || !hoverId || playing) return;
   dragId = hoverId; orbit.enabled = false; canvas.setPointerCapture(e.pointerId);
 });
 addEventListener('pointerup', () => { if (dragId) { dragId = null; orbit.enabled = true; poseHighlight(); } });
@@ -892,12 +952,20 @@ async function setPose(on) {
   model.visible = !on; jointGroup.visible = fanGroup.visible = !on; if (lines) lines.visible = !on;
   if (poseRoot) { poseRoot.visible = on; skelHelp.visible = on; }
   if (on) tc.detach(); else if (selected) attach();
-  $('guide').hidden = on; $('poseBar').hidden = !on; $('mPose').classList.toggle('on', on);
+  $('guide').hidden = on || document.body.classList.contains('viewonly'); $('poseBar').hidden = !on; $('mPose').classList.toggle('on', on);
   $('mPose').textContent = on ? 'К разметке' : 'Поза';
   refreshAll();
   poseHighlight();
 }
 $('mPose').onclick = () => setPose(!poseOn);
+$('pWeights').onclick = () => setWeights(!weightsOn);
+$('pPlay').onclick = () => {
+  if (!mixer) return;
+  if (playing) { action.paused = !action.paused; $('pPlay').textContent = action.paused ? '▶ Анимация' : '❚❚ Пауза'; return; }
+  poseReset(); action = mixer.clipAction(clips[+$('pClip').value || 0]); action.reset().play(); playing = true;
+  $('pPlay').textContent = '❚❚ Пауза';
+};
+$('pClip').onchange = () => { if (playing) { stopClip(); $('pPlay').onclick(); } };
 window.sf3dPose = { PB, PINFO, REST, poseMeshes, pickBone, camera, ray };   // for debugging from the browser console
 $('pReset').onclick = () => { poseReset(); poseHighlight(); };
 const FW = new V3(0, 0, 1), UPV = new V3(0, 1, 0), BK = new V3(0, 0, -1);
@@ -931,11 +999,16 @@ $('pSquat').onclick = () => {
     applyYaw(); $('msg').hidden = true;
     if (S.phase === 'place') current = nextMark().id;
     resize(); setView('front'); sync();
-    if (DATA.mode === 'pose' && DATA.rigged) await setPose(true);
+    if (DATA.mode === 'view' && DATA.rigged) { document.body.classList.add('viewonly'); $('guide').hidden = true; await setPose(true); $('guide').hidden = true; }
+    else if (DATA.mode === 'pose' && DATA.rigged) await setPose(true);
   } catch (e) { $('msg').textContent = 'Не удалось открыть модель: ' + e.message; }
 })();
 new ResizeObserver(resize).observe(canvas);
-renderer.setAnimationLoop(() => renderer.render(scene, camera));
+renderer.setAnimationLoop(() => {
+  const dt = clock.getDelta();
+  if (mixer && playing && poseOn) { mixer.update(dt); if (hoverId) poseHighlight(); }
+  renderer.render(scene, camera);
+});
 </script>
 </body>
 </html>
