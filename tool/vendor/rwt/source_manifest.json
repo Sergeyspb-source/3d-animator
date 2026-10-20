@@ -1,0 +1,12 @@
+[
+  {
+    "file": "weighttransfer.py",
+    "url": "https://raw.githubusercontent.com/sentfromspacevr/robust-weight-transfer/d659986daf6d3f56645e5ebd384e5125bb47c1ee/weighttransfer.py",
+    "sha256": "f4ac13065948311f491e284f3c0f9230abe77df814e6fe88e304f757f2bad49c"
+  },
+  {
+    "file": "LICENSE",
+    "url": "https://raw.githubusercontent.com/sentfromspacevr/robust-weight-transfer/d659986daf6d3f56645e5ebd384e5125bb47c1ee/LICENSE",
+    "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+  }
+]

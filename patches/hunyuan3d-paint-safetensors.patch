@@ -1,0 +1,19 @@
+diff --git a/hy3dgen/texgen/hunyuanpaint/unet/modules.py b/hy3dgen/texgen/hunyuanpaint/unet/modules.py
+index f558cd7..b0776a9 100644
+--- a/hy3dgen/texgen/hunyuanpaint/unet/modules.py
++++ b/hy3dgen/texgen/hunyuanpaint/unet/modules.py
+@@ -428,7 +428,13 @@ class UNet2p5DConditionModel(torch.nn.Module):
+             config = json.load(file)
+         unet = UNet2DConditionModel(**config)
+         unet = UNet2p5DConditionModel(unet)
+-        unet_ckpt = torch.load(unet_ckpt_path, map_location='cpu', weights_only=True)
++        # local patch: fall back to the .safetensors copy so the 3.5 GB .bin need not be downloaded
++        st_path = os.path.join(pretrained_model_name_or_path, 'diffusion_pytorch_model.safetensors')
++        if not os.path.exists(unet_ckpt_path) and os.path.exists(st_path):
++            from safetensors.torch import load_file
++            unet_ckpt = load_file(st_path, device='cpu')
++        else:
++            unet_ckpt = torch.load(unet_ckpt_path, map_location='cpu', weights_only=True)
+         unet.load_state_dict(unet_ckpt, strict=True)
+         unet = unet.to(torch_dtype)
+         return unet

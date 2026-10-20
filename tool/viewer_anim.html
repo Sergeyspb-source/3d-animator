@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Просмотр анимаций</title>
+<style>
+  /* Embedded in the SF3D app (iframe srcdoc). Layout: 3D stage left, clip list and controls right. */
+  :root { --bg:#ece8e1; --panel:#f6f3ee; --stage:#cfc8bc; --fg:#231d17; --muted:#6b6258; --line:#d0c9bd; --accent:#a8451d;
+          --accent-fg:#fff6ec; --ui:"Segoe UI",system-ui,sans-serif; --mono:ui-monospace,Consolas,monospace; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#15110d; --panel:#1e1913; --stage:#0f0c09;
+    --fg:#eadfca; --muted:#a39580; --line:#352d23; --accent:#d9622f; --accent-fg:#1a0e06; color-scheme:dark; } }
+  :root[data-theme="dark"] { --bg:#15110d; --panel:#1e1913; --stage:#0f0c09; --fg:#eadfca; --muted:#a39580; --line:#352d23;
+    --accent:#d9622f; --accent-fg:#1a0e06; color-scheme:dark; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; }
+  body { background:var(--bg); color:var(--fg); font:14px/1.4 var(--ui); padding:10px; }
+  .wrap { display:grid; grid-template-columns:minmax(0,1fr) 270px; gap:10px; height:100%; min-height:420px; }
+  @media (max-width: 700px) { .wrap { grid-template-columns:minmax(0,1fr); grid-template-rows:55vh auto; height:auto; } }
+  .stage { position:relative; background:var(--stage); border:1px solid var(--line); border-radius:10px; overflow:hidden; min-height:300px; }
+  canvas { position:absolute; inset:0; width:100%; height:100%; display:block; touch-action:none; }
+  .badge { position:absolute; left:10px; top:8px; font:12px var(--mono); color:var(--muted); background:color-mix(in srgb,var(--panel) 80%,transparent);
+    padding:3px 8px; border-radius:6px; }
+  [hidden] { display:none !important; }
+  .msg { position:absolute; inset:0; display:grid; place-items:center; color:var(--muted); padding:16px; text-align:center; }
+  .rail { display:grid; grid-template-rows:minmax(0,1fr) auto; gap:10px; min-height:0; }
+  .box { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px; min-width:0; }
+  .list { overflow:auto; display:grid; gap:5px; align-content:start; }
+  .grp { font:11px var(--mono); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-top:6px; }
+  button { font:inherit; color:var(--fg); background:transparent; border:1px solid var(--line); border-radius:7px; padding:6px 9px;
+    cursor:pointer; text-align:left; min-width:0; }
+  button:hover { border-color:var(--accent); }
+  button.on { background:var(--accent); border-color:var(--accent); color:var(--accent-fg); }
+  button:focus-visible, input:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .clip { display:grid; grid-template-columns:1fr auto; gap:8px; align-items:baseline; }
+  .clip small { font:12px var(--mono); opacity:.8; }
+  .ctl { display:grid; gap:8px; }
+  .row { display:grid; gap:2px; }
+  .row span { display:flex; justify-content:space-between; color:var(--muted); font-size:12px; }
+  .top { display:grid; grid-template-columns:auto 1fr; gap:8px; align-items:center; }
+  input[type=range] { width:100%; accent-color:var(--accent); }
+  label { display:flex; gap:7px; align-items:center; font-size:13px; }
+  input[type=checkbox] { accent-color:var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="stage"><canvas id="view" aria-label="3D-просмотр"></canvas><div class="badge" id="badge">загрузка…</div><div class="msg" id="msg">Загружаю модель…</div></div>
+  <div class="rail">
+    <div class="box list" id="list"></div>
+    <div class="box ctl">
+      <div class="top"><button type="button" id="play">Пауза</button>
+        <div class="row"><span><b>Время</b><em id="tval">0,00 с</em></span><input type="range" id="scrub" min="0" max="1000" value="0" aria-label="Время клипа"></div></div>
+      <div class="row"><span><b>Скорость</b><em id="sval">1,0×</em></span><input type="range" id="speed" min="10" max="200" value="100" aria-label="Скорость"></div>
+      <label><input type="checkbox" id="inplace" checked> Убрать смещение корпуса по земле</label>
+      <label><input type="checkbox" id="back" checked> После действия вернуться в стойку</label>
+      <label><input type="checkbox" id="spin"> Крутить камеру</label>
+    </div>
+  </div>
+</div>
+<script id="d-data" type="application/json">@@DATA@@</script>
+<script id="d-glb" type="text/plain">@@GLB@@</script>
+<script id="d-weapons" type="application/json">@@WEAPONS@@</script>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+               "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const $ = (id) => document.getElementById(id);
+const fmt = (x, d = 2) => x.toFixed(d).replace('.', ',');
+const DATA = JSON.parse($('d-data').textContent);          // { clips: [{id, label, group, loop}] }
+const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const bytes = (id) => { const s = atob($(id).textContent.trim()); const u = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u.buffer; };
+
+const canvas = $('view');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(38, 4 / 3, 0.05, 80);
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true; controls.maxPolarAngle = Math.PI * 0.52; controls.autoRotateSpeed = 1.2;
+scene.add(new THREE.HemisphereLight(0xfff0d8, 0x40362a, 1.15));
+const sun = new THREE.DirectionalLight(0xffd9a8, 2.4); sun.position.set(3, 5, 2.5); scene.add(sun);
+
+const ground = new THREE.Mesh(new THREE.CircleGeometry(8, 64), new THREE.MeshStandardMaterial({ color: 0x7a6140, roughness: 1 }));
+ground.rotation.x = -Math.PI / 2; scene.add(ground);
+const grid = new THREE.GridHelper(16, 32, 0xe8d4a8, 0xb89a68); grid.material.opacity = 0.35; grid.material.transparent = true; scene.add(grid);
+function theme() { const c = new THREE.Color(css('--stage')); renderer.setClearColor(c); scene.fog = new THREE.Fog(c, 8, 20); }
+theme(); matchMedia('(prefers-color-scheme: dark)').addEventListener('change', theme);
+function resize() { const r = canvas.getBoundingClientRect(); renderer.setSize(r.width, r.height, false); camera.aspect = r.width / Math.max(r.height, 1); camera.updateProjectionMatrix(); }
+new ResizeObserver(resize).observe(canvas.parentElement); resize();
+
+let mixer, root, current = null, playing = true, speed = 1;
+const actions = {}, plain = {};
+const info = Object.fromEntries(DATA.clips.map((c) => [c.id, c]));
+
+function inPlace(clip) {
+  const c = clip.clone();
+  c.tracks.forEach((tr) => {
+    if (tr.name.endsWith('Hips.position')) { const v = tr.values, x0 = v[0], z0 = v[2];
+      for (let i = 0; i < v.length; i += 3) { v[i] -= x0; v[i + 2] -= z0; } }
+  });
+  return c;
+}
+const act = (id) => actions[id][$('inplace').checked ? 'flat' : 'raw'];
+
+function play(id, instant) {
+  if (!actions[id]) return;
+  const next = act(id), loop = info[id].loop;
+  const prev = current && current !== id ? act(current) : null;
+  Object.values(actions).forEach((p) => [p.raw, p.flat].forEach((x) => { if (x !== next && x !== prev) x.stop(); }));
+  next.reset(); next.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity); next.clampWhenFinished = true;
+  next.setEffectiveTimeScale(1); next.setEffectiveWeight(1); next.play();
+  if (prev && !instant) next.crossFadeFrom(prev, 0.2, false); else if (prev) prev.stop();
+  current = id; playing = true; $('play').textContent = 'Пауза'; $('badge').textContent = info[id].label || id;
+  document.querySelectorAll('#list button').forEach((b) => b.classList.toggle('on', b.dataset.clip === id));
+}
+function restId(id) {
+  const g = info[id].group;
+  const same = DATA.clips.filter((c) => c.group === g && c.loop); return (same[0] || DATA.clips.find((c) => c.loop) || DATA.clips[0]).id;
+}
+
+// held weapon parts: {bone, glb (base64), scale, rot [x,y,z] Godot Euler YXZ degrees, grip, offset, palm}
+async function addWeapons(root) {
+  const list = JSON.parse($('d-weapons').textContent || '[]');
+  for (const w of list) {
+    let bone = null;
+    root.traverse((o) => { if (o.isBone && o.name.endsWith(w.bone)) bone = o; });
+    if (!bone) continue;
+    const buf = Uint8Array.from(atob(w.glb), (c) => c.charCodeAt(0)).buffer;
+    const g = await new Promise((res, rej) => new GLTFLoader().parse(buf, '', res, rej));
+    const drop = []; g.scene.traverse((o) => { if (o.isMesh && /col/i.test(o.name)) drop.push(o); });
+    drop.forEach((o) => o.parent.remove(o));
+    const item = g.scene;
+    item.scale.setScalar(w.scale);
+    item.rotation.set(...w.rot.map((d) => d * Math.PI / 180), 'YXZ');
+    item.updateMatrix();
+    const pos = new THREE.Vector3(...w.grip).applyQuaternion(item.quaternion).multiplyScalar(-w.scale);
+    pos.add(new THREE.Vector3(...(w.offset || [0, 0, 0])));
+    if (w.palm) {
+      const fing = bone.children.find((c) => c.isBone && c.name.endsWith('Middle1'));
+      let dir, len = 0.075;
+      if (fing) { dir = fing.position.clone(); len = dir.length() * 0.5; }
+      else { dir = bone.position.clone().applyQuaternion(bone.quaternion.clone().invert()); }
+      pos.add(dir.normalize().multiplyScalar(len));
+    }
+    item.position.copy(pos);
+    bone.add(item);
+  }
+}
+
+async function load() {
+  const gltf = await new Promise((res, rej) => new GLTFLoader().parse(bytes('d-glb'), '', res, rej));
+  root = gltf.scene; scene.add(root);
+  await addWeapons(root);
+  root.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
+  mixer = new THREE.AnimationMixer(root);
+  gltf.animations.forEach((a) => { plain[a.name] = a; actions[a.name] = { raw: mixer.clipAction(a), flat: mixer.clipAction(inPlace(a)) }; });
+  // frame the character from its bones (works for any scale the GLB was exported with)
+  root.updateMatrixWorld(true);
+  const box = new THREE.Box3(), tmp = new THREE.Vector3();
+  root.traverse((o) => { if (o.isBone) { o.getWorldPosition(tmp); box.expandByPoint(tmp); } });
+  const size = box.getSize(new THREE.Vector3());
+  const h = Math.max(0.3, size.y * 1.1);
+  controls.target.set(0, box.min.y + size.y * 0.5, 0);
+  camera.position.set(h * 1.2, h * 0.9, h * 1.9); controls.minDistance = h * 0.6; controls.maxDistance = h * 8;
+  let last = '';
+  DATA.clips.filter((c) => actions[c.id]).forEach((c) => {
+    if (c.group !== last) { const g = document.createElement('div'); g.className = 'grp'; g.textContent = c.group; $('list').appendChild(g); last = c.group; }
+    const b = document.createElement('button'); b.type = 'button'; b.dataset.clip = c.id; b.className = 'clip';
+    b.innerHTML = `<span>${c.label || c.id}</span><small>${fmt(plain[c.id].duration)} с</small>`;
+    b.addEventListener('click', () => play(c.id)); $('list').appendChild(b);
+  });
+  mixer.addEventListener('finished', () => { if ($('back').checked && current && !info[current].loop) play(restId(current)); });
+  $('msg').hidden = true;
+  const first = DATA.clips.find((c) => actions[c.id] && c.loop) || DATA.clips.find((c) => actions[c.id]);
+  if (first) play(first.id, true);
+}
+
+$('inplace').addEventListener('change', () => { const k = current; current = null; mixer.stopAllAction(); if (k) play(k, true); });
+$('play').addEventListener('click', () => { playing = !playing; $('play').textContent = playing ? 'Пауза' : 'Играть'; });
+$('speed').addEventListener('input', (e) => { speed = e.target.value / 100; $('sval').textContent = fmt(speed, 1) + '×'; });
+$('spin').addEventListener('change', (e) => { controls.autoRotate = e.target.checked; });
+$('scrub').addEventListener('input', (e) => { const a = current && act(current); if (!a) return;
+  playing = false; $('play').textContent = 'Играть'; a.paused = false; a.time = (e.target.value / 1000) * a.getClip().duration; mixer.update(0); });
+addEventListener('keydown', (e) => { if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+  const ids = DATA.clips.filter((c) => actions[c.id]).map((c) => c.id); const i = ids.indexOf(current); const n = ids.length;
+  play(ids[(i + (e.key === 'ArrowDown' ? 1 : n - 1)) % n]); e.preventDefault(); });
+
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.1);
+  if (mixer && playing) mixer.update(dt * speed);
+  const a = current && actions[current] && act(current);
+  if (a) { const d = a.getClip().duration; $('scrub').value = Math.round(((a.time % d) / d) * 1000); $('tval').textContent = fmt(a.time % d) + ' с'; }
+  controls.update(); renderer.render(scene, camera);
+});
+load().catch((e) => { $('msg').hidden = false; $('msg').textContent = 'Не удалось загрузить модель: ' + e.message; });
+</script>
+</body>
+</html>

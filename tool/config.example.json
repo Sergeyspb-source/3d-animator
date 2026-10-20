@@ -1,0 +1,47 @@
+{
+    "export_dir":  "D:/My projects/SF3D/export",
+    "work_dir":  "D:/My projects/SF3D/work",
+    "texture_resolution":  1024,
+    "foreground_ratio":  0.85,
+    "collision_faces":  800,
+    "blender_exe":  "D:/Blender 5.2/blender.exe",
+    "input_dir":  "D:/My projects/SF3D/input",
+    "categories":  {
+                       "item":  {
+                                    "pivot":  "center",
+                                    "height_m":  null,
+                                    "metallic":  0.2,
+                                    "roughness":  null,
+                                    "collision":  "convex"
+                                },
+                       "prop":  {
+                                    "pivot":  "bottom",
+                                    "height_m":  null,
+                                    "metallic":  0.0,
+                                    "roughness":  0.85,
+                                    "collision":  "convex"
+                                },
+                       "building":  {
+                                        "pivot":  "bottom",
+                                        "height_m":  6.0,
+                                        "metallic":  0.0,
+                                        "roughness":  0.9,
+                                        "collision":  "simplified"
+                                    },
+                       "character":  {
+                                         "pivot":  "bottom",
+                                         "height_m":  1.8,
+                                         "metallic":  0.0,
+                                         "roughness":  0.8,
+                                         "collision":  null
+                                     },
+                       "vegetation":  {
+                                          "pivot":  "bottom",
+                                          "height_m":  4,
+                                          "metallic":  0,
+                                          "roughness":  0.9,
+                                          "collision":  "none"
+                                      }
+                   },
+    "godot_exe":  "D:/Godot_v4.7.2-stable_win64.exe/Godot_v4.7.2-stable_win64_console.exe"
+}

@@ -1,0 +1,4 @@
+# Bash scripts and patches must stay LF on Windows checkouts (Git Bash / git apply break on CRLF)
+*.sh    text eol=lf
+*.patch text eol=lf
+*.yaml  text eol=lf

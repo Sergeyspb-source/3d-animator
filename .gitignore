@@ -1,0 +1,61 @@
+# ---- Generated assets, scratch, inputs (never commit) ----
+/export/
+/work/
+/input/
+/output/
+
+# ---- Third-party repositories (cloned separately, see README) ----
+/sf3d-src/
+/hunyuan3d-src/
+/unirig-src/
+
+# ---- Local config (paths, API keys); tool/config.example.json is the template ----
+/tool/config.json
+
+# ---- Compiled third-party wheels for Robust Weight Transfer (installed with pip --target, see README) ----
+/tool/vendor/rwt/deps/
+
+# ---- One-off local experiment scripts ----
+/hunyuan3d-texgen-run.ps1
+
+# ---- Models, weights, meshes, media (safety net in case something lands in the tree) ----
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.bin
+*.onnx
+*.npz
+*.glb
+*.gltf
+*.fbx
+*.blend
+*.blend1
+*.obj
+*.ply
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.exr
+*.mp4
+*.zip
+*.7z
+
+# ---- Python / tools ----
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+*.log
+*.err
+
+# ---- Godot / editors / OS ----
+.godot/
+*.import
+.vscode/
+.idea/
+.claude/
+Thumbs.db
+desktop.ini
+.DS_Store
