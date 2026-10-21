@@ -826,6 +826,61 @@ for o in jaw_objs:
     add_key(o, "jawOpen", open_jaw)
 
 
+def smooth_key(o, name, passes=40):
+    """Corrective smooth of a shape key on the face: the displacement is relaxed over the surface in the transition
+    zone (partial jaw weight: mouth corners, cheeks, under the chin), so neighbouring points no longer turn by
+    different angles and fold. Rigid parts keep their motion: the lower lip / chin (jaw weight > 0.97), the slit and
+    lip roll, and everything still (no displacement and far from the mouth)."""
+    kb = o.data.shape_keys.key_blocks[name]
+    base = o.data.shape_keys.key_blocks[0]
+    n = len(o.data.vertices)
+    q_ = W * 1e-4
+    # weld UV-seam twins (same place, same jaw weight), but never the two lips of the slit (same place, other weight)
+    key = [tuple(round(c / q_) for c in base.data[i].co) + (round(jaw_w(o, o.data.vertices[i]), 1),) for i in range(n)]
+    nbr = {}
+    for e in o.data.edges:
+        a_, b_ = key[e.vertices[0]], key[e.vertices[1]]
+        if a_ != b_:
+            nbr.setdefault(a_, set()).add(b_); nbr.setdefault(b_, set()).add(a_)
+    disp = {}
+    for i in range(n):
+        disp.setdefault(key[i], kb.data[i].co - base.data[i].co)
+    mw = o.matrix_world
+    lip_mat = {j for j, m in enumerate(o.data.materials) if m and m.name.startswith("lip_inner")}
+    on_lip = set()
+    for poly in o.data.polygons:
+        if poly.material_index in lip_mat:
+            on_lip.update(key[v] for v in poly.vertices)
+    free = set()
+    for i, v in enumerate(o.data.vertices):
+        k = key[i]
+        if k in on_lip:
+            continue
+        p = mw @ base.data[i].co
+        if (p - M).length > 4.0 * W:
+            continue
+        w = jaw_w(o, v)
+        if w > 0.85:
+            continue   # rigid jaw part (chin, lower lip)
+        if abs(side(p)) < 0.5 * W and abs(p.x - cx) < 0.8 * (x1 - x0) / 2:
+            continue   # the lips themselves keep their motion; corners and cheeks are smoothed
+        free.add(k)
+    for _ in range(passes):
+        new = {}
+        for k in free:
+            nb = nbr.get(k)
+            if nb:
+                avg = sum((disp[j] for j in nb), Vector()) / len(nb)
+                new[k] = disp[k].lerp(avg, 0.5)
+        disp.update(new)
+    for i in range(n):
+        kb.data[i].co = base.data[i].co + disp[key[i]]
+    return len(free)
+
+
+report["jawOpen_smoothed"] = smooth_key(face, "jawOpen", int(job.get("key_smooth", 40)))
+
+
 def lip_fall(p, r):
     """1 on the lips, 0 at radius r from the line (front skin only)"""
     if p.y > front_limit + 0.3 * W:
