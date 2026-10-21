@@ -180,7 +180,7 @@ def build(C):
         outline = catmull_closed(mpts, max(2, int(64 / len(mpts))))
     else:
         eu, cu = to_uv((EL + ER) / 2), to_uv(chin)
-        top, bot = eu.y + 0.85 * ipd, cu.y - 0.3 * ipd             # down to the jaw line under the chin
+        top, bot = eu.y + 0.85 * ipd, cu.y - 0.75 * ipd             # down to the jaw line under the chin
         mz, hz = (top + bot) / 2, (top - bot) / 2
         hx = abs(to_uv(EL).x - to_uv(ER).x) / 2 + 0.9 * ipd
         cx_uv = eu.x

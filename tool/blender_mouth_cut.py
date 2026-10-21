@@ -851,17 +851,30 @@ def smooth_key(o, name, passes=40):
     for poly in o.data.polygons:
         if poly.material_index in lip_mat:
             on_lip.update(key[v] for v in poly.vertices)
+    # with the rebuilt face mask the whole jaw motion stays on the mask (clean, seam-free mesh): the old mesh outside
+    # it is pinned still (moving it lit the Tripo neck in pale patches, its normals split on many UV seams)
+    mask_mat = {j for j, m in enumerate(o.data.materials) if m and m.name.startswith("face_mask")}
+    on_mask = set()
+    for poly in o.data.polygons:
+        if poly.material_index in mask_mat or poly.material_index in lip_mat:
+            on_mask.update(key[v] for v in poly.vertices)
+    if mask_mat:
+        for k in list(disp):
+            if k not in on_mask and k not in on_lip:
+                disp[k] = Vector()
     free = set()
     for i, v in enumerate(o.data.vertices):
         k = key[i]
         if k in on_lip:
             continue
+        if mask_mat and k not in on_mask:
+            continue
         p = mw @ base.data[i].co
-        if (p - M).length > 4.0 * W:
+        if (p - M).length > 5.5 * W:
             continue
         w = jaw_w(o, v)
-        if w > 0.85:
-            continue   # rigid jaw part (chin, lower lip)
+        if w > 0.85 and (p - M).length < 1.6 * W:
+            continue   # rigid jaw part: lower lip and chin front only (the throat under the chin is smoothed)
         if abs(side(p)) < 0.5 * W and abs(p.x - cx) < 0.8 * (x1 - x0) / 2:
             continue   # the lips themselves keep their motion; corners and cheeks are smoothed
         free.add(k)
@@ -873,12 +886,65 @@ def smooth_key(o, name, passes=40):
                 avg = sum((disp[j] for j in nb), Vector()) / len(nb)
                 new[k] = disp[k].lerp(avg, 0.5)
         disp.update(new)
+    # a wide 3D Gaussian average of the displacement (graph smoothing only spreads a few edges on a dense mesh, so
+    # the chin's motion stayed packed in a thin band of the throat and folded it)
+    from mathutils.kdtree import KDTree as _KD
+    bpos0 = {}
+    for i in range(n):
+        bpos0.setdefault(key[i], mw @ base.data[i].co)
+    allk = list(bpos0)
+    kd = _KD(len(allk))
+    for j, k in enumerate(allk):
+        kd.insert(bpos0[k], j)
+    kd.balance()
+    R = float(job.get("key_smooth_radius", 0.7)) * W
+    for _ in range(3):
+        new = {}
+        for k in free:
+            acc, wsum = Vector(), 0.0
+            for (_, j, d) in kd.find_range(bpos0[k], R):
+                w_ = math.exp(-(d / (0.5 * R)) ** 2)
+                acc += disp[allk[j]] * w_; wsum += w_
+            if wsum > 0:
+                new[k] = acc / wsum
+        disp.update(new)
+    # untangle: faces that still turn over (skin under the chin compresses as the jaw drops) get their free
+    # vertices relaxed again, locally, until nothing folds
+    bpos = {}
+    for i in range(n):
+        bpos.setdefault(key[i], base.data[i].co.copy())
+    polys = [[key[v] for v in poly.vertices] for poly in o.data.polygons]
+    left = 0
+    for it in range(60):
+        bad = set()
+        for ks in polys:
+            if len(ks) < 3:
+                continue
+            a0, b0, c0 = (bpos[k] for k in ks[:3])
+            a1, b1, c1 = (bpos[k] + disp[k] for k in ks[:3])
+            n0 = (b0 - a0).cross(c0 - a0); n1 = (b1 - a1).cross(c1 - a1)
+            if n0.length > 1e-12 and (n1.length < 1e-12 or n0.normalized().dot(n1.normalized()) < 0.5):
+                bad.update(k for k in ks if k in free)
+        left = len(bad)
+        if not bad:
+            break
+        grow = set(bad)
+        for k in bad:
+            grow |= {j for j in nbr.get(k, ()) if j in free}
+        for _ in range(4):
+            new = {}
+            for k in grow:
+                nb = nbr.get(k)
+                if nb:
+                    new[k] = disp[k].lerp(sum((disp[j] for j in nb), Vector()) / len(nb), 0.8)
+            disp.update(new)
+    report["jawOpen_folds_left"] = left
     for i in range(n):
         kb.data[i].co = base.data[i].co + disp[key[i]]
     return len(free)
 
 
-report["jawOpen_smoothed"] = smooth_key(face, "jawOpen", int(job.get("key_smooth", 40)))
+report["jawOpen_smoothed"] = smooth_key(face, "jawOpen", int(job.get("key_smooth", 150)))
 
 
 def lip_fall(p, r):
@@ -941,7 +1007,7 @@ for o in bpy.data.objects:
     o.select_set(o.type in ("ARMATURE", "MESH"))
 bpy.context.view_layer.objects.active = arm
 bpy.ops.export_scene.gltf(filepath=job["out"], export_format="GLB", use_selection=True, export_skins=True,
-                          export_animations=False, export_morph=True, export_morph_normal=False, export_influence_nb=4)
+                          export_animations=False, export_morph=True, export_morph_normal=True, export_influence_nb=4)
 
 if job.get("preview"):
     sc = bpy.context.scene
