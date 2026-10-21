@@ -190,13 +190,19 @@
 <script id="d-glb" type="text/plain">@@GLB@@</script>
 <script type="importmap">
 { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-               "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }
+               "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+               "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.7.6/build/index.module.js" } }
 </script>
 <script type="module">
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
+// a bounding-volume tree per mesh: rays test a few triangles instead of all of them (the oval rings cast hundreds)
+THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
+THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
+THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
 const $ = (id) => document.getElementById(id);
 const DATA = JSON.parse($('d-data').textContent);   // { state: saved landmarks JSON or null, target: textbox elem id }
@@ -266,6 +272,10 @@ const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -100, 100);
 const orbit = new OrbitControls(camera, canvas);
 orbit.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE };
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+// the middle button pans the view, not the page (browser autoscroll); the wheel zooms, it does not scroll the app
+canvas.addEventListener('mousedown', (e) => { if (e.button === 1) e.preventDefault(); });
+canvas.addEventListener('auxclick', (e) => { if (e.button === 1) e.preventDefault(); });
+canvas.addEventListener('wheel', (e) => e.preventDefault(), { passive: false });
 // rotating with the right button leaves the fixed front/side view
 canvas.addEventListener('pointerdown', (e) => { if (e.button === 2 && view !== 'free') { view = 'free'; refreshAll(); } });
 const tc = new TransformControls(camera, canvas);
@@ -872,7 +882,8 @@ function drawOval() {
   const P = ovalParams(S.face), zf = V(S.face.mouth_c).z, N = 48;
   for (const ring of OVAL_RINGS) {
     const pts = [];
-    for (let i = 0; i <= N; i++) { const [x, y] = ovalPoint(P, ring, i / N * 2 * Math.PI); pts.push(x, y, skinNear(x, y, zf) + .002 * H); }
+    const fast = !!ovalMode.drag;   // while dragging: no ray casts (hundreds per frame froze the page), exact on release
+    for (let i = 0; i <= N; i++) { const [x, y] = ovalPoint(P, ring, i / N * 2 * Math.PI); pts.push(x, y, (fast ? zf + .01 * H : skinNear(x, y, zf)) + .002 * H); }
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
     const l = new THREE.Line(g, new THREE.LineBasicMaterial({ color: ring.c, depthTest: false, transparent: true }));
     l.renderOrder = 998; ovalGroup.add(l);
@@ -909,7 +920,13 @@ function ovalMove(e) {
     for (const kk of OVAL_KEYS) put(kk, F[kk][0] + (S.sym ? 0 : dx), F[kk][1] + dy);
   } else if (k === 'lip_top' || k === 'lip_bot' || k === 'mouth_limit_top') put(k, S.sym ? cx : w.x, w.y);
   else {
-    put(k, w.x, w.y);
+    let x = w.x, y = w.y;
+    if (k.startsWith('eye_')) {   // an eyelid point stays within reach of its eye
+      const c = V(F['eye_' + k.slice(-1)] || F[k]), lim = (F.eye_L && F.eye_R ? V(F.eye_L).distanceTo(V(F.eye_R)) : .06 * H) * .55;
+      const dx = x - c.x, dy = y - c.y, d = Math.hypot(dx, dy);
+      if (d > lim) { x = c.x + dx / d * lim; y = c.y + dy / d * lim; }
+    }
+    put(k, x, y);
     if (S.sym) { const o = k.endsWith('_L') ? k.slice(0, -1) + 'R' : k.slice(0, -1) + 'L'; F[o] = arr(mirror(V(F[k]))); }
   }
   drawOval();
@@ -919,7 +936,12 @@ canvas.addEventListener('pointerdown', (e) => {
   const k = ovalPick(e); if (!k) return;
   pushUndo(); ovalMode.drag = k; orbit.enabled = false; canvas.setPointerCapture(e.pointerId); e.stopImmediatePropagation();
 }, true);
-canvas.addEventListener('pointermove', (e) => { if (ovalMode && ovalMode.drag) ovalMove(e); });
+let ovalPending = null;
+canvas.addEventListener('pointermove', (e) => {
+  if (!(ovalMode && ovalMode.drag)) return;
+  const first = !ovalPending; ovalPending = e;
+  if (first) requestAnimationFrame(() => { const ev = ovalPending; ovalPending = null; if (ovalMode && ovalMode.drag) ovalMove(ev); });
+});
 addEventListener('pointerup', () => {
   if (ovalMode && ovalMode.drag) { ovalMode.drag = null; orbit.enabled = true; drawOval(); sync(); }
 });
@@ -1532,7 +1554,7 @@ $('pSquat').onclick = () => {
     for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i);
     const gltf = await new Promise((res, rej) => new GLTFLoader().parse(u.buffer, '', res, rej));
     model.add(gltf.scene);
-    gltf.scene.traverse((o) => { if (o.isMesh) { meshes.push(o); for (const mt of [].concat(o.material)) mt.side = THREE.DoubleSide; } });
+    gltf.scene.traverse((o) => { if (o.isMesh) { meshes.push(o); o.geometry.computeBoundsTree(); for (const mt of [].concat(o.material)) mt.side = THREE.DoubleSide; } });
     if (DATA.state && DATA.state.joints) {
       Object.assign(S, { phase: 'edit', yaw: DATA.state.yaw || 0, sym: DATA.state.sym !== false, marks: DATA.state.marks || {},
                          pos: DATA.state.joints, rot: DATA.state.rot || {}, bend: DATA.state.bend || {}, fmarks: DATA.state.fmarks || {}, face: DATA.state.face || {} });
