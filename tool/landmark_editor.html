@@ -633,7 +633,7 @@ function refreshList() {
 function refreshHint() {
   const h = $('hint');
   if (ovalMode) {
-    h.hidden = false; h.textContent = 'Тяните ручки: рот (уголки, щель, края губ; центр — весь овал; красная — граница под носом) и края век';
+    h.hidden = false; h.textContent = 'Кликните точку и тяните её стрелки: рот (уголки, щель, края губ; центр — весь овал; красная — граница под носом) и края век';
   } else if (faceMode && faceMode.cur) {
     h.hidden = false; h.textContent = 'Кликните: ' + FACE_MARKS[faceMode.cur];
   } else if (fingerMode && fingerMode.cur) {
@@ -903,7 +903,7 @@ function drawOval() {
   }
   const r = .006 * H / Math.max(1, camera.zoom);
   for (const k of ovalHandles()) {
-    const sp = new THREE.Mesh(sphereGeo, k === ovalMode.drag ? COL.sel : k === 'mouth_c' ? COL.derived : k === 'mouth_limit_top' ? COL.bad : COL.place);
+    const sp = new THREE.Mesh(sphereGeo, k === ovalMode.sel ? COL.sel : k === 'mouth_c' ? COL.derived : k === 'mouth_limit_top' ? COL.bad : COL.place);
     sp.scale.setScalar(k === 'mouth_c' ? r * 1.3 : r); sp.position.copy(V(S.face[k])); sp.renderOrder = 999; ovalGroup.add(sp);
   }
 }
@@ -915,19 +915,25 @@ function ovalPick(e) {
   }
   return best;
 }
-function ovalMove(e) {
-  // the cursor's point on the model in any view (unprojecting as if seen from the front made a tilted view jump)
-  const rc = canvas.getBoundingClientRect(), F = S.face, k = ovalMode.drag;
-  ndc.set(((e.clientX - rc.left) / rc.width) * 2 - 1, -((e.clientY - rc.top) / rc.height) * 2 + 1);
-  ray.setFromCamera(ndc, camera);
-  let w = null;
-  const hit = ray.intersectObjects(meshes, false)[0];
-  if (hit) w = hit.point;
-  else {   // off the model: the plane through the handle facing the camera
-    const n = camera.getWorldDirection(new THREE.Vector3());
-    w = ray.ray.intersectPlane(new THREE.Plane().setFromNormalAndCoplanarPoint(n, V(F[k])), new THREE.Vector3());
-    if (!w) return;
-  }
+// handles move with their own axis gizmo, like the joints (smaller, X/Y only: the depth is taken from the skin)
+const ovalHelper = new THREE.Object3D(); scene.add(ovalHelper);
+const tcO = new TransformControls(camera, canvas);
+tcO.setSpace('world'); tcO.setSize(.55); tcO.showZ = false; scene.add(tcO);
+tcO.addEventListener('dragging-changed', (e) => { orbit.enabled = !e.value; });
+tcO.addEventListener('mouseDown', () => { if (ovalMode && ovalMode.sel) { pushUndo(); ovalMode.drag = ovalMode.sel; } });
+tcO.addEventListener('objectChange', () => { if (ovalMode && ovalMode.drag) ovalApply(ovalMode.drag, ovalHelper.position.clone()); });
+tcO.addEventListener('mouseUp', () => {
+  if (!ovalMode) return;
+  ovalMode.drag = null; drawOval(); sync();
+  if (ovalMode.sel) ovalHelper.position.copy(V(S.face[ovalMode.sel]));   // snapped onto the skin
+});
+function ovalSelect(k) {
+  ovalMode.sel = k;
+  if (k) { ovalHelper.position.copy(V(S.face[k])); ovalHelper.updateMatrixWorld(); tcO.attach(ovalHelper); } else tcO.detach();
+  drawOval();
+}
+function ovalApply(k, w) {
+  const F = S.face;
   const ref = (key) => (key.startsWith('eye_') ? (F['eye_' + key.slice(-1)] || F[key])[2]
     : key === 'mouth_limit_top' ? F.lip_top[2] : F.mouth_c[2]);   // the limit follows the lip skin, not the nose
   const put = (key, x, y) => { F[key] = [x, y, skinNear(x, y, ref(key))]; };
@@ -954,23 +960,14 @@ function ovalMove(e) {
   drawOval();
 }
 canvas.addEventListener('pointerdown', (e) => {
-  if (!ovalMode || e.button !== 0) return;
+  if (!ovalMode || e.button !== 0 || tcO.axis) return;   // on the gizmo: the gizmo handles it
   const k = ovalPick(e); if (!k) return;
-  pushUndo(); ovalMode.drag = k; orbit.enabled = false; canvas.setPointerCapture(e.pointerId); e.stopImmediatePropagation();
+  ovalSelect(k); e.stopImmediatePropagation();
 }, true);
-let ovalPending = null;
-canvas.addEventListener('pointermove', (e) => {
-  if (!(ovalMode && ovalMode.drag)) return;
-  const first = !ovalPending; ovalPending = e;
-  if (first) requestAnimationFrame(() => { const ev = ovalPending; ovalPending = null; if (ovalMode && ovalMode.drag) ovalMove(ev); });
-});
-addEventListener('pointerup', () => {
-  if (ovalMode && ovalMode.drag) { ovalMode.drag = null; orbit.enabled = true; drawOval(); sync(); }
-});
 $('ovalBtn').onclick = () => {
   if (S.phase !== 'edit') return;
-  if (ovalMode) { ovalMode = null; drawOval(); refreshAll(); sync(); return; }
-  pushUndo(); ovalInit(); ovalMode = { drag: null }; select(null); faceView(); drawOval(); refreshAll();
+  if (ovalMode) { tcO.detach(); ovalMode = null; drawOval(); refreshAll(); sync(); return; }
+  pushUndo(); ovalInit(); ovalMode = { drag: null, sel: null }; select(null); faceView(); drawOval(); refreshAll();
 };
 function placeFace(n) {
   ray.setFromCamera(n, camera);
@@ -1511,7 +1508,7 @@ $('pPlay').onclick = () => {
   $('pPlay').textContent = '❚❚ Пауза';
 };
 $('pClip').onchange = () => { if (playing) { stopClip(); $('pPlay').onclick(); } };
-window.sf3dPose = { PB, PINFO, REST, poseMeshes, pickBone, camera, ray };   // for debugging from the browser console
+window.sf3dPose = { PB, PINFO, REST, poseMeshes, pickBone, camera, ray, tcO, ovalHelper, S };   // for debugging from the browser console
 $('pReset').onclick = () => { poseReset(); poseHighlight(); };
 const FW = new V3(0, 0, 1), UPV = new V3(0, 1, 0), BK = new V3(0, 0, -1);
 $('pCheck').onclick = () => {
