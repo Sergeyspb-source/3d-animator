@@ -193,6 +193,7 @@
       <div class="sub">Рот и веки</div>
       <div class="row">
         <button id="ovalBtn" title="Шаблон рта из колец: тяните ручки мышью, чтобы совпал с губами">Овал рта</button>
+        <button id="eyeSmall" title="Глазной шар меньше" hidden>Глаз −</button><button id="eyeBig" title="Глазной шар больше" hidden>Глаз +</button>
       </div>
     </div>
     <div class="box" id="selBox">
@@ -717,6 +718,7 @@ function refreshAll() {
   $('tabNodes').classList.toggle('on', !extra); $('tabExtra').classList.toggle('on', extra);
   $('ovalBtn').textContent = ovalMode ? 'Готово: рот и веки' : 'Овал рта и веки';
   $('ovalBtn').classList.toggle('on', !!ovalMode);
+  $('eyeSmall').hidden = $('eyeBig').hidden = !ovalMode || !S.face.eyeball_L;
   $('faceClear').hidden = !S.pos.jaw;
   $('fClear').hidden = !Object.keys(S.pos).some((k) => FINGER_RE.test(k));
   const w = S.phase === 'edit' ? bendWarnings() : [];
@@ -888,7 +890,18 @@ const skinZ = (x, y, fb) => { const z = hitsAt(x, y); return z.length ? z[0] : f
 // the skin layer nearest to a reference depth (under an overhanging nose the first hit is the nose tip)
 const skinNear = (x, y, ref) => { const z = hitsAt(x, y); if (!z.length) return ref; return z.reduce((a, b) => (Math.abs(b - ref) < Math.abs(a - ref) ? b : a)); };
 const EYE_HANDLES = () => ['eye_in_L', 'eye_top_L', 'eye_out_L', 'eye_bot_L'].concat(S.sym ? [] : ['eye_in_R', 'eye_top_R', 'eye_out_R', 'eye_bot_R']).filter((k) => S.face[k]);
-const ovalHandles = () => OVAL_KEYS.concat(EYE_HANDLES());
+const EYEBALLS = () => ['eyeball_L'].concat(S.sym ? [] : ['eyeball_R']).filter((k) => S.face[k]);
+const ovalHandles = () => OVAL_KEYS.concat(EYE_HANDLES(), EYEBALLS());
+// default eyeball from the eyelid outline: the cornea at the lid plane (as a real eye), radius from the opening width
+function eyeballDefault(sd) {
+  const F = S.face, pts = ['eye_in', 'eye_top', 'eye_out', 'eye_bot'].map((k) => F[k + '_' + sd]).filter(Boolean).map(V);
+  if (pts.length < 4) return;
+  // as blender_eye_insert.py: iris about half the opening wide (r = 0.42 width), cornea just behind the painted eye
+  const c = pts.reduce((a, b) => a.add(b), new THREE.Vector3()).multiplyScalar(.25), w = pts[0].distanceTo(pts[2]);
+  const zl = (pts[1].z + pts[3].z) / 2, painted = F['eye_' + sd] ? F['eye_' + sd][2] : zl;   // glTF: forward = +z
+  const r = .42 * w, front = Math.max(zl, painted) - .02 * w;
+  F['eyeball_' + sd] = [c.x, c.y, front - r]; if (!F.eyeball_r) F.eyeball_r = r;
+}
 function eyeLoop(sd) {   // closed Catmull-Rom through the 4 eyelid points, as blender_eye_insert.py / face_topo.py
   const pts = ['eye_in', 'eye_top', 'eye_out', 'eye_bot'].map((k) => S.face[k + '_' + sd]).filter(Boolean).map(V);
   if (pts.length < 4) return [];
@@ -904,6 +917,8 @@ function eyeLoop(sd) {   // closed Catmull-Rom through the 4 eyelid points, as b
 }
 function ovalInit() {
   const F = S.face;
+  if (!F.eyeball_L) eyeballDefault('L');
+  if (!F.eyeball_R) { if (S.sym && F.eyeball_L) F.eyeball_R = arr(mirror(V(F.eyeball_L))); else eyeballDefault('R'); }
   if (OVAL_KEYS.every((k) => F[k])) return;
   if (!(F.mouth_c && F.mouth_corner_L)) {   // first guess from the eyes and the chin
     const eY = F.eye_L ? V(F.eye_L).y : V(S.pos.head).y + .03 * H, chin = S.marks.chin ? V(S.marks.chin) : V(S.pos.jaw_end || S.pos.head);
@@ -949,6 +964,13 @@ function drawOval() {
     const l = new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0x3fbf6a, depthTest: false, transparent: true }));
     l.renderOrder = 998; ovalGroup.add(l);
   }
+  for (const sd of ['L', 'R']) {   // eyeballs as wire spheres
+    const c = S.face['eyeball_' + sd]; if (!c) continue;
+    const rr = (sd === 'R' && S.face.eyeball_r_R) || S.face.eyeball_r || .01 * H;
+    const wg = new THREE.WireframeGeometry(new THREE.SphereGeometry(rr, 16, 10));
+    const ws = new THREE.LineSegments(wg, new THREE.LineBasicMaterial({ color: 0x35c2e8, depthTest: false, transparent: true, opacity: .7 }));
+    ws.position.copy(V(c)); ws.renderOrder = 997; ovalGroup.add(ws);
+  }
   const r = .006 * H / Math.max(1, camera.zoom);
   for (const k of ovalHandles()) {
     const sp = new THREE.Mesh(sphereGeo, k === ovalMode.sel ? COL.sel : k === 'mouth_c' ? COL.derived : k === 'mouth_limit_top' ? COL.bad : COL.place);
@@ -977,11 +999,17 @@ tcO.addEventListener('mouseUp', () => {
 });
 function ovalSelect(k) {
   ovalMode.sel = k;
+  tcO.showZ = !!(k && k.startsWith('eyeball'));   // an eyeball moves in depth too
   if (k) { ovalHelper.position.copy(V(S.face[k])); ovalHelper.updateMatrixWorld(); tcO.attach(ovalHelper); } else tcO.detach();
   drawOval();
 }
 function ovalApply(k, w) {
   const F = S.face;
+  if (k.startsWith('eyeball')) {   // free in 3D (no skin projection); the other eye mirrors
+    F[k] = arr(w);
+    if (S.sym) F[k.endsWith('_L') ? 'eyeball_R' : 'eyeball_L'] = arr(mirror(w));
+    drawOval(); return;
+  }
   const ref = (key) => (key.startsWith('eye_') ? (F['eye_' + key.slice(-1)] || F[key])[2]
     : key === 'mouth_limit_top' ? F.lip_top[2] : F.mouth_c[2]);   // the limit follows the lip skin, not the nose
   const put = (key, x, y) => { F[key] = [x, y, skinNear(x, y, ref(key))]; };
@@ -1012,6 +1040,17 @@ canvas.addEventListener('pointerdown', (e) => {
   const k = ovalPick(e); if (!k) return;
   ovalSelect(k); e.stopImmediatePropagation();
 }, true);
+function eyeScale(f) {
+  if (!ovalMode) return; pushUndo();
+  const F = S.face, sd = ovalMode.sel && ovalMode.sel.endsWith('_R') && !S.sym ? 'R' : 'L';
+  const key = sd === 'R' ? 'eyeball_r_R' : 'eyeball_r';
+  const r0 = F[key] || F.eyeball_r || .01 * H, r1 = r0 * f;
+  for (const s2 of (S.sym ? ['L', 'R'] : [sd])) {   // keep the cornea where it is: the centre moves back as it grows
+    const c = F['eyeball_' + s2]; if (c) c[2] -= (r1 - r0);
+  }
+  F[key] = r1; drawOval(); sync();
+}
+$('eyeSmall').onclick = () => eyeScale(1 / 1.06); $('eyeBig').onclick = () => eyeScale(1.06);
 $('ovalBtn').onclick = () => {
   if (S.phase !== 'edit') return;
   if (ovalMode) { tcO.detach(); ovalMode = null; drawOval(); refreshAll(); sync(); return; }
@@ -1605,7 +1644,7 @@ $('pJaw').onclick = () => {
   stopClip(); poseReset();
   const plate = poseMeshes.some((m) => m.morphTargetDictionary && 'jawOpen' in m.morphTargetDictionary);   // plate or cut mouth
   if (plate) setMorph('jawOpen', .8); else setHinge('jaw', 20);
-  for (const s of SIDES) poseBend('eye_' + s, UPV, 15); poseHighlight();
+  poseHighlight();
 };
 $('pFist').onclick = () => {
   stopClip();

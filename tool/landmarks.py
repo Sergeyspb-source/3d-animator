@@ -285,7 +285,9 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=T
               "open_rim": bool(face_topo and mouth == "cut"),
               "head_bone": names["head"], "sym": bool(landmarks.get("sym", True)), "report": str(work / "eyes_report.json"),
               "preview": str(work / "eyes.png"),
-              "sides": {s: {"outline": pts, "bone": names[f"eye_{s}"] if f"eye_{s}" in landmarks["joints"] else ""}
+              "sides": {s: {"outline": pts, "bone": names[f"eye_{s}"] if f"eye_{s}" in landmarks["joints"] else "",
+                            "ball": face.get(f"eyeball_{s}"),
+                            "ball_r": (face.get("eyeball_r_R") if s == "R" else None) or face.get("eyeball_r")}
                         for s, pts in rim.items()}}
         (work / "eyes_job.json").write_text(json.dumps(ej, ensure_ascii=False), encoding="utf-8")
         r = subprocess.run([blender, "-b", "--factory-startup", "-P", str(ROOT / "blender_eye_insert.py"), "--",

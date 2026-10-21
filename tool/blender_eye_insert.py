@@ -155,13 +155,21 @@ for side, spec in job["sides"].items():
         dx, dz, a = p.x - cx, p.z - cz, p.y - (front_y + gap)
         if a > width * 0.02:
             rs.append((dx * dx + dz * dz + a * a) / (2 * a))
-    r = sorted(rs)[len(rs) // 2] if rs else width * 0.6
-    r = max(width * 0.35, min(width * 1.0, r))
-    solved[side] = dict(r=r, cx=cx, cz=cz, front_y=front_y, gap=gap, rim=rim_surf, width=width, kill=len(kill), bone=spec.get("bone"))
+    # cornea at the lid plane like a real eye (the old "rim on the ball" fit sank deep-set eyes far back)
+    # natural proportion: the iris (32 deg cap) about half the opening wide -> r = 0.42 width; the cornea just behind
+    # the painted eye / the middle of the lids, whichever is further forward (forward = -y)
+    lids = [p for p in rim_surf if abs(p.x - cx) < 0.15 * width] or rim_surf
+    yl = sum(p.y for p in lids) / len(lids)
+    r = 0.42 * width
+    front_y, gap = min(front_y if hit[0] is not None else yl, yl), 0.02 * width
+    solved[side] = dict(r=r, cx=cx, cz=cz, front_y=front_y, gap=gap, rim=rim_surf, width=width, kill=len(kill), bone=spec.get("bone"),
+                        ball=spec.get("ball"), ball_r=spec.get("ball_r"))
 for side, sv in solved.items():
     r = sum(v["r"] for v in solved.values()) / len(solved) if job.get("sym", True) else sv["r"]
     cx, cz, front_y, gap, rim_surf, width = sv["cx"], sv["cz"], sv["front_y"], sv["gap"], sv["rim"], sv["width"]
     centre = Vector((cx, front_y + gap + r, cz))
+    if sv.get("ball") and sv.get("ball_r"):   # placed by hand in the editor
+        centre, r = bl(sv["ball"]), float(sv["ball_r"])
     ball = kit.copy(); ball.data = kit.data.copy(); bpy.context.scene.collection.objects.link(ball)
     ball.name = ball.data.name = f"Eye_{side}"
     ball.data.transform(Matrix.Scale(r / kit_r, 4))
