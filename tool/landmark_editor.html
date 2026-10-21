@@ -15,9 +15,28 @@
   * { box-sizing:border-box; }
   html, body { margin:0; height:100%; }
   body { background:var(--bg); color:var(--fg); font:13px/1.4 var(--ui); padding:10px; }
-  .wrap { display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:10px; height:100%; min-height:520px; }
-  @media (max-width: 760px) { .wrap { grid-template-columns:minmax(0,1fr); grid-template-rows:60vh auto; height:auto; } }
-  .stage { position:relative; background:var(--stage); border:1px solid var(--line); border-radius:10px; overflow:hidden; min-height:320px; }
+  .wrap { display:grid; grid-template-columns:minmax(0,1fr) 320px; gap:10px; height:100%; min-height:520px; }
+  @media (max-width: 760px) { .wrap { grid-template-columns:minmax(0,1fr); grid-template-rows:auto auto; height:auto; } .stage { min-height:60vh; } }
+  .main { display:flex; flex-direction:column; gap:8px; min-height:0; min-width:0; }
+  .stage { position:relative; flex:1; background:var(--stage); border:1px solid var(--line); border-radius:10px; overflow:hidden; min-height:320px; }
+  /* tool bar over the stage: view and display, then the pose check */
+  .toolbar { display:flex; flex-wrap:wrap; gap:6px; align-items:center; background:var(--panel); border:1px solid var(--line);
+    border-radius:10px; padding:6px 8px; }
+  .seg { display:inline-flex; }
+  .tabs { display:flex; } .tabs button { flex:1; }
+  .seg button { border-radius:0; margin-left:-1px; } .seg button:first-child { border-radius:7px 0 0 7px; margin-left:0; }
+  .seg button:last-child { border-radius:0 7px 7px 0; }
+  .sep { width:1px; align-self:stretch; background:var(--line); margin:0 2px; }
+  .grow { flex:1; }
+  button.primary { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button.primary.on { color:var(--accent-fg); }
+  button.danger { color:#e5484d; }
+  .sub { font:11px var(--mono); color:var(--muted); margin:8px 0 4px; }
+  .sub:first-of-type { margin-top:2px; }
+  .opt { font:11px var(--ui); letter-spacing:0; text-transform:none; color:var(--muted); }
+  details.note { margin-top:6px; } details.note summary { cursor:pointer; color:var(--muted); font-size:12px; }
+  .foot { position:sticky; bottom:0; margin-top:auto; box-shadow:0 -6px 8px -6px rgba(0,0,0,.25); }
+  .foot .row { margin-top:6px; }
   canvas { position:absolute; inset:0; width:100%; height:100%; display:block; touch-action:none; }
   .badge { position:absolute; left:10px; top:8px; font:12px var(--mono); color:var(--muted); background:color-mix(in srgb,var(--panel) 85%,transparent);
     padding:3px 8px; border-radius:6px; pointer-events:none; }
@@ -34,7 +53,7 @@
   button.on { background:var(--accent); color:var(--accent-fg); border-color:var(--accent); }
   button:disabled { opacity:.45; cursor:default; }
   label.chk { display:flex; gap:6px; align-items:center; cursor:pointer; }
-  .list { display:grid; gap:3px; max-height:260px; overflow:auto; }
+  .list { display:grid; gap:3px; max-height:210px; overflow:auto; }
   .item { display:flex; justify-content:space-between; gap:6px; text-align:left; padding:4px 8px; }
   .item .st { font:11px var(--mono); color:var(--muted); }
   .item.done .st { color:var(--ok); }
@@ -74,11 +93,14 @@
   .posebar button.on { background:var(--accent); color:var(--accent-fg); }
   .pinfo { background:color-mix(in srgb,var(--panel) 90%,transparent); border-radius:6px; padding:4px 8px; font:12px var(--mono); }
   .pinfo.stop { color:#e5484d; }
-  .mouse { position:absolute; left:10px; top:36px; display:flex; gap:8px; align-items:center; pointer-events:none;
-    background:color-mix(in srgb,var(--panel) 88%,transparent); border-radius:8px; padding:5px 8px; font-size:12px; line-height:1.35; }
+  .mouse { position:absolute; left:10px; top:36px; z-index:3; display:flex; gap:8px; align-items:center;
+    background:color-mix(in srgb,var(--panel) 94%,transparent); border:1px solid var(--line); border-radius:8px; padding:7px 10px; font-size:12px; line-height:1.5; }
   .mouse svg { width:24px; height:36px; flex:none; }
   .mouse .l { color:#d9622f; font-weight:600; } .mouse .r { color:#3f8fe6; font-weight:600; } .mouse .w { color:var(--muted); font-weight:600; }
-  body.viewonly .rail > .box:not(:first-child), body.viewonly #mPose, body.viewonly #yawL, body.viewonly #yawR { display:none; }
+  /* the pose check and the viewer of a ready rig need the whole width and no markup tools */
+  body.viewonly .rail, body.pose .rail { display:none; }
+  body.viewonly .wrap, body.pose .wrap { grid-template-columns:minmax(0,1fr); }
+  body.viewonly #mPose, body.viewonly .edit-only, body.pose .edit-only { display:none; }
   .posebar select { font:inherit; color:var(--fg); background:var(--panel); border:1px solid var(--line); border-radius:7px; padding:5px 6px; max-width:180px; }
   .legend { display:inline-flex; align-items:center; gap:4px; font:11px var(--mono); }
   .legend i { display:inline-block; width:70px; height:8px; border-radius:4px;
@@ -88,10 +110,29 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="stage">
+  <div class="main">
+    <div class="toolbar" id="toolbar">
+      <div class="seg">
+        <button id="vFront" title="Клавиша 1">Спереди</button>
+        <button id="vSide" title="Клавиша 3">Сбоку</button>
+        <button id="vFree" title="Вращение правой кнопкой мыши">Свободно</button>
+      </div>
+      <button id="vFit" title="Вернуть модель в кадр (F)">Вписать</button>
+      <button id="vHand" title="Крупно левая кисть (H)">Кисть</button>
+      <button id="xray" title="Alt+Z">Рентген</button>
+      <span class="sep edit-only"></span>
+      <button id="yawL" class="edit-only" title="Если модель стоит боком или спиной">↺ 90°</button>
+      <button id="yawR" class="edit-only" title="Повернуть модель; разметка сбросится">↻ 90°</button>
+      <span class="small edit-only" id="yawTxt"></span>
+      <label class="chk edit-only" title="Зелёный сектор — куда сустав гнётся, красный — куда нет"><input type="checkbox" id="showBends" checked> Сектора сгиба</label>
+      <span class="grow"></span>
+      <button id="mPose" class="primary" title="Проверить сгибы на собранной модели">Поза</button>
+      <button id="helpBtn" title="Мышь и клавиши">?</button>
+    </div>
+    <div class="stage">
     <canvas id="cv"></canvas>
     <div class="badge" id="badge">вид спереди</div>
-    <div class="mouse" id="mouseHelp">
+    <div class="mouse" id="mouseHelp" hidden>
       <svg viewBox="0 0 24 36" aria-hidden="true">
         <path d="M12 1 C5 1 2 5 2 11 V24 C2 31 6 35 12 35 C18 35 22 31 22 24 V11 C22 5 19 1 12 1 Z" fill="none" stroke="currentColor" stroke-width="1.5"/>
         <path d="M12 1 C5 1 2 5 2 11 V14 H12 Z" fill="#d9622f"/>
@@ -100,7 +141,9 @@
       </svg>
       <div><span class="l">ЛКМ</span> — <span id="mLeft">поставить точку</span><br>
         <span class="r">ПКМ</span> — вращать вид<br>
-        <span class="w">Колесо</span> — масштаб, зажать — сдвиг · <kbd>F</kbd> — вписать</div>
+        <span class="w">Колесо</span> — масштаб, зажать — сдвиг<br>
+        <kbd>1</kbd> спереди · <kbd>3</kbd> сбоку · <kbd>F</kbd> вписать · <kbd>H</kbd> кисть · <kbd>Alt+Z</kbd> рентген<br>
+        <kbd>G</kbd> перемещение · <kbd>R</kbd> поворот · <kbd>Ctrl+Z</kbd> отменить · <kbd>Esc</kbd> снять выбор</div>
     </div>
     <div class="hint" id="hint" hidden></div>
     <div class="msg" id="msg">Загрузка модели…</div>
@@ -122,39 +165,35 @@
         <div class="row"><button id="gScheme">Схема</button><label class="filebtn">Своя картинка<input type="file" id="gFile" accept="image/*" hidden></label></div>
       </div>
     </div>
+    </div>
   </div>
   <div class="rail">
-    <div class="box">
-      <div class="grp">Вид</div>
-      <div class="row">
-        <button id="vFront" title="Клавиша 1">Спереди</button>
-        <button id="vSide" title="Клавиша 3">Сбоку</button>
-        <button id="vFree" title="Вращение правой кнопкой мыши">Свободно</button>
-        <button id="vFit" title="Вернуть модель в кадр (F)">Вписать</button>
-        <button id="vHand" title="Крупно левая кисть (H)">Кисть</button>
-        <button id="xray" title="Alt+Z">Рентген</button>
-        <button id="mPose" title="Проверить сгибы на собранной модели">Поза</button>
-      </div>
-      <div class="row" style="margin-top:6px">
-        <button id="yawL" title="Если модель стоит боком или спиной">↺ 90°</button>
-        <button id="yawR">↻ 90°</button>
-        <span class="small" id="yawTxt"></span>
-      </div>
+    <div class="seg tabs" id="railTabs" hidden>
+      <button id="tabNodes" class="on">Узлы скелета</button><button id="tabExtra">Пальцы и лицо</button>
     </div>
-    <div class="box">
+    <div class="box" id="listBox">
       <div class="grp" id="listTitle">Ориентиры</div>
-      <div class="row" id="fRow" style="margin-bottom:6px" hidden>
-        <button id="fStart" title="Камера подъедет к кисти; кликайте кончики пальцев">Разметить пальцы</button>
-        <label class="chk" title="Два клика на палец: кончик и костяшка; точнее на необычных кистях"><input type="checkbox" id="fBase"> и основания</label>
-        <button id="fClear">Убрать пальцы</button>
-        <button id="faceStart" title="Глаза и челюсть: три клика по лицу">Разметить лицо</button>
-        <label class="chk" title="Ещё 4 клика по краю век: глаза вырежутся и заменятся шарами"><input type="checkbox" id="faceEyes" checked> и контур глаз</label>
-        <button id="faceClear">Убрать лицо</button>
-        <button id="ovalBtn" title="Шаблон рта из колец: тяните ручки мышью, чтобы совпал с губами">Овал рта</button>
-      </div>
-      <label class="chk" style="margin-bottom:4px"><input type="checkbox" id="showBends" checked> Сектора сгиба суставов</label>
       <label class="chk" style="margin-bottom:6px"><input type="checkbox" id="sym" checked> Симметрия (правая сторона повторяет левую)</label>
       <div class="list" id="list"></div>
+    </div>
+    <div class="box" id="fRow" hidden>
+      <div class="grp">Не обязательно: можно пропустить</div>
+      <div class="sub">Пальцы</div>
+      <div class="row">
+        <button id="fStart" title="Камера подъедет к кисти; кликайте кончики пальцев">Разметить пальцы</button>
+        <button id="fClear">Убрать</button>
+        <label class="chk" title="Два клика на палец: кончик и костяшка; точнее на необычных кистях"><input type="checkbox" id="fBase"> и основания</label>
+      </div>
+      <div class="sub">Лицо</div>
+      <div class="row">
+        <button id="faceStart" title="Глаза и челюсть: три клика по лицу">Разметить лицо</button>
+        <button id="faceClear">Убрать</button>
+        <label class="chk" title="Ещё 4 клика по краю век: глаза вырежутся и заменятся шарами"><input type="checkbox" id="faceEyes" checked> и контур глаз</label>
+      </div>
+      <div class="sub">Рот и веки</div>
+      <div class="row">
+        <button id="ovalBtn" title="Шаблон рта из колец: тяните ручки мышью, чтобы совпал с губами">Овал рта</button>
+      </div>
     </div>
     <div class="box" id="selBox">
       <div class="grp">Выбранный узел</div>
@@ -173,16 +212,19 @@
         <button id="flip" title="Для обратных коленей (гарпии, оборотни на цифровой стопе)">Развернуть сгиб</button>
       </div>
       <div class="small" id="bendInfo"></div>
-      <div class="small" style="margin-top:6px">Оси как в Blender (Z вверх, −Y вперёд). Перемещение двигает только узел; поворот вращает узел вместе со всеми дочерними.</div>
+      <details class="note"><summary>Про оси</summary>
+        <div class="small">Оси как в Blender (Z вверх, −Y вперёд). Перемещение двигает только узел; поворот вращает узел вместе со всеми дочерними.</div>
+      </details>
     </div>
-    <div class="box">
+    <div class="box foot">
+      <div class="small warn" id="warn"></div>
+      <div class="sync" id="sync" style="margin-top:6px"></div>
       <div class="row">
         <button id="undo" title="Ctrl+Z">Отменить</button>
         <button id="rebuild" title="Пересчитать таз, позвоночник, шею, ключицы, бёдра и стопы по ориентирам">Пересчитать производные</button>
-        <button id="reset">Начать заново</button>
+        <span class="grow"></span>
+        <button id="reset" class="danger" title="Удалить всю разметку">Начать заново</button>
       </div>
-      <div class="small warn" id="warn"></div>
-      <div class="sync" id="sync" style="margin-top:6px"></div>
     </div>
   </div>
 </div>
@@ -296,6 +338,7 @@ const S = {   // editor state (serialised)
 let current = null;       // landmark being placed
 let selected = null;      // joint selected in edit phase
 let view = 'front', xray = false;
+let railTab = 'nodes';     // right panel: 'nodes' (list) or 'extra' (fingers, face, mouth)
 const undoStack = [];
 
 // ---------------------------------------------------------------- helpers
@@ -580,7 +623,8 @@ function nextMark() { return activeMarks().find((m) => !S.marks[m.id]) || null; 
 function refreshList() {
   const list = $('list'); list.innerHTML = '';
   if (S.phase === 'place') {
-    $('listTitle').textContent = 'Ориентиры: кликните по модели';
+    const marks = activeMarks();
+    $('listTitle').textContent = `Ориентиры: кликните по модели (${marks.filter((m) => S.marks[m.id]).length}/${marks.length})`;
     for (const m of activeMarks()) {
       const b = document.createElement('button'); b.className = 'item' + (S.marks[m.id] ? ' done' : '') + (m.id === current ? ' cur' : '');
       b.innerHTML = `<span>${m.label}</span><span class="st">${S.marks[m.id] ? 'готово' : '—'}</span>`;
@@ -666,7 +710,11 @@ function refreshFields() {
 function refreshAll() {
   refreshList(); refreshHint(); refreshFields(); draw(); refreshGuide();
   $('mLeft').textContent = poseOn ? 'навести и тянуть: согнуть сустав' : S.phase === 'place' ? 'поставить точку (вид спереди)' : 'выбрать узел, тянуть стрелки';
-  $('fRow').hidden = S.phase !== 'edit' || !!fingerMode || !!faceMode;
+  const marking = !!fingerMode || !!faceMode, extra = S.phase === 'edit' && !marking && railTab === 'extra';
+  $('railTabs').hidden = S.phase !== 'edit' || marking;   // while clicking fingertips or face points the list is the work area
+  $('listBox').hidden = extra; $('fRow').hidden = !extra;
+  $('selBox').hidden = S.phase !== 'edit';   // nothing to inspect while the landmarks are still being placed
+  $('tabNodes').classList.toggle('on', !extra); $('tabExtra').classList.toggle('on', extra);
   $('ovalBtn').textContent = ovalMode ? 'Готово: рот и веки' : 'Овал рта и веки';
   $('ovalBtn').classList.toggle('on', !!ovalMode);
   $('faceClear').hidden = !S.pos.jaw;
@@ -1250,12 +1298,12 @@ $('rebuild').onclick = () => {
 };
 $('reset').onclick = () => {
   if (!confirm('Удалить всю разметку и начать заново?')) return;
-  pushUndo(); S.phase = 'place'; S.marks = {}; S.pos = {}; S.rot = {}; S.fmarks = {}; S.face = {}; fingerMode = null; faceMode = null; select(null); current = nextMark().id; setView('front'); sync();
+  pushUndo(); S.phase = 'place'; S.marks = {}; S.pos = {}; S.rot = {}; S.fmarks = {}; S.face = {}; fingerMode = null; faceMode = null; select(null); current = nextMark().id; showGuide(true); setView('front'); sync();
 };
 const turn = (d) => {
   if (S.phase === 'edit' && !confirm('Поворот модели сбросит разметку. Продолжить?')) return;
   pushUndo(); S.yaw = ((S.yaw + d) % 360 + 360) % 360; S.phase = 'place'; S.marks = {}; S.pos = {}; S.rot = {};
-  select(null); applyYaw(); current = nextMark().id; resize(); setView('front'); sync();
+  select(null); applyYaw(); current = nextMark().id; showGuide(true); resize(); setView('front'); sync();
 };
 $('yawL').onclick = () => turn(90); $('yawR').onclick = () => turn(-90);
 
@@ -1273,7 +1321,11 @@ $('flip').onclick = () => {
   for (const id of [selected, S.sym ? partner(selected) : null]) if (id) S.bend[id] = -(S.bend[id] || 1);
   refreshAll(); sync();
 };
-$('gHide').onclick = () => { const b = $('gBody'); b.hidden = !b.hidden; $('gHide').textContent = b.hidden ? '+' : '−'; };
+$('tabNodes').onclick = () => { railTab = 'nodes'; refreshAll(); };
+$('tabExtra').onclick = () => { railTab = 'extra'; refreshAll(); };
+$('helpBtn').onclick = () => { const m = $('mouseHelp'); m.hidden = !m.hidden; $('helpBtn').classList.toggle('on', !m.hidden); };
+const showGuide = (on) => { $('gBody').hidden = !on; $('gHide').textContent = on ? '−' : '+'; };
+$('gHide').onclick = () => showGuide($('gBody').hidden);
 $('gScheme').onclick = () => { $('gFig').hidden = false; $('gImg').hidden = true; };
 $('gFile').onchange = (e) => {
   const f = e.target.files[0]; if (!f) return;
@@ -1495,6 +1547,7 @@ async function setPose(on) {
   if (poseRoot) { poseRoot.visible = on; skelHelp.visible = on; }
   if (on) tc.detach(); else if (selected) attach();
   $('guide').hidden = on || document.body.classList.contains('viewonly'); $('poseBar').hidden = !on; $('mPose').classList.toggle('on', on);
+  document.body.classList.toggle('pose', on);   // the rail makes way: the pose check wants the whole width
   $('mPose').textContent = on ? 'К разметке' : 'Поза';
   refreshAll();
   poseHighlight();
@@ -1580,6 +1633,7 @@ $('pSquat').onclick = () => {
       cx = DATA.state.center_x || 0;
     }
     applyYaw(); $('msg').hidden = true;
+    if (S.phase === 'edit') showGuide(false);   // the schematic helps while placing; collapsed for a finished markup
     if (S.phase === 'place') current = nextMark().id;
     resize(); setView('front'); sync();
     if (DATA.mode === 'view' && DATA.rigged) { document.body.classList.add('viewonly'); $('guide').hidden = true; await setPose(true); $('guide').hidden = true; }

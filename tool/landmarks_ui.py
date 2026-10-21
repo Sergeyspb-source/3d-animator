@@ -12,7 +12,7 @@ NAMINGS = {"Mixamo (под анимации из Mixamo)": "mixamo", "Godot (п�
 
 
 def _frame(page):
-    return ('<iframe srcdoc="%s" style="width:100%%;height:720px;border:0;border-radius:10px"></iframe>'
+    return ('<iframe srcdoc="%s" style="width:100%%;height:max(760px,84vh);border:0;border-radius:10px"></iframe>'
             % _html.escape(page, quote=True))
 
 
