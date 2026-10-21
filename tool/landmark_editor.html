@@ -616,6 +616,7 @@ function draw() {
     }
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(seg, 3));
     lines = new THREE.LineSegments(g, lineMat); lines.renderOrder = 998; lines.visible = !poseOn; scene.add(lines);
+    for (const sd of SIDES) eyeWire(jointGroup, sd, 0x35c2e8);   // eyeballs: centre = eye joint, radius to its end
   }
 }
 
@@ -718,7 +719,7 @@ function refreshAll() {
   $('tabNodes').classList.toggle('on', !extra); $('tabExtra').classList.toggle('on', extra);
   $('ovalBtn').textContent = ovalMode ? 'Готово: рот и веки' : 'Овал рта и веки';
   $('ovalBtn').classList.toggle('on', !!ovalMode);
-  $('eyeSmall').hidden = $('eyeBig').hidden = !ovalMode || !S.face.eyeball_L;
+  $('eyeSmall').hidden = $('eyeBig').hidden = !ovalMode || !S.pos.eye_L;
   $('faceClear').hidden = !S.pos.jaw;
   $('fClear').hidden = !Object.keys(S.pos).some((k) => FINGER_RE.test(k));
   const w = S.phase === 'edit' ? bendWarnings() : [];
@@ -890,17 +891,16 @@ const skinZ = (x, y, fb) => { const z = hitsAt(x, y); return z.length ? z[0] : f
 // the skin layer nearest to a reference depth (under an overhanging nose the first hit is the nose tip)
 const skinNear = (x, y, ref) => { const z = hitsAt(x, y); if (!z.length) return ref; return z.reduce((a, b) => (Math.abs(b - ref) < Math.abs(a - ref) ? b : a)); };
 const EYE_HANDLES = () => ['eye_in_L', 'eye_top_L', 'eye_out_L', 'eye_bot_L'].concat(S.sym ? [] : ['eye_in_R', 'eye_top_R', 'eye_out_R', 'eye_bot_R']).filter((k) => S.face[k]);
-const EYEBALLS = () => ['eyeball_L'].concat(S.sym ? [] : ['eyeball_R']).filter((k) => S.face[k]);
+// the eyeball = the eye joint (centre) and its end joint (the cornea): radius = their distance
+const EYEBALLS = () => ['eyeball_L'].concat(S.sym ? [] : ['eyeball_R']).filter((k) => S.pos['eye_' + k.slice(-1)]);
 const ovalHandles = () => OVAL_KEYS.concat(EYE_HANDLES(), EYEBALLS());
-// default eyeball from the eyelid outline: the cornea at the lid plane (as a real eye), radius from the opening width
-function eyeballDefault(sd) {
-  const F = S.face, pts = ['eye_in', 'eye_top', 'eye_out', 'eye_bot'].map((k) => F[k + '_' + sd]).filter(Boolean).map(V);
-  if (pts.length < 4) return;
-  // as blender_eye_insert.py: iris about half the opening wide (r = 0.42 width), cornea just behind the painted eye
-  const c = pts.reduce((a, b) => a.add(b), new THREE.Vector3()).multiplyScalar(.25), w = pts[0].distanceTo(pts[2]);
-  const zl = (pts[1].z + pts[3].z) / 2, painted = F['eye_' + sd] ? F['eye_' + sd][2] : zl;   // glTF: forward = +z
-  const r = .42 * w, front = Math.max(zl, painted) - .02 * w;
-  F['eyeball_' + sd] = [c.x, c.y, front - r]; if (!F.eyeball_r) F.eyeball_r = r;
+const handlePos = (k) => (k.startsWith('eyeball') ? S.pos['eye_' + k.slice(-1)] : S.face[k]);
+const eyeR = (sd) => (S.pos['eye_' + sd] && S.pos['eye_end_' + sd] ? V(S.pos['eye_' + sd]).distanceTo(V(S.pos['eye_end_' + sd])) : 0);
+function eyeWire(group, sd, colour) {
+  const c = S.pos['eye_' + sd], r = eyeR(sd); if (!c || !r) return;
+  const ws = new THREE.LineSegments(new THREE.WireframeGeometry(new THREE.SphereGeometry(r, 16, 10)),
+    new THREE.LineBasicMaterial({ color: colour, depthTest: false, transparent: true, opacity: .6 }));
+  ws.position.copy(V(c)); ws.renderOrder = 997; group.add(ws);
 }
 function eyeLoop(sd) {   // closed Catmull-Rom through the 4 eyelid points, as blender_eye_insert.py / face_topo.py
   const pts = ['eye_in', 'eye_top', 'eye_out', 'eye_bot'].map((k) => S.face[k + '_' + sd]).filter(Boolean).map(V);
@@ -917,8 +917,6 @@ function eyeLoop(sd) {   // closed Catmull-Rom through the 4 eyelid points, as b
 }
 function ovalInit() {
   const F = S.face;
-  if (!F.eyeball_L) eyeballDefault('L');
-  if (!F.eyeball_R) { if (S.sym && F.eyeball_L) F.eyeball_R = arr(mirror(V(F.eyeball_L))); else eyeballDefault('R'); }
   if (OVAL_KEYS.every((k) => F[k])) return;
   if (!(F.mouth_c && F.mouth_corner_L)) {   // first guess from the eyes and the chin
     const eY = F.eye_L ? V(F.eye_L).y : V(S.pos.head).y + .03 * H, chin = S.marks.chin ? V(S.marks.chin) : V(S.pos.jaw_end || S.pos.head);
@@ -964,23 +962,17 @@ function drawOval() {
     const l = new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0x3fbf6a, depthTest: false, transparent: true }));
     l.renderOrder = 998; ovalGroup.add(l);
   }
-  for (const sd of ['L', 'R']) {   // eyeballs as wire spheres
-    const c = S.face['eyeball_' + sd]; if (!c) continue;
-    const rr = (sd === 'R' && S.face.eyeball_r_R) || S.face.eyeball_r || .01 * H;
-    const wg = new THREE.WireframeGeometry(new THREE.SphereGeometry(rr, 16, 10));
-    const ws = new THREE.LineSegments(wg, new THREE.LineBasicMaterial({ color: 0x35c2e8, depthTest: false, transparent: true, opacity: .7 }));
-    ws.position.copy(V(c)); ws.renderOrder = 997; ovalGroup.add(ws);
-  }
+  for (const sd of ['L', 'R']) eyeWire(ovalGroup, sd, 0x35c2e8);   // eyeballs as wire spheres
   const r = .006 * H / Math.max(1, camera.zoom);
   for (const k of ovalHandles()) {
     const sp = new THREE.Mesh(sphereGeo, k === ovalMode.sel ? COL.sel : k === 'mouth_c' ? COL.derived : k === 'mouth_limit_top' ? COL.bad : COL.place);
-    sp.scale.setScalar(k === 'mouth_c' ? r * 1.3 : r); sp.position.copy(V(S.face[k])); sp.renderOrder = 999; ovalGroup.add(sp);
+    sp.scale.setScalar(k === 'mouth_c' ? r * 1.3 : r); sp.position.copy(V(handlePos(k))); sp.renderOrder = 999; ovalGroup.add(sp);
   }
 }
 function ovalPick(e) {
   const rc = canvas.getBoundingClientRect(); let best = null, bd = 16;
   for (const k of ovalHandles()) {
-    const q = V(S.face[k]).project(camera), sx = rc.left + (q.x + 1) / 2 * rc.width, sy = rc.top + (1 - q.y) / 2 * rc.height;
+    const q = V(handlePos(k)).project(camera), sx = rc.left + (q.x + 1) / 2 * rc.width, sy = rc.top + (1 - q.y) / 2 * rc.height;
     const d = Math.hypot(sx - e.clientX, sy - e.clientY); if (d < bd) { bd = d; best = k; }
   }
   return best;
@@ -995,19 +987,19 @@ tcO.addEventListener('objectChange', () => { if (ovalMode && ovalMode.drag) oval
 tcO.addEventListener('mouseUp', () => {
   if (!ovalMode) return;
   ovalMode.drag = null; drawOval(); sync();
-  if (ovalMode.sel) ovalHelper.position.copy(V(S.face[ovalMode.sel]));   // snapped onto the skin
+  if (ovalMode.sel) ovalHelper.position.copy(V(handlePos(ovalMode.sel)));   // snapped onto the skin
 });
 function ovalSelect(k) {
   ovalMode.sel = k;
   tcO.showZ = !!(k && k.startsWith('eyeball'));   // an eyeball moves in depth too
-  if (k) { ovalHelper.position.copy(V(S.face[k])); ovalHelper.updateMatrixWorld(); tcO.attach(ovalHelper); } else tcO.detach();
+  if (k) { ovalHelper.position.copy(V(handlePos(k))); ovalHelper.updateMatrixWorld(); tcO.attach(ovalHelper); } else tcO.detach();
   drawOval();
 }
 function ovalApply(k, w) {
   const F = S.face;
-  if (k.startsWith('eyeball')) {   // free in 3D (no skin projection); the other eye mirrors
-    F[k] = arr(w);
-    if (S.sym) F[k.endsWith('_L') ? 'eyeball_R' : 'eyeball_L'] = arr(mirror(w));
+  if (k.startsWith('eyeball')) {   // moves the eye joint with its cornea point; the other eye mirrors
+    const sd = k.slice(-1), d = w.clone().sub(V(S.pos['eye_' + sd]));
+    for (const id of ['eye_' + sd, 'eye_end_' + sd]) setPos(id, V(S.pos[id]).add(d));
     drawOval(); return;
   }
   const ref = (key) => (key.startsWith('eye_') ? (F['eye_' + key.slice(-1)] || F[key])[2]
@@ -1040,15 +1032,14 @@ canvas.addEventListener('pointerdown', (e) => {
   const k = ovalPick(e); if (!k) return;
   ovalSelect(k); e.stopImmediatePropagation();
 }, true);
-function eyeScale(f) {
+function eyeScale(f) {   // grow or shrink the ball keeping the cornea: the centre moves back
   if (!ovalMode) return; pushUndo();
-  const F = S.face, sd = ovalMode.sel && ovalMode.sel.endsWith('_R') && !S.sym ? 'R' : 'L';
-  const key = sd === 'R' ? 'eyeball_r_R' : 'eyeball_r';
-  const r0 = F[key] || F.eyeball_r || .01 * H, r1 = r0 * f;
-  for (const s2 of (S.sym ? ['L', 'R'] : [sd])) {   // keep the cornea where it is: the centre moves back as it grows
-    const c = F['eyeball_' + s2]; if (c) c[2] -= (r1 - r0);
+  const sides = S.sym ? ['L'] : [ovalMode.sel && ovalMode.sel.endsWith('_R') ? 'R' : 'L'];
+  for (const sd of sides) {
+    const c = V(S.pos['eye_' + sd]), e = V(S.pos['eye_end_' + sd]), r = c.distanceTo(e); if (!r) continue;
+    setPos('eye_' + sd, e.clone().add(c.clone().sub(e).multiplyScalar(f)));
   }
-  F[key] = r1; drawOval(); sync();
+  drawOval(); sync();
 }
 $('eyeSmall').onclick = () => eyeScale(1 / 1.06); $('eyeBig').onclick = () => eyeScale(1.06);
 $('ovalBtn').onclick = () => {

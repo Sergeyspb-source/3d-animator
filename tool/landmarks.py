@@ -145,6 +145,10 @@ def initial_state(src: Path, export_dir, textbox: str):
     return None
 
 
+def _dist(a, b):
+    return sum((x - y) ** 2 for x, y in zip(a, b)) ** 0.5 if a and b else None
+
+
 def face_kit(cfg, kit, work):
     """(folder, parts.json) of a face-parts set (export/face_parts/<kit>); a default set is generated when there is none."""
     if kit and (Path(cfg["export_dir"]) / "face_parts" / kit / "eyes.glb").exists():
@@ -286,8 +290,9 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=T
               "head_bone": names["head"], "sym": bool(landmarks.get("sym", True)), "report": str(work / "eyes_report.json"),
               "preview": str(work / "eyes.png"),
               "sides": {s: {"outline": pts, "bone": names[f"eye_{s}"] if f"eye_{s}" in landmarks["joints"] else "",
-                            "ball": face.get(f"eyeball_{s}"),
-                            "ball_r": (face.get("eyeball_r_R") if s == "R" else None) or face.get("eyeball_r")}
+                            # the eye joint is the ball centre, its end joint the cornea
+                            "ball": landmarks["joints"].get(f"eye_{s}"),
+                            "ball_r": _dist(landmarks["joints"].get(f"eye_{s}"), landmarks["joints"].get(f"eye_end_{s}"))}
                         for s, pts in rim.items()}}
         (work / "eyes_job.json").write_text(json.dumps(ej, ensure_ascii=False), encoding="utf-8")
         r = subprocess.run([blender, "-b", "--factory-startup", "-P", str(ROOT / "blender_eye_insert.py"), "--",
