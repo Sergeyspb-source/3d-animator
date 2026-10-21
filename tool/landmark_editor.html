@@ -829,7 +829,7 @@ function ovalParams(F) {
   const L = slitCurve(F), cL = V(F.mouth_corner_L), cR = V(F.mouth_corner_R);
   const cxm = (cL.x + cR.x) / 2, half = Math.abs(cL.x - cR.x) / 2;
   const hu = Math.max(1e-6, V(F.lip_top).y - L(V(F.lip_top).x)), hl = Math.max(1e-6, L(V(F.lip_bot).x) - V(F.lip_bot).y);
-  const HU = F.mouth_limit_top ? Math.max(hu * 1.2, V(F.mouth_limit_top).y - L(cxm)) : 0;
+  const HU = F.mouth_limit_top ? Math.max(hu * 1.05, V(F.mouth_limit_top).y - L(cxm)) : 0;   // outer ring through the red handle
   return { L, cx: cxm, half, hu, hl, HU };
 }
 function ovalPoint(P, ring, th) {
@@ -880,10 +880,16 @@ function drawOval() {
   for (const c of [...ovalGroup.children]) { ovalGroup.remove(c); if (c.geometry) c.geometry.dispose(); }
   if (!ovalMode || !OVAL_KEYS.every((k) => S.face[k])) return;
   const P = ovalParams(S.face), zf = V(S.face.mouth_c).z, N = 48;
+  // depth chained ring by ring along each direction (slit outward): a ring never jumps onto an overhanging nose
+  const fast = !!ovalMode.drag;   // while dragging: no ray casts (hundreds per frame froze the page), exact on release
+  const prevZ = new Array(N + 1).fill(zf);
   for (const ring of OVAL_RINGS) {
     const pts = [];
-    const fast = !!ovalMode.drag;   // while dragging: no ray casts (hundreds per frame froze the page), exact on release
-    for (let i = 0; i <= N; i++) { const [x, y] = ovalPoint(P, ring, i / N * 2 * Math.PI); pts.push(x, y, (fast ? zf + .01 * H : skinNear(x, y, zf)) + .002 * H); }
+    for (let i = 0; i <= N; i++) {
+      const [x, y] = ovalPoint(P, ring, i / N * 2 * Math.PI);
+      const z = fast ? zf + .01 * H : skinNear(x, y, prevZ[i]); prevZ[i] = z;
+      pts.push(x, y, z + .002 * H);
+    }
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
     const l = new THREE.Line(g, new THREE.LineBasicMaterial({ color: ring.c, depthTest: false, transparent: true }));
     l.renderOrder = 998; ovalGroup.add(l);
@@ -913,12 +919,14 @@ function ovalMove(e) {
   const rc = canvas.getBoundingClientRect();
   const w = new THREE.Vector3(((e.clientX - rc.left) / rc.width) * 2 - 1, -((e.clientY - rc.top) / rc.height) * 2 + 1, 0).unproject(camera);
   const F = S.face, k = ovalMode.drag;
-  const ref = (key) => (key.startsWith('eye_') ? (F['eye_' + key.slice(-1)] || F[key])[2] : F.mouth_c[2]);
+  const ref = (key) => (key.startsWith('eye_') ? (F['eye_' + key.slice(-1)] || F[key])[2]
+    : key === 'mouth_limit_top' ? F.lip_top[2] : F.mouth_c[2]);   // the limit follows the lip skin, not the nose
   const put = (key, x, y) => { F[key] = [x, y, skinNear(x, y, ref(key))]; };
   if (k === 'mouth_c') {   // the centre moves the whole oval
     const dx = w.x - F.mouth_c[0], dy = w.y - F.mouth_c[1];
     for (const kk of OVAL_KEYS) put(kk, F[kk][0] + (S.sym ? 0 : dx), F[kk][1] + dy);
-  } else if (k === 'lip_top' || k === 'lip_bot' || k === 'mouth_limit_top') put(k, S.sym ? cx : w.x, w.y);
+  } else if (k === 'mouth_limit_top') put(k, S.sym ? cx : w.x, Math.max(w.y, F.lip_top[1] + .002 * H));
+  else if (k === 'lip_top' || k === 'lip_bot') put(k, S.sym ? cx : w.x, w.y);
   else {
     let x = w.x, y = w.y;
     if (k.startsWith('eye_')) {   // an eyelid point stays within reach of its eye

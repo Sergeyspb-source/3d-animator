@@ -147,7 +147,7 @@ def build(C):
     B_ = bl(job["lip_bot"]) if job.get("lip_bot") else Vector((cx, 0, line_z(cx) - 0.2 * W))
     hu = max(W * 0.02, T_.z - line_z(T_.x)); hl = max(W * 0.02, line_z(B_.x) - B_.z)
     RINGS = [(1.0, 0.0), (1.04, 1.0), (1.14, 1.5), (1.28, 2.0), (1.42, 2.5)]
-    HU = max(hu * 1.2, bl(job["limit_top"]).z - line_z(cx)) if job.get("limit_top") else 0.0
+    HU = max(hu * 1.05, bl(job["limit_top"]).z - line_z(cx)) if job.get("limit_top") else 0.0
     NM = 32
 
     def ring_up(h_):
@@ -288,11 +288,19 @@ def build(C):
     if len(rim) < 12:
         fail("контур маски лица почти не пересёк сетку: проверьте маску")
 
+    # depth chained ring by ring along each direction (slit outward), as the editor draws it: no jump onto the nose
     U = [new_vert(*mpt(0, i), ref_y=M.y) for i in range(NM // 2 + 1)]
     D = {NM // 2: U[NM // 2], NM: U[0]}
     for i in range(NM // 2 + 1, NM):
         D[i] = new_vert(*mpt(0, i), ref_y=M.y)
-    MR = {k: [new_vert(*mpt(k, i), ref_y=M.y) for i in range(NM)] for k in range(1, 5)}
+    prev = [P(U[i]) .y if i <= NM // 2 else P(D[i]).y for i in range(NM)]
+    MR = {}
+    for k in range(1, 5):
+        MR[k] = []
+        for i in range(NM):
+            v_ = new_vert(*mpt(k, i), ref_y=prev[i])
+            prev[i] = P(v_).y
+            MR[k].append(v_)
     mouth_outer = [tuple(to_uv(P(v))) for v in MR[4]]
     EYE_SCALES = [1.0, 1.3, 1.65, 2.0]
     ER_ = {}
