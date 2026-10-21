@@ -113,13 +113,37 @@ for side, spec in job["sides"].items():
     # cut: delete faces in front of the eye whose centre is inside the outline
     bm = bmesh.new(); bm.from_mesh(face.data)
     inv = fw.inverted()
+    # cut exactly along the eyelid outline (like the mouth cut): edges crossing it are split at the crossing (UVs and
+    # weights interpolated), faces joined along it, then the inside goes - the rim is the smooth curve, not stair steps
+    front = lambda p: p.y < front_y + width * 0.6
+    ins = lambda p: inside(poly, p.x, p.z)
     kill = []
-    for f in bm.faces:
-        c = fw @ f.calc_center_median()
-        if c.y < front_y + width * 0.6 and inside(poly, c.x, c.z):
-            kill.append(f)
-    if job.get("open_rim"):
-        kill = []
+    if not job.get("open_rim"):
+        cuts = set()
+        for e in list(bm.edges):
+            a_, b_ = fw @ e.verts[0].co, fw @ e.verts[1].co
+            if ins(a_) == ins(b_) or not (front(a_) or front(b_)):
+                continue
+            lo, hi = 0.0, 1.0
+            for _ in range(16):
+                m_ = (lo + hi) / 2
+                if ins(a_.lerp(b_, m_)) == ins(a_):
+                    lo = m_
+                else:
+                    hi = m_
+            _, nv = bmesh.utils.edge_split(e, e.verts[0], (lo + hi) / 2)
+            cuts.add(nv)
+        for f in list(bm.faces):
+            cv = [v for v in f.verts if v in cuts]
+            if len(cv) == 2 and not any(cv[1] in e.verts for e in cv[0].link_edges):
+                try:
+                    bmesh.ops.connect_verts(bm, verts=cv)
+                except Exception:
+                    pass
+        for f in bm.faces:
+            c = fw @ f.calc_center_median()
+            if front(c) and ins(c):
+                kill.append(f)
     bmesh.ops.delete(bm, geom=kill, context="FACES")
     loose = [v for v in bm.verts if not v.link_faces]
     bmesh.ops.delete(bm, geom=loose, context="VERTS")
