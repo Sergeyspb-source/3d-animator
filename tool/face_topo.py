@@ -74,8 +74,20 @@ def build(C):
         tot = sum(out.values()) or 1.0
         return {k: w / tot for k, w in out.items() if w / tot > 1e-3}
 
-    def new_vert(x, z):
-        h = ray(x, z)
+    def ray_near(x, z, ref_y):
+        """the hit along the front ray nearest to depth ref_y (an overhanging nose hides the upper lip)"""
+        o, d, best = Vector((x, ymin - W * 20, z)), Vector((0, 1, 0)), (None, None, None, None)
+        for _ in range(8):
+            h = skin_bvh.ray_cast(o, d, W * 80)
+            if h[0] is None:
+                break
+            if best[0] is None or abs(h[0].y - ref_y) < abs(best[0].y - ref_y):
+                best = h
+            o = h[0] + d * (W * 1e-4)
+        return best
+
+    def new_vert(x, z, ref_y=None):
+        h = ray(x, z) if ref_y is None else ray_near(x, z, ref_y)
         if h[0] is None:
             fail(f"нет кожи под маской лица в точке ({x:.3g}, {z:.3g}): уменьшите маску")
         v = bm.verts.new(finv @ h[0])
@@ -230,11 +242,11 @@ def build(C):
     if len(rim) < 12:
         fail("контур маски лица почти не пересёк сетку: проверьте маску")
 
-    U = [new_vert(*mpt(0, i)) for i in range(NM // 2 + 1)]
+    U = [new_vert(*mpt(0, i), ref_y=M.y) for i in range(NM // 2 + 1)]
     D = {NM // 2: U[NM // 2], NM: U[0]}
     for i in range(NM // 2 + 1, NM):
-        D[i] = new_vert(*mpt(0, i))
-    MR = {k: [new_vert(*mpt(k, i)) for i in range(NM)] for k in range(1, 5)}
+        D[i] = new_vert(*mpt(0, i), ref_y=M.y)
+    MR = {k: [new_vert(*mpt(k, i), ref_y=M.y) for i in range(NM)] for k in range(1, 5)}
     mouth_outer = [mpt(4, i) for i in range(NM)]
     EYE_SCALES = [1.0, 1.3, 1.65, 2.0]
     ER_ = {}
@@ -341,7 +353,9 @@ def build(C):
         for a_, b_ in zip(loops, loops[1:]):
             for i in range(n):
                 make([a_[i], a_[(i + 1) % n], b_[(i + 1) % n], b_[i]])
-        cv = new_vert(c2.x, c2.y)                              # cap over the painted eye (the eye step cuts it)
+        if job.get("eyes_open"):   # the eyeball step puts a ball here: the inner ring is the smooth eyelid edge
+            continue
+        cv = new_vert(c2.x, c2.y)                              # cap over the painted eye
         for i in range(n):
             make([cv, loops[0][(i + 1) % n], loops[0][i]])
     report["mask_new_faces"] = len(new_faces)

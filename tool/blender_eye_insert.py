@@ -98,9 +98,9 @@ for side, spec in job["sides"].items():
     bvh = BVHTree.FromPolygons(wv, [tuple(t.vertices) for t in face.data.loop_triangles])
     ymin = min(v.y for v in wv)
     hit = bvh.ray_cast(Vector((cx, ymin - width * 20, cz)), Vector((0, 1, 0)), width * 80)
-    if hit[0] is None:
+    if hit[0] is None and not job.get("open_rim"):
         fail(f"нет поверхности перед глазом {side}: проверьте контур глаза")
-    front_y = hit[0].y
+    front_y = hit[0].y if hit[0] is not None else 0.0
     rim_surf = []
     for p in curve:
         h = bvh.ray_cast(Vector((p.x, ymin - width * 20, p.z)), Vector((0, 1, 0)), width * 80)
@@ -108,6 +108,8 @@ for side, spec in job["sides"].items():
             rim_surf.append(h[0])
     if len(rim_surf) < len(curve) * 0.7:
         fail(f"контур глаза {side} выходит за модель")
+    if job.get("open_rim"):   # face retopology left a clean hole: the eyelid edge sets the depth, nothing is cut
+        front_y = sum(p.y for p in rim_surf) / len(rim_surf) - width * 0.06
     # cut: delete faces in front of the eye whose centre is inside the outline
     bm = bmesh.new(); bm.from_mesh(face.data)
     inv = fw.inverted()
@@ -116,6 +118,8 @@ for side, spec in job["sides"].items():
         c = fw @ f.calc_center_median()
         if c.y < front_y + width * 0.6 and inside(poly, c.x, c.z):
             kill.append(f)
+    if job.get("open_rim"):
+        kill = []
     bmesh.ops.delete(bm, geom=kill, context="FACES")
     loose = [v for v in bm.verts if not v.link_faces]
     bmesh.ops.delete(bm, geom=loose, context="VERTS")

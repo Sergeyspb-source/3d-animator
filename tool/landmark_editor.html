@@ -623,7 +623,7 @@ function refreshList() {
 function refreshHint() {
   const h = $('hint');
   if (ovalMode) {
-    h.hidden = false; h.textContent = 'Тяните ручки: уголки, середины щели, края губ; центр двигает весь овал; красная — верхняя граница (под носом)';
+    h.hidden = false; h.textContent = 'Тяните ручки: рот (уголки, щель, края губ; центр — весь овал; красная — граница под носом) и края век';
   } else if (faceMode && faceMode.cur) {
     h.hidden = false; h.textContent = 'Кликните: ' + FACE_MARKS[faceMode.cur];
   } else if (fingerMode && fingerMode.cur) {
@@ -657,7 +657,7 @@ function refreshAll() {
   refreshList(); refreshHint(); refreshFields(); draw(); refreshGuide();
   $('mLeft').textContent = poseOn ? 'навести и тянуть: согнуть сустав' : S.phase === 'place' ? 'поставить точку (вид спереди)' : 'выбрать узел, тянуть стрелки';
   $('fRow').hidden = S.phase !== 'edit' || !!fingerMode || !!faceMode;
-  $('ovalBtn').textContent = ovalMode ? 'Готово: овал рта' : 'Овал рта';
+  $('ovalBtn').textContent = ovalMode ? 'Готово: рот и веки' : 'Овал рта и веки';
   $('ovalBtn').classList.toggle('on', !!ovalMode);
   $('faceClear').hidden = !S.pos.jaw;
   $('fClear').hidden = !Object.keys(S.pos).some((k) => FINGER_RE.test(k));
@@ -827,6 +827,23 @@ function ovalPoint(P, ring, th) {
   return [x, P.L(x) + (sn >= 0 ? ringUp(P, ring) : P.hl * ring.h) * sn];
 }
 const skinZ = (x, y, fb) => { const z = hitsAt(x, y); return z.length ? z[0] : fb; };
+// the skin layer nearest to a reference depth (under an overhanging nose the first hit is the nose tip)
+const skinNear = (x, y, ref) => { const z = hitsAt(x, y); if (!z.length) return ref; return z.reduce((a, b) => (Math.abs(b - ref) < Math.abs(a - ref) ? b : a)); };
+const EYE_HANDLES = () => ['eye_in_L', 'eye_top_L', 'eye_out_L', 'eye_bot_L'].concat(S.sym ? [] : ['eye_in_R', 'eye_top_R', 'eye_out_R', 'eye_bot_R']).filter((k) => S.face[k]);
+const ovalHandles = () => OVAL_KEYS.concat(EYE_HANDLES());
+function eyeLoop(sd) {   // closed Catmull-Rom through the 4 eyelid points, as blender_eye_insert.py / face_topo.py
+  const pts = ['eye_in', 'eye_top', 'eye_out', 'eye_bot'].map((k) => S.face[k + '_' + sd]).filter(Boolean).map(V);
+  if (pts.length < 4) return [];
+  const out = [];
+  for (let i = 0; i < 4; i++) {
+    const p0 = pts[(i + 3) % 4], p1 = pts[i], p2 = pts[(i + 1) % 4], p3 = pts[(i + 2) % 4];
+    for (let k = 0; k < 12; k++) {
+      const t = k / 12, f = (a0, a1, a2, a3) => 0.5 * (2 * a1 + (-a0 + a2) * t + (2 * a0 - 5 * a1 + 4 * a2 - a3) * t * t + (-a0 + 3 * a1 - 3 * a2 + a3) * t * t * t);
+      out.push(new THREE.Vector3(f(p0.x, p1.x, p2.x, p3.x), f(p0.y, p1.y, p2.y, p3.y), f(p0.z, p1.z, p2.z, p3.z)));
+    }
+  }
+  return out;
+}
 function ovalInit() {
   const F = S.face;
   if (OVAL_KEYS.every((k) => F[k])) return;
@@ -855,20 +872,27 @@ function drawOval() {
   const P = ovalParams(S.face), zf = V(S.face.mouth_c).z, N = 48;
   for (const ring of OVAL_RINGS) {
     const pts = [];
-    for (let i = 0; i <= N; i++) { const [x, y] = ovalPoint(P, ring, i / N * 2 * Math.PI); pts.push(x, y, skinZ(x, y, zf) + .002 * H); }
+    for (let i = 0; i <= N; i++) { const [x, y] = ovalPoint(P, ring, i / N * 2 * Math.PI); pts.push(x, y, skinNear(x, y, zf) + .002 * H); }
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
     const l = new THREE.Line(g, new THREE.LineBasicMaterial({ color: ring.c, depthTest: false, transparent: true }));
     l.renderOrder = 998; ovalGroup.add(l);
   }
+  for (const sd of ['L', 'R']) {   // eyelid outlines
+    const lp = eyeLoop(sd); if (!lp.length) continue;
+    const pts = []; for (const q of lp.concat([lp[0]])) pts.push(q.x, q.y, q.z + .002 * H);
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    const l = new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0x3fbf6a, depthTest: false, transparent: true }));
+    l.renderOrder = 998; ovalGroup.add(l);
+  }
   const r = .006 * H / Math.max(1, camera.zoom);
-  for (const k of OVAL_KEYS) {
+  for (const k of ovalHandles()) {
     const sp = new THREE.Mesh(sphereGeo, k === ovalMode.drag ? COL.sel : k === 'mouth_c' ? COL.derived : k === 'mouth_limit_top' ? COL.bad : COL.place);
     sp.scale.setScalar(k === 'mouth_c' ? r * 1.3 : r); sp.position.copy(V(S.face[k])); sp.renderOrder = 999; ovalGroup.add(sp);
   }
 }
 function ovalPick(e) {
   const rc = canvas.getBoundingClientRect(); let best = null, bd = 16;
-  for (const k of OVAL_KEYS) {
+  for (const k of ovalHandles()) {
     const q = V(S.face[k]).project(camera), sx = rc.left + (q.x + 1) / 2 * rc.width, sy = rc.top + (1 - q.y) / 2 * rc.height;
     const d = Math.hypot(sx - e.clientX, sy - e.clientY); if (d < bd) { bd = d; best = k; }
   }
@@ -877,7 +901,9 @@ function ovalPick(e) {
 function ovalMove(e) {
   const rc = canvas.getBoundingClientRect();
   const w = new THREE.Vector3(((e.clientX - rc.left) / rc.width) * 2 - 1, -((e.clientY - rc.top) / rc.height) * 2 + 1, 0).unproject(camera);
-  const F = S.face, k = ovalMode.drag, put = (key, x, y) => { F[key] = [x, y, skinZ(x, y, F[key][2])]; };
+  const F = S.face, k = ovalMode.drag;
+  const ref = (key) => (key.startsWith('eye_') ? (F['eye_' + key.slice(-1)] || F[key])[2] : F.mouth_c[2]);
+  const put = (key, x, y) => { F[key] = [x, y, skinNear(x, y, ref(key))]; };
   if (k === 'mouth_c') {   // the centre moves the whole oval
     const dx = w.x - F.mouth_c[0], dy = w.y - F.mouth_c[1];
     for (const kk of OVAL_KEYS) put(kk, F[kk][0] + (S.sym ? 0 : dx), F[kk][1] + dy);

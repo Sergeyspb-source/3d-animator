@@ -223,6 +223,7 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=T
               "mid_L": face.get("mouth_mid_L"), "mid_R": face.get("mouth_mid_R"),
               "lip_top": face.get("lip_top"), "lip_bot": face.get("lip_bot"), "limit_top": face.get("mouth_limit_top"),
               "face_topo": bool(face_topo and face.get("eye_L") and face.get("eye_R")),
+              "eyes_open": bool(eyes and face.get("eye_in_L") and face.get("eye_bot_L")),
               "eye_L": face.get("eye_L"), "eye_R": face.get("eye_R"), "chin": landmarks.get("marks", {}).get("chin"),
               "eye_rim_L": [face.get(k + "_L") for k in ("eye_in", "eye_top", "eye_out", "eye_bot")] if face.get("eye_in_L") else None,
               "eye_rim_R": [face.get(k + "_R") for k in ("eye_in", "eye_top", "eye_out", "eye_bot")] if face.get("eye_in_R") else None,
@@ -276,6 +277,7 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=T
         names = bone_names(naming)
         eyes_glb, kit_r = face_kit_eyes(cfg, kit, work)
         ej = {"source": str(model), "out": str(work / "model_eyes.glb"), "eyes_glb": str(eyes_glb), "kit_r": kit_r,
+              "open_rim": bool(face_topo and mouth == "cut"),
               "head_bone": names["head"], "sym": bool(landmarks.get("sym", True)), "report": str(work / "eyes_report.json"),
               "preview": str(work / "eyes.png"),
               "sides": {s: {"outline": pts, "bone": names[f"eye_{s}"] if f"eye_{s}" in landmarks["joints"] else ""}
