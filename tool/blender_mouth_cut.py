@@ -129,7 +129,8 @@ def in_zone(p):
 
 
 
-OVAL = bool(job.get("oval_mesh") and job.get("lip_top") and job.get("lip_bot"))   # experimental: off unless asked
+FACE_TOPO = bool(job.get("face_topo") and job.get("eye_L") and job.get("eye_R"))
+OVAL = FACE_TOPO or bool(job.get("oval_mesh") and job.get("lip_top") and job.get("lip_bot"))   # oval: experimental
 CORNERS = set()
 
 
@@ -467,7 +468,15 @@ if not OVAL:
         c = sum((fw @ f.calc_center_median() for f in v.link_faces), Vector()) / len(v.link_faces)
         (upper if side(c) > 0 else lower).append(v)
 else:
-    upper, lower, new_verts = oval_remesh()
+    if FACE_TOPO:   # the whole face mask rebuilt (tool/face_topo.py), slit included
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import face_topo
+        upper, lower, _corners, new_verts = face_topo.build(dict(
+            bm=bm, dl=dl, face=face, fw=fw, finv=finv, skin_bvh=skin_bvh, skin_y=skin_y, W=W, cx=cx, line_z=line_z,
+            x0=x0, x1=x1, M=M, job=job, bl=bl, report=report, fail=fail))
+        CORNERS.update(_corners)
+    else:
+        upper, lower, new_verts = oval_remesh()
     report['oval'] = True
 
 
@@ -597,6 +606,33 @@ for verts_side, sgn in ((set(upper), 1), (set(lower), -1)):
         edges = [e for e in ne if e.is_boundary and all(v in nv for v in e.verts)]
 bm.normal_update()
 bm.to_mesh(face.data); bm.free()
+# smooth normals for the rebuilt area: the source mesh carries custom split normals and new vertices get none, which
+# shades every new triangle differently. Loops of faces touching the new area get the area-weighted normal of all
+# faces at that position (welded across UV-seam twins); the rest of the body keeps its own normals.
+if OVAL:
+    me_ = face.data
+    new_mats = {i for i, m in enumerate(me_.materials) if m and m.name.startswith(("face_mask", "lip_inner"))}
+    if new_mats:
+        q_ = W * 1e-4
+        key = [tuple(round(c / q_) for c in v.co) for v in me_.vertices]
+        acc = {}
+        for poly in me_.polygons:
+            n = poly.normal * poly.area
+            for vi in poly.vertices:
+                acc[key[vi]] = acc.get(key[vi], Vector()) + n
+        hot = {key[vi] for poly in me_.polygons if poly.material_index in new_mats for vi in poly.vertices}
+        try:
+            old = [Vector(cn.vector) for cn in me_.corner_normals]
+        except AttributeError:
+            me_.calc_normals_split(); old = [Vector(l.normal) for l in me_.loops]
+        out = []
+        for li, loop in enumerate(me_.loops):
+            k_ = key[loop.vertex_index]
+            out.append(acc[k_].normalized() if k_ in hot and acc[k_].length > 0 else old[li])
+        for poly in me_.polygons:
+            poly.use_smooth = True
+        me_.normals_split_custom_set(out)
+        report["renormalised_points"] = len(hot)
 report["roll_faces"] = len(roll_faces)
 
 # ------------------------------------------------------------------ 3. cavity cup

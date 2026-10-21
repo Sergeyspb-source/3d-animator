@@ -172,7 +172,7 @@ def face_kit_eyes(cfg, kit, work):
     return out / "eyes.glb", 0.012
 
 
-def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=True, kit=""):
+def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=True, kit="", face_topo=False):
     """Generator of log lines; the last item is a dict with the result paths."""
     blender = cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe"
     final, saved = output_paths(src, cfg["export_dir"])
@@ -222,6 +222,10 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=T
               "corner_L": face["mouth_corner_L"], "corner_R": face["mouth_corner_R"],
               "mid_L": face.get("mouth_mid_L"), "mid_R": face.get("mouth_mid_R"),
               "lip_top": face.get("lip_top"), "lip_bot": face.get("lip_bot"), "limit_top": face.get("mouth_limit_top"),
+              "face_topo": bool(face_topo and face.get("eye_L") and face.get("eye_R")),
+              "eye_L": face.get("eye_L"), "eye_R": face.get("eye_R"), "chin": landmarks.get("marks", {}).get("chin"),
+              "eye_rim_L": [face.get(k + "_L") for k in ("eye_in", "eye_top", "eye_out", "eye_bot")] if face.get("eye_in_L") else None,
+              "eye_rim_R": [face.get(k + "_R") for k in ("eye_in", "eye_top", "eye_out", "eye_bot")] if face.get("eye_in_R") else None,
               "hinge": landmarks["joints"].get("jaw"), "head_bone": names["head"],
               "jaw_bone": names["jaw"] if "jaw" in landmarks["joints"] else "",
               "teeth_glb": str(kd / "teeth.glb"), "tongue_glb": str(kd / "tongue.glb"),
