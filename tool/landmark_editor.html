@@ -916,9 +916,18 @@ function ovalPick(e) {
   return best;
 }
 function ovalMove(e) {
-  const rc = canvas.getBoundingClientRect();
-  const w = new THREE.Vector3(((e.clientX - rc.left) / rc.width) * 2 - 1, -((e.clientY - rc.top) / rc.height) * 2 + 1, 0).unproject(camera);
-  const F = S.face, k = ovalMode.drag;
+  // the cursor's point on the model in any view (unprojecting as if seen from the front made a tilted view jump)
+  const rc = canvas.getBoundingClientRect(), F = S.face, k = ovalMode.drag;
+  ndc.set(((e.clientX - rc.left) / rc.width) * 2 - 1, -((e.clientY - rc.top) / rc.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  let w = null;
+  const hit = ray.intersectObjects(meshes, false)[0];
+  if (hit) w = hit.point;
+  else {   // off the model: the plane through the handle facing the camera
+    const n = camera.getWorldDirection(new THREE.Vector3());
+    w = ray.ray.intersectPlane(new THREE.Plane().setFromNormalAndCoplanarPoint(n, V(F[k])), new THREE.Vector3());
+    if (!w) return;
+  }
   const ref = (key) => (key.startsWith('eye_') ? (F['eye_' + key.slice(-1)] || F[key])[2]
     : key === 'mouth_limit_top' ? F.lip_top[2] : F.mouth_c[2]);   // the limit follows the lip skin, not the nose
   const put = (key, x, y) => { F[key] = [x, y, skinNear(x, y, ref(key))]; };
@@ -929,10 +938,15 @@ function ovalMove(e) {
   else if (k === 'lip_top' || k === 'lip_bot') put(k, S.sym ? cx : w.x, w.y);
   else {
     let x = w.x, y = w.y;
-    if (k.startsWith('eye_')) {   // an eyelid point stays within reach of its eye
-      const c = V(F['eye_' + k.slice(-1)] || F[k]), lim = (F.eye_L && F.eye_R ? V(F.eye_L).distanceTo(V(F.eye_R)) : .06 * H) * .55;
-      const dx = x - c.x, dy = y - c.y, d = Math.hypot(dx, dy);
-      if (d > lim) { x = c.x + dx / d * lim; y = c.y + dy / d * lim; }
+    if (k.startsWith('eye_')) {   // an eyelid point keeps its role and stays near its eye
+      const sd = k.slice(-1), c = V(F['eye_' + sd] || F[k]);
+      const ipd = F.eye_L && F.eye_R ? V(F.eye_L).distanceTo(V(F.eye_R)) : .06 * H;
+      const ci = F['eye_in_' + sd] ? V(F['eye_in_' + sd]) : c, co = F['eye_out_' + sd] ? V(F['eye_out_' + sd]) : c;
+      const midY = (ci.y + co.y) / 2;
+      if (k.startsWith('eye_top')) y = Math.min(Math.max(y, midY + .01 * ipd), midY + .25 * ipd);
+      else if (k.startsWith('eye_bot')) y = Math.max(Math.min(y, midY - .01 * ipd), midY - .25 * ipd);
+      else y = Math.min(Math.max(y, c.y - .15 * ipd), c.y + .15 * ipd);
+      x = Math.min(Math.max(x, c.x - .45 * ipd), c.x + .45 * ipd);
     }
     put(k, x, y);
     if (S.sym) { const o = k.endsWith('_L') ? k.slice(0, -1) + 'R' : k.slice(0, -1) + 'L'; F[o] = arr(mirror(V(F[k]))); }
