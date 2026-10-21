@@ -107,6 +107,34 @@ def build(C):
             pts = [ec + Vector((-w_, 0, 0)), ec + Vector((0, 0, h_)), ec + Vector((w_, 0, 0)), ec + Vector((0, 0, -h_))]
         rims[sd] = catmull_closed([Vector((p.x, p.z)) for p in pts], 6)
     chin = bl(job["chin"]) if job.get("chin") else Vector((cx, 0, M.z - 0.6 * ipd))
+    # centre inside the head, behind the face: every mask point is placed by a ray from here outward, so it lands on
+    # the surface itself - also under the chin and on the side of the cheeks, where a front ray cannot reach
+    C = Vector((cx, M.y + 1.0 * ipd, ((EL.z + ER.z) / 2 + M.z) / 2))
+    R0 = ((EL + ER) / 2 - C).length
+
+    def to_uv(p):
+        d = p - C
+        return Vector((math.atan2(d.x, -d.y) * R0, math.atan2(d.z, math.hypot(d.x, d.y)) * R0))
+
+    def dir_of(u, v):
+        az, el = u / R0, v / R0
+        return Vector((math.sin(az) * math.cos(el), -math.cos(az) * math.cos(el), math.sin(el)))
+
+    def ray_rad(u, v):
+        return skin_bvh.ray_cast(C, dir_of(u, v), ipd * 6)
+
+    def new_vert_uv(u, v):
+        h = ray_rad(u, v)
+        if h[0] is None:
+            fail(f"нет кожи под маской лица в направлении ({u:.3g}, {v:.3g}): уменьшите маску")
+        nv_ = bm.verts.new(finv @ h[0])
+        for k, w in weights_at(h[0], h[2]).items():
+            nv_[dl][k] = w
+        return nv_
+
+    def front_hit(x, z, ref_y=None):   # 3D point a front ray (nearest the reference depth) finds
+        h = ray(x, z) if ref_y is None else ray_near(x, z, ref_y)
+        return h[0]
 
     # ------------------------------------------------------------ rings: mouth (oval) and eyes
     half = (x1 - x0) / 2
@@ -130,18 +158,27 @@ def build(C):
         return x, line_z(x) + (ring_up(h_) if sn >= 0 else hl * h_) * sn
 
     # points the mask must contain with a margin: the mouth's outer ring and the eyes' outer loops
-    must = [Vector(mpt(4, i)) for i in range(NM)]
+    must = []
+    for i in range(NM):
+        q3 = front_hit(*mpt(4, i), ref_y=M.y)
+        if q3 is not None:
+            must.append(to_uv(q3))
     for rim2 in rims.values():
         c2 = sum(rim2, Vector((0, 0))) / len(rim2)
-        must += [c2 + (p - c2) * 2.0 for p in rim2]
+        for p in rim2:
+            q3 = front_hit(*(c2 + (p - c2) * 2.0))
+            if q3 is not None:
+                must.append(to_uv(q3))
     # ------------------------------------------------------------ mask outline (front view x, z)
     if job.get("mask"):
-        mpts = [Vector((bl(p).x, bl(p).z)) for p in job["mask"]]
+        mpts = [to_uv(bl(p)) for p in job["mask"]]
         outline = catmull_closed(mpts, max(2, int(64 / len(mpts))))
     else:
-        top, bot = max(EL.z, ER.z) + 0.85 * ipd, chin.z - 0.12 * ipd
+        eu, cu = to_uv((EL + ER) / 2), to_uv(chin)
+        top, bot = eu.y + 0.85 * ipd, cu.y - 0.3 * ipd             # down to the jaw line under the chin
         mz, hz = (top + bot) / 2, (top - bot) / 2
-        hx = abs(EL.x - ER.x) / 2 + 0.75 * ipd
+        hx = abs(to_uv(EL).x - to_uv(ER).x) / 2 + 0.9 * ipd
+        cx_uv = eu.x
         outline, radii = [], []
         for i in range(48):
             th = 2 * math.pi * i / 48
@@ -150,11 +187,11 @@ def build(C):
             good = 0.15
             for k in range(1, 41):     # the farthest point where the skin still faces forward (dips inside are fine)
                 f_ = k / 40
-                x, z = cx + hx * c * r * f_, mz + hz * sn * r * f_
-                h = ray(x, z)
+                x, z = cx_uv + hx * c * r * f_, mz + hz * sn * r * f_
+                h = ray_rad(x, z)
                 if h[0] is None:
                     break
-                if h[1].dot(Vector((0, -1, 0))) > 0.45 and z > chin.z + 0.02 * ipd:   # forward-facing, above the chin edge
+                if h[1].dot(dir_of(x, z)) > 0.3:     # the surface faces outward along the ray (not an ear or a fold)
                     good = f_
             good *= 0.96
             radii.append((c * r, sn * r, good))
@@ -163,7 +200,7 @@ def build(C):
             th = math.atan2(uz, ux)
             need = 0.0
             for q in must:
-                dx, dz = (q.x - cx) / hx, (q.y - mz) / hz
+                dx, dz = (q.x - cx_uv) / hx, (q.y - mz) / hz
                 if abs(((math.atan2(dz, dx) - th + math.pi) % (2 * math.pi)) - math.pi) < math.pi / 24:
                     need = max(need, math.hypot(dx, dz) / max(math.hypot(ux, uz), 1e-9) * 1.12)
             radii[k] = (ux, uz, max(g, need))
@@ -173,17 +210,21 @@ def build(C):
                   (rs[i - 1] + 2 * rs[i] + rs[(i + 1) % len(rs)]) / 4 for i in range(len(rs))]
         for (ux, uz, g), r_ in zip(radii, rs):
             r_ = max(r_, g if g > 0 else r_)
-            outline.append(Vector((cx + hx * ux * r_, max(mz + hz * uz * r_, chin.z + 0.02 * ipd))))
+            ou, ov = cx_uv + hx * ux * r_, mz + hz * uz * r_
+            outline.append(Vector((max(cx_uv - hx, min(cx_uv + hx, ou)), max(bot, min(top, ov)))))
+        report["mask_radii"] = [round(x, 2) for x in rs]
     poly = [(p.x, p.y) for p in outline]
     mcx = sum(p.x for p in outline) / len(outline); mcz = sum(p.y for p in outline) / len(outline)
     report["mask_points"] = len(outline)
 
     def in_mask(p):
-        return inside(poly, p.x, p.z)
+        q = to_uv(p)
+        return inside(poly, q.x, q.y)
 
-    def front(p):
-        sy = skin_y(p.x, p.z)
-        return sy is not None and p.y < sy + 0.08 * W
+    def front(p):   # on the outer skin as seen from the centre (not inner folds, not the back of an ear)
+        d = p - C
+        h = skin_bvh.ray_cast(C, d.normalized(), d.length + 0.3 * W)
+        return h[0] is not None and abs((h[0] - C).length - d.length) < 0.15 * W
 
     # ------------------------------------------------------------ cut the old mesh along the outline
     rim = []
@@ -234,7 +275,7 @@ def build(C):
             best = loop
     report["mask_rim_walk"] = [len(best), len(rim)]
     if len(best) < 0.8 * len(rim):
-        rim.sort(key=lambda v: math.atan2(P(v).z - mcz, P(v).x - mcx))
+        rim.sort(key=lambda v: math.atan2(to_uv(P(v)).y - mcz, to_uv(P(v)).x - mcx))
     else:
         rim = best
     report["mask_rim"] = len(rim)
@@ -247,7 +288,7 @@ def build(C):
     for i in range(NM // 2 + 1, NM):
         D[i] = new_vert(*mpt(0, i), ref_y=M.y)
     MR = {k: [new_vert(*mpt(k, i), ref_y=M.y) for i in range(NM)] for k in range(1, 5)}
-    mouth_outer = [mpt(4, i) for i in range(NM)]
+    mouth_outer = [tuple(to_uv(P(v))) for v in MR[4]]
     EYE_SCALES = [1.0, 1.3, 1.65, 2.0]
     ER_ = {}
     eye_outer = {}
@@ -257,7 +298,7 @@ def build(C):
         for sc in EYE_SCALES:
             loops.append([new_vert(c2.x + (p.x - c2.x) * sc, c2.y + (p.y - c2.y) * sc) for p in rim2])
         ER_[sd] = (c2, loops)
-        eye_outer[sd] = [(c2.x + (p.x - c2.x) * EYE_SCALES[-1], c2.y + (p.y - c2.y) * EYE_SCALES[-1]) for p in rim2]
+        eye_outer[sd] = [tuple(to_uv(P(v))) for v in loops[-1]]
 
     # ------------------------------------------------------------ fill: smoothed constrained Delaunay
     pts2, kind = [], []                                       # kind: ("rim", v) / ("vert", v) / ("free", None)
@@ -270,7 +311,7 @@ def build(C):
         n = len(vs2)
         for i in range(n):
             edges2.append((start + i, start + (i + 1) % n))
-    add_loop([(P(v).x, P(v).z) for v in rim], rim)
+    add_loop([tuple(to_uv(P(v))) for v in rim], rim)
     add_loop(mouth_outer, MR[4])
     for sd in ("L", "R"):
         add_loop(eye_outer[sd], ER_[sd][1][-1])
@@ -282,7 +323,7 @@ def build(C):
             if inside([(hx_ + (p[0] - hx_) * grow, hz_ + (p[1] - hz_) * grow) for p in hpoly], x, z):
                 return True
         return False
-    rim2d = [Vector((P(v).x, P(v).z)) for v in rim]
+    rim2d = [to_uv(P(v)) for v in rim]
     xs = [p[0] for p in poly]; zs = [p[1] for p in poly]
     z = min(zs); row = 0
     while z < max(zs):
@@ -293,6 +334,10 @@ def build(C):
                 pts2.append((x, z)); kind.append(("free", None))
             x += s
         z += s * 0.866; row += 1
+    if job.get("debug_uv"):
+        import json as _j
+        open(job["debug_uv"], "w").write(_j.dumps({"poly": poly, "rim": [list(to_uv(P(v))) for v in rim],
+            "mouth": mouth_outer, "eyeL": eye_outer["L"], "eyeR": eye_outer["R"], "free": [p_ for p_, k_ in zip(pts2, kind) if k_[0] == "free"]}))
     res = G.delaunay_2d_cdt(pts2, edges2, [], 0, W * 1e-6)
     out_v, _, out_f, orig_v = res[0], res[1], res[2], res[3]
     to_in = []
@@ -322,7 +367,7 @@ def build(C):
             pv[i] = q
     verts_of = []
     for i, (kd, v) in enumerate(kind):
-        verts_of.append(v if kd != "free" else (new_vert(pv[i].x, pv[i].y) if i in nb else None))
+        verts_of.append(v if kd != "free" else (new_vert_uv(pv[i].x, pv[i].y) if i in nb else None))
 
     new_faces = []
     mat_idx = len(me.materials)                                 # the baked mask material (appended below)
@@ -362,16 +407,12 @@ def build(C):
 
     # ------------------------------------------------------------ orientation like the skin
     nf = [f for f in new_faces if f.is_valid]
-    bmesh.ops.recalc_face_normals(bm, faces=nf)
-    votes = 0
-    for f in nf:
+    flipped = 0
+    for f in nf:   # every face looks away from the centre inside the head
         f.normal_update()
-        h = skin_bvh.find_nearest(fw @ f.calc_center_median())
-        if h[1] is not None:
-            votes += 1 if (fw.to_3x3() @ f.normal).dot(h[1]) > 0 else -1
-    if votes < 0:
-        for f in nf:
-            f.normal_flip()
+        if (fw.to_3x3() @ f.normal).dot((fw @ f.calc_center_median()) - C) < 0:
+            f.normal_flip(); flipped += 1
+    report["mask_flipped"] = flipped
 
     # ------------------------------------------------------------ planar UVs for the mask
     span = max(max(xs) - min(xs), max(zs) - min(zs)) * 1.02
@@ -379,8 +420,8 @@ def build(C):
     uvl = bm.loops.layers.uv.verify()
     for f in nf:
         for l in f.loops:
-            p = P(l.vert)
-            l[uvl].uv = ((p.x - ux0) / span, (p.z - uz0) / span)
+            q = to_uv(P(l.vert))
+            l[uvl].uv = ((q.x - ux0) / span, (q.y - uz0) / span)
 
     # ------------------------------------------------------------ bake the mask texture from the original
     res_px = int(job.get("bake_size", 2048))
