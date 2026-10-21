@@ -1,4 +1,5 @@
 """Gradio panel: the shared procedural eyes, teeth and tongue (tool/blender_face_parts.py)."""
+import contextlib
 import json
 import re
 import subprocess
@@ -45,8 +46,9 @@ def generate(cfg, name, iris, pupil, slit, sclera_yel, veins, per_side, missing,
     return msg, str(out / "preview.png"), [str(out / f) for f in ("eyes.glb", "teeth.glb", "tongue.glb", "parts.json")]
 
 
-def mount(config_loader):
-    with gr.Accordion("Детали лица: глаза, зубы, язык (общий набор для всех моделей)", open=False):
+def mount(config_loader, accordion=True):
+    with (gr.Accordion("Детали лица: глаза, зубы, язык (общий набор для всех моделей)", open=False) if accordion
+          else contextlib.nullcontext()):
         gr.Markdown("Процедурные глаза (шар с роговицей и нарисованной радужкой), зубы с дёснами и язык. Один набор "
                     "подходит всем персонажам: при установке в голову он масштабируется. Пропуски зубов — номера от "
                     "середины дуги: `U2` — второй верхний, `L4` — четвёртый нижний, `3` — третий в обоих рядах.")

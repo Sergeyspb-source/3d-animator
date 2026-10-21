@@ -95,6 +95,7 @@ GPU_NEEDS = [("SF3D: предмет, пропс, персонаж", 6400),
              ("Hunyuan3D: форма", 6200),
              ("Hunyuan3D: покраска текстурой", 7000),
              ("Риггинг (UniRig)", 4500)]
+GPU_SHORT = ["SF3D", "Hunyuan: форма", "Hunyuan: краска", "Риггинг"]  # same order as GPU_NEEDS, for the status strip
 # never offered for closing: Windows itself and the things that would log the user out or break the GPU driver
 PROTECTED = {"claude", "system", "idle", "registry", "dwm", "csrss", "winlogon", "wininit", "services", "lsass", "smss",
              "svchost", "explorer", "fontdrvhost", "audiodg", "memory compression", "nvcontainer",
@@ -231,7 +232,7 @@ def vram_gate(need_mb, log, emit, label, timeout_s=900):
     names = ", ".join(f"{h['label']} ({h['mb']} МБ)" for h in gpu_holders()[:3] if h["mb"])
     log.append(f"{label}: свободно {free} МБ видеопамяти, нужно около {need_mb}. Жду, пока освободится."
                + (f" Сейчас её занимают: {names}." if names else "")
-               + " Закройте лишнее или откройте блок «Видеопамять» вверху окна.")
+               + " Закройте лишнее или откройте меню «Опции → Видеопамять».")
     t0 = time.time()
     while time.time() - t0 < timeout_s:
         yield emit()
@@ -1351,7 +1352,7 @@ def ref_send(views, front, cat_label, obj):
             gr.update(value=[views["front"]] if views.get("front") and not multi else None),
             views.get("front") if multi else None, views.get("back"), views.get("left"), views.get("right"),
             gr.update(value=cat), T.slug(obj or "")[:40] or "",
-            gr.Tabs(selected="gen"))
+            gr.Tabs(selected="g_create"), gr.Tabs(selected="gen"))
 
 
 def ref_save_keys(key, img_model, txt_model):
@@ -1945,230 +1946,396 @@ def on_category(category_label):
 UI_CSS = """
 .gradio-container { max-width: 1400px !important; }
 .tab-nav button { font-size: 15px; font-weight: 600; }
+/* two levels of tabs: sections big, the tools inside them smaller */
+#maintabs > .tab-nav button { font-size: 17px; font-weight: 700; padding: 8px 18px; }
+#maintabs .tabs .tab-nav button { font-size: 14px; font-weight: 500; padding: 5px 12px; }
+/* menu bar: File / Options / Help, GPU status on the right */
+#topbar { align-items: center; flex-wrap: nowrap !important; gap: 0 !important; padding: 2px 8px;
+  border: 1px solid var(--border-color-primary); border-radius: 10px; background: var(--background-fill-secondary);
+  margin-bottom: 8px; overflow: visible !important; }
+#topbar .brand-box { flex: 0 0 auto !important; width: auto !important; min-width: 0 !important; padding: 0 12px 0 4px; border: none !important;
+  background: none !important; }
+#topbar .brand { font-weight: 800; font-size: 16px; letter-spacing: .04em; }
+.menu { position: relative; flex: 0 0 auto !important; overflow: visible !important; }
+.menu-title { background: transparent !important; border: none !important; box-shadow: none !important;
+  padding: 4px 12px !important; font-weight: 600 !important; }
+.menu:hover .menu-title { background: var(--background-fill-primary) !important; }
+.menu-drop { display: none !important; position: absolute; top: 100%; left: 0; z-index: 1500; width: max-content !important;
+  min-width: 250px !important; background: var(--background-fill-primary); border: 1px solid var(--border-color-primary);
+  border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.25); padding: 4px; gap: 0 !important; }
+.menu:hover .menu-drop { display: flex !important; }
+.menu-drop button { justify-content: flex-start !important; text-align: left; background: transparent !important;
+  border: none !important; box-shadow: none !important; font-weight: 400 !important; }
+.menu-drop button:hover { background: var(--background-fill-secondary) !important; }
+#gpustat { flex: 1 1 auto !important; width: auto !important; height: 30px; overflow: hidden !important; opacity: 1 !important; text-align: right; border: none !important; background: none !important; padding: 0 !important; min-width: 0 !important; }
+#gpustat .wrap, #gpustat .progress-text { display: none !important; }
+.gpu-in { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; font-size: 13px; }
+.gpu-bar { display: inline-block; width: 110px; height: 8px; border-radius: 4px; background: var(--border-color-primary);
+  overflow: hidden; }
+.gpu-bar i { display: block; height: 100%; }
+.gpu-bar i.ok { background: #2f9e5f; } .gpu-bar i.warn { background: #e0a800; } .gpu-bar i.bad { background: #e5484d; }
+.gpu-chip { padding: 1px 8px; border-radius: 10px; border: 1px solid var(--border-color-primary); font-size: 12px; }
+.gpu-chip.ok { color: #2f9e5f; } .gpu-chip.warn { color: #b88a00; } .gpu-chip.bad { color: #e5484d; }
+.gpu-sf { color: var(--body-text-color-subdued); font-size: 12px; }
+/* dialogs opened from the menu */
+.dlg { position: fixed !important; top: 6vh; left: 50%; transform: translateX(-50%); width: min(780px, 94vw) !important;
+  max-height: 86vh; overflow: auto; z-index: 2000; background: var(--background-fill-primary);
+  border: 1px solid var(--border-color-primary); border-radius: 12px; padding: 14px;
+  box-shadow: 0 0 0 100vmax rgba(0,0,0,.4), 0 20px 60px rgba(0,0,0,.4); }
 """
+
+UI_HEAD = """<script>document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  for (const b of document.querySelectorAll('.dlg-close')) if (b.offsetParent) { b.click(); break; } });</script>"""
+
+RIG_MODES = ["Автоматически (UniRig, нужна видеокарта)", "Вручную по ориентирам (как в Mixamo, видеокарта не нужна)"]
+
+HELP_TEXT = """\
+Окно разбито на три раздела, внутри каждого вкладки идут в порядке работы.
+
+**Создание**
+1. **Референс**: картинка и виды будущей модели по описанию.
+2. **Создать модель**: SF3D (одна картинка, 20 секунд) или Hunyuan3D (1–4 вида, 7–10 минут).
+3. **Материалы**: карты металла, дерева, камня для готовой модели.
+4. **Пакетная обработка**: целая папка картинок за один запуск, например на ночь.
+
+**Персонаж**
+1. **Скелет**: автоматически (UniRig) или вручную по ориентирам с редактором.
+2. **Анимации**: 12 процедурных клипов или перенос клипов Mixamo.
+3. **Экипировка**: броня с одетой модели целиком или одна вещь.
+4. Реже нужны: **Исправление весов**, **Детали лица** (глаза, зубы, язык), **Липсинк**.
+
+**Окружение**: поверхности (земля, пол, стены), эффекты, модульные наборы подземелья, разрушаемые объекты.
+
+**Видеокарта.** Полоска справа вверху показывает занятую видеопамять и то, какие задачи сейчас поместятся
+(SF3D, Hunyuan3D, риггинг). Две тяжёлые задачи одновременно не запускайте. Меню *Опции → Видеопамять* покажет, кто занимает
+память, и закроет лишнюю программу.
+
+**Клавиши.** `Esc` закрывает открытое окно меню. В 3D-просмотре: мышь крутит, колесо приближает.
+"""
+
+
+def status_html():
+    """The always-visible GPU strip next to the menu: usage bar, which tasks fit now, where the SF3D model sits."""
+    try:
+        r = subprocess.run(["nvidia-smi", "--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"],
+                           capture_output=True, text=True, timeout=10,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        used, total = (int(x) for x in r.stdout.strip().splitlines()[0].split(","))
+    except Exception:  # noqa: BLE001
+        return '<span class="gpu-in"><span class="gpu-sf">Видеокарта: нет данных (nvidia-smi)</span></span>'
+    free = total - used
+    frac = used / total
+    level = "ok" if frac < 0.6 else "warn" if frac < 0.85 else "bad"
+    chips = []
+    for (short, (_, need)) in zip(GPU_SHORT, GPU_NEEDS):
+        if short == "SF3D" and _state["model"] is not None and _state["on_gpu"]:
+            cls, mark, tip = "ok", "✓", "модель уже в видеопамяти"
+        elif free >= need + 500:
+            cls, mark, tip = "ok", "✓", f"нужно около {need / 1024:.1f} ГБ: хватит"
+        elif free >= need:
+            cls, mark, tip = "warn", "≈", f"нужно около {need / 1024:.1f} ГБ: впритык"
+        else:
+            cls, mark, tip = "bad", "✗", f"нужно около {need / 1024:.1f} ГБ: не хватает"
+        chips.append(f'<span class="gpu-chip {cls}" title="{tip}">{short} {mark}</span>')
+    sf = ""
+    if _state["model"] is not None:
+        sf = f'<span class="gpu-sf">SF3D: {"в видеопамяти" if _state["on_gpu"] else "в оперативной памяти"}</span>'
+    return (f'<span class="gpu-in"><span class="gpu-bar" title="занято {used / 1024:.1f} из {total / 1024:.1f} ГБ">'
+            f'<i class="{level}" style="width:{frac * 100:.0f}%"></i></span>'
+            f'<span>Видеопамять {used / 1024:.1f} / {total / 1024:.1f} ГБ, свободно {free / 1024:.1f}</span>'
+            f'{"".join(chips)}{sf}</span>')
 
 def build():
     cfg = T.load_config()
     labels = [CATEGORY_LABELS[k] for k in cfg["categories"]]
     default_cat = CATEGORY_LABELS["prop"]
     import outfit as OF
-    with gr.Blocks(title="SF3D — игровые ассеты", theme=gr.themes.Soft(), css=UI_CSS) as ui:
-        gr.Markdown("## SF3D — игровые ассеты\n"
-                    "Порядок работы слева направо по вкладкам: **референс** → **создать модель** → **скелет и анимация** → "
-                    "**экипировка**. В каждой вкладке справа 3D-просмотр: модель появляется сразу, как только "
-                    "вы её выбрали или загрузили. Крутите мышью, колесо приближает.")
-        with gr.Tabs() as main_tabs:
-            # ---------------------------------------------------------------- 0. reference pictures
-            with gr.Tab("Референс", id="ref"):
-                with gr.Row():
-                    with gr.Column(scale=1):
-                        gr.Markdown("**1. Что нужно.** Опишите объект своими словами. Стиль, ракурс, фон и требования "
-                                    "для 3D программа добавит сама.")
-                        ref_obj = gr.Textbox(label="Объект", lines=2,
-                                             placeholder="например: покосившийся деревянный забор с коваными накладками")
-                        with gr.Row():
-                            ref_cat = gr.Dropdown(list(REF_CATEGORIES), value="Объект окружения", label="Тип", scale=2)
-                            ref_n = gr.Slider(1, 4, value=1, step=1, label="Вариантов", scale=1)
-                        ref_provider = gr.Radio(list(REF_PROVIDERS), value=list(REF_PROVIDERS)[0],
-                                                label="Чем генерировать")
-                        ref_go = gr.Button("Сгенерировать", variant="primary")
-                        with gr.Accordion("Стиль проекта (общий для всех референсов)", open=False):
-                            gr.Markdown("Эталонные картинки (3–5 удачных ассетов) прикладываются к каждому запросу, "
-                                        "описание стиля добавляется в текст. «Описать по картинкам» составит описание "
-                                        "само.")
-                            ref_style_text = gr.Textbox(label="Описание стиля (по-английски точнее)", lines=4)
-                            ref_style_files = gr.File(label="Эталонные картинки стиля", file_count="multiple",
-                                                      file_types=["image"], type="filepath")
-                            with gr.Row():
-                                ref_describe_btn = gr.Button("Описать по картинкам")
-                                ref_style_save_btn = gr.Button("Сохранить стиль")
-                            ref_style_note = gr.Markdown("")
-                        ref_log = gr.Textbox(label="Ход работы", lines=5, interactive=False)
-                    with gr.Column(scale=1):
-                        ref_gallery = gr.Gallery(label="Варианты (щёлкните лучший)", columns=2, height=420,
-                                                 allow_preview=True)
-                        ref_choice_note = gr.Markdown("")
-                        ref_want = gr.CheckboxGroup(["сзади", "слева", "справа"], value=["сзади", "слева", "справа"],
-                                                    label="Дополнительные виды (для Hunyuan3D, лучшая форма)")
-                        with gr.Row():
-                            ref_views_btn = gr.Button("Сделать виды по выбранному варианту")
-                            ref_send_btn = gr.Button("Отправить в 3D", variant="primary")
-                        ref_views_gallery = gr.Gallery(label="Виды", columns=4, height=200)
-                ref_paths = gr.State([])
-                ref_front = gr.State(None)
-                ref_views_state = gr.State({})
+    with gr.Blocks(title="SF3D — игровые ассеты", theme=gr.themes.Soft(), css=UI_CSS, head=UI_HEAD) as ui:
+        with gr.Row(elem_id="topbar"):
+            gr.HTML('<span class="brand">SF3D</span>', elem_classes="brand-box")
+            with gr.Column(elem_classes="menu", min_width=0, scale=0):
+                gr.Button("Файл", elem_classes="menu-title", size="sm")
+                with gr.Column(elem_classes="menu-drop", min_width=0):
+                    mi_open_export = gr.Button("Открыть папку экспорта", size="sm")
+                    mi_open_input = gr.Button("Открыть папку входных картинок", size="sm")
+                    mi_batch = gr.Button("Пакетная обработка…", size="sm")
+            with gr.Column(elem_classes="menu", min_width=0, scale=0):
+                gr.Button("Опции", elem_classes="menu-title", size="sm")
+                with gr.Column(elem_classes="menu-drop", min_width=0):
+                    mi_vram = gr.Button("Видеопамять…", size="sm")
+                    mi_settings = gr.Button("Настройки…", size="sm")
+                    mi_unload = gr.Button("Выгрузить SF3D из видеопамяти", size="sm")
+            with gr.Column(elem_classes="menu", min_width=0, scale=0):
+                gr.Button("Справка", elem_classes="menu-title", size="sm")
+                with gr.Column(elem_classes="menu-drop", min_width=0):
+                    mi_help = gr.Button("Порядок работы", size="sm")
+            gpu_stat = gr.HTML("", elem_id="gpustat")
+            gpu_timer = gr.Timer(5)
 
-            # ---------------------------------------------------------------- 1. generation
-            with gr.Tab("1. Создать модель", id="gen"):
-                with gr.Row():
-                    with gr.Column(scale=1):
-                        engine = gr.Radio([ENGINE_SF3D, ENGINE_HY], value=ENGINE_SF3D, label="Движок")
-                        files = gr.File(label="Картинки (одна или несколько)", file_count="multiple",
-                                        file_types=["image"], type="filepath")
-                        with gr.Group(visible=False) as hy_views:
-                            gr.Markdown("**Виды объекта** (одна и та же модель с разных сторон; обязателен «Спереди»). "
-                                        "«Слева» и «справа» — со стороны левой и правой руки объекта.")
-                            with gr.Row():
-                                v_front = gr.Image(label="Спереди *", type="filepath", sources=["upload"], height=150)
-                                v_back = gr.Image(label="Сзади", type="filepath", sources=["upload"], height=150)
-                            with gr.Row():
-                                v_left = gr.Image(label="Слева", type="filepath", sources=["upload"], height=150)
-                                v_right = gr.Image(label="Справа", type="filepath", sources=["upload"], height=150)
+        with gr.Tabs(elem_id="maintabs") as main_tabs:
+            with gr.Tab("Создание", id="g_create"):
+                with gr.Tabs() as tabs_create:
+                    # ---------------------------------------------------------------- 0. reference pictures
+                    with gr.Tab("Референс", id="ref"):
                         with gr.Row():
-                            category = gr.Dropdown(labels, value=default_cat, label="Категория", scale=1)
-                            name = gr.Textbox(label="Имя (если картинка одна; иначе — имя файла)", scale=1)
-                        preset_note = gr.Markdown(on_category(default_cat))
-                        veg_kind = gr.Radio(list(VEG_KINDS), value="Дерево", visible=False,
-                                            label="Что за растение (для ветра в Godot: как гнётся и где листва)")
-                        with gr.Accordion("Размер и pivot", open=False):
-                            height = gr.Number(label="Высота модели в метрах (0 — по умолчанию для категории)",
-                                               value=0)
-                            with gr.Row():
-                                width = gr.Number(label="Ширина (по X), м; 0 — не менять", value=0)
-                                depth = gr.Number(label="Глубина (по Z), м; 0 — не менять", value=0)
-                            pivot = gr.Radio(list(PIVOT_LABELS), value="авто (по категории)",
-                                             label="Точка привязки (pivot)")
-                            collision = gr.Dropdown(list(COLLISION_LABELS), value="по категории",
-                                                    label="Коллизия для Godot (создаётся при импорте автоматически)")
-                        with gr.Accordion("Материал и цвет", open=False):
-                            override = gr.Checkbox(label="Задать металличность и шероховатость вручную", value=False)
-                            metallic = gr.Slider(0, 1, value=0.0, step=0.05, label="Металличность")
-                            roughness = gr.Slider(0, 1, value=0.8, step=0.05, label="Шероховатость")
-                            color_match = gr.Slider(0, 1, value=0.0, step=0.05,
-                                                    label="Подгонка палитры под ваши картинки (0 — выкл.)")
-                            saturation = gr.Slider(0.3, 1.5, value=1.0, step=0.05,
-                                                   label="Насыщенность (1 — без изменений)")
-                            brightness = gr.Slider(0.5, 1.5, value=1.0, step=0.05, label="Яркость (1 — без изменений)")
-                            auto_materials = gr.Checkbox(label="Распознать материалы (дерево, металл, камень…) и "
-                                                               "построить карты шероховатости и металличности",
-                                                         value=False)
-                        with gr.Accordion("Параметры Hunyuan3D", open=False, visible=False) as hy_params:
-                            paint = gr.Checkbox(label="Красить текстурой (без неё — серая форма, быстрее)", value=True)
-                            hy_tex = gr.Dropdown([1024, 2048], value=2048, label="Размер текстуры")
-                            hy_faces = gr.Slider(10000, 100000, value=50000, step=5000,
-                                                 label="Целевое число граней после упрощения")
-                            hy_steps = gr.Slider(20, 50, value=50, step=5, label="Шагов диффузии (меньше — быстрее)")
-                        with gr.Accordion("Параметры генерации SF3D", open=False) as sf_params:
-                            tex_res = gr.Dropdown([512, 1024, 2048], value=1024,
-                                                  label="Размер текстуры (2048 может не поместиться в 8 ГБ)")
-                            fg_ratio = gr.Slider(0.5, 1.0, value=cfg["foreground_ratio"], step=0.01,
-                                                 label="Доля предмета в кадре")
-                            remove_bg = gr.Checkbox(label="Удалять фон (выключите, если фон уже прозрачный)",
-                                                    value=True)
-                            remesh = gr.Dropdown(["none", "triangle", "quad"], value="none",
-                                                 label="Ремеш (none — без изменений)")
-                        with gr.Row():
-                            make_preview = gr.Checkbox(label="Превью и иконка (Blender, ~10 с)", value=True)
-                            overwrite = gr.Checkbox(label="Перезаписать уже готовое", value=False)
-                        auto_rig = gr.Checkbox(label="Сразу создать скелет человекоподобному персонажу "
-                                                     "(категория «Персонаж», ещё 3–5 минут)", value=False)
-                        go = gr.Button("Создать модель", variant="primary", size="lg")
-                    with gr.Column(scale=1):
-                        viewer = gr.Model3D(label="Результат", height=460, clear_color=(0.9, 0.9, 0.9, 1))
-                        inputs_gallery = gr.Gallery(label="Подготовленные картинки, превью и иконка",
-                                                    columns=4, height=150)
-                        logbox = gr.Textbox(label="Журнал", lines=6, interactive=False)
-                table = gr.Dataframe(headers=["имя", "категория", "граней", "размер (м)", "секунд", "файл"],
-                                     label="Создано за эту сессию", interactive=False, wrap=True)
+                            with gr.Column(scale=1):
+                                gr.Markdown("**1. Что нужно.** Опишите объект своими словами. Стиль, ракурс, фон и требования "
+                                            "для 3D программа добавит сама.")
+                                ref_obj = gr.Textbox(label="Объект", lines=2,
+                                                     placeholder="например: покосившийся деревянный забор с коваными накладками")
+                                with gr.Row():
+                                    ref_cat = gr.Dropdown(list(REF_CATEGORIES), value="Объект окружения", label="Тип", scale=2)
+                                    ref_n = gr.Slider(1, 4, value=1, step=1, label="Вариантов", scale=1)
+                                ref_provider = gr.Radio(list(REF_PROVIDERS), value=list(REF_PROVIDERS)[0],
+                                                        label="Чем генерировать")
+                                ref_go = gr.Button("Сгенерировать", variant="primary")
+                                with gr.Accordion("Стиль проекта (общий для всех референсов)", open=False):
+                                    gr.Markdown("Эталонные картинки (3–5 удачных ассетов) прикладываются к каждому запросу, "
+                                                "описание стиля добавляется в текст. «Описать по картинкам» составит описание "
+                                                "само.")
+                                    ref_style_text = gr.Textbox(label="Описание стиля (по-английски точнее)", lines=4)
+                                    ref_style_files = gr.File(label="Эталонные картинки стиля", file_count="multiple",
+                                                              file_types=["image"], type="filepath")
+                                    with gr.Row():
+                                        ref_describe_btn = gr.Button("Описать по картинкам")
+                                        ref_style_save_btn = gr.Button("Сохранить стиль")
+                                    ref_style_note = gr.Markdown("")
+                                ref_log = gr.Textbox(label="Ход работы", lines=5, interactive=False)
+                            with gr.Column(scale=1):
+                                ref_gallery = gr.Gallery(label="Варианты (щёлкните лучший)", columns=2, height=420,
+                                                         allow_preview=True)
+                                ref_choice_note = gr.Markdown("")
+                                ref_want = gr.CheckboxGroup(["сзади", "слева", "справа"], value=["сзади", "слева", "справа"],
+                                                            label="Дополнительные виды (для Hunyuan3D, лучшая форма)")
+                                with gr.Row():
+                                    ref_views_btn = gr.Button("Сделать виды по выбранному варианту")
+                                    ref_send_btn = gr.Button("Отправить в 3D", variant="primary")
+                                ref_views_gallery = gr.Gallery(label="Виды", columns=4, height=200)
+                        ref_paths = gr.State([])
+                        ref_front = gr.State(None)
+                        ref_views_state = gr.State({})
 
-            # ---------------------------------------------------------------- 2. rigging
-            with gr.Tab("2. Скелет и анимация"):
-                with gr.Row():
-                    with gr.Column(scale=1):
-                        gr.Markdown("**1. Модель.** Выберите созданную или загрузите свою (например, из Tripo). "
-                                    "Она сразу появится справа. Если в файле уже есть скелет, он будет заменён.")
+                    # ---------------------------------------------------------------- 1. generation
+                    with gr.Tab("Создать модель", id="gen"):
                         with gr.Row():
-                            rig_asset = gr.Dropdown(_export_assets(), label="Готовая модель (категория/имя)",
-                                                    scale=4)
-                            rig_refresh_btn = gr.Button("Обновить", scale=1)
-                        rig_upload = gr.File(label="…или загрузите GLB", file_types=[".glb"], type="filepath")
-                        gr.Markdown("**2. Тип.**")
-                        rig_kind = gr.Radio(list(RIG_KINDS), value=list(RIG_KINDS)[0], label="Какой скелет нужен")
-                        with gr.Group() as rig_human:
-                            rig_naming = gr.Radio(list(RIG_NAMINGS), value=list(RIG_NAMINGS)[0],
-                                                  label="Имена костей")
-                            rig_tries = gr.Slider(1, 6, value=3, step=1,
-                                                  label="Попыток подобрать скелет с пальцами (каждая около минуты)")
-                        with gr.Group(visible=False) as rig_creature:
-                            gr.Markdown("Кости получат понятные имена (`hips`, `spine`, `head`, `leg_FL…`, `tail…`), "
-                                        "модель развернётся мордой вперёд, а по линии рта появится кость `jaw`. "
-                                        "Лучше всего, если пасть на модели приоткрыта.")
-                            with gr.Row():
-                                jaw_line = gr.Slider(-40, 40, value=0, step=1,
-                                                     label="Линия рта: выше (+) / ниже (−), мм")
-                                jaw_hinge = gr.Slider(-40, 40, value=0, step=1,
-                                                      label="Шарнир челюсти: дальше (+) / ближе к носу (−), мм")
-                        rig_btn = gr.Button("Создать скелет (3–6 минут, ~3,5 ГБ видеопамяти)", variant="primary")
-                        with gr.Group(visible=False) as rig_creature_after:
-                            rejaw_btn = gr.Button("Пересобрать челюсть с новыми ползунками (около 30 секунд)")
-                        with gr.Accordion("Для человекоподобных: стыки и части тела под броню", open=False) as rig_extra:
-                            seam_btn = gr.Button("Починить стыки между частями (модель уже со скелетом)")
-                            split_btn = gr.Button("Разбить тело на части для брони (голова, торс, таз, руки, ноги…)")
-                        rig_log = gr.Textbox(label="Ход работы", lines=8, interactive=False)
-                    with gr.Column(scale=1):
-                        rig_view = gr.Model3D(label="Модель", height=460, clear_color=(0.9, 0.9, 0.9, 1))
-                        jaw_gallery = gr.Gallery(label="Челюсть: закрыта и открыта", columns=4, height=220)
-                creature_state = gr.State(None)
-                landmarks_ui.mount(T.load_config, rig_asset, rig_upload)
-                face_parts_ui.mount(T.load_config)
-                rwt_ui.mount(T.load_config)  # GPT: Optional repair retains the skeleton.
-            # ---------------------------------------------------------------- humanoid animation library
-            with gr.Tab("Анимации (человекоподобные)", id="hanim"):
-                with gr.Row():
-                    with gr.Column(scale=1):
-                        gr.Markdown("Набор готовых клипов для человекоподобного персонажа **со скелетом** (вкладка "
-                                    "«Скелет и анимация», тип «Человекоподобный»): покой, ходьба, бег, прыжок, "
-                                    "падение, приземление, два удара, заклинание, блок, получение удара, смерть. "
-                                    "Клипы считаются по костям модели, поэтому подходят и гоблину, и фее. Результат — "
-                                    "один GLB с моделью и всеми анимациями. Анимации «на месте»: двигает персонажа "
-                                    "ваш код.")
-                        with gr.Row():
-                            ha_asset = gr.Dropdown(_rigged_assets(), label="Модель со скелетом", scale=4)
-                            ha_refresh_btn = gr.Button("Обновить", scale=1)
-                        ha_upload = gr.File(label="…или загрузите GLB со скелетом", file_types=[".glb"],
-                                            type="filepath")
-                        ha_clips = gr.CheckboxGroup(list(HA.CLIPS.values()), value=list(HA.CLIPS.values()),
-                                                    label="Какие клипы добавить")
-                        ha_btn = gr.Button("Добавить анимации", variant="primary")
-                        ha_log = gr.Textbox(label="Ход работы", lines=8, interactive=False)
-                    with gr.Column(scale=1):
-                        ha_view = gr.Model3D(label="Результат (поза покоя)", height=320,
-                                             clear_color=(0.9, 0.9, 0.9, 1))
-                        ha_gallery = gr.Gallery(label="Кадры клипов (вид сбоку, 6 кадров на клип)", columns=1,
-                                                height=420)
+                            with gr.Column(scale=1):
+                                engine = gr.Radio([ENGINE_SF3D, ENGINE_HY], value=ENGINE_SF3D, label="Движок")
+                                files = gr.File(label="Картинки (одна или несколько)", file_count="multiple",
+                                                file_types=["image"], type="filepath")
+                                with gr.Group(visible=False) as hy_views:
+                                    gr.Markdown("**Виды объекта** (одна и та же модель с разных сторон; обязателен «Спереди»). "
+                                                "«Слева» и «справа» — со стороны левой и правой руки объекта.")
+                                    with gr.Row():
+                                        v_front = gr.Image(label="Спереди *", type="filepath", sources=["upload"], height=150)
+                                        v_back = gr.Image(label="Сзади", type="filepath", sources=["upload"], height=150)
+                                    with gr.Row():
+                                        v_left = gr.Image(label="Слева", type="filepath", sources=["upload"], height=150)
+                                        v_right = gr.Image(label="Справа", type="filepath", sources=["upload"], height=150)
+                                with gr.Row():
+                                    category = gr.Dropdown(labels, value=default_cat, label="Категория", scale=1)
+                                    name = gr.Textbox(label="Имя (если картинка одна; иначе — имя файла)", scale=1)
+                                preset_note = gr.Markdown(on_category(default_cat))
+                                veg_kind = gr.Radio(list(VEG_KINDS), value="Дерево", visible=False,
+                                                    label="Что за растение (для ветра в Godot: как гнётся и где листва)")
+                                with gr.Accordion("Размер и pivot", open=False):
+                                    height = gr.Number(label="Высота модели в метрах (0 — по умолчанию для категории)",
+                                                       value=0)
+                                    with gr.Row():
+                                        width = gr.Number(label="Ширина (по X), м; 0 — не менять", value=0)
+                                        depth = gr.Number(label="Глубина (по Z), м; 0 — не менять", value=0)
+                                    pivot = gr.Radio(list(PIVOT_LABELS), value="авто (по категории)",
+                                                     label="Точка привязки (pivot)")
+                                    collision = gr.Dropdown(list(COLLISION_LABELS), value="по категории",
+                                                            label="Коллизия для Godot (создаётся при импорте автоматически)")
+                                with gr.Accordion("Материал и цвет", open=False):
+                                    override = gr.Checkbox(label="Задать металличность и шероховатость вручную", value=False)
+                                    metallic = gr.Slider(0, 1, value=0.0, step=0.05, label="Металличность")
+                                    roughness = gr.Slider(0, 1, value=0.8, step=0.05, label="Шероховатость")
+                                    color_match = gr.Slider(0, 1, value=0.0, step=0.05,
+                                                            label="Подгонка палитры под ваши картинки (0 — выкл.)")
+                                    saturation = gr.Slider(0.3, 1.5, value=1.0, step=0.05,
+                                                           label="Насыщенность (1 — без изменений)")
+                                    brightness = gr.Slider(0.5, 1.5, value=1.0, step=0.05, label="Яркость (1 — без изменений)")
+                                    auto_materials = gr.Checkbox(label="Распознать материалы (дерево, металл, камень…) и "
+                                                                       "построить карты шероховатости и металличности",
+                                                                 value=False)
+                                with gr.Accordion("Параметры Hunyuan3D", open=False, visible=False) as hy_params:
+                                    paint = gr.Checkbox(label="Красить текстурой (без неё — серая форма, быстрее)", value=True)
+                                    hy_tex = gr.Dropdown([1024, 2048], value=2048, label="Размер текстуры")
+                                    hy_faces = gr.Slider(10000, 100000, value=50000, step=5000,
+                                                         label="Целевое число граней после упрощения")
+                                    hy_steps = gr.Slider(20, 50, value=50, step=5, label="Шагов диффузии (меньше — быстрее)")
+                                with gr.Accordion("Параметры генерации SF3D", open=False) as sf_params:
+                                    tex_res = gr.Dropdown([512, 1024, 2048], value=1024,
+                                                          label="Размер текстуры (2048 может не поместиться в 8 ГБ)")
+                                    fg_ratio = gr.Slider(0.5, 1.0, value=cfg["foreground_ratio"], step=0.01,
+                                                         label="Доля предмета в кадре")
+                                    remove_bg = gr.Checkbox(label="Удалять фон (выключите, если фон уже прозрачный)",
+                                                            value=True)
+                                    remesh = gr.Dropdown(["none", "triangle", "quad"], value="none",
+                                                         label="Ремеш (none — без изменений)")
+                                with gr.Row():
+                                    make_preview = gr.Checkbox(label="Превью и иконка (Blender, ~10 с)", value=True)
+                                    overwrite = gr.Checkbox(label="Перезаписать уже готовое", value=False)
+                                auto_rig = gr.Checkbox(label="Сразу создать скелет человекоподобному персонажу "
+                                                             "(категория «Персонаж», ещё 3–5 минут)", value=False)
+                                go = gr.Button("Создать модель", variant="primary", size="lg")
+                            with gr.Column(scale=1):
+                                viewer = gr.Model3D(label="Результат", height=460, clear_color=(0.9, 0.9, 0.9, 1))
+                                inputs_gallery = gr.Gallery(label="Подготовленные картинки, превью и иконка",
+                                                            columns=4, height=150)
+                                logbox = gr.Textbox(label="Журнал", lines=6, interactive=False)
+                        table = gr.Dataframe(headers=["имя", "категория", "граней", "размер (м)", "секунд", "файл"],
+                                             label="Создано за эту сессию", interactive=False, wrap=True)
 
-            # ---------------------------------------------------------------- Mixamo FBX animations
-            with gr.Tab("Анимации Mixamo (FBX)", id="fbxanim"):
-                with gr.Row():
-                    with gr.Column(scale=4):
-                        gr.Markdown("Анимации из Mixamo (**FBX, Without Skin**, по возможности «In Place») переносятся на "
-                                    "скелет вашей модели. Кости должны называться как в Mixamo (`mixamorig:...`): так "
-                                    "называет их вкладка «Скелет». Результат — один GLB с именованными клипами, он "
-                                    "открывается справа, и там же его можно проиграть.")
+                    # ---------------------------------------------------------------- 4. materials
+                    with gr.Tab("Материалы", id="mat"):
                         with gr.Row():
-                            fx_asset = gr.Dropdown(_rigged_assets(), label="Модель со скелетом", scale=4)
-                            fx_refresh = gr.Button("Обновить", scale=1)
-                        fx_upload = gr.File(label="…или свой GLB со скелетом", file_types=[".glb"], type="filepath")
-                        fx_folder = gr.Textbox(value=_fbx_dir(), label="Папка с FBX")
-                        with gr.Row():
-                            fx_scan_btn = gr.Button("Прочитать папку")
-                            fx_save_btn = gr.Button("Сохранить настройки")
-                        fx_table = gr.Dataframe(headers=["Файл", "Имя клипа", "Цикл", "Скорость", "На месте", "Группа"],
-                                                datatype=["str", "str", "bool", "number", "bool", "str"],
-                                                col_count=(6, "fixed"), interactive=True, type="array", wrap=True)
-                        fx_weapon = gr.Dropdown(list(__import__("fbxanim").WEAPON_SETS), value="Нет",
-                                                label="Оружие в руках (только для просмотра)")
-                        fx_go = gr.Button("Перенести на модель", variant="primary")
-                        fx_log = gr.Textbox(label="Ход работы", lines=7, interactive=False)
-                        fx_file = gr.File(label="Готовый GLB", interactive=False)
-                    with gr.Column(scale=6):
-                        fx_view = gr.HTML(value='<div style="padding:24px;color:#888">Здесь появится окно просмотра: '
-                                                'выберите модель и нажмите «Перенести на модель».</div>')
+                            with gr.Column(scale=1):
+                                gr.Markdown("**1.** Выберите модель. **2.** «Проанализировать»: текстура делится на цветовые "
+                                            "группы с предложенным материалом. **3.** Поправьте, если ошиблась. "
+                                            "**4.** «Применить».")
+                                with gr.Row():
+                                    mat_asset = gr.Dropdown(_mat_assets(), label="Модель (категория/имя)", scale=4)
+                                    mat_refresh_btn = gr.Button("Обновить", scale=1)
+                                mat_analyze_btn = gr.Button("Проанализировать")
+                                mat_note = gr.Markdown("")
+                                mat_dd = [gr.Dropdown(MAT_CHOICES, value=None, visible=False, label=f"Группа {j + 1}")
+                                          for j in range(MAX_GROUPS)]
+                                mat_apply_btn = gr.Button("Применить материалы", variant="primary")
+                                mat_status = gr.Textbox(label="Результат", interactive=False)
+                            with gr.Column(scale=1):
+                                mat_m3d = gr.Model3D(label="Модель", height=380, clear_color=(0.9, 0.9, 0.9, 1))
+                                mat_overlay = gr.Image(label="Группы на текстуре", height=260, interactive=False)
+                                mat_gallery = gr.Gallery(label="Превью", columns=4, height=150)
 
-            # ---------------------------------------------------------------- 3. equipment
-            with gr.Tab("3. Экипировка"):
-                with gr.Tabs():
-                    with gr.Tab("Перенести сет с одетой модели"):
+                    # ---------------------------------------------------------------- 5. batch
+                    with gr.Tab("Пакетная обработка", id="batch"):
+                        gr.Markdown("Схема папок: `<корень>\\<категория>\\картинка.png` — SF3D; "
+                                    "`<корень>\\<категория>\\<объект>\\front.png` (+ `back`, `left`, `right`) — Hunyuan3D. "
+                                    "Готовое пропускается, ошибка в одной задаче не останавливает очередь.")
+                        with gr.Row():
+                            batch_dir = gr.Textbox(label="Корневая папка",
+                                                   value=cfg.get("input_dir", r"D:\My projects\SF3D\input"), scale=3)
+                            batch_cat = gr.Dropdown(labels, value=default_cat, label="Категория по умолчанию", scale=2)
+                        with gr.Row():
+                            batch_over = gr.Checkbox(label="Перезаписать готовое", value=False)
+                            batch_prev = gr.Checkbox(label="Превью и иконки", value=True)
+                            batch_mat = gr.Checkbox(label="Распознавать материалы", value=False)
+                            batch_rig = gr.Checkbox(label="Скелеты для персонажей (в конце)", value=False)
+                        with gr.Row():
+                            scan_btn = gr.Button("Сканировать папку")
+                            batch_btn = gr.Button("Запустить пакет", variant="primary")
+                        batch_info = gr.Textbox(label="Найдено", interactive=False)
+                        batch_jobs = gr.Dataframe(headers=["имя", "категория", "движок", "источник", "статус"],
+                                                  label="Очередь", interactive=False, wrap=True)
+                        with gr.Row():
+                            batch_log = gr.Textbox(label="Журнал", lines=8, interactive=False, scale=1)
+                            batch_view = gr.Model3D(label="Последняя модель", height=320, clear_color=(0.9, 0.9, 0.9, 1),
+                                                    scale=1)
+                        batch_table = gr.Dataframe(headers=["имя", "категория", "граней", "размер (м)", "секунд", "файл"],
+                                                   label="Готово", interactive=False, wrap=True)
+                        batch_gallery = gr.Gallery(label="Превью", columns=6, height=150)
+
+            with gr.Tab("Персонаж", id="g_char"):
+                with gr.Tabs() as tabs_char:
+                    with gr.Tab("Скелет", id="rig"):
+                        with gr.Row():
+                            with gr.Column(scale=1):
+                                gr.Markdown("**1. Модель.** Выберите созданную или загрузите свою (например, из Tripo). "
+                                            "Она сразу появится справа. Если в файле уже есть скелет, он будет заменён.")
+                                with gr.Row():
+                                    rig_asset = gr.Dropdown(_export_assets(), label="Готовая модель (категория/имя)",
+                                                            scale=4)
+                                    rig_refresh_btn = gr.Button("Обновить", scale=1)
+                                rig_upload = gr.File(label="…или загрузите GLB", file_types=[".glb"], type="filepath")
+                                rig_mode = gr.Radio(list(RIG_MODES), value=list(RIG_MODES)[0], label="2. Как строить скелет")
+                                with gr.Column() as rig_auto_box:
+                                    rig_kind = gr.Radio(list(RIG_KINDS), value=list(RIG_KINDS)[0], label="Какой скелет нужен")
+                                    with gr.Group() as rig_human:
+                                        rig_naming = gr.Radio(list(RIG_NAMINGS), value=list(RIG_NAMINGS)[0],
+                                                              label="Имена костей")
+                                        rig_tries = gr.Slider(1, 6, value=3, step=1,
+                                                              label="Попыток подобрать скелет с пальцами (каждая около минуты)")
+                                    with gr.Group(visible=False) as rig_creature:
+                                        gr.Markdown("Кости получат понятные имена (`hips`, `spine`, `head`, `leg_FL…`, `tail…`), "
+                                                    "модель развернётся мордой вперёд, а по линии рта появится кость `jaw`. "
+                                                    "Лучше всего, если пасть на модели приоткрыта.")
+                                        with gr.Row():
+                                            jaw_line = gr.Slider(-40, 40, value=0, step=1,
+                                                                 label="Линия рта: выше (+) / ниже (−), мм")
+                                            jaw_hinge = gr.Slider(-40, 40, value=0, step=1,
+                                                                  label="Шарнир челюсти: дальше (+) / ближе к носу (−), мм")
+                                    rig_btn = gr.Button("Создать скелет (3–6 минут, ~3,5 ГБ видеопамяти)", variant="primary")
+                                    with gr.Group(visible=False) as rig_creature_after:
+                                        rejaw_btn = gr.Button("Пересобрать челюсть с новыми ползунками (около 30 секунд)")
+                                    with gr.Accordion("Для человекоподобных: стыки и части тела под броню", open=False) as rig_extra:
+                                        seam_btn = gr.Button("Починить стыки между частями (модель уже со скелетом)")
+                                        split_btn = gr.Button("Разбить тело на части для брони (голова, торс, таз, руки, ноги…)")
+                                    rig_log = gr.Textbox(label="Ход работы", lines=8, interactive=False)
+                            with gr.Column(scale=1):
+                                rig_view = gr.Model3D(label="Модель", height=460, clear_color=(0.9, 0.9, 0.9, 1))
+                                jaw_gallery = gr.Gallery(label="Челюсть: закрыта и открыта", columns=4, height=220)
+                        creature_state = gr.State(None)
+                        with gr.Column(visible=False) as rig_manual_box:
+                            lm_data, lm_editor = landmarks_ui.mount(T.load_config, rig_asset, rig_upload, accordion=False)
+
+                    # ---------------------------------------------------------------- humanoid animation library
+                    with gr.Tab("Анимации: процедурные", id="hanim"):
+                        with gr.Row():
+                            with gr.Column(scale=1):
+                                gr.Markdown("Набор готовых клипов для человекоподобного персонажа **со скелетом** (вкладка "
+                                            "«Скелет», тип «Человекоподобный»): покой, ходьба, бег, прыжок, "
+                                            "падение, приземление, два удара, заклинание, блок, получение удара, смерть. "
+                                            "Клипы считаются по костям модели, поэтому подходят и гоблину, и фее. Результат — "
+                                            "один GLB с моделью и всеми анимациями. Анимации «на месте»: двигает персонажа "
+                                            "ваш код.")
+                                with gr.Row():
+                                    ha_asset = gr.Dropdown(_rigged_assets(), label="Модель со скелетом", scale=4)
+                                    ha_refresh_btn = gr.Button("Обновить", scale=1)
+                                ha_upload = gr.File(label="…или загрузите GLB со скелетом", file_types=[".glb"],
+                                                    type="filepath")
+                                ha_clips = gr.CheckboxGroup(list(HA.CLIPS.values()), value=list(HA.CLIPS.values()),
+                                                            label="Какие клипы добавить")
+                                ha_btn = gr.Button("Добавить анимации", variant="primary")
+                                ha_log = gr.Textbox(label="Ход работы", lines=8, interactive=False)
+                            with gr.Column(scale=1):
+                                ha_view = gr.Model3D(label="Результат (поза покоя)", height=320,
+                                                     clear_color=(0.9, 0.9, 0.9, 1))
+                                ha_gallery = gr.Gallery(label="Кадры клипов (вид сбоку, 6 кадров на клип)", columns=1,
+                                                        height=420)
+
+                    # ---------------------------------------------------------------- Mixamo FBX animations
+                    with gr.Tab("Анимации: Mixamo (FBX)", id="fbxanim"):
+                        with gr.Row():
+                            with gr.Column(scale=4):
+                                gr.Markdown("Анимации из Mixamo (**FBX, Without Skin**, по возможности «In Place») переносятся на "
+                                            "скелет вашей модели. Кости должны называться как в Mixamo (`mixamorig:...`): так "
+                                            "называет их вкладка «Скелет». Результат — один GLB с именованными клипами, он "
+                                            "открывается справа, и там же его можно проиграть.")
+                                with gr.Row():
+                                    fx_asset = gr.Dropdown(_rigged_assets(), label="Модель со скелетом", scale=4)
+                                    fx_refresh = gr.Button("Обновить", scale=1)
+                                fx_upload = gr.File(label="…или свой GLB со скелетом", file_types=[".glb"], type="filepath")
+                                fx_folder = gr.Textbox(value=_fbx_dir(), label="Папка с FBX")
+                                with gr.Row():
+                                    fx_scan_btn = gr.Button("Прочитать папку")
+                                    fx_save_btn = gr.Button("Сохранить настройки")
+                                fx_table = gr.Dataframe(headers=["Файл", "Имя клипа", "Цикл", "Скорость", "На месте", "Группа"],
+                                                        datatype=["str", "str", "bool", "number", "bool", "str"],
+                                                        col_count=(6, "fixed"), interactive=True, type="array", wrap=True)
+                                fx_weapon = gr.Dropdown(list(__import__("fbxanim").WEAPON_SETS), value="Нет",
+                                                        label="Оружие в руках (только для просмотра)")
+                                fx_go = gr.Button("Перенести на модель", variant="primary")
+                                fx_log = gr.Textbox(label="Ход работы", lines=7, interactive=False)
+                                fx_file = gr.File(label="Готовый GLB", interactive=False)
+                            with gr.Column(scale=6):
+                                fx_view = gr.HTML(value='<div style="padding:24px;color:#888">Здесь появится окно просмотра: '
+                                                        'выберите модель и нажмите «Перенести на модель».</div>')
+
+                    # ---------------------------------------------------------------- 3. equipment
+                    with gr.Tab("Экипировка: сет целиком"):
                         with gr.Row():
                             with gr.Column(scale=1):
                                 gr.Markdown(
@@ -2197,7 +2364,7 @@ def build():
                         out_btn = gr.Button("Перенести сет", variant="primary")
                         out_log = gr.Textbox(label="Ход работы", lines=8, interactive=False)
                         out_view = gr.Gallery(label="Результат на базовом теле", columns=4, height=420)
-                    with gr.Tab("Подогнать одну вещь"):
+                    with gr.Tab("Экипировка: одна вещь"):
                         with gr.Row():
                             with gr.Column(scale=1):
                                 gr.Markdown("Сажает отдельно сгенерированную вещь на тело и привязывает к его скелету. "
@@ -2233,207 +2400,175 @@ def build():
                                 fit_m3d = gr.Model3D(label="Модель", height=420, clear_color=(0.9, 0.9, 0.9, 1))
                                 fit_view = gr.Gallery(label="Как сидит (спереди и сбоку)", columns=2, height=300)
 
-            # ---------------------------------------------------------------- surfaces
-            with gr.Tab("Поверхности (земля, пол, стены)", id="surf"):
-                with gr.Row():
-                    with gr.Column(scale=1):
-                        gr.Markdown("Бесшовный материал для ландшафта, полов, дорог и стен: текстура вида сверху, "
-                                    "карты рельефа и готовый материал Godot (`.tres`). Стиль берётся из карточки "
-                                    "стиля во вкладке «Референс».")
-                        surf_desc = gr.Textbox(label="Поверхность", lines=2,
-                                               placeholder="например: старая булыжная дорога, мох и грязь между камнями")
-                        surf_own = gr.File(label="…или своя картинка (вид сверху)", file_types=["image"],
-                                           type="filepath")
-                        surf_provider = gr.Radio(list(REF_PROVIDERS), value=list(REF_PROVIDERS)[0],
-                                                 label="Чем генерировать")
-                        with gr.Row():
-                            surf_tile = gr.Slider(0.5, 10, value=4, step=0.5, label="Плитка повторяется каждые, м")
-                            surf_strength = gr.Slider(0.2, 3, value=1.0, step=0.1, label="Сила рельефа")
-                        with gr.Row():
-                            surf_size = gr.Dropdown([512, 1024, 2048], value=1024, label="Размер текстур")
-                            surf_name = gr.Textbox(label="Имя (папка в materials/)")
-                        surf_btn = gr.Button("Сделать материал", variant="primary")
-                        surf_log = gr.Textbox(label="Ход работы", lines=6, interactive=False)
-                    with gr.Column(scale=1):
-                        surf_gallery = gr.Gallery(label="Результат", columns=1, height=520)
+                    with gr.Tab("Исправление весов", id="rwt"):
+                        rwt_ui.mount(T.load_config, accordion=False)  # GPT: Optional repair retains the skeleton.
+                    with gr.Tab("Детали лица", id="face"):
+                        face_parts_ui.mount(T.load_config, accordion=False)
+                    with gr.Tab("Липсинк", id="lipsync"):
+                        landmarks_ui.mount_lipsync(T.load_config, rig_asset, rig_upload, lm_data, lm_editor, accordion=False)
 
-            # ---------------------------------------------------------------- effects
-            with gr.Tab("Эффекты (частицы)", id="fx"):
-                with gr.Row():
-                    with gr.Column(scale=1):
-                        gr.Markdown("**1. Анимированный лист** для частиц Godot: взрыв, дым, огонь (зациклен), "
-                                    "магическая вспышка, искра. Рисуется программно, за секунды.")
-                        fx_kind = gr.Dropdown(list(FX_KINDS), value=list(FX_KINDS)[0], label="Что нарисовать")
+            with gr.Tab("Окружение", id="g_env"):
+                with gr.Tabs():
+                    # ---------------------------------------------------------------- surfaces
+                    with gr.Tab("Поверхности (земля, пол, стены)", id="surf"):
                         with gr.Row():
-                            fx_color = gr.ColorPicker(value="#ffffff", label="Оттенок")
-                            fx_grid = gr.Dropdown([4, 8], value=8, label="Сетка кадров")
-                            fx_size = gr.Dropdown([64, 128, 256], value=128, label="Размер кадра, px")
-                        with gr.Row():
-                            fx_seed = gr.Number(value=1, precision=0, label="Вариант (seed)")
-                            fx_speed = gr.Slider(0.5, 2.0, value=1.0, step=0.1, label="Скорость")
-                            fx_name = gr.Textbox(label="Имя файла (пусто — по виду)")
-                        fx_flip_btn = gr.Button("Сделать лист", variant="primary")
-                        gr.Markdown("**2. Светящийся спрайт по описанию** (руны, символы, круг призыва). Чёрный фон "
-                                    "становится прозрачностью.")
-                        fx_provider = gr.Radio(list(REF_PROVIDERS), value=list(REF_PROVIDERS)[0],
-                                               label="Чем генерировать")
-                        fx_desc = gr.Textbox(label="Описание", lines=2, placeholder="круг призыва с рунами, голубое свечение")
-                        fx_sname = gr.Textbox(label="Имя файла (magic_circle — для стандартной сцены)")
-                        fx_sprite_btn = gr.Button("Сгенерировать спрайт")
-                        gr.Markdown("**3. Сцены Godot** из листов: explosion, fire, smoke, magic_circle, hit_sparks "
-                                    "(папка `sf3d_fx`, копируется в `res://sf3d_fx/`).")
-                        fx_scene_btn = gr.Button("Собрать сцены Godot")
-                        fx_log = gr.Textbox(label="Результат", lines=5, interactive=False)
-                    with gr.Column(scale=1):
-                        fx_gallery = gr.Gallery(label="Предпросмотр", columns=1, height=560)
+                            with gr.Column(scale=1):
+                                gr.Markdown("Бесшовный материал для ландшафта, полов, дорог и стен: текстура вида сверху, "
+                                            "карты рельефа и готовый материал Godot (`.tres`). Стиль берётся из карточки "
+                                            "стиля во вкладке «Референс».")
+                                surf_desc = gr.Textbox(label="Поверхность", lines=2,
+                                                       placeholder="например: старая булыжная дорога, мох и грязь между камнями")
+                                surf_own = gr.File(label="…или своя картинка (вид сверху)", file_types=["image"],
+                                                   type="filepath")
+                                surf_provider = gr.Radio(list(REF_PROVIDERS), value=list(REF_PROVIDERS)[0],
+                                                         label="Чем генерировать")
+                                with gr.Row():
+                                    surf_tile = gr.Slider(0.5, 10, value=4, step=0.5, label="Плитка повторяется каждые, м")
+                                    surf_strength = gr.Slider(0.2, 3, value=1.0, step=0.1, label="Сила рельефа")
+                                with gr.Row():
+                                    surf_size = gr.Dropdown([512, 1024, 2048], value=1024, label="Размер текстур")
+                                    surf_name = gr.Textbox(label="Имя (папка в materials/)")
+                                surf_btn = gr.Button("Сделать материал", variant="primary")
+                                surf_log = gr.Textbox(label="Ход работы", lines=6, interactive=False)
+                            with gr.Column(scale=1):
+                                surf_gallery = gr.Gallery(label="Результат", columns=1, height=520)
 
-            # ---------------------------------------------------------------- modular kits
-            with gr.Tab("Модульные наборы (подземелье)", id="kit"):
-                with gr.Row():
-                    with gr.Column(scale=1):
-                        gr.Markdown("Набор деталей, которые стыкуются по сетке: пол, потолок, стены (глухая, с дверью, "
-                                    "с аркой, с окном), углы, колонна, лестница и дверь. Блоки, арка и ступени "
-                                    "строятся процедурно, поэтому стыки сходятся точно. Материалы берутся из "
-                                    "вкладки «Поверхности».")
-                        gr.Markdown("**1. Детали набора**")
+                    # ---------------------------------------------------------------- effects
+                    with gr.Tab("Эффекты (частицы)", id="fx"):
                         with gr.Row():
-                            kit_cell = gr.Number(value=4, label="Ячейка, м")
-                            kit_height = gr.Number(value=3, label="Высота этажа, м")
-                            kit_seed = gr.Number(value=1, precision=0, label="Вариант кладки")
-                        _mats = _mat_folders()
-                        with gr.Row():
-                            kit_wall = gr.Dropdown([KIT_PROC] + _mats, value=KIT_PROC, label="Камень стен")
-                            kit_floor = gr.Dropdown(_mats, value="dungeon_floor" if "dungeon_floor" in _mats
-                                                    else (_mats[0] if _mats else None), label="Пол и лестница")
-                            kit_wood = gr.Dropdown(_mats, value="dungeon_wood" if "dungeon_wood" in _mats
-                                                   else (_mats[0] if _mats else None), label="Дерево (дверь, балки)")
-                            kit_mats_btn = gr.Button("Обновить список", scale=0)
-                        kit_build_btn = gr.Button("Собрать детали", variant="primary")
-                        gr.Markdown("**2. План этажа → сцена Godot.** Строки — вид сверху, север вверху. "
-                                    "`.` пол · `P` колонна · `D` проём с дверью · `A` арка · `W` пол с окнами в "
-                                    "наружных стенах · `^ > v <` лестница (вверх в эту сторону; дальше начинается "
-                                    "следующий этаж) · `#` или пробел — ничего. Этажи разделяет строка `---`. "
-                                    "Дверь и арка ставятся в клетку, где проход идёт между двумя открытыми соседями.")
-                        kit_plan = gr.Textbox(value=_kit_sample(), lines=16, label="План", max_lines=40,
-                                              elem_classes=["mono"])
-                        kit_ceil = gr.Checkbox(value=True, label="Потолки")
-                        kit_scene_btn = gr.Button("Построить сцену")
-                        kit_log = gr.Textbox(label="Ход работы", lines=6, interactive=False)
-                    with gr.Column(scale=1):
-                        kit_gallery = gr.Gallery(label="Результат", columns=1, height=620)
+                            with gr.Column(scale=1):
+                                gr.Markdown("**1. Анимированный лист** для частиц Godot: взрыв, дым, огонь (зациклен), "
+                                            "магическая вспышка, искра. Рисуется программно, за секунды.")
+                                fx_kind = gr.Dropdown(list(FX_KINDS), value=list(FX_KINDS)[0], label="Что нарисовать")
+                                with gr.Row():
+                                    fx_color = gr.ColorPicker(value="#ffffff", label="Оттенок")
+                                    fx_grid = gr.Dropdown([4, 8], value=8, label="Сетка кадров")
+                                    fx_size = gr.Dropdown([64, 128, 256], value=128, label="Размер кадра, px")
+                                with gr.Row():
+                                    fx_seed = gr.Number(value=1, precision=0, label="Вариант (seed)")
+                                    fx_speed = gr.Slider(0.5, 2.0, value=1.0, step=0.1, label="Скорость")
+                                    fx_name = gr.Textbox(label="Имя файла (пусто — по виду)")
+                                fx_flip_btn = gr.Button("Сделать лист", variant="primary")
+                                gr.Markdown("**2. Светящийся спрайт по описанию** (руны, символы, круг призыва). Чёрный фон "
+                                            "становится прозрачностью.")
+                                fx_provider = gr.Radio(list(REF_PROVIDERS), value=list(REF_PROVIDERS)[0],
+                                                       label="Чем генерировать")
+                                fx_desc = gr.Textbox(label="Описание", lines=2, placeholder="круг призыва с рунами, голубое свечение")
+                                fx_sname = gr.Textbox(label="Имя файла (magic_circle — для стандартной сцены)")
+                                fx_sprite_btn = gr.Button("Сгенерировать спрайт")
+                                gr.Markdown("**3. Сцены Godot** из листов: explosion, fire, smoke, magic_circle, hit_sparks "
+                                            "(папка `sf3d_fx`, копируется в `res://sf3d_fx/`).")
+                                fx_scene_btn = gr.Button("Собрать сцены Godot")
+                                fx_log = gr.Textbox(label="Результат", lines=5, interactive=False)
+                            with gr.Column(scale=1):
+                                fx_gallery = gr.Gallery(label="Предпросмотр", columns=1, height=560)
 
-            # ---------------------------------------------------------------- destructibles
-            with gr.Tab("Разрушаемые объекты", id="destr"):
-                with gr.Row():
-                    with gr.Column(scale=1):
-                        gr.Markdown("Модель (бочка, ящик, ваза, столб) режется на осколки с гранями «изнутри». "
-                                    "В Godot получается сцена: цельный объект, который по команде рассыпается "
-                                    "на твёрдые тела, с пылью, исчезновением осколков и сигналом `destroyed` "
-                                    "для выпадения добычи.")
+                    # ---------------------------------------------------------------- modular kits
+                    with gr.Tab("Модульные наборы (подземелье)", id="kit"):
                         with gr.Row():
-                            dst_asset = gr.Dropdown(_export_assets(), label="Готовая модель (категория/имя)", scale=4)
-                            dst_refresh_btn = gr.Button("Обновить", scale=1)
-                        dst_upload = gr.File(label="…или загрузите GLB", file_types=[".glb"], type="filepath")
-                        with gr.Row():
-                            dst_chunks = gr.Slider(4, 40, value=14, step=1, label="Осколков")
-                            dst_seed = gr.Number(value=1, precision=0, label="Вариант разлома")
-                        with gr.Row():
-                            dst_auto = gr.Checkbox(value=True, label="Цвет излома по текстуре")
-                            dst_color = gr.ColorPicker(value="#6b4a2e", label="…или свой цвет излома")
-                        with gr.Row():
-                            dst_mass = gr.Number(value=20, label="Масса, кг")
-                            dst_health = gr.Number(value=20, label="Прочность")
-                            dst_burst = gr.Number(value=3.5, label="Скорость разлёта, м/с")
-                        dst_name = gr.Textbox(label="Имя (пусто — как у модели)")
-                        dst_btn = gr.Button("Сделать разрушаемым", variant="primary")
-                        dst_log = gr.Textbox(label="Ход работы", lines=6, interactive=False)
-                    with gr.Column(scale=1):
-                        dst_view = gr.Model3D(label="Модель", height=300, clear_color=(0.9, 0.9, 0.9, 1))
-                        dst_gallery = gr.Gallery(label="Проверка в Godot: цел → разрушение", columns=2, height=380)
+                            with gr.Column(scale=1):
+                                gr.Markdown("Набор деталей, которые стыкуются по сетке: пол, потолок, стены (глухая, с дверью, "
+                                            "с аркой, с окном), углы, колонна, лестница и дверь. Блоки, арка и ступени "
+                                            "строятся процедурно, поэтому стыки сходятся точно. Материалы берутся из "
+                                            "вкладки «Поверхности».")
+                                gr.Markdown("**1. Детали набора**")
+                                with gr.Row():
+                                    kit_cell = gr.Number(value=4, label="Ячейка, м")
+                                    kit_height = gr.Number(value=3, label="Высота этажа, м")
+                                    kit_seed = gr.Number(value=1, precision=0, label="Вариант кладки")
+                                _mats = _mat_folders()
+                                with gr.Row():
+                                    kit_wall = gr.Dropdown([KIT_PROC] + _mats, value=KIT_PROC, label="Камень стен")
+                                    kit_floor = gr.Dropdown(_mats, value="dungeon_floor" if "dungeon_floor" in _mats
+                                                            else (_mats[0] if _mats else None), label="Пол и лестница")
+                                    kit_wood = gr.Dropdown(_mats, value="dungeon_wood" if "dungeon_wood" in _mats
+                                                           else (_mats[0] if _mats else None), label="Дерево (дверь, балки)")
+                                    kit_mats_btn = gr.Button("Обновить список", scale=0)
+                                kit_build_btn = gr.Button("Собрать детали", variant="primary")
+                                gr.Markdown("**2. План этажа → сцена Godot.** Строки — вид сверху, север вверху. "
+                                            "`.` пол · `P` колонна · `D` проём с дверью · `A` арка · `W` пол с окнами в "
+                                            "наружных стенах · `^ > v <` лестница (вверх в эту сторону; дальше начинается "
+                                            "следующий этаж) · `#` или пробел — ничего. Этажи разделяет строка `---`. "
+                                            "Дверь и арка ставятся в клетку, где проход идёт между двумя открытыми соседями.")
+                                kit_plan = gr.Textbox(value=_kit_sample(), lines=16, label="План", max_lines=40,
+                                                      elem_classes=["mono"])
+                                kit_ceil = gr.Checkbox(value=True, label="Потолки")
+                                kit_scene_btn = gr.Button("Построить сцену")
+                                kit_log = gr.Textbox(label="Ход работы", lines=6, interactive=False)
+                            with gr.Column(scale=1):
+                                kit_gallery = gr.Gallery(label="Результат", columns=1, height=620)
 
-            # ---------------------------------------------------------------- 4. materials
-            with gr.Tab("Материалы"):
-                with gr.Row():
-                    with gr.Column(scale=1):
-                        gr.Markdown("**1.** Выберите модель. **2.** «Проанализировать»: текстура делится на цветовые "
-                                    "группы с предложенным материалом. **3.** Поправьте, если ошиблась. "
-                                    "**4.** «Применить».")
+                    # ---------------------------------------------------------------- destructibles
+                    with gr.Tab("Разрушаемые объекты", id="destr"):
                         with gr.Row():
-                            mat_asset = gr.Dropdown(_mat_assets(), label="Модель (категория/имя)", scale=4)
-                            mat_refresh_btn = gr.Button("Обновить", scale=1)
-                        mat_analyze_btn = gr.Button("Проанализировать")
-                        mat_note = gr.Markdown("")
-                        mat_dd = [gr.Dropdown(MAT_CHOICES, value=None, visible=False, label=f"Группа {j + 1}")
-                                  for j in range(MAX_GROUPS)]
-                        mat_apply_btn = gr.Button("Применить материалы", variant="primary")
-                        mat_status = gr.Textbox(label="Результат", interactive=False)
-                    with gr.Column(scale=1):
-                        mat_m3d = gr.Model3D(label="Модель", height=380, clear_color=(0.9, 0.9, 0.9, 1))
-                        mat_overlay = gr.Image(label="Группы на текстуре", height=260, interactive=False)
-                        mat_gallery = gr.Gallery(label="Превью", columns=4, height=150)
+                            with gr.Column(scale=1):
+                                gr.Markdown("Модель (бочка, ящик, ваза, столб) режется на осколки с гранями «изнутри». "
+                                            "В Godot получается сцена: цельный объект, который по команде рассыпается "
+                                            "на твёрдые тела, с пылью, исчезновением осколков и сигналом `destroyed` "
+                                            "для выпадения добычи.")
+                                with gr.Row():
+                                    dst_asset = gr.Dropdown(_export_assets(), label="Готовая модель (категория/имя)", scale=4)
+                                    dst_refresh_btn = gr.Button("Обновить", scale=1)
+                                dst_upload = gr.File(label="…или загрузите GLB", file_types=[".glb"], type="filepath")
+                                with gr.Row():
+                                    dst_chunks = gr.Slider(4, 40, value=14, step=1, label="Осколков")
+                                    dst_seed = gr.Number(value=1, precision=0, label="Вариант разлома")
+                                with gr.Row():
+                                    dst_auto = gr.Checkbox(value=True, label="Цвет излома по текстуре")
+                                    dst_color = gr.ColorPicker(value="#6b4a2e", label="…или свой цвет излома")
+                                with gr.Row():
+                                    dst_mass = gr.Number(value=20, label="Масса, кг")
+                                    dst_health = gr.Number(value=20, label="Прочность")
+                                    dst_burst = gr.Number(value=3.5, label="Скорость разлёта, м/с")
+                                dst_name = gr.Textbox(label="Имя (пусто — как у модели)")
+                                dst_btn = gr.Button("Сделать разрушаемым", variant="primary")
+                                dst_log = gr.Textbox(label="Ход работы", lines=6, interactive=False)
+                            with gr.Column(scale=1):
+                                dst_view = gr.Model3D(label="Модель", height=300, clear_color=(0.9, 0.9, 0.9, 1))
+                                dst_gallery = gr.Gallery(label="Проверка в Godot: цел → разрушение", columns=2, height=380)
 
-            # ---------------------------------------------------------------- 5. batch
-            with gr.Tab("Пакетная обработка"):
-                gr.Markdown("Схема папок: `<корень>\\<категория>\\картинка.png` — SF3D; "
-                            "`<корень>\\<категория>\\<объект>\\front.png` (+ `back`, `left`, `right`) — Hunyuan3D. "
-                            "Готовое пропускается, ошибка в одной задаче не останавливает очередь.")
-                with gr.Row():
-                    batch_dir = gr.Textbox(label="Корневая папка",
-                                           value=cfg.get("input_dir", r"D:\My projects\SF3D\input"), scale=3)
-                    batch_cat = gr.Dropdown(labels, value=default_cat, label="Категория по умолчанию", scale=2)
-                with gr.Row():
-                    batch_over = gr.Checkbox(label="Перезаписать готовое", value=False)
-                    batch_prev = gr.Checkbox(label="Превью и иконки", value=True)
-                    batch_mat = gr.Checkbox(label="Распознавать материалы", value=False)
-                    batch_rig = gr.Checkbox(label="Скелеты для персонажей (в конце)", value=False)
-                with gr.Row():
-                    scan_btn = gr.Button("Сканировать папку")
-                    batch_btn = gr.Button("Запустить пакет", variant="primary")
-                batch_info = gr.Textbox(label="Найдено", interactive=False)
-                batch_jobs = gr.Dataframe(headers=["имя", "категория", "движок", "источник", "статус"],
-                                          label="Очередь", interactive=False, wrap=True)
-                with gr.Row():
-                    batch_log = gr.Textbox(label="Журнал", lines=8, interactive=False, scale=1)
-                    batch_view = gr.Model3D(label="Последняя модель", height=320, clear_color=(0.9, 0.9, 0.9, 1),
-                                            scale=1)
-                batch_table = gr.Dataframe(headers=["имя", "категория", "граней", "размер (м)", "секунд", "файл"],
-                                           label="Готово", interactive=False, wrap=True)
-                batch_gallery = gr.Gallery(label="Превью", columns=6, height=150)
 
-            # ---------------------------------------------------------------- 6. settings
-            with gr.Tab("Настройки и видеопамять"):
-                with gr.Row():
-                    with gr.Column(scale=1):
-                        gr.Markdown("**Видеопамять.** Перед генерацией закройте программы, нагружающие видеокарту: "
-                                    "SF3D нужно около 6,2 ГБ, Hunyuan3D при покраске до 7,5 ГБ, риггинг около 3,5 ГБ.")
-                        gpu_btn = gr.Button("Показать занятость видеопамяти")
-                        gpu_md = gr.Markdown("")
-                        with gr.Row():
-                            gpu_proc = gr.Dropdown([], label="Программа, которую можно закрыть", scale=3)
-                            gpu_force = gr.Checkbox(label="Принудительно (несохранённое пропадёт)", scale=2)
-                        gpu_close = gr.Button("Закрыть выбранную программу")
-                        gpu_msg = gr.Markdown("")
-                        with gr.Row():
-                            unload_btn = gr.Button("Выгрузить SF3D из видеопамяти")
-                            vram_btn = gr.Button("Коротко: сколько занято")
-                    with gr.Column(scale=1):
-                        export_dir = gr.Textbox(label="Папка экспорта (потом укажите папку assets проекта Godot)",
-                                                value=cfg["export_dir"])
-                        with gr.Row():
-                            save_btn = gr.Button("Сохранить папку")
-                            open_btn = gr.Button("Открыть папку")
-                        info = gr.Textbox(label="Статус", interactive=False)
-                        gr.Markdown("**OpenRouter** (для референсов по ключу). Ключ хранится только в "
-                                    "`tool/config.json` на этом компьютере.")
-                        or_key = gr.Textbox(label="Ключ OpenRouter", type="password",
-                                            value=("•" * 12) if cfg.get("openrouter_key") else "")
-                        with gr.Row():
-                            or_img = gr.Textbox(label="Модель для картинок",
-                                                value=cfg.get("openrouter_image_model", "google/gemini-2.5-flash-image"))
-                            or_txt = gr.Textbox(label="Модель для описания стиля",
-                                                value=cfg.get("openrouter_text_model", "google/gemini-2.5-flash"))
-                        or_save = gr.Button("Сохранить настройки OpenRouter")
-                        or_note = gr.Markdown("")
+        # ---------------------------------------------------------------- dialogs opened from the menu bar
+        with gr.Column(visible=False, elem_classes="dlg") as dlg_vram:
+            with gr.Row():
+                gr.Markdown("### Видеопамять")
+                dlg_vram_x = gr.Button("✕ Закрыть", scale=0, min_width=110, elem_classes="dlg-close")
+            gr.Markdown("Перед генерацией закройте программы, нагружающие видеокарту: SF3D нужно около 6,2 ГБ, "
+                        "Hunyuan3D при покраске до 7,5 ГБ, риггинг около 3,5 ГБ.")
+            gpu_btn = gr.Button("Обновить: показать занятость видеопамяти")
+            gpu_md = gr.Markdown("")
+            with gr.Row():
+                gpu_proc = gr.Dropdown([], label="Программа, которую можно закрыть", scale=3)
+                gpu_force = gr.Checkbox(label="Принудительно (несохранённое пропадёт)", scale=2)
+            gpu_close = gr.Button("Закрыть выбранную программу")
+            unload_btn = gr.Button("Выгрузить SF3D из видеопамяти")
+            gpu_msg = gr.Markdown("")
+        with gr.Column(visible=False, elem_classes="dlg") as dlg_settings:
+            with gr.Row():
+                gr.Markdown("### Настройки")
+                dlg_settings_x = gr.Button("✕ Закрыть", scale=0, min_width=110, elem_classes="dlg-close")
+            export_dir = gr.Textbox(label="Папка экспорта (потом укажите папку assets проекта Godot)",
+                                    value=cfg["export_dir"])
+            with gr.Row():
+                save_btn = gr.Button("Сохранить папку")
+                open_btn = gr.Button("Открыть папку")
+            info = gr.Textbox(label="Статус", interactive=False)
+            gr.Markdown("**OpenRouter** (для референсов по ключу). Ключ хранится только в "
+                        "`tool/config.json` на этом компьютере.")
+            or_key = gr.Textbox(label="Ключ OpenRouter", type="password",
+                                value=("•" * 12) if cfg.get("openrouter_key") else "")
+            with gr.Row():
+                or_img = gr.Textbox(label="Модель для картинок",
+                                    value=cfg.get("openrouter_image_model", "google/gemini-2.5-flash-image"))
+                or_txt = gr.Textbox(label="Модель для описания стиля",
+                                    value=cfg.get("openrouter_text_model", "google/gemini-2.5-flash"))
+            or_save = gr.Button("Сохранить настройки OpenRouter")
+            or_note = gr.Markdown("")
+        with gr.Column(visible=False, elem_classes="dlg") as dlg_help:
+            with gr.Row():
+                gr.Markdown("### Порядок работы")
+                dlg_help_x = gr.Button("✕ Закрыть", scale=0, min_width=110, elem_classes="dlg-close")
+            gr.Markdown(HELP_TEXT)
 
         # ---------------------------------------------------------------- events
         category.change(on_category, category, preset_note, show_progress="hidden")
@@ -2502,7 +2637,7 @@ def build():
         ref_views_btn.click(ref_views, [ref_provider, ref_front, ref_obj, ref_cat, ref_style_text, ref_style_files,
                                         ref_want], [ref_log, ref_views_gallery, ref_views_state])
         ref_send_btn.click(ref_send, [ref_views_state, ref_front, ref_cat, ref_obj],
-                           [engine, files, v_front, v_back, v_left, v_right, category, name, main_tabs])
+                           [engine, files, v_front, v_back, v_left, v_right, category, name, main_tabs, tabs_create])
         or_save.click(ref_save_keys, [or_key, or_img, or_txt], or_note)
 
         # surfaces, effects, modular kits
@@ -2544,8 +2679,41 @@ def build():
                         [batch_log, batch_table, batch_view, batch_gallery])
         save_btn.click(save_settings, export_dir, info)
         open_btn.click(open_export, export_dir, info)
-        unload_btn.click(unload_model, None, info)
-        vram_btn.click(vram_text, None, info)
+        unload_btn.click(unload_model, None, gpu_msg).then(status_html, None, gpu_stat, show_progress="hidden")
+
+        # skeleton: one of two ways at a time
+        rig_mode.change(lambda m: (gr.update(visible=m == RIG_MODES[0]), gr.update(visible=m != RIG_MODES[0])),
+                        rig_mode, [rig_auto_box, rig_manual_box], show_progress="hidden")
+
+        # menu bar, dialogs, GPU strip
+        def open_folder_toast(key, fallback):
+            p = Path(T.load_config().get(key) or fallback)
+            p.mkdir(parents=True, exist_ok=True)
+            os.startfile(str(p))
+            gr.Info(f"Открыта папка {p}")
+
+        def unload_toast():
+            gr.Info(unload_model())
+            return status_html()
+
+        def show_dialog(which):
+            return [gr.update(visible=i == which) for i in range(3)]
+
+        dialogs = [dlg_vram, dlg_settings, dlg_help]
+        mi_open_export.click(lambda: open_folder_toast("export_dir", T.ROOT / "export"), None, None)
+        mi_open_input.click(lambda: open_folder_toast("input_dir", T.ROOT / "input"), None, None)
+        mi_batch.click(lambda: (gr.Tabs(selected="g_create"), gr.Tabs(selected="batch")), None,
+                       [main_tabs, tabs_create], show_progress="hidden")
+        mi_vram.click(lambda: show_dialog(0), None, dialogs, show_progress="hidden") \
+            .then(gpu_status, None, [gpu_md, gpu_proc])
+        mi_settings.click(lambda: show_dialog(1), None, dialogs, show_progress="hidden")
+        mi_help.click(lambda: show_dialog(2), None, dialogs, show_progress="hidden")
+        mi_unload.click(unload_toast, None, gpu_stat, show_progress="hidden")
+        for close_btn in (dlg_vram_x, dlg_settings_x, dlg_help_x):
+            close_btn.click(lambda: show_dialog(None), None, dialogs, show_progress="hidden")
+        ui.load(status_html, None, gpu_stat, show_progress="hidden")
+        gpu_timer.tick(status_html, None, gpu_stat, show_progress="hidden", concurrency_id="gpu_strip",
+                       concurrency_limit=1)
     return ui
 
 

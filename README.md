@@ -14,19 +14,20 @@ It glues several open-source models together (Stable Fast 3D, Hunyuan3D-2, UniRi
 
 | GUI tab | What you get | Engine |
 |---|---|---|
-| Референс (Reference) | Style card + reference pictures (single view or front/back/left/right) for a model, built from a text prompt | Codex CLI (ChatGPT) or OpenRouter |
-| 1. Создать модель (Create model) | GLB from 1 picture (~20 s) or from 1–4 views (7–10 min), with pivot, real-world scale, collision proxy, PBR factors, previews and an icon. Categories: item, prop, building, character, vegetation | SF3D / Hunyuan3D-2mv + Hunyuan3D-Paint |
-| 2. Скелет и анимация (Rig) | Auto skeleton + skin for humanoids and creatures, Mixamo or Godot bone names, seam welding, body split into regions | UniRig + Blender |
-| Анимации (человекоподобные) | 12 procedural clips for any rigged humanoid (idle, walk, run, jump, attacks, cast, block, hit, death…) | Blender |
-| Анимации Mixamo (FBX) | Retarget Mixamo FBX clips (without skin) onto your rig, in-place option, three.js viewer | Blender |
-| 3. Экипировка (Equipment) | Move an outfit from a dressed character onto the base body, or fit a single armour piece and skin it to the shared skeleton | Blender + Robust Weight Transfer |
-| Поверхности (Surfaces) | Seamless ground/floor/wall materials (albedo, normal, height, roughness, AO) | numpy |
-| Эффекты (Effects) | Particle flipbooks (explosion, fire, smoke, magic) + ready Godot scenes | numpy + Godot |
-| Модульные наборы (Modular kits) | Procedural dungeon kit (walls, arches, stairs, doors) + ASCII plan → Godot scene | Blender + Godot |
-| Разрушаемые объекты (Destructibles) | Voronoi-fractured props + Godot scene that breaks on hit | Blender + Godot |
-| Материалы (Materials) | Recognises metal/wood/stone/cloth on an existing GLB and writes a metallic-roughness map | CLIP |
-| Пакетная обработка (Batch) | Whole folder of pictures in one run (overnight) | all of the above |
-| Настройки и видеопамять (Settings / VRAM) | Paths, category presets, who holds GPU memory, unload models | – |
+| Создание → Референс (Reference) | Style card + reference pictures (single view or front/back/left/right) for a model, built from a text prompt | Codex CLI (ChatGPT) or OpenRouter |
+| Создание → Создать модель (Create model) | GLB from 1 picture (~20 s) or from 1–4 views (7–10 min), with pivot, real-world scale, collision proxy, PBR factors, previews and an icon. Categories: item, prop, building, character, vegetation | SF3D / Hunyuan3D-2mv + Hunyuan3D-Paint |
+| Персонаж → Скелет (Rig; automatic UniRig or manual landmarks) | Auto skeleton + skin for humanoids and creatures, Mixamo or Godot bone names, seam welding, body split into regions | UniRig + Blender |
+| Персонаж → Анимации: процедурные | 12 procedural clips for any rigged humanoid (idle, walk, run, jump, attacks, cast, block, hit, death…) | Blender |
+| Персонаж → Анимации: Mixamo (FBX) | Retarget Mixamo FBX clips (without skin) onto your rig, in-place option, three.js viewer | Blender |
+| Персонаж → Экипировка (Equipment) | Move an outfit from a dressed character onto the base body, or fit a single armour piece and skin it to the shared skeleton | Blender + Robust Weight Transfer |
+| Окружение → Поверхности (Surfaces) | Seamless ground/floor/wall materials (albedo, normal, height, roughness, AO) | numpy |
+| Окружение → Эффекты (Effects) | Particle flipbooks (explosion, fire, smoke, magic) + ready Godot scenes | numpy + Godot |
+| Окружение → Модульные наборы (Modular kits) | Procedural dungeon kit (walls, arches, stairs, doors) + ASCII plan → Godot scene | Blender + Godot |
+| Окружение → Разрушаемые объекты (Destructibles) | Voronoi-fractured props + Godot scene that breaks on hit | Blender + Godot |
+| Создание → Материалы (Materials) | Recognises metal/wood/stone/cloth on an existing GLB and writes a metallic-roughness map | CLIP |
+| Создание → Пакетная обработка (Batch; also File menu) | Whole folder of pictures in one run (overnight) | all of the above |
+| Меню Опции (Options) + GPU strip | Paths, OpenRouter key, who holds GPU memory, unload models; live VRAM strip at the top | – |
+| Персонаж → Исправление весов, Детали лица, Липсинк | Weight repair, shared eyes/teeth/tongue kit, lip-sync clip for the mouth plate | Blender |
 
 Outputs go to `export\<category>\<name>\` (GLB + JSON stats + icon). Scratch files go to `work\`. Neither folder is in the repository.
 

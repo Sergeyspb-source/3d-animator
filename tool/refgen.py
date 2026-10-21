@@ -177,7 +177,7 @@ def _or_call(key, model, prompt, images, want_image, timeout=300):
 
 def openrouter_image(key, model, prompt, images, out_png):
     if not key:
-        raise RuntimeError("Не задан ключ OpenRouter (вкладка «Настройки»).")
+        raise RuntimeError("Не задан ключ OpenRouter (меню «Опции» → «Настройки»).")
     msg = _or_call(key, model, prompt, images, True)
     for im in msg.get("images") or []:
         url = (im.get("image_url") or {}).get("url", "")

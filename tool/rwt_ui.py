@@ -1,12 +1,13 @@
 """Small Gradio panel for optional weight repair on an existing rig."""
+import contextlib
 from pathlib import Path
 import gradio as gr
 from rwt_strings import TEXT as S
 
 
 # GPT: Own all RWT controls and callbacks here so the large generation UI contains wiring only.
-def mount(config_loader):
-    with gr.Accordion(S['title'],open=False):
+def mount(config_loader, accordion=True):
+    with (gr.Accordion(S['title'],open=False) if accordion else contextlib.nullcontext()):
         gr.Markdown(S['intro']);gr.Markdown(S['limit'])
         with gr.Row():
             with gr.Column():
