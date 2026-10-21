@@ -581,7 +581,7 @@ lip_idx = len(face.data.materials) - 1
 boundary = [e for e in bm.edges if e.is_boundary and all(v in set(upper) | set(lower) | CORNERS for v in e.verts)]
 roll_faces = []
 for verts_side, sgn in ((set(upper), 1), (set(lower), -1)):
-    edges = [e for e in boundary if all(v in verts_side | CORNERS for v in e.verts) and any(v in verts_side for v in e.verts)]
+    edges = [e for e in boundary if all(v in verts_side for v in e.verts)]   # not at the corners: the lips meet there (a shared corner stretched a flap)
     for ring, (back, curl) in enumerate(((0.16, 0.05), (0.30, 0.10))):
         if not edges:
             break
