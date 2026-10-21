@@ -180,7 +180,12 @@ def build(C):
         outline = catmull_closed(mpts, max(2, int(64 / len(mpts))))
     else:
         eu, cu = to_uv((EL + ER) / 2), to_uv(chin)
-        top, bot = eu.y + 0.4 * ipd, cu.y - 0.75 * ipd              # just above the lids (brows and hair cards stay whole), down under the chin
+        # up to the hairline (the editor's handle; by default a low forehead line over the brows), down under the chin
+        # (a point on the skin: the radial v is compressed up the forehead, so the default is set in 3D, not in v)
+        em = (EL + ER) / 2
+        ft = bl(job["face_top"]) if job.get("face_top") else front_hit(em.x, em.z + 0.62 * ipd)
+        top = to_uv(ft).y if ft is not None else eu.y + 0.3 * ipd
+        top, bot = max(top, eu.y + 0.1 * ipd), cu.y - 0.75 * ipd
         mz, hz = (top + bot) / 2, (top - bot) / 2
         hx = abs(to_uv(EL).x - to_uv(ER).x) / 2 + 0.9 * ipd
         cx_uv = eu.x
@@ -231,12 +236,30 @@ def build(C):
         h = skin_bvh.ray_cast(C, d.normalized(), d.length + 0.3 * W)
         return h[0] is not None and abs((h[0] - C).length - d.length) < 0.15 * W
 
+    def skin_face(f):
+        """the face is skin the mask replaces: seen first from the centre, or - hidden behind something, like a brow
+        ridge overhanging the eye - still solid and close to that first surface. Thin sheets lying over the skin (hair
+        strands, brow tufts) are not: they stay whole and move with the skin under them."""
+        c = fw @ f.calc_center_median()
+        if front(c):
+            return True
+        d = c - C
+        h = skin_bvh.ray_cast(C, d.normalized(), d.length)
+        if h[0] is None or d.length - (h[0] - C).length > 0.6 * ipd:
+            return False
+        f.normal_update()
+        n = (fw.to_3x3() @ f.normal).normalized()
+        if n.length < 0.5:
+            return False
+        t = skin_bvh.ray_cast(c - n * (W * 1e-3), -n, 0.25 * ipd)   # through the sheet: its other side is right there
+        return t[0] is None
+
     # ------------------------------------------------------------ cut the old mesh along the outline
     rim = []
     for e in list(bm.edges):
         a, b = P(e.verts[0]), P(e.verts[1])
         ia, ib = in_mask(a), in_mask(b)
-        if ia == ib or not (front(a) or front(b)):
+        if ia == ib or not any(skin_face(f) for f in e.link_faces):
             continue
         lo, hi = 0.0, 1.0                                      # bisect the crossing
         for _ in range(18):
@@ -258,7 +281,7 @@ def build(C):
                 bmesh.ops.connect_verts(bm, verts=cv)
             except Exception:
                 pass
-    kill = [f for f in bm.faces if front(fw @ f.calc_center_median()) and in_mask(fw @ f.calc_center_median())]
+    kill = [f for f in bm.faces if in_mask(fw @ f.calc_center_median()) and skin_face(f)]
     bmesh.ops.delete(bm, geom=kill, context="FACES")
     bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context="VERTS")
     rim = [v for v in rim if v.is_valid]
@@ -539,7 +562,25 @@ def build(C):
     imgs = {}
     # no normal-map bake: tangent-space normals baked selected-to-active came out patchy per triangle; the relief
     # is in the geometry itself (the mask follows the surface)
-    for name, btype, colour in (("color", "DIFFUSE", True), ("rough", "ROUGHNESS", False)):
+    # the colour is baked as emission of the base colour: the DIFFUSE colour pass is base x (1 - metallic), which came
+    # out darker than the old texture on Tripo's slightly metallic skin and left a line at the mask edge
+    swaps = []
+    for m in {s_.material for s_ in src.material_slots if s_.material and s_.material.use_nodes}:
+        nt_ = m.node_tree
+        out = next((n for n in nt_.nodes if n.type == "OUTPUT_MATERIAL" and n.is_active_output), None)
+        bsdf_ = next((n for n in nt_.nodes if n.type == "BSDF_PRINCIPLED"), None)
+        if out is None or bsdf_ is None:
+            continue
+        old = [l_.from_socket for l_ in out.inputs["Surface"].links]
+        em = nt_.nodes.new("ShaderNodeEmission")
+        bc = bsdf_.inputs["Base Color"]
+        if bc.links:
+            nt_.links.new(bc.links[0].from_socket, em.inputs["Color"])
+        else:
+            em.inputs["Color"].default_value = bc.default_value
+        nt_.links.new(em.outputs["Emission"], out.inputs["Surface"])
+        swaps.append((nt_, out, old, em))
+    for name, btype, colour in (("color", "EMIT", True), ("rough", "ROUGHNESS", False)):
         img = bpy.data.images.new("face_mask_" + name, res_px, res_px, alpha=False, float_buffer=False)
         if not colour:
             img.colorspace_settings.name = "Non-Color"
@@ -547,12 +588,14 @@ def build(C):
         bpy.ops.object.select_all(action="DESELECT")
         src.select_set(True); tgt.select_set(True)
         bpy.context.view_layer.objects.active = tgt
-        kw = {"type": btype}
-        if btype == "DIFFUSE":
-            kw["pass_filter"] = {"COLOR"}
-        bpy.ops.object.bake(**kw)
+        bpy.ops.object.bake(type=btype)
         img.pack()
         imgs[name] = img
+        if btype == "EMIT":    # the materials are shared with the face: put the surfaces back before roughness
+            for nt_, out, old, em in swaps:
+                nt_.nodes.remove(em)
+                for fs in old:
+                    nt_.links.new(fs, out.inputs["Surface"])
     # the mask material on the face
     mm = bpy.data.materials.new("face_mask"); mm.use_nodes = True
     nt = mm.node_tree

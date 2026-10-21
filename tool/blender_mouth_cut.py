@@ -996,6 +996,69 @@ def k_lip(dz, upper_side):
 for name, fn in (("mouthSmile", k_smile), ("mouthStretch", k_stretch), ("mouthFunnel", k_round(0.06, 0.18)),
                  ("mouthPucker", k_round(0.09, 0.35)), ("mouthUpperUp", k_lip(0.06, True)), ("mouthLowerDown", k_lip(-0.07, False))):
     add_key(face, name, fn)
+
+
+def brow_keys():
+    """ARKit brow keys on the rebuilt forehead (lipsync.py drives them from emotions): browInnerUp, browOuterUp and
+    browDown per side. Each moves the brow over its eye with a soft falloff: nothing at the eyelid rim (the eyeball
+    fits there), full at the brow line, fading again up the forehead. Hair strands lying over the brow move along."""
+    EL_, ER_ = bl(job["eye_L"]), bl(job["eye_R"])
+    ipd = (EL_ - ER_).length
+    mid_x = (EL_.x + ER_.x) / 2
+    sides = {}
+    for sd, ec in (("Left", EL_), ("Right", ER_)):
+        rim = [bl(q) for q in job.get("eye_rim_" + sd[0]) or [] if q]
+        if len(rim) < 4:
+            rim = [ec + Vector((dx * ipd, 0, dz * ipd)) for dx, dz in ((-.22, 0), (0, .09), (.22, 0), (0, -.09))]
+        inner = min(rim, key=lambda q: abs(q.x - mid_x)); outer = max(rim, key=lambda q: abs(q.x - mid_x))
+        top = max(rim, key=lambda q: q.z)
+        sides[sd] = dict(c=sum(rim, Vector()) / len(rim), inner=inner, outer=outer, top=top,
+                         half=max(abs(outer.x - inner.x) / 2, 0.1 * ipd), sx=1.0 if outer.x > inner.x else -1.0)
+    front_y = min(EL_.y, ER_.y) - 0.2 * ipd   # the brow skin is in front of the eye centres
+
+    def lift(sd, p):
+        """0 at and under the upper lid rim, 1 from 0.22 ipd above it to the brow line, fading up the forehead"""
+        g = sides[sd]
+        t = min(1.0, abs(p.x - g["c"].x) / (g["half"] * 1.35))
+        rim_z = g["top"].z - (g["top"].z - g["c"].z) * t * t
+        if p.y > front_y + 0.6 * ipd:
+            return 0.0
+        a_ = max(0.0, min(1.0, (p.z - rim_z) / (0.22 * ipd)))
+        a_ = a_ * a_ * (3 - 2 * a_)
+        brow_z = g["top"].z + 0.3 * ipd
+        if p.z > brow_z:
+            a_ *= math.exp(-((p.z - brow_z) / (0.45 * ipd)) ** 2)
+        return a_
+
+    def around(p, x, sigma):
+        return math.exp(-((p.x - x) / (sigma * ipd)) ** 2)
+
+    def inner_up(o, v, p):
+        w = max(lift(sd, p) * around(p, sides[sd]["inner"].x, 0.32) for sd in sides)
+        return p + Vector((0, 0, 0.11 * ipd)) * w if w > 1e-3 else None
+
+    def outer_up(sd):
+        def f(o, v, p):
+            w = lift(sd, p) * around(p, sides[sd]["outer"].x, 0.3)
+            return p + Vector((0, 0, 0.13 * ipd)) * w if w > 1e-3 else None
+        return f
+
+    def down(sd):
+        def f(o, v, p):   # the brow lowers and pulls toward the nose, the inner end most
+            g = sides[sd]
+            w = lift(sd, p) * around(p, (2 * g["inner"].x + g["outer"].x) / 3, 0.4)
+            return p + Vector((-g["sx"] * 0.05 * ipd, -0.025 * ipd, -0.11 * ipd)) * w if w > 1e-3 else None
+        return f
+    keys = [("browInnerUp", inner_up)]
+    for sd in ("Left", "Right"):
+        keys += [("browDown" + sd, down(sd)), ("browOuterUp" + sd, outer_up(sd))]
+    for name, fn in keys:
+        add_key(face, name, fn)
+    return [k for k, _ in keys]
+
+
+if FACE_TOPO:
+    report["brow_keys"] = brow_keys()
 for o in bpy.data.objects:     # rest = all keys at 0 (Blender 5 adds new keys at 1 -> glTF default weights)
     if o.type == "MESH" and o.data.shape_keys:
         for kb in o.data.shape_keys.key_blocks[1:]:

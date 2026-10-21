@@ -230,7 +230,7 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=T
               "corner_L": face["mouth_corner_L"], "corner_R": face["mouth_corner_R"],
               "mid_L": face.get("mouth_mid_L"), "mid_R": face.get("mouth_mid_R"),
               "lip_top": face.get("lip_top"), "lip_bot": face.get("lip_bot"), "limit_top": face.get("mouth_limit_top"),
-              "face_topo": bool(face_topo and face.get("eye_L") and face.get("eye_R")),
+              "face_topo": bool(face_topo and face.get("eye_L") and face.get("eye_R")), "face_top": face.get("face_top"),
               "face_smooth": 1 if int(smooth) > 0 else 0, "face_relax": [0, 8, 16, 30][max(0, min(3, int(smooth)))],
               "eyes_open": bool(eyes and face.get("eye_in_L") and face.get("eye_bot_L")),
               "eye_L": face.get("eye_L"), "eye_R": face.get("eye_R"), "chin": landmarks.get("marks", {}).get("chin"),

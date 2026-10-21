@@ -679,7 +679,7 @@ function refreshList() {
 function refreshHint() {
   const h = $('hint');
   if (ovalMode) {
-    h.hidden = false; h.textContent = 'Кликните точку и тяните её стрелки: рот (уголки, щель, края губ; центр — весь овал; красная — граница под носом) и края век';
+    h.hidden = false; h.textContent = 'Кликните точку и тяните её стрелки: рот (уголки, щель, края губ; центр — весь овал; красная — граница под носом), края век и верх маски лица у линии волос (оранжевая линия)';
   } else if (faceMode && faceMode.cur) {
     h.hidden = false; h.textContent = 'Кликните: ' + FACE_MARKS[faceMode.cur];
   } else if (fingerMode && fingerMode.cur) {
@@ -893,7 +893,10 @@ const skinNear = (x, y, ref) => { const z = hitsAt(x, y); if (!z.length) return 
 const EYE_HANDLES = () => ['eye_in_L', 'eye_top_L', 'eye_out_L', 'eye_bot_L'].concat(S.sym ? [] : ['eye_in_R', 'eye_top_R', 'eye_out_R', 'eye_bot_R']).filter((k) => S.face[k]);
 // the eyeball = the eye joint (centre) and its end joint (the cornea): radius = their distance
 const EYEBALLS = () => ['eyeball_L'].concat(S.sym ? [] : ['eyeball_R']).filter((k) => S.pos['eye_' + k.slice(-1)]);
-const ovalHandles = () => OVAL_KEYS.concat(EYE_HANDLES(), EYEBALLS());
+// the top of the face mask (rebuilt skin with movable brows): a point at the hairline, the line across the forehead
+const FACE_TOP = () => (S.face.face_top ? ['face_top'] : []);
+const ovalHandles = () => OVAL_KEYS.concat(EYE_HANDLES(), EYEBALLS(), FACE_TOP());
+const eyeMid = () => { const l = V(S.face.eye_L), r = S.face.eye_R ? V(S.face.eye_R) : mirror(l); return { c: l.clone().add(r).multiplyScalar(.5), ipd: l.distanceTo(r) }; };
 const handlePos = (k) => (k.startsWith('eyeball') ? S.pos['eye_' + k.slice(-1)] : S.face[k]);
 const eyeR = (sd) => (S.pos['eye_' + sd] && S.pos['eye_end_' + sd] ? V(S.pos['eye_' + sd]).distanceTo(V(S.pos['eye_end_' + sd])) : 0);
 function eyeWire(group, sd, colour) {
@@ -917,6 +920,10 @@ function eyeLoop(sd) {   // closed Catmull-Rom through the 4 eyelid points, as b
 }
 function ovalInit() {
   const F = S.face;
+  if (!F.face_top && F.eye_L) {   // as face_topo.py: 0.62 ipd above the eyes, on the skin
+    const { c, ipd } = eyeMid(), x = S.sym ? cx : c.x, y = c.y + .62 * ipd;
+    F.face_top = [x, y, skinZ(x, y, c.z)];
+  }
   if (OVAL_KEYS.every((k) => F[k])) return;
   if (!(F.mouth_c && F.mouth_corner_L)) {   // first guess from the eyes and the chin
     const eY = F.eye_L ? V(F.eye_L).y : V(S.pos.head).y + .03 * H, chin = S.marks.chin ? V(S.marks.chin) : V(S.pos.jaw_end || S.pos.head);
@@ -963,9 +970,19 @@ function drawOval() {
     l.renderOrder = 998; ovalGroup.add(l);
   }
   for (const sd of ['L', 'R']) eyeWire(ovalGroup, sd, 0x35c2e8);   // eyeballs as wire spheres
+  if (S.face.face_top && S.face.eye_L) {   // the mask top across the forehead
+    const t = V(S.face.face_top), { ipd } = eyeMid(), pts = [];
+    for (let i = 0; i <= 24; i++) {
+      const x = t.x + (i / 12 - 1) * ipd, z = fast ? t.z : skinNear(x, t.y, t.z);
+      pts.push(x, t.y, z + .002 * H);
+    }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    const l = new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0xff7a2f, depthTest: false, transparent: true }));
+    l.renderOrder = 998; ovalGroup.add(l);
+  }
   const r = .006 * H / Math.max(1, camera.zoom);
   for (const k of ovalHandles()) {
-    const sp = new THREE.Mesh(sphereGeo, k === ovalMode.sel ? COL.sel : k === 'mouth_c' ? COL.derived : k === 'mouth_limit_top' ? COL.bad : COL.place);
+    const sp = new THREE.Mesh(sphereGeo, k === ovalMode.sel ? COL.sel : k === 'mouth_c' ? COL.derived : k === 'mouth_limit_top' || k === 'face_top' ? COL.bad : COL.place);
     sp.scale.setScalar(k === 'mouth_c' ? r * 1.3 : r); sp.position.copy(V(handlePos(k))); sp.renderOrder = 999; ovalGroup.add(sp);
   }
 }
@@ -1003,13 +1020,15 @@ function ovalApply(k, w) {
     drawOval(); return;
   }
   const ref = (key) => (key.startsWith('eye_') ? (F['eye_' + key.slice(-1)] || F[key])[2]
-    : key === 'mouth_limit_top' ? F.lip_top[2] : F.mouth_c[2]);   // the limit follows the lip skin, not the nose
+    : key === 'mouth_limit_top' ? F.lip_top[2] : key === 'face_top' ? F.face_top[2]
+    : F.mouth_c[2]);   // the limit follows the lip skin, not the nose
   const put = (key, x, y) => { F[key] = [x, y, skinNear(x, y, ref(key))]; };
   if (k === 'mouth_c') {   // the centre moves the whole oval
     const dx = w.x - F.mouth_c[0], dy = w.y - F.mouth_c[1];
     for (const kk of OVAL_KEYS) put(kk, F[kk][0] + (S.sym ? 0 : dx), F[kk][1] + dy);
   } else if (k === 'mouth_limit_top') put(k, S.sym ? cx : w.x, Math.max(w.y, F.lip_top[1] + .002 * H));
   else if (k === 'lip_top' || k === 'lip_bot') put(k, S.sym ? cx : w.x, w.y);
+  else if (k === 'face_top') { const { c, ipd } = eyeMid(); put(k, S.sym ? cx : w.x, Math.max(w.y, c.y + .1 * ipd)); }
   else {
     let x = w.x, y = w.y;
     if (k.startsWith('eye_')) {   // an eyelid point keeps its role and stays near its eye
