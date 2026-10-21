@@ -5,10 +5,12 @@
 job.json (all optional except out_dir):
   out_dir, seed
   eye:    iris [r,g,b], iris_dark [r,g,b], pupil (0.25..0.7 of the iris), slit (bool, cat/creature pupil),
-          sclera [r,g,b], veins (0..1), radius (m, default 0.012)
+          sclera [r,g,b], veins (0..1), radius (m, default 0.012), style ("real" / "anime": big flat iris darker on
+          top, big pupil, painted highlights), iris_size (degrees of the iris disc from the centre, default 32, anime 50)
   teeth:  per_side (4..8 per half arch, default 7), missing ("2,5" indices from the middle, upper U / lower L prefix
           allowed: "U1,L3"), missing_random (0..1), yellow (0..1), crooked (0..1), fangs (0..1 extra canine length),
-          arch_width (m, default 0.05), gum [r,g,b]
+          arch_width (m, default 0.05), gum [r,g,b], height (0.5..1.6 crown length), volume (0 = one white strip,
+          1 = separate teeth), canines (bool, false = canines shaped like incisors: no fangs)
   tongue: colour [r,g,b], length (m, default 0.055)
 
 Real-world sizes in metres; the fitting step scales them into the skull. Writes eyes.glb (Eye_L, Eye_R with the iris
@@ -68,17 +70,18 @@ def eye_texture(w=1024, h=512):
     iris = np.array(E.get("iris", [0.32, 0.45, 0.22])); dark = np.array(E.get("iris_dark", (iris * 0.35).tolist()))
     sclera = np.array(E.get("sclera", [0.93, 0.91, 0.87])); veins = float(E.get("veins", 0.35))
     pupil = float(E.get("pupil", 0.42)); slit = bool(E.get("slit", False))
+    anime = E.get("style") == "anime"
     theta = (np.arange(h)[:, None] + 0.5) / h * math.pi          # 0 = front pole
     phi = (np.arange(w)[None, :] + 0.5) / w * 2 * math.pi
     TH, PH = np.broadcast_arrays(theta, phi)
-    iris_r = math.radians(32)                                     # iris disc seen from the centre
+    iris_r = math.radians(float(E.get("iris_size", 50 if anime else 32)))   # iris disc seen from the centre
     r = TH / iris_r                                               # 0 centre .. 1 limbus
     out = np.empty((h, w, 3))
     # sclera: slightly pinker toward the back, thin red veins growing from the back
     back = np.clip((TH - iris_r) / (math.pi - iris_r), 0, 1)
     out[:] = sclera[None, None] * (1 - 0.18 * back[..., None]) + np.array([0.12, 0.0, 0.0]) * back[..., None] * 0.5
     vr = np.random.default_rng(job.get("seed", 1))
-    for _ in range(int(24 * veins)):
+    for _ in range(int(24 * veins * (not anime))):
         ph0, amp, freq = vr.uniform(0, 2 * math.pi), vr.uniform(0.02, 0.08), vr.uniform(3, 9)
         path = ph0 + amp * np.sin(TH * freq + vr.uniform(0, 6))
         d = np.abs(((PH - path + math.pi) % (2 * math.pi)) - math.pi) * np.sin(TH)
@@ -88,6 +91,10 @@ def eye_texture(w=1024, h=512):
     fib = 0.5 + 0.5 * np.sin(PH * 90 + 3 * np.sin(PH * 7)) * np.sin(PH * 41 + r * 6)
     col = dark[None, None] + (iris - dark)[None, None] * (0.55 + 0.45 * fib[..., None]) * (1.1 - 0.5 * r[..., None])
     col = col * np.clip(1.25 - 0.35 * r, 0.6, 1.25)[..., None]
+    if anime:   # flat colour, dark at the top (the lid's shadow), lighter at the bottom, no fibres
+        up = np.sin(TH) * np.sin(PH)                                  # +1 at the top of the eye (UV v = +Z)
+        flat = dark[None, None] + (iris - dark)[None, None] * (0.75 + 0.25 * fib[..., None] * 0.3)
+        col = flat * np.clip(1.0 - 0.9 * np.clip(up / math.sin(iris_r), 0, 1) ** 1.3 + 0.25 * np.clip(-up / math.sin(iris_r), 0, 1), 0.15, 1.3)[..., None]
     limbus = np.clip((r - 0.86) / 0.14, 0, 1)
     col = col * (1 - 0.75 * limbus[..., None])
     inside = r < 1.0
@@ -102,6 +109,11 @@ def eye_texture(w=1024, h=512):
     else:
         pup = r < pupil
     out[pup] = np.array([0.015, 0.012, 0.012])
+    if anime:   # two painted highlights, upper side (they turn with the eye: fine at game distance)
+        x = np.sin(TH) * np.cos(PH); y = np.sin(TH) * np.sin(PH); R = math.sin(iris_r)
+        for cx_, cy_, rr in ((-0.38, 0.38, 0.24), (0.32, -0.32, 0.11)):
+            m = np.clip(1.4 - np.hypot(x / R - cx_, y / R - cy_) / rr, 0, 1) ** 0.6
+            out = out * (1 - m[..., None]) + m[..., None]
     return np.clip(out, 0, 1)
 
 
@@ -150,6 +162,11 @@ for name, x in (("Eye_L", eye_r * 2.7), ("Eye_R", -eye_r * 2.7)):
 per = max(4, min(8, int(T.get("per_side", 7))))
 KINDS = ["incisor", "incisor", "canine", "premolar", "premolar", "molar", "molar", "molar"][:per]
 yellow = float(T.get("yellow", 0.0)); crooked = float(T.get("crooked", 0.0)); fangs = float(T.get("fangs", 0.0))
+height = max(0.3, float(T.get("height", 1.0))); volume = max(0.0, min(1.0, float(T.get("volume", 1.0))))
+canines = bool(T.get("canines", True))
+if not canines:
+    fangs = 0.0
+crooked *= volume                                       # a merged strip stays straight
 arch_w = float(T.get("arch_width", 0.05))
 missing = set()
 for tok in str(T.get("missing", "")).replace(" ", "").split(","):
@@ -164,7 +181,7 @@ def tooth_color():
     """white -> yellow -> brown with yellow; a slight random tint per tooth."""
     base = np.array([0.94, 0.92, 0.86]); yel = np.array([0.86, 0.74, 0.45]); brown = np.array([0.55, 0.42, 0.25])
     c = base + (yel - base) * min(1, yellow * 1.6) + (brown - yel) * max(0, yellow - 0.6) / 0.4 * (yellow > 0.6)
-    return np.clip(c * (1 + rng.uniform(-0.04, 0.04)), 0, 1)
+    return np.clip(c * (1 + rng.uniform(-0.04, 0.04) * volume), 0, 1)
 
 
 def tooth_mesh(kind, size):
@@ -173,8 +190,12 @@ def tooth_mesh(kind, size):
     o = bpy.context.active_object
     w, d, h = {"incisor": (0.0046, 0.0020, 0.0058), "canine": (0.0040, 0.0036, 0.0062),
                "premolar": (0.0036, 0.0042, 0.0045), "molar": (0.0050, 0.0052, 0.0040)}[kind]
+    if kind == "canine" and not canines:   # no fangs: shaped like an incisor
+        kind, w, d, h = "incisor", 0.0044, 0.0024, 0.0056
     if kind == "canine":
         h *= 1 + 1.4 * fangs
+    h *= height
+    d *= 0.35 + 0.65 * volume                          # low volume: the crowns sink into the white strip
     for v in o.data.vertices:
         x, y, z = v.co
         t = (z + 1) / 2                                     # 0 root .. 1 edge
@@ -230,6 +251,33 @@ def arch(upper):
                 o.location.y += rng.uniform(-0.0012, 0.0012) * crooked
                 o.location.z += sgn * rng.uniform(0, 0.0012) * crooked
             teeth.append(o); cols.append(tooth_color())
+    if volume < 1:   # one white strip along the front of the arch (rounded edge); the teeth stick out of it by volume
+        bm = bmesh.new(); n = 24; hh = 0.0052 * height; th = 0.0011 + 0.0011 * (1 - volume)
+        prof = [(-th, -0.004), (-th, hh * 0.72), (-th * 0.6, hh * 0.92), (0.0, hh), (th * 0.6, hh * 0.92), (th, hh * 0.72), (th, -0.004)]
+        rows_ = []
+        for j in range(-n, n + 1):
+            u = abs(j) / n * 0.7                               # incisors to the premolars
+            sd = 1 if j >= 0 else -1
+            x = sd * half * math.sin(u * math.pi / 2) ** 0.9
+            y = depth * u ** 1.8
+            x1, y1 = half * math.sin(min(1, u + 1e-3) * math.pi / 2) ** 0.9, depth * min(1, u + 1e-3) ** 1.8
+            tx, ty = x1 - abs(x), y1 - y
+            ln = math.hypot(tx, ty) or 1.0
+            nx, ny = -ty / ln * sd, tx / ln                    # across the arch, toward the inside
+            rows_.append([bm.verts.new((x + nx * a_, y + ny * a_, sgn * b_)) for a_, b_ in prof])
+        for r0, r1 in zip(rows_, rows_[1:]):
+            for k in range(len(prof) - 1):
+                bm.faces.new((r0[k], r0[k + 1], r1[k + 1], r1[k]))
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        band_me = bpy.data.meshes.new("band"); bm.to_mesh(band_me); bm.free()
+        band = bpy.data.objects.new("band", band_me); scene.collection.objects.link(band)
+        for p in band_me.polygons:
+            p.use_smooth = True
+        if volume <= 0.02:
+            for o in teeth:
+                bpy.data.objects.remove(o, do_unlink=True)
+            teeth, cols = [], []
+        teeth.append(band); cols.append(tooth_color())
     # gum: a tube-ish strip along the arch above (upper) / below (lower) the crowns
     bm = bmesh.new()
     rows = []

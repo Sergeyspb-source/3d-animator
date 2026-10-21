@@ -128,14 +128,58 @@ def build(C):
     def ray_rad(u, v):
         return skin_bvh.ray_cast(C, dir_of(u, v), ipd * 6)
 
+    last_r = [R0]
+
     def new_vert_uv(u, v):
         h = ray_rad(u, v)
-        if h[0] is None:
-            fail(f"нет кожи под маской лица в направлении ({u:.3g}, {v:.3g}): уменьшите маску")
+        if h[0] is None:   # the ray slipped past the surface (a gap under the chin, a collar): the nearest skin
+            h = skin_bvh.find_nearest(C + dir_of(u, v) * last_r[0])
+            if h[0] is None:
+                fail(f"нет кожи под маской лица в направлении ({u:.3g}, {v:.3g}): уменьшите маску")
+            report["mask_ray_misses"] = report.get("mask_ray_misses", 0) + 1
+        else:
+            last_r[0] = (h[0] - C).length
         nv_ = bm.verts.new(finv @ h[0])
         for k, w in weights_at(h[0], h[2]).items():
             nv_[dl][k] = w
         return nv_
+
+    # ------------------------------------------------------------ skin colour (hair fused to the face is told by colour)
+    tex_px = {}
+
+    def base_image(mi):
+        m = me.materials[mi] if mi < len(me.materials) else None
+        if mi in tex_px or m is None or not m.use_nodes:
+            return tex_px.get(mi)
+        bsdf_ = next((n for n in m.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
+        img, stack = None, [l_.from_node for l_ in bsdf_.inputs["Base Color"].links] if bsdf_ else []
+        while stack and img is None:
+            n = stack.pop()
+            if n.type == "TEX_IMAGE" and n.image and n.image.size[0]:
+                img = n.image
+            else:
+                stack += [l_.from_node for i_ in n.inputs for l_ in i_.links]
+        if img is None:
+            tex_px[mi] = None
+            return None
+        import numpy as np
+        a_ = np.empty(img.size[0] * img.size[1] * 4, dtype=np.float32)
+        img.pixels.foreach_get(a_)
+        tex_px[mi] = (a_.reshape(img.size[1], img.size[0], 4)[..., :3], img.size[0], img.size[1])
+        return tex_px[mi]
+    uv_data = me.uv_layers.active.data if me.uv_layers.active else None
+
+    def colour_at(p, ti):
+        if uv_data is None or ti is None:
+            return None
+        t = tris[ti]
+        px = base_image(t.material_index)
+        if px is None:
+            return None
+        b = bary(t, p)
+        uv = sum((uv_data[li].uv * max(0.0, w) for w, li in zip(b, t.loops)), Vector((0, 0)))
+        arr, w_, h_ = px
+        return Vector(arr[int(min(h_ - 1, max(0, (uv.y % 1.0) * h_))), int(min(w_ - 1, max(0, (uv.x % 1.0) * w_)))])
 
     def front_hit(x, z, ref_y=None):   # 3D point a front ray (nearest the reference depth) finds
         h = ray(x, z) if ref_y is None else ray_near(x, z, ref_y)
@@ -149,6 +193,12 @@ def build(C):
     RINGS = [(1.0, 0.0), (1.04, 1.0), (1.14, 1.5), (1.28, 2.0), (1.42, 2.5)]
     HU = max(hu * 1.05, bl(job["limit_top"]).z - line_z(cx)) if job.get("limit_top") else 0.0
     NM = 32
+    # a mouth modelled half-open: ring 0 runs along the inner lip edges and everything between them is cut out
+    OT = max(0.0, bl(job["open_top"]).z - line_z(bl(job["open_top"]).x)) if job.get("open_top") else 0.0
+    OB = max(0.0, line_z(bl(job["open_bot"]).x) - bl(job["open_bot"]).z) if job.get("open_bot") else 0.0
+    OT, OB = min(OT, 0.9 * hu), min(OB, 0.9 * hl)          # inside the lip edges (ring 1)
+    if OT or OB:
+        report["mouth_open"] = [round(OT / W, 3), round(OB / W, 3)]
 
     def ring_up(h_):
         if h_ <= 1 or not HU:
@@ -160,7 +210,17 @@ def build(C):
         th = 2 * math.pi * i / NM
         x = cx + half * a_ * math.cos(th)
         sn = math.sin(th)
+        if k == 0:
+            return x, line_z(x) + (OT if sn >= 0 else OB) * sn
         return x, line_z(x) + (ring_up(h_) if sn >= 0 else hl * h_) * sn
+
+    def eye_grow(c2, p, sc):
+        """a point of the eye loop sc times the eyelid outline; the growth is capped in ipd (up 0.08, sideways 0.25),
+        so the loops around big cartoon eyes do not run into a fringe or the hair at the temples"""
+        gx, gz = (p.x - c2.x) * (sc - 1), (p.y - c2.y) * (sc - 1)
+        gx = max(-0.25 * ipd * (sc - 1), min(0.25 * ipd * (sc - 1), gx))
+        gz = max(-0.12 * ipd * (sc - 1), min(0.08 * ipd * (sc - 1), gz))
+        return p.x + gx, p.y + gz
 
     # points the mask must contain with a margin: the mouth's outer ring and the eyes' outer loops
     must = []
@@ -171,10 +231,20 @@ def build(C):
     for rim2 in rims.values():
         c2 = sum(rim2, Vector((0, 0))) / len(rim2)
         for p in rim2:
-            q3 = front_hit(*(c2 + (p - c2) * 2.0))
+            q3 = front_hit(*eye_grow(c2, p, 2.0))
             if q3 is not None:
                 must.append(to_uv(q3))
     # ------------------------------------------------------------ mask outline (front view x, z)
+    # the skin colour (nose, cheeks, brow skin; median): hair painted on the same surface is told by it
+    refs = []
+    for dx, dz in ((0, -0.35), (-0.45, -0.45), (0.45, -0.45), (-0.3, 0.45), (0.3, 0.45), (0, 0.5)):
+        hq = skin_bvh.ray_cast(Vector(((EL.x + ER.x) / 2 + dx * ipd, ymin - W * 20, (EL.z + ER.z) / 2 + dz * ipd)), Vector((0, 1, 0)), W * 80)
+        cq = colour_at(hq[0], hq[2]) if hq[0] is not None else None
+        if cq is not None:
+            refs.append(cq)
+    skin_col = Vector([sorted(c[i] for c in refs)[len(refs) // 2] for i in range(3)]) if len(refs) >= 3 else None
+    if skin_col is not None:
+        report["skin_colour"] = [round(c, 3) for c in skin_col]
     if job.get("mask"):
         mpts = [to_uv(bl(p)) for p in job["mask"]]
         outline = catmull_closed(mpts, max(2, int(64 / len(mpts))))
@@ -195,24 +265,46 @@ def build(C):
             c, sn = math.cos(th), math.sin(th)
             r = 1.0 / (abs(c) ** 2.5 + abs(sn) ** 2.5) ** (1 / 2.5)       # superellipse
             good = 0.15
+            hair_from = None                       # where the current stretch of hair colour began (k, point)
             for k in range(1, 41):     # the farthest point where the skin still faces forward (dips inside are fine)
                 f_ = k / 40
                 x, z = cx_uv + hx * c * r * f_, mz + hz * sn * r * f_
                 h = ray_rad(x, z)
                 if h[0] is None:
                     break
+                q_ = h[0]
+                # above the brows or past the outer eye corners: stop where hair hangs in front of the skin (a fringe,
+                # curls at the temples); not around the eyes, where a brow ridge hides a little of the lid from the front
+                if q_.z > M.z and (q_.z > max(EL.z, ER.z) + 0.15 * ipd or abs(q_.x - cx) > max(abs(EL.x - cx), abs(ER.x - cx)) + 0.3 * ipd):
+                    fhit = ray(h[0].x, h[0].z)
+                    if fhit[0] is not None and (h[0] - fhit[0]).length > 0.04 * ipd:
+                        break
+                    # hair painted on the same surface (a fringe fused to the forehead): seen from the front off the
+                    # skin colour for longer than a brow is tall
+                    cq = colour_at(fhit[0], fhit[2]) if skin_col is not None and fhit[0] is not None else None
+                    if cq is not None and (cq - skin_col).length > 0.2:
+                        hair_from = hair_from or (k, h[0].copy())
+                        if (h[0] - hair_from[1]).length > 0.25 * ipd:
+                            good = min(good, (hair_from[0] - 1) / 40)
+                            report["mask_hair_stops"] = report.get("mask_hair_stops", 0) + 1
+                            break
+                    else:
+                        hair_from = None
                 if h[1].dot(dir_of(x, z)) > 0.3:     # the surface faces outward along the ray (not an ear or a fold)
                     good = f_
+            if hair_from:      # the outline ends on hair: back to where it began
+                good = min(good, (hair_from[0] - 1) / 40)
             good *= 0.96
             radii.append((c * r, sn * r, good))
-        # never smaller than the rings it must hold (+12 %), then smoothed around so the outline stays a round shape
+        # never smaller than the rings it must hold (+0.05 ipd), then smoothed around so the outline stays a round shape
         for k, (ux, uz, g) in enumerate(radii):
             th = math.atan2(uz, ux)
             need = 0.0
             for q in must:
                 dx, dz = (q.x - cx_uv) / hx, (q.y - mz) / hz
                 if abs(((math.atan2(dz, dx) - th + math.pi) % (2 * math.pi)) - math.pi) < math.pi / 24:
-                    need = max(need, math.hypot(dx, dz) / max(math.hypot(ux, uz), 1e-9) * 1.12)
+                    d_uv = max(math.hypot(q.x - cx_uv, q.y - mz), 1e-9)
+                    need = max(need, math.hypot(dx, dz) / max(math.hypot(ux, uz), 1e-9) * (1 + 0.05 * ipd / d_uv))
             radii[k] = (ux, uz, max(g, need))
         rs = [g for _, _, g in radii]
         for _ in range(3):
@@ -236,13 +328,33 @@ def build(C):
         h = skin_bvh.ray_cast(C, d.normalized(), d.length + 0.3 * W)
         return h[0] is not None and abs((h[0] - C).length - d.length) < 0.15 * W
 
+    def hair_sheet(f, c, n):
+        """a thin sheet painted in hair colour (a lock fused to the forehead): never part of the mask"""
+        if skin_col is None:
+            return False
+        hq = skin_bvh.find_nearest(c)
+        cq = colour_at(hq[0], hq[2]) if hq[0] is not None else None
+        if cq is None or (cq - skin_col).length <= 0.2:
+            return False
+        return skin_bvh.ray_cast(c - n * (W * 1e-3), -n, 0.25 * ipd)[0] is not None
+
     def skin_face(f):
         """the face is skin the mask replaces: seen first from the centre, or - hidden behind something, like a brow
         ridge overhanging the eye - still solid and close to that first surface. Thin sheets lying over the skin (hair
         strands, brow tufts) are not: they stay whole and move with the skin under them."""
         c = fw @ f.calc_center_median()
+        f.normal_update()
+        nf_ = (fw.to_3x3() @ f.normal).normalized()
+        if nf_.length > 0.5 and hair_sheet(f, c, nf_):
+            return False
         if front(c):
             return True
+        # only over the eyes, where the brow ridge overhangs: elsewhere a thick lock of hair over the cheek would be
+        # taken for skin and cut into the mask edge
+        # ... and in the mouth, where the lips overhang a half-open mouth's painted teeth
+        in_mouth = abs(c.x - cx) < half * 1.45 and line_z(c.x) - 2.6 * hl < c.z < line_z(c.x) + max(2.6 * hu, HU)
+        if not in_mouth and not any(abs(c.x - e.x) < 0.6 * ipd and e.z - 0.1 * ipd < c.z < e.z + 0.8 * ipd for e in (EL, ER)):
+            return False
         d = c - C
         h = skin_bvh.ray_cast(C, d.normalized(), d.length)
         if h[0] is None or d.length - (h[0] - C).length > 0.6 * ipd:
@@ -332,7 +444,7 @@ def build(C):
         c2 = sum(rim2, Vector((0, 0))) / len(rim2)
         loops = []
         for sc in EYE_SCALES:
-            loops.append([new_vert(c2.x + (p.x - c2.x) * sc, c2.y + (p.y - c2.y) * sc) for p in rim2])
+            loops.append([new_vert(*eye_grow(c2, p, sc)) for p in rim2])
         ER_[sd] = (c2, loops)
         eye_outer[sd] = [tuple(to_uv(P(v))) for v in loops[-1]]
 

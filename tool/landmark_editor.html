@@ -194,6 +194,7 @@
       <div class="row">
         <button id="ovalBtn" title="Шаблон рта из колец: тяните ручки мышью, чтобы совпал с губами">Овал рта</button>
         <button id="eyeSmall" title="Глазной шар меньше" hidden>Глаз −</button><button id="eyeBig" title="Глазной шар больше" hidden>Глаз +</button>
+        <button id="mouthOpenBtn" title="Рот на модели приоткрыт (видны зубы): вместо щели вырезать отверстие между внутренними краями губ" hidden>Рот приоткрыт</button>
       </div>
     </div>
     <div class="box" id="selBox">
@@ -679,7 +680,7 @@ function refreshList() {
 function refreshHint() {
   const h = $('hint');
   if (ovalMode) {
-    h.hidden = false; h.textContent = 'Кликните точку и тяните её стрелки: рот (уголки, щель, края губ; центр — весь овал; красная — граница под носом), края век и верх маски лица у линии волос (оранжевая линия)';
+    h.hidden = false; h.textContent = 'Кликните точку и тяните её стрелки: рот (уголки, щель, края губ; центр — весь овал; красная — граница под носом; «Рот приоткрыт» — две точки на внутренних краях губ), края век и верх маски лица у линии волос (оранжевая линия)';
   } else if (faceMode && faceMode.cur) {
     h.hidden = false; h.textContent = 'Кликните: ' + FACE_MARKS[faceMode.cur];
   } else if (fingerMode && fingerMode.cur) {
@@ -720,6 +721,7 @@ function refreshAll() {
   $('ovalBtn').textContent = ovalMode ? 'Готово: рот и веки' : 'Овал рта и веки';
   $('ovalBtn').classList.toggle('on', !!ovalMode);
   $('eyeSmall').hidden = $('eyeBig').hidden = !ovalMode || !S.pos.eye_L;
+  $('mouthOpenBtn').hidden = !ovalMode; $('mouthOpenBtn').classList.toggle('on', !!S.face.mouth_open_top);
   $('faceClear').hidden = !S.pos.jaw;
   $('fClear').hidden = !Object.keys(S.pos).some((k) => FINGER_RE.test(k));
   const w = S.phase === 'edit' ? bendWarnings() : [];
@@ -881,10 +883,13 @@ function ovalParams(F) {
   const cxm = (cL.x + cR.x) / 2, half = Math.abs(cL.x - cR.x) / 2;
   const hu = Math.max(1e-6, V(F.lip_top).y - L(V(F.lip_top).x)), hl = Math.max(1e-6, L(V(F.lip_bot).x) - V(F.lip_bot).y);
   const HU = F.mouth_limit_top ? Math.max(hu * 1.05, V(F.mouth_limit_top).y - L(cxm)) : 0;   // outer ring through the red handle
-  return { L, cx: cxm, half, hu, hl, HU };
+  const ot = F.mouth_open_top ? Math.max(0, V(F.mouth_open_top).y - L(V(F.mouth_open_top).x)) : 0;
+  const ob = F.mouth_open_bot ? Math.max(0, L(V(F.mouth_open_bot).x) - V(F.mouth_open_bot).y) : 0;
+  return { L, cx: cxm, half, hu, hl, HU, ot, ob };
 }
 function ovalPoint(P, ring, th) {
   const A = P.half * ring.a, x = P.cx + A * Math.cos(th), sn = Math.sin(th);
+  if (!ring.h) return [x, P.L(x) + (sn >= 0 ? P.ot : P.ob) * sn];   // the slit, or the opening of a half-open mouth
   return [x, P.L(x) + (sn >= 0 ? ringUp(P, ring) : P.hl * ring.h) * sn];
 }
 const skinZ = (x, y, fb) => { const z = hitsAt(x, y); return z.length ? z[0] : fb; };
@@ -895,7 +900,9 @@ const EYE_HANDLES = () => ['eye_in_L', 'eye_top_L', 'eye_out_L', 'eye_bot_L'].co
 const EYEBALLS = () => ['eyeball_L'].concat(S.sym ? [] : ['eyeball_R']).filter((k) => S.pos['eye_' + k.slice(-1)]);
 // the top of the face mask (rebuilt skin with movable brows): a point at the hairline, the line across the forehead
 const FACE_TOP = () => (S.face.face_top ? ['face_top'] : []);
-const ovalHandles = () => OVAL_KEYS.concat(EYE_HANDLES(), EYEBALLS(), FACE_TOP());
+// a mouth modelled half-open: the inner lip edges at the middle; the slit ring becomes the opening between them
+const OPEN_KEYS = () => (S.face.mouth_open_top && S.face.mouth_open_bot ? ['mouth_open_top', 'mouth_open_bot'] : []);
+const ovalHandles = () => OVAL_KEYS.concat(OPEN_KEYS(), EYE_HANDLES(), EYEBALLS(), FACE_TOP());
 const eyeMid = () => { const l = V(S.face.eye_L), r = S.face.eye_R ? V(S.face.eye_R) : mirror(l); return { c: l.clone().add(r).multiplyScalar(.5), ipd: l.distanceTo(r) }; };
 const handlePos = (k) => (k.startsWith('eyeball') ? S.pos['eye_' + k.slice(-1)] : S.face[k]);
 const eyeR = (sd) => (S.pos['eye_' + sd] && S.pos['eye_end_' + sd] ? V(S.pos['eye_' + sd]).distanceTo(V(S.pos['eye_end_' + sd])) : 0);
@@ -1020,14 +1027,19 @@ function ovalApply(k, w) {
     drawOval(); return;
   }
   const ref = (key) => (key.startsWith('eye_') ? (F['eye_' + key.slice(-1)] || F[key])[2]
-    : key === 'mouth_limit_top' ? F.lip_top[2] : key === 'face_top' ? F.face_top[2]
+    : key === 'mouth_limit_top' || key === 'mouth_open_top' ? F.lip_top[2] : key === 'mouth_open_bot' ? F.lip_bot[2]
+    : key === 'face_top' ? F.face_top[2]
     : F.mouth_c[2]);   // the limit follows the lip skin, not the nose
   const put = (key, x, y) => { F[key] = [x, y, skinNear(x, y, ref(key))]; };
   if (k === 'mouth_c') {   // the centre moves the whole oval
     const dx = w.x - F.mouth_c[0], dy = w.y - F.mouth_c[1];
-    for (const kk of OVAL_KEYS) put(kk, F[kk][0] + (S.sym ? 0 : dx), F[kk][1] + dy);
+    for (const kk of OVAL_KEYS.concat(OPEN_KEYS())) put(kk, F[kk][0] + (S.sym ? 0 : dx), F[kk][1] + dy);
   } else if (k === 'mouth_limit_top') put(k, S.sym ? cx : w.x, Math.max(w.y, F.lip_top[1] + .002 * H));
   else if (k === 'lip_top' || k === 'lip_bot') put(k, S.sym ? cx : w.x, w.y);
+  else if (k === 'mouth_open_top' || k === 'mouth_open_bot') {   // between the slit line and the outer lip edge
+    const P = ovalParams(F), x = S.sym ? cx : w.x, l = P.L(x);
+    put(k, x, k === 'mouth_open_top' ? Math.min(Math.max(w.y, l), l + .9 * P.hu) : Math.max(Math.min(w.y, l), l - .9 * P.hl));
+  }
   else if (k === 'face_top') { const { c, ipd } = eyeMid(); put(k, S.sym ? cx : w.x, Math.max(w.y, c.y + .1 * ipd)); }
   else {
     let x = w.x, y = w.y;
@@ -1060,6 +1072,16 @@ function eyeScale(f) {   // grow or shrink the ball keeping the cornea: the cent
   }
   drawOval(); sync();
 }
+$('mouthOpenBtn').onclick = () => {
+  if (!ovalMode) return; pushUndo(); const F = S.face;
+  if (F.mouth_open_top) { delete F.mouth_open_top; delete F.mouth_open_bot; if (/^mouth_open/.test(ovalMode.sel || '')) ovalSelect(null); }
+  else {
+    const P = ovalParams(F), x = F.mouth_c[0], l = P.L(x);
+    F.mouth_open_top = [x, l + .45 * P.hu, skinNear(x, l + .45 * P.hu, F.lip_top[2])];
+    F.mouth_open_bot = [x, l - .45 * P.hl, skinNear(x, l - .45 * P.hl, F.lip_bot[2])];
+  }
+  drawOval(); refreshAll(); sync();
+};
 $('eyeSmall').onclick = () => eyeScale(1 / 1.06); $('eyeBig').onclick = () => eyeScale(1.06);
 $('ovalBtn').onclick = () => {
   if (S.phase !== 'edit') return;

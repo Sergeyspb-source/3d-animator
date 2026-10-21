@@ -20,16 +20,18 @@ def _rgb(hex_or_rgb):
 
 
 def generate(cfg, name, iris, pupil, slit, sclera_yel, veins, per_side, missing, missing_rand, yellow, crooked, fangs,
-             tongue_col, seed):
+             tongue_col, seed, eye_style="Реалистичные", iris_size=0, t_height=1.0, t_volume=1.0, canines=True):
     name = re.sub(r"[^\w.-]+", "_", (name or "face_parts").strip()) or "face_parts"
     out = Path(cfg["export_dir"]) / "face_parts" / name
     out.mkdir(parents=True, exist_ok=True)
     white, yel = [0.93, 0.91, 0.87], [0.95, 0.86, 0.55]
     sclera = [w + (y - w) * float(sclera_yel) for w, y in zip(white, yel)]
     job = {"out_dir": str(out), "seed": int(seed),
-           "eye": {"iris": _rgb(iris), "pupil": float(pupil), "slit": bool(slit), "sclera": sclera, "veins": float(veins)},
+           "eye": {"iris": _rgb(iris), "pupil": float(pupil), "slit": bool(slit), "sclera": sclera, "veins": float(veins),
+                   "style": "anime" if eye_style == "Аниме" else "real", **({"iris_size": float(iris_size)} if iris_size else {})},
            "teeth": {"per_side": int(per_side), "missing": missing or "", "missing_random": float(missing_rand),
-                     "yellow": float(yellow), "crooked": float(crooked), "fangs": float(fangs)},
+                     "yellow": float(yellow), "crooked": float(crooked), "fangs": float(fangs),
+                     "height": float(t_height), "volume": float(t_volume), "canines": bool(canines)},
            "tongue": {"colour": _rgb(tongue_col)}}
     (out / "job.json").write_text(json.dumps(job, indent=1), encoding="utf-8")
     blender = cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe"
@@ -58,6 +60,9 @@ def mount(config_loader, accordion=True):
                 with gr.Row():
                     iris = gr.ColorPicker(value="#4d8033", label="Радужка")
                     tongue = gr.ColorPicker(value="#b8545c", label="Язык")
+                eye_style = gr.Radio(["Реалистичные", "Аниме"], value="Реалистичные", label="Стиль глаз",
+                                     info="Аниме: большая ровная радужка, темнее сверху, большой зрачок и блики")
+                iris_size = gr.Slider(0, 70, value=0, step=1, label="Размер радужки, ° (0 — по стилю: 32 / 50)")
                 pupil = gr.Slider(0.25, 0.7, value=0.42, step=0.01, label="Зрачок (доля радужки)")
                 slit = gr.Checkbox(value=False, label="Вертикальный зрачок (существа)")
                 sclera = gr.Slider(0, 1, value=0.0, step=0.05, label="Желтизна белка")
@@ -68,6 +73,10 @@ def mount(config_loader, accordion=True):
                 mrand = gr.Slider(0, 0.6, value=0.0, step=0.05, label="Случайные пропуски (доля)")
                 yellow = gr.Slider(0, 1, value=0.15, step=0.05, label="Желтизна зубов (1 — гнилые, коричневые)")
                 crooked = gr.Slider(0, 1, value=0.2, step=0.05, label="Кривизна зубов")
+                t_height = gr.Slider(0.5, 1.6, value=1.0, step=0.05, label="Высота зубов")
+                t_volume = gr.Slider(0, 1, value=1.0, step=0.05, label="Объём зубов",
+                                     info="0 — сплошная белая полоска, 1 — отдельные зубы с зазорами")
+                canines = gr.Checkbox(value=True, label="Клыки (выкл. — клыки как резцы)")
                 fangs = gr.Slider(0, 1, value=0.0, step=0.05, label="Длина клыков")
                 seed = gr.Number(value=1, precision=0, label="Вариант (случайное зерно)")
                 go = gr.Button("Сгенерировать набор", variant="primary")
@@ -76,5 +85,6 @@ def mount(config_loader, accordion=True):
             pic = gr.Image(label="Предпросмотр", type="filepath", height=260)
         files = gr.File(label="Файлы", file_count="multiple", interactive=False)
         go.click(lambda *a: generate(config_loader(), *a),
-                 [name, iris, pupil, slit, sclera, veins, per, missing, mrand, yellow, crooked, fangs, tongue, seed],
+                 [name, iris, pupil, slit, sclera, veins, per, missing, mrand, yellow, crooked, fangs, tongue, seed,
+                  eye_style, iris_size, t_height, t_volume, canines],
                  [log, pic, files], concurrency_id="face_parts", concurrency_limit=1)

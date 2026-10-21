@@ -217,6 +217,7 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=T
     face = landmarks.get("face") or {}
     images_extra = []
     mouth = "plate" if mouth is True else (mouth or "none")
+    topo_done = False
     has_mouth = all(face.get(k) for k in ("mouth_c", "mouth_corner_L", "mouth_corner_R"))
     if face_topo and mouth == "cut" and has_mouth and not (face.get("eye_L") and face.get("eye_R")):
         yield "Ретопология лица пропущена: в разметке нет глаз. Нажмите «Разметить лицо» (с контуром глаз)."
@@ -230,6 +231,7 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=T
               "corner_L": face["mouth_corner_L"], "corner_R": face["mouth_corner_R"],
               "mid_L": face.get("mouth_mid_L"), "mid_R": face.get("mouth_mid_R"),
               "lip_top": face.get("lip_top"), "lip_bot": face.get("lip_bot"), "limit_top": face.get("mouth_limit_top"),
+              "open_top": face.get("mouth_open_top"), "open_bot": face.get("mouth_open_bot"),
               "face_topo": bool(face_topo and face.get("eye_L") and face.get("eye_R")), "face_top": face.get("face_top"),
               "face_smooth": 1 if int(smooth) > 0 else 0, "face_relax": [0, 8, 16, 30][max(0, min(3, int(smooth)))],
               "eyes_open": bool(eyes and face.get("eye_in_L") and face.get("eye_bot_L")),
@@ -248,13 +250,14 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=T
         line = next((x for x in r.stdout.splitlines() if x.startswith("CUT_OK")), None)
         if line:
             model = work / "model_cut.glb"
+            topo_done = bool(cj["face_topo"])
             cr = json.loads(line.split(" ", 1)[1])
             images_extra += cr.get("previews", [])
             yield (f"Рот разрезан: губы подвёрнуты, полость, {', '.join(cr.get('inserted', []))}; ключи jawOpen, "
                    "mouthSmile, mouthFunnel и др. (липсинк работает так же).")
         else:
             fail = next((x for x in r.stdout.splitlines() if x.startswith("CUT_FAIL")), (r.stdout + r.stderr)[-600:])
-            yield "Разрез рта не получился, модель без него: " + fail
+            yield "⚠ Разрез рта не получился, модель без него (глаза вырежутся сами): " + fail
     if mouth == "plate" and has_mouth:
         yield "Кладу рот для речи: пластина с ключами jawOpen, mouthSmile, mouthFunnel и др. (для липсинка)…"
         names = bone_names(naming)
@@ -286,7 +289,7 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=T
         names = bone_names(naming)
         eyes_glb, kit_r = face_kit_eyes(cfg, kit, work)
         ej = {"source": str(model), "out": str(work / "model_eyes.glb"), "eyes_glb": str(eyes_glb), "kit_r": kit_r,
-              "open_rim": bool(face_topo and mouth == "cut"),
+              "open_rim": topo_done,   # the face retopology already cut the eye openings
               "head_bone": names["head"], "sym": bool(landmarks.get("sym", True)), "report": str(work / "eyes_report.json"),
               "preview": str(work / "eyes.png"),
               "sides": {s: {"outline": pts, "bone": names[f"eye_{s}"] if f"eye_{s}" in landmarks["joints"] else "",
