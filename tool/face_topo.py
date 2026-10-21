@@ -48,6 +48,11 @@ def build(C):
     skin_bvh, skin_y, W, cx, line_z = C["skin_bvh"], C["skin_y"], C["W"], C["cx"], C["line_z"]
     x0, x1, M, job, bl, report, fail = C["x0"], C["x1"], C["M"], C["job"], C["bl"], C["report"], C["fail"]
     P = lambda v: fw @ v.co
+    # an int layer to find kept vertices again after subdivide_edges; adding a layer reallocates the mesh too, so it
+    # must exist before any vertex reference is taken (the caller's own vertex lists are not used past this call)
+    if bm.verts.layers.int.get("ftag") is None:
+        bm.verts.layers.int.new("ftag")
+    dl = bm.verts.layers.deform.verify()
     me = face.data
     tris = list(me.loop_triangles)
     wv = [fw @ v.co for v in me.vertices]
@@ -404,6 +409,82 @@ def build(C):
         for i in range(n):
             make([cv, loops[0][(i + 1) % n], loops[0][i]])
     report["mask_new_faces"] = len(new_faces)
+
+    # ------------------------------------------------------------ smoothing: subdivide the fill, relax, back onto the surface
+    # (like Relax in sculpting tools): long thin triangles where the fill meets the rings become even. Rings, the slit,
+    # the eyelid loops and the seam to the old mesh stay fixed.
+    fixed = set(rim) | set(U) | set(D.values())
+    for k in MR:
+        fixed |= set(MR[k])
+    for sd in ("L", "R"):
+        for lp in ER_[sd][1]:
+            fixed |= set(lp)
+    ring_faces = {f for f in new_faces if f.is_valid and all(v in fixed for v in f.verts)}
+    fill = [f for f in new_faces if f.is_valid and f not in ring_faces]
+    levels = int(job.get("face_smooth", 1))
+    if levels > 0 and fill:
+        fill_set = set(fill)
+        edges = [e for f in fill for e in f.edges
+                 if all(g in fill_set for g in e.link_faces) or not all(v in fixed for v in e.verts)]
+        edges = list({e for e in edges if not all(v in fixed for v in e.verts)})
+        # subdivide_edges reallocates the mesh: every kept BMVert reference goes stale, so keep indices and re-look up
+        # subdivide_edges reallocates the mesh: every kept BMVert reference goes stale. Tag the kept vertices in an
+        # int layer (indices are not stable either) and look them up again by tag afterwards.
+        tag = bm.verts.layers.int["ftag"]
+        for v in bm.verts:
+            v[tag] = 0
+        keep_lists = {"U": U, "D": [D[k] for k in sorted(D)], "rim": rim}
+        for k in MR:
+            keep_lists["MR%d" % k] = MR[k]
+        for sd in ER_:
+            for j, lp in enumerate(ER_[sd][1]):
+                keep_lists["E%s%d" % (sd, j)] = lp
+        nid = 1
+        ids = {}
+        for name, vs in keep_lists.items():
+            ids[name] = []
+            for v in vs:
+                if v[tag] == 0:
+                    v[tag] = nid; nid += 1
+                ids[name].append(v[tag])
+        dkeys = sorted(D)
+        bmesh.ops.subdivide_edges(bm, edges=edges, cuts=levels, use_grid_fill=True, use_only_quads=False)
+        by_tag = {v[tag]: v for v in bm.verts if v[tag]}
+        U = [by_tag[t] for t in ids["U"]]
+        D = {k: by_tag[t] for k, t in zip(dkeys, ids["D"])}
+        rim = [by_tag[t] for t in ids["rim"]]
+        MR = {k: [by_tag[t] for t in ids["MR%d" % k]] for k in MR}
+        ER_ = {sd: (ER_[sd][0], [[by_tag[t] for t in ids["E%s%d" % (sd, j)]] for j in range(len(ER_[sd][1]))]) for sd in ER_}
+        fixed = set(rim) | set(U) | set(D.values())
+        for k in MR:
+            fixed |= set(MR[k])
+        for sd in ("L", "R"):
+            for lp in ER_[sd][1]:
+                fixed |= set(lp)
+        bmesh.ops.triangulate(bm, faces=[f for f in bm.faces if f.material_index == mat_idx and len(f.verts) > 4])
+    new_faces = [f for f in bm.faces if f.material_index == mat_idx]
+    movable = {v for f in new_faces for v in f.verts if v not in fixed}
+    for _ in range(int(job.get("face_relax", 12))):
+        target = {}
+        for v in movable:
+            nbs = [e.other_vert(v) for e in v.link_edges]
+            if nbs:
+                target[v] = v.co.lerp(sum((n.co for n in nbs), Vector()) / len(nbs), 0.5)
+        for v, t in target.items():
+            v.co = t
+        for v in movable:   # back onto the original surface along the ray from the centre
+            d = (fw @ v.co) - C
+            h = skin_bvh.ray_cast(C, d.normalized(), ipd * 6)
+            if h[0] is not None:
+                v.co = finv @ h[0]
+    for v in movable:       # skin weights where the point ended up
+        p_ = fw @ v.co
+        h = skin_bvh.find_nearest(p_)
+        if h[2] is not None:
+            v[dl].clear()
+            for k, w in weights_at(h[0], h[2]).items():
+                v[dl][k] = w
+    report["mask_smoothed_points"] = len(movable)
 
     # ------------------------------------------------------------ orientation like the skin
     nf = [f for f in new_faces if f.is_valid]

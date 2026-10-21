@@ -39,6 +39,7 @@ def mount(config_loader, asset, upload):
                               ("Нет", "none")], value="plate", label="Рот для речи (если размечено лицо)")
             eyes = gr.Checkbox(value=True, label="Вставить глаза-шары (если обведены глаза)")
             ftopo = gr.Checkbox(value=False, label="Ретопология лица (эксперимент, только с «Разрез»)")
+            fsmooth = gr.Slider(0, 3, value=2, step=1, label="Сглаживание сетки лица (0 — выкл.)")
             kit = gr.Dropdown(choices=[""], value="", label="Набор деталей лица (пусто — стандартный)", allow_custom_value=True)
         editor = gr.HTML()
         data = gr.Textbox(label="Разметка (заполняется редактором автоматически; можно вставить сохранённую)",
@@ -75,7 +76,7 @@ def mount(config_loader, asset, upload):
             return _frame(LM.editor_page(src, LM.initial_state(src, cfg["export_dir"], text),
                                          LM.output_paths(src, cfg["export_dir"])[0]))
 
-        def run(up, name, text, nm, do_weld, do_mouth, do_eyes, kit_name, do_topo):
+        def run(up, name, text, nm, do_weld, do_mouth, do_eyes, kit_name, do_topo, smooth_lvl):
             cfg = config_loader()
             src = LM.source_path(up, name, cfg["export_dir"])
             lines = []
@@ -84,7 +85,7 @@ def mount(config_loader, asset, upload):
                 return
             try:
                 marks = LM.parse(text)
-                for step in LM.build(src, marks, NAMINGS[nm], cfg, do_weld, do_mouth, do_eyes, (kit_name or "").strip(), do_topo):
+                for step in LM.build(src, marks, NAMINGS[nm], cfg, do_weld, do_mouth, do_eyes, (kit_name or "").strip(), do_topo, smooth_lvl):
                     if isinstance(step, dict):  # reopen the editor in the pose mode on the fresh build
                         lines.append("Редактор открыт в режиме «Поза»: тяните мышью руки и ноги, чтобы проверить сгибы.")
                         state = json.loads(Path(step["landmarks"]).read_text(encoding="utf-8"))
@@ -141,5 +142,5 @@ def mount(config_loader, asset, upload):
         ls_btn.click(lipsync, [upload, asset, ls_audio, ls_text, ls_lang, data], [ls_log, editor], concurrency_id="lipsync",
                      concurrency_limit=1)
         ref_btn.click(open_view, ref_file, editor)
-        go.click(run, [upload, asset, data, naming, weld, mouth, eyes, kit, ftopo], [log, view, files, shots, editor], concurrency_id="landmark_rig",
+        go.click(run, [upload, asset, data, naming, weld, mouth, eyes, kit, ftopo, fsmooth], [log, view, files, shots, editor], concurrency_id="landmark_rig",
                  concurrency_limit=1)
