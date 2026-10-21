@@ -30,10 +30,12 @@ def mount(config_loader, asset, upload, accordion=True):
                 naming = gr.Radio(list(NAMINGS), value=list(NAMINGS)[0], label="Имена костей")
                 weld = gr.Checkbox(value=True, label="Сшить стыки между частями")
                 mouth = gr.Radio([("Пластина (быстро, для дальних планов)", "plate"), ("Разрез: губы, полость, зубы, язык", "cut"),
-                                  ("Нет", "none")], value="plate", label="Рот для речи (если размечено лицо)")
+                                  ("Нет", "none")], value="cut", label="Рот для речи (если размечено лицо)")
                 eyes = gr.Checkbox(value=True, label="Вставить глаза-шары (если обведены глаза)")
             with gr.Row():
-                ftopo = gr.Checkbox(value=False, label="Ретопология лица (эксперимент, только с «Разрез»)")
+                ftopo = gr.Checkbox(value=True, label="Ретопология лица: ровная сетка вокруг рта и глаз (рекомендуется)",
+                                    info="Перестраивает сетку лица кольцами: гладкие края век и губ, без заломов при открытии рта. "
+                                         "Работает с режимом рта «Разрез» и размеченными глазами.")
                 fsmooth = gr.Slider(0, 3, value=2, step=1, label="Сглаживание сетки лица (0 — выкл.)")
                 kit = gr.Dropdown(choices=[""], value="", label="Набор деталей лица (пусто — стандартный)", allow_custom_value=True)
         go = gr.Button("Построить скелет и веса по разметке (около минуты, без видеокарты)", variant="primary")
@@ -110,6 +112,10 @@ def mount(config_loader, asset, upload, accordion=True):
         open_btn.click(open_editor, [upload, asset, data], editor)
         open_btn.click(kits, None, kit)
         ref_btn.click(open_view, ref_file, editor)
+        # retopology needs the cut mouth: keep the two consistent
+        mouth.change(lambda m: gr.update(interactive=m == "cut", value=(m == "cut")), mouth, ftopo, show_progress="hidden")
+        ftopo.change(lambda t, m: gr.update(value="cut") if t and m != "cut" else gr.update(), [ftopo, mouth], mouth,
+                     show_progress="hidden")
         go.click(run, [upload, asset, data, naming, weld, mouth, eyes, kit, ftopo, fsmooth], [log, view, files, shots, editor], concurrency_id="landmark_rig",
                  concurrency_limit=1)
         return data, editor

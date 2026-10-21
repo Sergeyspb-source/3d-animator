@@ -214,6 +214,10 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=T
     images_extra = []
     mouth = "plate" if mouth is True else (mouth or "none")
     has_mouth = all(face.get(k) for k in ("mouth_c", "mouth_corner_L", "mouth_corner_R"))
+    if face_topo and mouth == "cut" and has_mouth and not (face.get("eye_L") and face.get("eye_R")):
+        yield "Ретопология лица пропущена: в разметке нет глаз. Нажмите «Разметить лицо» (с контуром глаз)."
+    if face_topo and mouth != "cut":
+        yield "Ретопология лица работает только с режимом рта «Разрез» — пропущена."
     if mouth == "cut" and has_mouth:
         yield "Режу рот по линии губ, ставлю полость, зубы и язык из набора деталей лица…"
         names = bone_names(naming)
