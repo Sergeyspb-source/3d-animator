@@ -25,6 +25,11 @@ def mount(config_loader, asset, upload, accordion=True):
         editor = gr.HTML()
         data = gr.Textbox(label="Разметка (заполняется редактором автоматически; можно вставить сохранённую)",
                           lines=2, max_lines=4, elem_id=LM.TARGET_ID)
+        # the editor's armour mode: it writes the request here and clicks the button (both kept out of sight)
+        gr.HTML("<style>.sf3d-hidden{display:none!important}</style>")
+        wear_req = gr.Textbox(elem_id=LM.WEAR_ID, elem_classes=["sf3d-hidden"], show_label=False)
+        wear_btn = gr.Button("wear", elem_id=LM.WEAR_GO, elem_classes=["sf3d-hidden"])
+        wear_log = gr.Textbox(label="Броня", lines=2, interactive=False)
         with gr.Accordion("Параметры сборки", open=False):
             with gr.Row():
                 naming = gr.Radio(list(NAMINGS), value=list(NAMINGS)[0], label="Имена костей")
@@ -113,6 +118,13 @@ def mount(config_loader, asset, upload, accordion=True):
             names = sorted(p.name for p in d.iterdir() if (p / "eyes.glb").exists()) if d.exists() else []
             return gr.update(choices=[""] + names)
 
+        def do_wear(text):
+            try:
+                return LM.wear(config_loader(), text)
+            except Exception as e:
+                return "Ошибка: " + str(e)
+
+        wear_btn.click(do_wear, wear_req, wear_log, concurrency_id="landmark_rig", concurrency_limit=1, show_progress="minimal")
         open_btn.click(open_editor, [upload, asset, data], editor)
         open_btn.click(kits, None, kit)
         ref_btn.click(open_view, ref_file, editor)

@@ -97,6 +97,45 @@ def clean_glb(src: Path) -> Path:
     return out
 
 
+WEAR_ID = "sf3d_wear_json"      # textbox the editor's armour mode writes into
+WEAR_GO = "sf3d_wear_go"        # hidden button the editor clicks
+
+
+def wear(cfg, text):
+    """Put a piece of armour on a built character as placed in the editor (mode «Броня»). text: JSON from the editor
+    {id, rigged, item, glb (base64 of the piece), placements, offset}. Writes <stem>_wear_<item>.glb and a
+    .wear.json (id + log; the editor waits for it) next to the character. Returns the log text."""
+    req = json.loads(text)
+    rigged = Path(req["rigged"])
+    item = re.sub(r"[^\w-]+", "_", req.get("item") or "item").strip("_") or "item"
+    stem = re.sub(r"_landmarks_rigged$", "", rigged.stem)
+    work = Path(cfg["work_dir"]) / "wear" / f"{stem}_{item}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    work.mkdir(parents=True, exist_ok=True)
+    piece = work / "piece.glb"
+    piece.write_bytes(base64.b64decode(req["glb"]))
+    out = rigged.parent / f"{stem}_wear_{item}.glb"
+    job = {"character": str(rigged), "armour": str(clean_glb(piece)), "out": str(out), "item": item,
+           "placements": req["placements"], "offset": float(req.get("offset", 0.0)), "report": str(work / "report.json")}
+    (work / "job.json").write_text(json.dumps(job, ensure_ascii=False), encoding="utf-8")
+    blender = cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe"
+    r = subprocess.run([blender, "-b", "--factory-startup", "-P", str(ROOT / "blender_wear_fit.py"), "--", str(work / "job.json")],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=900,
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    line = next((x for x in r.stdout.splitlines() if x.startswith("WEAR_OK")), None)
+    if line:
+        rep = json.loads(line.split(" ", 1)[1])
+        log = f"Надето: {out.name} — " + "; ".join(f"{k}: вытолкнуто из тела {v['pushed_out']} из {v['vertices']} вершин, кости {', '.join(v['bones'][:4])}"
+                                                 for k, v in rep.items())
+        ok = True
+    else:
+        log = "Не получилось: " + next((x for x in r.stdout.splitlines() if x.startswith("WEAR_FAIL")), (r.stdout + r.stderr)[-600:])
+        ok = False
+    (rigged.parent / f"{stem}_wear_{item}.wear.json").write_text(
+        json.dumps({"id": req.get("id"), "ok": ok, "glb": out.resolve().as_posix() if ok else None, "log": log}, ensure_ascii=False),
+        encoding="utf-8")
+    return log
+
+
 def godot_scene(glb: Path) -> Path | None:
     """<stem>.tscn next to the rigged GLB: the model instanced under a Node3D with sf3d_face_rig.gd (blinking on a
     timer, say(line) for the lip-sync clips saved in the same folder). Paths are relative, so the folder can be
@@ -150,7 +189,7 @@ def editor_page(src: Path, state: dict | None, rigged: Path | None = None, mode:
     """rigged: built GLB for the pose mode (fetched by the page through Gradio's /file= route, so it must lie in
     an allowed path such as export_dir); mode='pose' opens the page straight in the pose mode."""
     page = EDITOR.read_text(encoding="utf-8")
-    data = {"state": state, "target": TARGET_ID, "source": str(src), "mode": mode,
+    data = {"state": state, "target": TARGET_ID, "wear_target": WEAR_ID, "wear_go": WEAR_GO, "source": str(src), "mode": mode,
             "rigged": Path(rigged).resolve().as_posix() if rigged and Path(rigged).exists() else None,
             "rigged_v": int(Path(rigged).stat().st_mtime) if rigged and Path(rigged).exists() else 0,
             "names": {"mixamo": bone_names("mixamo"), "godot": bone_names("godot")},

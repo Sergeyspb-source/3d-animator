@@ -18,6 +18,15 @@
   .wrap { display:grid; grid-template-columns:minmax(0,1fr) 320px; gap:10px; height:100%; min-height:520px; }
   @media (max-width: 760px) { .wrap { grid-template-columns:minmax(0,1fr); grid-template-rows:auto auto; height:auto; } .stage { min-height:60vh; } }
   .main { display:flex; flex-direction:column; gap:8px; min-height:0; min-width:0; }
+  .wearpanel { position:absolute; left:10px; top:36px; width:250px; z-index:6; max-height:calc(100% - 110px); overflow:auto; display:flex; flex-direction:column; gap:6px;
+    background:color-mix(in srgb,var(--panel) 94%,transparent); border:1px solid var(--line); border-radius:10px; padding:10px; font-size:13px; }
+  .wearpanel label { display:flex; flex-direction:column; gap:2px; }
+  .wearpanel label.chk { flex-direction:row; align-items:center; gap:6px; }
+  .wearpanel select, .wearpanel input[type=file] { font:inherit; max-width:100%; }
+  .wearpanel .row { display:flex; gap:6px; flex-wrap:wrap; }
+  .wearpanel button.on { background:var(--accent); color:var(--accent-fg); }
+  .wearpanel .small { color:var(--muted); font-size:12px; }
+  body.wear #mWear { background:var(--accent); color:var(--accent-fg); }
   .stage { position:relative; flex:1; background:var(--stage); border:1px solid var(--line); border-radius:10px; overflow:hidden; min-height:320px; }
   /* tool bar over the stage: view and display, then the pose check */
   .toolbar { display:flex; flex-wrap:wrap; gap:6px; align-items:center; background:var(--panel); border:1px solid var(--line);
@@ -127,11 +136,29 @@
       <label class="chk edit-only" title="Зелёный сектор — куда сустав гнётся, красный — куда нет"><input type="checkbox" id="showBends" checked> Сектора сгиба</label>
       <span class="grow"></span>
       <button id="mPose" class="primary" title="Проверить сгибы на собранной модели">Поза</button>
+      <button id="mWear" title="Надеть броню на собранного персонажа">Броня</button>
       <button id="helpBtn" title="Мышь и клавиши">?</button>
     </div>
     <div class="stage">
     <canvas id="cv"></canvas>
     <div class="badge" id="badge">вид спереди</div>
+    <div class="wearpanel" id="wearPanel" hidden>
+      <b>Броня: подгонка вещи</b>
+      <label>Вещь (GLB) <input type="file" id="wFile" accept=".glb"></label>
+      <label>Часть тела <select id="wPart">
+        <option value="forearm">Предплечье (наручи)</option><option value="arm">Плечо</option><option value="hand">Кисть (перчатка)</option>
+        <option value="upleg">Бедро</option><option value="leg">Голень (поножи)</option><option value="foot">Стопа (сапог)</option></select></label>
+      <label>Сторона <select id="wSide"><option value="L">левая (справа на экране)</option><option value="R">правая (слева на экране)</option></select></label>
+      <label class="chk"><input type="checkbox" id="wMirror" checked> Зеркально на вторую сторону</label>
+      <label>Положение вдоль <input type="range" id="wPos" min="0" max="1" step="0.01"></label>
+      <label>Длина <input type="range" id="wLen" min="0.5" max="2" step="0.01" value="1"></label>
+      <label>Толщина <input type="range" id="wThick" min="0.6" max="1.6" step="0.01" value="1"></label>
+      <label>Поворот вокруг оси <input type="range" id="wTwist" min="-180" max="180" step="1" value="0"></label>
+      <label>Зазор до кожи <input type="range" id="wGap" min="0" max="0.3" step="0.01" value="0.04"></label>
+      <div class="row"><button id="wMove" title="Стрелки на вещи: сдвиг">Сдвиг</button><button id="wRot" title="Стрелки на вещи: поворот">Поворот</button><button id="wScale" title="Стрелки на вещи: размер по осям">Размер</button></div>
+      <div class="row"><button id="wReset">Сбросить</button><button id="wApply" class="primary">Надеть</button></div>
+      <div class="small" id="wStatus">Выберите файл вещи.</div>
+    </div>
     <div class="mouse" id="mouseHelp" hidden>
       <svg viewBox="0 0 24 36" aria-hidden="true">
         <path d="M12 1 C5 1 2 5 2 11 V24 C2 31 6 35 12 35 C18 35 22 31 22 24 V11 C22 5 19 1 12 1 Z" fill="none" stroke="currentColor" stroke-width="1.5"/>
@@ -1793,7 +1820,7 @@ canvas.addEventListener('pointermove', (e) => {
   });
 });
 canvas.addEventListener('pointerdown', (e) => {
-  if (!poseOn || e.button !== 0 || !hoverId || playing) return;
+  if (!poseOn || e.button !== 0 || !hoverId || playing || tcW.axis) return;   // the armour gizmo has the click
   dragId = hoverId; orbit.enabled = false; canvas.setPointerCapture(e.pointerId);
 });
 addEventListener('pointerup', () => { if (dragId) { dragId = null; orbit.enabled = true; poseHighlight(); } });
@@ -1815,7 +1842,7 @@ async function setPose(on) {
   refreshAll();
   poseHighlight();
 }
-$('mPose').onclick = () => setPose(!poseOn);
+$('mPose').onclick = () => { if (wearOn) wearMode(false); setPose(!poseOn); };
 $('pWeights').onclick = () => setWeights(!weightsOn);
 $('pPlay').onclick = () => {
   if (!mixer) return;
@@ -1897,6 +1924,216 @@ $('pSquat').onclick = () => {
   poseBend('spine1', FW, 15);
   poseHighlight();
 };
+
+// ---------------------------------------------------------------- armour fitting («Броня»)
+// The built character stays as it is (the pose mode's model); the piece is placed on a limb segment between two
+// joints: its tube axis (the eigen axis of its point cloud whose other two spreads are most alike) along the limb,
+// its wide end at the joint nearer the body, its inner wall on the skin (limb radius from rays out of the bone
+// axis), then the sliders and the gizmo. «Надеть» hands the matrices to blender_wear_fit.py through SF3D and loads
+// the skinned result back onto this skeleton for the pose check.
+const WEAR_PARTS = { forearm: ['forearm', 'hand'], arm: ['arm', 'forearm'], hand: ['hand', 'hand_end'],
+                     upleg: ['upleg', 'leg'], leg: ['leg', 'foot'], foot: ['foot', 'toe_end'] };
+let wear = null, wearOn = false;
+const wearGroup = new THREE.Group(); scene.add(wearGroup);
+const wearHelper = new THREE.Object3D(); scene.add(wearHelper);
+const tcW = new TransformControls(camera, canvas); tcW.setSpace('world'); tcW.setSize(.7); scene.add(tcW);
+tcW.addEventListener('dragging-changed', (e) => { orbit.enabled = !e.value; });
+tcW.addEventListener('objectChange', () => { if (wear) { wear.off = wearHelper.position.clone().sub(wear.c); wearDraw(); } });
+const median = (a) => { const s = [...a].sort((x, y) => x - y); return s.length ? s[s.length >> 1] : 0; };
+
+function eigen3(c) {   // symmetric 3x3 (row-major array) -> [[value, vector] x3] by power iteration with deflation
+  const M = c.slice(), out = [];
+  for (let n = 0; n < 2; n++) {
+    let v = new V3(1, .7, .3).normalize();
+    for (let k = 0; k < 80; k++) {
+      const w = new V3(M[0] * v.x + M[1] * v.y + M[2] * v.z, M[3] * v.x + M[4] * v.y + M[5] * v.z, M[6] * v.x + M[7] * v.y + M[8] * v.z);
+      if (w.lengthSq() < 1e-30) break; v = w.normalize();
+    }
+    const Mv = new V3(M[0] * v.x + M[1] * v.y + M[2] * v.z, M[3] * v.x + M[4] * v.y + M[5] * v.z, M[6] * v.x + M[7] * v.y + M[8] * v.z);
+    const lam = v.dot(Mv); out.push([lam, v.clone()]);
+    const a = [v.x, v.y, v.z]; for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) M[i * 3 + j] -= lam * a[i] * a[j];
+  }
+  const v3 = out[0][1].clone().cross(out[1][1]).normalize();
+  const a = [v3.x, v3.y, v3.z]; let lam3 = 0; for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) lam3 += a[i] * c[i * 3 + j] * a[j];
+  out.push([lam3, v3]); return out;
+}
+function wearShape(parts) {
+  const P = [];
+  for (const p of parts) { const a = p.geo.attributes.position, st = Math.max(1, Math.floor(a.count / 4000)); for (let i = 0; i < a.count; i += st) P.push(new V3().fromBufferAttribute(a, i)); }
+  const m = P.reduce((s, p) => s.add(p), new V3()).multiplyScalar(1 / P.length);
+  const c = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+  for (const p of P) { const d = [p.x - m.x, p.y - m.y, p.z - m.z]; for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) c[i * 3 + j] += d[i] * d[j] / P.length; }
+  const E = eigen3(c);
+  let best = 0, bs = Infinity;   // the tube axis: the other two spreads alike
+  for (let i = 0; i < 3; i++) { const o = E.filter((_, k) => k !== i).map((e) => e[0]); const s = Math.abs(o[0] - o[1]) / Math.max(o[0], o[1], 1e-30); if (s < bs) { bs = s; best = i; } }
+  let v = E[best][1];
+  let t0 = Infinity, t1 = -Infinity;
+  const td = P.map((p) => { const d = p.clone().sub(m), t = d.dot(v); t0 = Math.min(t0, t); t1 = Math.max(t1, t); return [t, d.addScaledVector(v, -t).length()]; });
+  const L = t1 - t0, mid = m.clone().addScaledVector(v, (t0 + t1) / 2);
+  const endR = (lo, hi) => median(td.filter(([t]) => t >= lo && t <= hi).map((q) => q[1]));
+  if (endR(t1 - .2 * L, t1) > endR(t0, t0 + .2 * L)) v = v.clone().negate();   // the wide end first
+  const rs = td.map((q) => q[1]).sort((a, b) => a - b);
+  return { mid, axis: v, L, rin: rs[Math.floor(rs.length * .15)] };
+}
+function limbOf(part, sd) {
+  const [a, b] = WEAR_PARTS[part], pa = S.pos[a + '_' + sd], pb = S.pos[b + '_' + sd];
+  if (!pa || !pb) return null;
+  const A = V(pa), B = V(pb), u = B.clone().sub(A), len = u.length(); u.normalize();
+  const p1 = (Math.abs(u.x) < .9 ? new V3(1, 0, 0) : new V3(0, 0, 1)).cross(u).normalize(), p2 = u.clone().cross(p1);
+  const rc = new THREE.Raycaster(), rs = [];
+  for (const t of [.3, .45, .6, .75]) for (let k = 0; k < 8; k++) {
+    const d = p1.clone().multiplyScalar(Math.cos(k / 8 * 2 * Math.PI)).addScaledVector(p2, Math.sin(k / 8 * 2 * Math.PI));
+    rc.set(A.clone().addScaledVector(u, t * len), d); rc.far = len;
+    const h = rc.intersectObjects(meshes, false)[0]; if (h) rs.push(h.distance);
+  }
+  return { A, B, u, len, r: median(rs) || .12 * len };
+}
+const wv = (id) => +$(id).value;
+function wearAuto() {
+  const L = limbOf($('wPart').value, $('wSide').value), P = wear.pca;
+  if (!L) { $('wStatus').textContent = 'У персонажа нет суставов этой части тела.'; return false; }
+  const s = L.r * (1 + wv('wGap')) / Math.max(P.rin, 1e-9);   // the inner wall on the skin plus the gap
+  const len = Math.min(P.L * s, .95 * L.len);
+  $('wPos').value = Math.min(.75, Math.max(.3, .93 - len / 2 / L.len));   // the far end near the next joint
+  $('wLen').value = 1; $('wThick').value = 1; $('wTwist').value = 0;
+  wear.s = s; wear.lenFit = len / (P.L * s); wear.off = new V3(); wearHelper.quaternion.identity(); wearHelper.scale.set(1, 1, 1);
+  return true;
+}
+function wearPlacement(L) {   // armour space -> world, from the sliders (without the gizmo)
+  const P = wear.pca, a = P.axis;
+  const sr = wear.s * wv('wThick'), sa = wear.s * wv('wThick') * wear.lenFit * wv('wLen'), k = sa - sr;
+  const S3 = new THREE.Matrix4().set(
+    sr + k * a.x * a.x, k * a.x * a.y, k * a.x * a.z, 0,
+    k * a.y * a.x, sr + k * a.y * a.y, k * a.y * a.z, 0,
+    k * a.z * a.x, k * a.z * a.y, sr + k * a.z * a.z, 0, 0, 0, 0, 1);
+  const q = new Q().setFromAxisAngle(L.u, THREE.MathUtils.degToRad(wv('wTwist'))).multiply(new Q().setFromUnitVectors(a, L.u));
+  const c = L.A.clone().addScaledVector(L.u, wv('wPos') * L.len);
+  const M = new THREE.Matrix4().makeTranslation(c.x, c.y, c.z).multiply(new THREE.Matrix4().makeRotationFromQuaternion(q))
+    .multiply(S3).multiply(new THREE.Matrix4().makeTranslation(-P.mid.x, -P.mid.y, -P.mid.z));
+  return { M, c };
+}
+function wearMatrices() {
+  const part = $('wPart').value, sd = $('wSide').value, L = limbOf(part, sd); if (!L) return [];
+  const { M, c } = wearPlacement(L);
+  wear.c = c;
+  // the gizmo: moved / turned / scaled about the piece's centre on the limb
+  const h = c.clone().add(wear.off || new V3());
+  const E = new THREE.Matrix4().compose(h, wearHelper.quaternion, wearHelper.scale).multiply(new THREE.Matrix4().makeTranslation(-c.x, -c.y, -c.z));
+  const M1 = E.multiply(M), out = [{ side: sd, M: M1 }];
+  if ($('wMirror').checked) {   // mirrored about the body's middle, then onto the other limb as it really is
+    const od = sd === 'L' ? 'R' : 'L', Lo = limbOf(part, od);
+    if (Lo) {
+      const refl = new THREE.Matrix4().set(-1, 0, 0, 2 * cx, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1);
+      const cm = c.clone().applyMatrix4(refl), um = new V3(-L.u.x, L.u.y, L.u.z);
+      const co = Lo.A.clone().addScaledVector(Lo.u, wv('wPos') * Lo.len);
+      const align = new THREE.Matrix4().makeTranslation(co.x, co.y, co.z)
+        .multiply(new THREE.Matrix4().makeRotationFromQuaternion(new Q().setFromUnitVectors(um, Lo.u)))
+        .multiply(new THREE.Matrix4().makeTranslation(-cm.x, -cm.y, -cm.z));
+      out.push({ side: od, M: align.multiply(refl).multiply(M1.clone()) });
+    }
+  }
+  return out;
+}
+function wearDraw() {
+  for (const g of [...wearGroup.children]) wearGroup.remove(g);
+  if (!wear) return;
+  for (const { M } of wearMatrices()) {
+    const g = new THREE.Group(); g.matrixAutoUpdate = false; g.matrix.copy(M);
+    for (const p of wear.parts) g.add(new THREE.Mesh(p.geo, p.mat));
+    wearGroup.add(g);
+  }
+  if (!tcW.dragging && wear.c) wearHelper.position.copy(wear.c.clone().add(wear.off || new V3()));
+}
+async function wearLoad(file) {
+  const buf = await file.arrayBuffer();
+  const gltf = await new Promise((res, rej) => new GLTFLoader().parse(buf, '', res, rej));
+  gltf.scene.updateMatrixWorld(true);
+  const parts = [];
+  gltf.scene.traverse((o) => {
+    if (!o.isMesh || /icosphere/i.test(o.name)) return;
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', o.geometry.attributes.position.clone());
+    if (o.geometry.attributes.normal) g.setAttribute('normal', o.geometry.attributes.normal.clone());
+    if (o.geometry.attributes.uv) g.setAttribute('uv', o.geometry.attributes.uv.clone());
+    if (o.geometry.index) g.setIndex(o.geometry.index.clone());
+    g.applyMatrix4(o.matrixWorld);
+    const mat = [].concat(o.material).map((m) => { const c = m.clone(); c.side = THREE.DoubleSide; c.skinning = false; return c; });
+    parts.push({ geo: g, mat: mat.length === 1 ? mat[0] : mat });
+  });
+  if (!parts.length) throw new Error('в файле нет сетки');
+  let bin = ''; const u8 = new Uint8Array(buf);
+  for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+  if (wear && wear.fitted) scene.remove(wear.fitted);
+  wear = { name: file.name.replace(/\.glb$/i, ''), b64: btoa(bin), parts, pca: wearShape(parts) };
+  if (wearAuto()) { wearDraw(); $('wStatus').textContent = 'Вещь на месте. Поправьте ползунками или стрелками и нажмите «Надеть».'; }
+  wearGroup.visible = true;
+}
+async function wearMode(on) {
+  if (on && !poseOn) { await setPose(true); if (!poseOn) return; }
+  wearOn = on; document.body.classList.toggle('wear', on);
+  $('wearPanel').hidden = !on; wearGroup.visible = on && !!wear && !(wear && wear.fitted && wear.fittedShown);
+  if (wear && wear.fitted) wear.fitted.visible = on;
+  if (!on) tcW.detach();
+}
+function wearGizmo(mode) {
+  if (!wear) return;
+  const same = tcW.object && tcW.mode === mode; tcW.detach();
+  for (const id of ['wMove', 'wRot', 'wScale']) $(id).classList.remove('on');
+  if (same) return;
+  tcW.setMode(mode); tcW.attach(wearHelper); $({ translate: 'wMove', rotate: 'wRot', scale: 'wScale' }[mode]).classList.add('on');
+}
+async function wearApply() {
+  if (!wear) { $('wStatus').textContent = 'Сначала выберите файл вещи.'; return; }
+  const L = limbOf($('wPart').value, $('wSide').value);
+  const item = (wear.name.replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'item');
+  const req = { id: Date.now(), rigged: DATA.rigged, item, glb: wear.b64, offset: wv('wGap') * .5 * L.r,
+                placements: wearMatrices().map((p) => ({ side: p.side, matrix: Array.from(p.M.elements) })) };
+  try {
+    const ta = window.parent.document.querySelector('#' + DATA.wear_target + ' textarea');
+    ta.value = JSON.stringify(req); ta.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 400));
+    window.parent.document.querySelector('#' + DATA.wear_go).click();
+  } catch (e) { $('wStatus').textContent = 'Не удалось передать в SF3D: ' + e.message; return; }
+  $('wStatus').textContent = 'Blender надевает вещь: выталкивает из тела и переносит веса (около минуты)…';
+  const stem = DATA.rigged.split('/').pop().replace(/_landmarks_rigged\.glb$/i, '').replace(/\.glb$/i, '');
+  const status = DATA.rigged.replace(/[^/]*$/, '') + stem + '_wear_' + item + '.wear.json';
+  for (let k = 0; k < 400; k++) {
+    await new Promise((r) => setTimeout(r, 1500));
+    let js = null;
+    try { const r = await fetch(fileUrl(status) + '?t=' + Date.now()); if (r.ok) js = await r.json(); } catch (e) { /* not yet */ }
+    if (!js || js.id !== req.id) continue;
+    $('wStatus').textContent = js.log;
+    if (js.ok) await wearShowFitted(js.glb);
+    return;
+  }
+  $('wStatus').textContent = 'SF3D не ответил: смотрите поле «Броня» под редактором.';
+}
+async function wearShowFitted(path) {
+  const g = await new GLTFLoader().loadAsync(fileUrl(path) + '?t=' + Date.now());
+  const byName = {}; poseRoot.traverse((o) => { if (o.isBone) byName[o.name] = o; });
+  g.scene.traverse((o) => {
+    if (!o.isSkinnedMesh) return;
+    const sk = o.skeleton;
+    o.bind(new THREE.Skeleton(sk.bones.map((b) => byName[b.name] || b), sk.boneInverses), o.bindMatrix);
+    o.frustumCulled = false;
+    for (const m of [].concat(o.material)) m.side = THREE.DoubleSide;
+  });
+  if (wear.fitted) scene.remove(wear.fitted);
+  wear.fitted = g.scene; wear.fittedShown = true; scene.add(g.scene);
+  wearGroup.visible = false; tcW.detach();
+  $('wStatus').textContent += ' Проверьте в позе: «Поза проверки» или тяните руку мышью.';
+}
+$('mWear').onclick = () => wearMode(!wearOn);
+$('wFile').onchange = async () => {
+  const f = $('wFile').files[0]; if (!f) return;
+  $('wStatus').textContent = 'Загружаю…';
+  try { await wearLoad(f); } catch (e) { $('wStatus').textContent = 'Не удалось открыть: ' + e.message; }
+};
+for (const id of ['wPos', 'wLen', 'wThick', 'wTwist', 'wMirror']) $(id).addEventListener('input', () => { if (wear) { wear.fittedShown = false; wearGroup.visible = true; if (wear.fitted) wear.fitted.visible = false; wearDraw(); } });
+for (const id of ['wPart', 'wSide']) $(id).addEventListener('change', () => { if (wear && wearAuto()) wearDraw(); });
+$('wGap').addEventListener('input', () => { if (wear && wearAuto()) wearDraw(); });
+$('wMove').onclick = () => wearGizmo('translate'); $('wRot').onclick = () => wearGizmo('rotate'); $('wScale').onclick = () => wearGizmo('scale');
+$('wReset').onclick = () => { if (wear && wearAuto()) wearDraw(); };
+$('wApply').onclick = wearApply;
 
 // ---------------------------------------------------------------- start
 (async () => {
