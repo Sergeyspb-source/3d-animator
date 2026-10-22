@@ -188,6 +188,7 @@
       <div class="sub">Лицо</div>
       <div class="row">
         <button id="faceStart" title="Глаза и челюсть: три клика по лицу">Разметить лицо</button>
+        <button id="faceAuto" title="Найти глаза, края век и рот по текстуре; потом поправьте точки мышью">Найти автоматически</button>
         <button id="faceClear">Убрать</button>
         <label class="chk" title="Ещё 4 клика по краю век: глаза вырежутся и заменятся шарами"><input type="checkbox" id="faceEyes" checked> и контур глаз</label>
       </div>
@@ -1210,6 +1211,121 @@ function deriveFace() {
   const chin = S.marks.chin ? V(S.marks.chin) : M.clone().add(new THREE.Vector3(0, -ipd * .6, 0));
   S.pos.jaw_end = arr(new THREE.Vector3(cx, chin.y, depthAt(cx, chin.y, .2, true)));
 }
+// ---------------------------------------------------------------- face points found from the front-view texture
+// A colour grid over the head (chin .. top of the head) is read through the mesh's own texture. Eyes: the most
+// symmetric pair of dark spots (pupils) with something bright beside them (sclera, highlight), in the upper part of
+// the face; the lids = where the colour turns back to skin around the pupil. Mouth: under the eyes, the row that is
+// darkest across the middle; its corners = where that dark line fades into the skin.
+function faceAutoFind() {
+  const top = V(S.pos.head_top || S.pos.head), chin = S.marks.chin ? V(S.marks.chin) : V(S.pos.jaw_end || S.pos.neck);
+  const hh = top.y - chin.y; if (!(hh > 0)) return null;
+  const st = hh / 150, x0 = cx - .35 * hh, y0 = chin.y - .05 * hh, nx = Math.round(.7 * hh / st), ny = Math.round(.95 * hh / st);
+  const C = [], L = [];
+  for (let j = 0; j < ny; j++) {
+    const rc = [], rl = [];
+    for (let i = 0; i <= nx; i++) { const c = colourAt(x0 + i * st, y0 + j * st); rc.push(c); rl.push(c ? .3 * c[0] + .59 * c[1] + .11 * c[2] : null); }
+    C.push(rc); L.push(rl);
+  }
+  const X = (i) => x0 + i * st, Y = (j) => y0 + j * st, I = (x) => Math.round((x - x0) / st), J = (y) => Math.round((y - y0) / st);
+  const lum = (i, j) => (j >= 0 && j < ny && i >= 0 && i <= nx ? L[j][i] : null);
+  // the skin: median colour of the middle of the face
+  const sk = [];
+  for (let j = J(chin.y + .2 * hh); j < J(chin.y + .55 * hh); j += 2) for (let i = Math.round(nx * .35); i < nx * .65; i += 2) if (C[j] && C[j][i]) sk.push(C[j][i]);
+  if (sk.length < 20) return null;
+  const skin = [0, 1, 2].map((k) => sk.map((c) => c[k]).sort((a, b) => a - b)[sk.length >> 1]);
+  const skinL = .3 * skin[0] + .59 * skin[1] + .11 * skin[2];
+  const dist = (c) => (c ? Math.hypot(c[0] - skin[0], c[1] - skin[1], c[2] - skin[2]) : 1);
+  const win = (i, j, r, f) => { let s = 0, n = 0; for (let b = -r; b <= r; b++) for (let a = -r; a <= r; a++) { const v = lum(i + a, j + b); if (v !== null) { s += f(v); n++; } } return n ? s / n : 0; };
+  // eyes
+  let best = null;
+  const r = Math.max(1, Math.round(.012 * hh / st)), R = 3 * r;
+  // eyes sit in the lower part of the head box (a hat, a bun or tall ears lift its top)
+  for (let j = J(chin.y + .2 * hh); j < J(chin.y + .65 * hh); j++) for (let i = I(cx + .09 * hh); i < nx - R; i++) {   // not the shadow by the nose bridge
+    const mi = I(2 * cx - X(i));
+    const dA = win(i, j, r, (v) => skinL - v), dB = win(mi, j, r, (v) => skinL - v);
+    if (dA < .12 || dB < .12) continue;
+    let brA = 0, brB = 0;
+    for (let b = -R; b <= R; b += 2) for (let a = -R; a <= R; a += 2) {
+      const va = lum(i + a, j + b), vb = lum(mi + a, j + b);
+      if (va !== null) brA = Math.max(brA, va); if (vb !== null) brB = Math.max(brB, vb);
+    }
+    // an eye is set in skin: around it most of a ring is skin-coloured (hair and hats are not)
+    // (rings of three sizes: a big cartoon eye fills the small one)
+    let ringOk = false;
+    for (const k of [2.2, 3.5, 5]) {
+      let skA = 0, skB = 0;
+      for (let t = 0; t < 16; t++) {
+        const a = Math.round(Math.cos(t / 16 * 2 * Math.PI) * k * R), b = Math.round(Math.sin(t / 16 * 2 * Math.PI) * .65 * k * R);
+        const ca = j + b >= 0 && j + b < ny && i + a >= 0 && i + a <= nx ? C[j + b][i + a] : null;
+        const cb = j + b >= 0 && j + b < ny && mi + a >= 0 && mi + a <= nx ? C[j + b][mi + a] : null;
+        skA += dist(ca) < .14; skB += dist(cb) < .14;
+      }
+      if (Math.min(skA, skB) >= 6) { ringOk = true; break; }
+    }
+    if (!ringOk) continue;
+    const s = Math.min(dA, dB) + .5 * Math.min(brA - skinL, brB - skinL);
+    if (!best || s > best.s) best = { s, i, j };
+  }
+  if (!best) return null;
+  const ex = X(best.i), ey = Y(best.j), ipd = 2 * (ex - cx);
+  // refine the pupil: the darkest spot around the pick
+  let pi = best.i, pj = best.j, pd = -Infinity;
+  for (let b = -2 * r; b <= 2 * r; b++) for (let a = -2 * r; a <= 2 * r; a++) { const d = win(best.i + a, best.j + b, Math.max(1, r >> 1), (v) => -v); if (d > pd) { pd = d; pi = best.i + a; pj = best.j + b; } }
+  const off = (i, j) => { const c = j >= 0 && j < ny && i >= 0 && i <= nx ? C[j][i] : null; return dist(c) > .14; };
+  const reach = (di, dj, max) => { let k = 1, miss = 0; for (; k < max; k++) { if (off(pi + di * k, pj + dj * k)) miss = 0; else if (++miss >= 2) return k - 2; } return max; };
+  const maxH = Math.round(.42 * ipd / st), maxV = Math.round(.3 * ipd / st);
+  const kin = reach(-1, 0, maxH), kout = reach(1, 0, maxH), ktop = reach(0, 1, maxV), kbot = reach(0, -1, maxV);
+  const eye = { c: [X(pi), Y(pj)], in: [X(pi - kin), Y(pj)], out: [X(pi + kout), Y(pj)], top: [X(pi + Math.round((kout - kin) / 2)), Y(pj + ktop)], bot: [X(pi + Math.round((kout - kin) / 2)), Y(pj - kbot)] };
+  // mouth: the darkest row across the middle, between under the eyes and the chin
+  const halfW = Math.max(2, Math.round(.3 * ipd / st));
+  // per column: how much darker the darkest of rows j-2..j+2 is than the skin a little above and below it (local
+  // contrast: no global skin reference, a curved smile line still counts); the mouth is the most contrasted row
+  const gap = Math.max(4, Math.round(.12 * ipd / st));
+  const contrast = (i, j) => {
+    let m = null; for (let b = -2; b <= 2; b++) { const v = lum(i, j + b); if (v !== null) m = m === null ? v : Math.min(m, v); }
+    const up = lum(i, j + gap), dn = lum(i, j - gap);
+    if (m === null || up === null || dn === null) return 0;
+    return Math.min(up, dn) - m;
+  };
+  let mj = -1, md = -1;
+  for (let j = J(ey - .3 * ipd); j > J(chin.y); j--) {
+    let s = 0, n = 0;
+    for (let a = -halfW; a <= halfW; a++) { s += contrast(I(cx) + a, j); n++; }
+    if (s / n > md) { md = s / n; mj = j; }
+  }
+  if (mj >= 0) {   // the darkest single row at that place
+    let bd = Infinity, bj = mj;
+    for (let b = -2; b <= 2; b++) { let s = 0, n = 0; for (let a = -halfW; a <= halfW; a++) { const v = lum(I(cx) + a, mj + b); if (v !== null) { s += v; n++; } } if (n && s / n < bd) { bd = s / n; bj = mj + b; } }
+    mj = bj;
+  }
+  if (mj < 0 || md < .03) return { eye, mouth: null, ipd };
+  // follow the line outward from the middle: in each column the darkest row near the last one
+  const line = [[I(cx), mj]];
+  let cj = mj, cornerI = I(cx);
+  for (let i = I(cx) + 1; i < nx - 1 && X(i) < cx + .8 * ipd; i++) {
+    let bj = cj, bd = -1;
+    for (let b = -2; b <= 2; b++) { const v = contrast(i, cj + b); if (v > bd) { bd = v; bj = cj + b; } }
+    if (bd < .3 * md) break;
+    cj = bj; cornerI = i; line.push([i, bj]);
+  }
+  const mid = line[Math.floor(line.length / 2)];
+  return { eye, ipd, mouth: { c: [cx, Y(mj)], corner: [X(cornerI), Y(cj)], mid: [X(mid[0]), Y(mid[1])] } };
+}
+$('faceAuto').onclick = () => {
+  if (S.phase !== 'edit') return;
+  const f = faceAutoFind();
+  if (!f || !f.mouth) { $('hint').hidden = false; $('hint').textContent = 'Не удалось найти ' + (f ? 'рот' : 'глаза') + ' по текстуре — разметьте лицо кликами.'; return; }
+  pushUndo();
+  const F = {}, put = (k, p) => { F[k] = [p[0], p[1], skinZ(p[0], p[1], 0)]; };
+  put('eye_L', f.eye.c); put('mouth_c', f.mouth.c); put('mouth_corner_L', f.mouth.corner); put('mouth_mid_L', f.mouth.mid);
+  if ($('faceEyes').checked) { put('eye_in_L', f.eye.in); put('eye_top_L', f.eye.top); put('eye_out_L', f.eye.out); put('eye_bot_L', f.eye.bot); }
+  if (!S.sym) {   // the other side mirrored; the user moves it where the model is not symmetric
+    for (const k of Object.keys(F)) if (k.endsWith('_L')) { const p = mirror(V(F[k])); put(k.slice(0, -1) + 'R', [p.x, p.y]); }
+  }
+  S.face = F; deriveFace(); faceMode = null; refreshAll(); sync();
+  if (!ovalMode) $('ovalBtn').click();
+  $('hint').hidden = false; $('hint').textContent = 'Точки лица найдены автоматически — проверьте глаза, края век и уголки рта и поправьте стрелками.';
+};
 $('faceStart').onclick = () => {
   if (S.phase !== 'edit') return;
   S.face = {}; faceMode = { cur: 'eye_L', eyes: $('faceEyes').checked }; select(null); faceView();
