@@ -680,27 +680,12 @@ def build(C):
     sc.render.bake.max_ray_distance = 0.4 * W
     sc.render.bake.margin = 8
     imgs = {}
-    # no normal-map bake: tangent-space normals baked selected-to-active came out patchy per triangle; the relief
-    # is in the geometry itself (the mask follows the surface)
-    # the colour is baked as emission of the base colour: the DIFFUSE colour pass is base x (1 - metallic), which came
-    # out darker than the old texture on Tripo's slightly metallic skin and left a line at the mask edge
-    swaps = []
-    for m in {s_.material for s_ in src.material_slots if s_.material and s_.material.use_nodes}:
-        nt_ = m.node_tree
-        out = next((n for n in nt_.nodes if n.type == "OUTPUT_MATERIAL" and n.is_active_output), None)
-        bsdf_ = next((n for n in nt_.nodes if n.type == "BSDF_PRINCIPLED"), None)
-        if out is None or bsdf_ is None:
-            continue
-        old = [l_.from_socket for l_ in out.inputs["Surface"].links]
-        em = nt_.nodes.new("ShaderNodeEmission")
-        bc = bsdf_.inputs["Base Color"]
-        if bc.links:
-            nt_.links.new(bc.links[0].from_socket, em.inputs["Color"])
-        else:
-            em.inputs["Color"].default_value = bc.default_value
-        nt_.links.new(em.outputs["Emission"], out.inputs["Surface"])
-        swaps.append((nt_, out, old, em))
-    for name, btype, colour in (("color", "EMIT", True), ("rough", "ROUGHNESS", False)):
+    # tangent-space normal map baked from the old surface (its own normal map + the relief the relaxed mesh lost)
+    passes = [("color", "EMIT", True), ("rough", "ROUGHNESS", False)]
+    if job.get("bake_normal", True):   # the old skin's relief (its normal map + the detail the new mesh smooths away)
+        passes.append(("normal", "NORMAL", False))
+        sc.render.bake.normal_space = "TANGENT"
+    for name, btype, colour in passes:
         img = bpy.data.images.new("face_mask_" + name, res_px, res_px, alpha=False, float_buffer=False)
         if not colour:
             img.colorspace_settings.name = "Non-Color"
@@ -724,6 +709,10 @@ def build(C):
     nt.links.new(tc.outputs["Color"], bsdf.inputs["Base Color"])
     tr = nt.nodes.new("ShaderNodeTexImage"); tr.image = imgs["rough"]
     nt.links.new(tr.outputs["Color"], bsdf.inputs["Roughness"])
+    if "normal" in imgs:
+        tn = nt.nodes.new("ShaderNodeTexImage"); tn.image = imgs["normal"]
+        nm = nt.nodes.new("ShaderNodeNormalMap")
+        nt.links.new(tn.outputs["Color"], nm.inputs["Color"]); nt.links.new(nm.outputs["Normal"], bsdf.inputs["Normal"])
     me.materials.append(mm)
     for ob in (src, tgt):
         d = ob.data
