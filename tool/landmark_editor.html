@@ -159,6 +159,7 @@
       <div class="row"><button id="wPoints" title="Клик по вещи ставит точку; тяните её — поверхность вокруг потянется">Точки</button><button id="wDel" title="Убрать выбранную точку (Delete)">Убрать</button><button id="wDelAll">Все точки</button></div>
       <label>Радиус точки <input type="range" id="wRad" min="0.05" max="1" step="0.01" value="0.25"></label>
       <div class="row"><button id="wReset">Сбросить</button><button id="wApply" class="primary">Надеть</button></div>
+      <div class="row"><button id="wCheck" title="Согнуть руки и ноги: надетая вещь должна идти за телом">Поза проверки</button><button id="wRest" title="Вернуть позу покоя">Сбросить позу</button></div>
       <div class="small" id="wStatus">Выберите файл вещи.</div>
     </div>
     <div class="mouse" id="mouseHelp" hidden>
@@ -1794,7 +1795,7 @@ let mixer = null, clips = [], action = null, playing = false; const clock = new 
 function stopClip() { if (action) action.stop(); action = null; playing = false; $('pPlay').textContent = '▶ Анимация'; }
 let pendingMove = null;
 canvas.addEventListener('pointermove', (e) => {
-  if (!poseOn) return;
+  if (!poseOn || wearOn) return;   // the armour mode picks the armour, not the bones
   if (pendingMove) { pendingMove = e; return; }
   pendingMove = e;
   requestAnimationFrame(() => {
@@ -2137,6 +2138,10 @@ async function wearMode(on) {
   wearOn = on; document.body.classList.toggle('wear', on);
   $('wearPanel').hidden = !on; wearGroup.visible = on && !!wear && !(wear && wear.fitted && wear.fittedShown);
   if (wear && wear.fitted) wear.fitted.visible = on;
+  // only the armour tools: no bones, no bone highlight, no pose bar (the pose check has its two buttons in the panel)
+  if (skelHelp) skelHelp.visible = !on && poseOn;
+  $('poseBar').hidden = on || !poseOn;
+  hoverId = dragId = null; poseHighlight();
   if (!on) tcW.detach();
 }
 function wearGizmo(mode) {
@@ -2201,6 +2206,8 @@ $('wGap').addEventListener('input', () => { if (wear && wearAuto()) wearDraw(); 
 $('wMove').onclick = () => wearGizmo('translate'); $('wRot').onclick = () => wearGizmo('rotate'); $('wScale').onclick = () => wearGizmo('scale');
 $('wReset').onclick = () => { if (wear && wearAuto()) wearDraw(); };
 $('wApply').onclick = wearApply;
+$('wCheck').onclick = () => { tcW.detach(); $('pCheck').onclick(); };
+$('wRest').onclick = () => { poseReset(); poseHighlight(); };
 $('wPoints').onclick = () => { if (!wear) return; wear.points = !wear.points; $('wPoints').classList.toggle('on', wear.points);
   if (!wear.points) wearSelect(-1); else { tcW.detach(); for (const id of ['wMove', 'wRot', 'wScale']) $(id).classList.remove('on'); }
   $('wStatus').textContent = wear.points ? 'Кликните по вещи — появится точка; тяните её стрелками, вокруг потянется поверхность.' : ''; };
