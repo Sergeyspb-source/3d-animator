@@ -939,6 +939,15 @@ def smooth_key(o, name, passes=40):
                     new[k] = disp[k].lerp(sum((disp[j] for j in nb), Vector()) / len(nb), 0.8)
             disp.update(new)
     report["jawOpen_folds_left"] = left
+    # the eyes stay out of it: on a cartoon face the eyes sit close to the mouth, and the smoothed jaw motion pulled
+    # the lower lids down off the eyeballs. Nothing moves from the lower lids up, fading in over 0.35 W below them.
+    lids = [bl(q).z for sd in "LR" for q in (job.get("eye_rim_" + sd) or [])[3:4] if q]
+    if lids:
+        z_lid, band = min(lids) - 0.05 * W, 0.35 * W
+        for k in disp:
+            t = (z_lid - bpos0[k].z) / band
+            if t < 1:
+                disp[k] = disp[k] * max(0.0, t) ** 2 * (3 - 2 * max(0.0, t))
     for i in range(n):
         kb.data[i].co = base.data[i].co + disp[key[i]]
     return len(free)

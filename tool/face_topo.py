@@ -125,8 +125,25 @@ def build(C):
         az, el = u / R0, v / R0
         return Vector((math.sin(az) * math.cos(el), -math.cos(az) * math.cos(el), math.sin(el)))
 
+    def outer_hit(o, d, far):
+        """the outermost surface within 0.3 ipd of the first one along the ray: the first exit may be the floor of a
+        nostril or the lid under an overhanging brow, which left pits and tears in the mask; a lock of hair lies
+        farther out"""
+        h = skin_bvh.ray_cast(o, d, far)
+        if h[0] is None:
+            return h
+        best, p = h, h[0] + d * (W * 1e-4)
+        for _ in range(6):
+            h2 = skin_bvh.ray_cast(p, d, far)
+            if h2[0] is None or (h2[0] - h[0]).length > 0.3 * ipd:
+                break
+            if h2[1].dot(d) > 0:   # leaving the solid outward: a skin surface
+                best = h2
+            p = h2[0] + d * (W * 1e-4)
+        return best
+
     def ray_rad(u, v):
-        return skin_bvh.ray_cast(C, dir_of(u, v), ipd * 6)
+        return outer_hit(C, dir_of(u, v), ipd * 6)
 
     last_r = [R0]
 
@@ -235,10 +252,15 @@ def build(C):
             if q3 is not None:
                 must.append(to_uv(q3))
     # ------------------------------------------------------------ mask outline (front view x, z)
-    # the skin colour (nose, cheeks, brow skin; median): hair painted on the same surface is told by it
+    # the skin colour (median of the nose, the cheeks, beside the mouth corners and under the lower lip - places hair
+    # seldom covers; samples over the brows hit the locks across an anime face): hair on the same surface is told by it
     refs = []
-    for dx, dz in ((0, -0.35), (-0.45, -0.45), (0.45, -0.45), (-0.3, 0.45), (0.3, 0.45), (0, 0.5)):
-        hq = skin_bvh.ray_cast(Vector(((EL.x + ER.x) / 2 + dx * ipd, ymin - W * 20, (EL.z + ER.z) / 2 + dz * ipd)), Vector((0, 1, 0)), W * 80)
+    emx, emz = (EL.x + ER.x) / 2, (EL.z + ER.z) / 2
+    spots = [(emx, emz - 0.35 * ipd), (emx - 0.45 * ipd, emz - 0.45 * ipd), (emx + 0.45 * ipd, emz - 0.45 * ipd),
+             (M.x + 0.75 * (x1 - x0), M.z), (M.x - 0.75 * (x1 - x0), M.z), (M.x, line_z(M.x) - 0.35 * W),
+             (emx, (emz + M.z) / 2)]
+    for sx_, sz_ in spots:
+        hq = skin_bvh.ray_cast(Vector((sx_, ymin - W * 20, sz_)), Vector((0, 1, 0)), W * 80)
         cq = colour_at(hq[0], hq[2]) if hq[0] is not None else None
         if cq is not None:
             refs.append(cq)
@@ -269,7 +291,7 @@ def build(C):
             for k in range(1, 41):     # the farthest point where the skin still faces forward (dips inside are fine)
                 f_ = k / 40
                 x, z = cx_uv + hx * c * r * f_, mz + hz * sn * r * f_
-                h = ray_rad(x, z)
+                h = skin_bvh.ray_cast(C, dir_of(x, z), ipd * 6)   # the skin itself, not a strand lying over it
                 if h[0] is None:
                     break
                 q_ = h[0]
@@ -355,12 +377,19 @@ def build(C):
         # taken for skin and cut into the mask edge
         # ... and in the mouth, where the lips overhang a half-open mouth's painted teeth
         in_mouth = abs(c.x - cx) < half * 1.45 and line_z(c.x) - 2.6 * hl < c.z < line_z(c.x) + max(2.6 * hu, HU)
-        if not in_mouth and not any(abs(c.x - e.x) < 0.6 * ipd and e.z - 0.1 * ipd < c.z < e.z + 0.8 * ipd for e in (EL, ER)):
-            return False
+        zoned = in_mouth or any(abs(c.x - e.x) < 0.6 * ipd and e.z - 0.1 * ipd < c.z < e.z + 0.8 * ipd for e in (EL, ER))
         d = c - C
         h = skin_bvh.ray_cast(C, d.normalized(), d.length)
         if h[0] is None or d.length - (h[0] - C).length > 0.6 * ipd:
             return False
+        if not zoned:
+            # elsewhere (the nose over its nostrils, a heavy brow) hidden skin goes when it is skin-coloured; a thick
+            # lock of hair over the cheek is not
+            if skin_col is None:
+                return False
+            hq = skin_bvh.find_nearest(c)
+            cq = colour_at(hq[0], hq[2]) if hq[0] is not None else None
+            return cq is not None and (cq - skin_col).length <= 0.2
         f.normal_update()
         n = (fw.to_3x3() @ f.normal).normalized()
         if n.length < 0.5:
@@ -397,6 +426,37 @@ def build(C):
                 pass
     kill = [f for f in bm.faces if in_mask(fw @ f.calc_center_median()) and skin_face(f)]
     bmesh.ops.delete(bm, geom=kill, context="FACES")
+    # scraps of the old surface left wholly inside the mask (a nostril wing, a shred of a brow ridge) would float over
+    # the new skin. Hair is never such an island: a lock across the face goes on to the hair outside the mask.
+    # Connectivity over vertices welded by position (glTF splits them along UV seams).
+    q_ = W * 1e-4
+    vkey = {v: tuple(round(c / q_) for c in v.co) for v in bm.verts}
+    owner = {}
+    parent = list(range(len(bm.faces)))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+    faces_ = list(bm.faces)
+    for i, f in enumerate(faces_):
+        for v in f.verts:
+            k = vkey[v]
+            if k in owner:
+                ra, rb = find(i), find(owner[k])
+                if ra != rb:
+                    parent[ra] = rb
+            else:
+                owner[k] = i
+    inside_ = [in_mask(fw @ f.calc_center_median()) for f in faces_]
+    comp_out = {}
+    for i in range(len(faces_)):
+        r_ = find(i)
+        comp_out[r_] = comp_out.get(r_, False) or not inside_[i]
+    scraps = [f for i, f in enumerate(faces_) if not comp_out[find(i)]]
+    bmesh.ops.delete(bm, geom=scraps, context="FACES")
+    report["mask_scraps_removed"] = len(scraps)
     bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context="VERTS")
     rim = [v for v in rim if v.is_valid]
     bmesh.ops.remove_doubles(bm, verts=rim, dist=W * 2e-4)     # UV-seam twins on the rim become one vertex
@@ -541,10 +601,12 @@ def build(C):
         return f
     for f in faces2:
         make([verts_of[i] for i in f])
+    slit_made = [0, 0]
     for i in range(NM // 2):
-        make([U[i], U[i + 1], MR[1][i + 1], MR[1][i]])
+        slit_made[0] += make([U[i], U[i + 1], MR[1][i + 1], MR[1][i]]) is not None
     for i in range(NM // 2, NM):
-        make([D[i], D[i + 1], MR[1][(i + 1) % NM], MR[1][i]])
+        slit_made[1] += make([D[i], D[i + 1], MR[1][(i + 1) % NM], MR[1][i]]) is not None
+    report["mask_slit_faces"] = slit_made
     for k in range(1, 4):
         for i in range(NM):
             make([MR[k][i], MR[k][(i + 1) % NM], MR[k + 1][(i + 1) % NM], MR[k + 1][i]])
@@ -599,8 +661,16 @@ def build(C):
                     v[tag] = nid; nid += 1
                 ids[name].append(v[tag])
         dkeys = sorted(D)
+        pos_of = {v[tag]: v.co.copy() for name in keep_lists for v in keep_lists[name]}
         bmesh.ops.subdivide_edges(bm, edges=edges, cuts=levels, use_grid_fill=True, use_only_quads=False)
-        by_tag = {v[tag]: v for v in bm.verts if v[tag]}
+        # subdivide_edges copies the int layer onto the new vertices of a cut edge, so a tag is not unique any more:
+        # the kept vertex is the one still at its old position (the lower slit got new vertices on the neck)
+        by_tag = {}
+        for v in bm.verts:
+            t = v[tag]
+            if t and (t not in by_tag or (v.co - pos_of[t]).length < (by_tag[t].co - pos_of[t]).length):
+                by_tag[t] = v
+        report["mask_tag_clashes"] = sum(1 for v in bm.verts if v[tag]) - len(by_tag)
         U = [by_tag[t] for t in ids["U"]]
         D = {k: by_tag[t] for k, t in zip(dkeys, ids["D"])}
         rim = [by_tag[t] for t in ids["rim"]]
@@ -625,7 +695,7 @@ def build(C):
             v.co = t
         for v in movable:   # back onto the original surface along the ray from the centre
             d = (fw @ v.co) - C
-            h = skin_bvh.ray_cast(C, d.normalized(), ipd * 6)
+            h = outer_hit(C, d.normalized(), ipd * 6)
             if h[0] is not None:
                 v.co = finv @ h[0]
     for v in movable:       # skin weights where the point ended up

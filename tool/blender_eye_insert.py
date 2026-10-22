@@ -198,7 +198,9 @@ for side, spec in job["sides"].items():
     cx = sum(p.x for p in curve) / len(curve); cz = sum(p.z for p in curve) / len(curve)
     width = max(p.x for p in curve) - min(p.x for p in curve)
     if face is None:   # the mesh that holds the eye region
-        face = max(meshes, key=lambda o: sum(1 for v in o.data.vertices if ((o.matrix_world @ v.co) - Vector((cx, rim3[0].y, cz))).length < width * 2))
+        # the skin, not the mouth parts the cut put inside (on a small face the teeth lie within reach of the eye)
+        skins = [o for o in meshes if not o.name.startswith(("Teeth_", "Gum_", "Tongue", "MouthCavity", "Eye"))] or meshes
+        face = max(skins, key=lambda o: sum(1 for v in o.data.vertices if ((o.matrix_world @ v.co) - Vector((cx, rim3[0].y, cz))).length < width * 2))
         fw = face.matrix_world
     # the painted surface in front of the aperture centre (before cutting)
     face.data.calc_loop_triangles()
@@ -211,11 +213,13 @@ for side, spec in job["sides"].items():
     front_y = hit[0].y if hit[0] is not None else 0.0
     rim_surf = []
     for p in curve:
+        if job.get("open_rim"):   # the opening is cut already: a ray right on the rim may pass through the hole
+            p = Vector((cx, p.y, cz)) + (p - Vector((cx, p.y, cz))) * 1.08
         h = bvh.ray_cast(Vector((p.x, ymin - width * 20, p.z)), Vector((0, 1, 0)), width * 80)
         if h[0] is not None:
             rim_surf.append(h[0])
     if len(rim_surf) < len(curve) * 0.7:
-        fail(f"контур глаза {side} выходит за модель")
+        fail(f"контур глаза {side} выходит за модель ({len(rim_surf)} из {len(curve)} точек на поверхности)")
     if job.get("open_rim"):   # face retopology left a clean hole: the eyelid edge sets the depth, nothing is cut
         front_y = sum(p.y for p in rim_surf) / len(rim_surf) - width * 0.06
     # cut: delete faces in front of the eye whose centre is inside the outline
