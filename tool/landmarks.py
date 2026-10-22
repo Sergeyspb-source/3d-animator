@@ -56,6 +56,47 @@ def source_path(upload, asset, export_dir):
     return None
 
 
+def clean_glb(src: Path) -> Path:
+    """A GLB the editor and Blender can read as a plain mesh. Tripo's own auto-rig ships inverse bind matrices of
+    garbage (1e32): three.js and Blender skin the mesh with them and it explodes. The old rig is rebuilt anyway, so
+    the skins go (the vertices are stored in the rest pose), and so do stray helper meshes (Tripo leaves a 42-vertex
+    unit icosphere at the origin, which would set the model's size). Returns src itself when nothing needs cleaning."""
+    import struct
+    import tempfile
+    if src.suffix.lower() != ".glb":
+        return src
+    b = src.read_bytes()
+    if b[:4] != b"glTF":
+        return src
+    n = struct.unpack("<I", b[12:16])[0]
+    j = json.loads(b[20:20 + n])
+    counts = {}
+    for mi, m in enumerate(j.get("meshes", [])):
+        counts[mi] = sum(j["accessors"][p["attributes"]["POSITION"]]["count"] for p in m["primitives"] if "POSITION" in p["attributes"])
+    big = max(counts.values(), default=0)
+    stray = [nd for nd in j.get("nodes", []) if "mesh" in nd and counts.get(nd["mesh"], 0) < 200 and big > 5000]
+    if not j.get("skins") and not stray:
+        return src
+    for nd in j.get("nodes", []):
+        nd.pop("skin", None)
+    for nd in stray:
+        nd.pop("mesh")
+    j.pop("skins", None)
+    j.pop("animations", None)
+    for m in j.get("meshes", []):
+        for p in m["primitives"]:
+            for k in [k for k in p["attributes"] if k.startswith(("JOINTS_", "WEIGHTS_"))]:
+                p["attributes"].pop(k)
+    js = json.dumps(j, separators=(",", ":")).encode("utf-8")
+    js += b" " * (-len(js) % 4)
+    rest = b[20 + n:]
+    out = Path(tempfile.gettempdir()) / "sf3d_clean" / f"{src.stem}_{int(src.stat().st_mtime)}.glb"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    body = struct.pack("<II", len(js), 0x4E4F534A) + js + rest
+    out.write_bytes(b"glTF" + struct.pack("<II", 2, 12 + len(body)) + body)
+    return out
+
+
 def output_paths(src: Path, export_dir) -> tuple[Path, Path]:
     """(<name>_landmarks_rigged.glb, <name>_landmarks.json): next to an exported model, else export/character/<name>/."""
     export_dir = Path(export_dir).resolve()
@@ -92,7 +133,7 @@ def editor_page(src: Path, state: dict | None, rigged: Path | None = None, mode:
             "clips": face_clips(rigged) if rigged and Path(rigged).exists() else []}
     # </script> inside JSON would end the tag early
     return (page.replace("@@DATA@@", json.dumps(data, ensure_ascii=False).replace("</", "<\\/"))
-                .replace("@@GLB@@", base64.b64encode(src.read_bytes()).decode("ascii")))
+                .replace("@@GLB@@", base64.b64encode((src if mode == "view" else clean_glb(src)).read_bytes()).decode("ascii")))
 
 
 def viewable(src: Path, cfg) -> tuple[Path, dict]:
@@ -183,7 +224,7 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=T
     final, saved = output_paths(src, cfg["export_dir"])
     work = Path(cfg["work_dir"]) / "landmark_rig" / (src.stem + "_" + datetime.now().strftime("%Y%m%d_%H%M%S"))
     work.mkdir(parents=True, exist_ok=True)
-    job = {"source": str(src), "out_dir": str(work), "landmarks": landmarks, "names": bone_names(naming)}
+    job = {"source": str(clean_glb(src)), "out_dir": str(work), "landmarks": landmarks, "names": bone_names(naming)}
     (work / "job.json").write_text(json.dumps(job, ensure_ascii=False, indent=1), encoding="utf-8")
     yield "Blender: строю скелет и считаю веса (около минуты)…"
     with (work / "blender.log").open("w", encoding="utf-8") as log:
