@@ -709,17 +709,32 @@ for o in parts:
 groups = {"upper": [o for o in parts if o.name.startswith(("Teeth_Upper", "Gum_Upper"))],
           "lower": [o for o in parts if not o.name.startswith(("Teeth_Upper", "Gum_Upper"))]}
 pushed = {}
+# against the skin as rebuilt (the relaxed face mask sits a little inside the old lips: a gum behind the old skin
+# poked through the new lower lip) as well as the old one
+face.data.calc_loop_triangles()
+_bvh_now = BVHTree.FromPolygons([fw @ v.co for v in face.data.vertices], [tuple(t.vertices) for t in face.data.loop_triangles])
+
+
+def skin_y_now(x, z):
+    h = _bvh_now.ray_cast(Vector((x, _ymin - W * 20, z)), Vector((0, 1, 0)), W * 80)
+    a_ = skin_y(x, z)
+    if h[0] is None or a_ is None:
+        return a_
+    # through the cut opening the ray finds the back of the mouth: only a surface close to the old skin counts
+    return max(a_, h[0].y) if h[0].y - a_ < 0.15 * W else a_
+
+
 for gname, objs in groups.items():
     lift = 0.045 * W if gname == "lower" else 0.0
     need = 0.0
     for o in objs:
-        for v in list(o.data.vertices)[::3]:
+        for v in o.data.vertices:
             p = o.matrix_world @ v.co + Vector((0, 0, lift if not o.name.startswith("Tongue") else 0.0))
             # upper row against the skin above the slit, lower row below it: fang tips that hang past the line may
             # show over the other lip, as on a real fanged mouth
             if (gname == "upper" and side(p) < 0.02 * W) or (gname == "lower" and side(p) > -0.02 * W):
                 continue
-            sy = skin_y(p.x, p.z)
+            sy = skin_y_now(p.x, p.z)
             if sy is not None:
                 need = max(need, sy + 0.03 * W - p.y)
     need = min(need, 1.5 * W)
@@ -1002,8 +1017,39 @@ def k_lip(dz, upper_side):
     return f
 
 
+def k_frown(o, v, p):   # corners down and a little in, the chin skin under them bunches a little
+    w = max(corner_fall(p, CL, 0.5 * W), corner_fall(p, CR, 0.5 * W))
+    if w <= 0:
+        return None
+    sx = 1 if p.x > cx else -1
+    return p + Vector((-sx * 0.03 * W, 0.0, -0.12 * W)) * w
+
+
+_roll_verts = None
+
+
+def k_press(o, v, p):   # lips pressed together and thinned: each lip toward the slit, rolled in a little
+    global _roll_verts
+    if _roll_verts is None:   # the rolled-in lip stays (moving it showed more of the pink roll between the lips)
+        mi = {j for j, m in enumerate(o.data.materials) if m and m.name.startswith("lip_inner")}
+        _roll_verts = {i for pl in o.data.polygons if pl.material_index in mi for i in pl.vertices}
+    if v.index in _roll_verts:
+        return None
+    w = lip_fall(p, 0.4 * W)
+    w *= min(1.0, min((p - CL).length, (p - CR).length) / (0.3 * W)) ** 2   # the corners stay: they opened a hole
+    if w <= 0:
+        return None
+    d = side(p)
+    if abs(d) < 0.04 * W:   # the slit edges stay shut (right at the line the side sign is noise: they spread apart)
+        return None
+    w *= min(1.0, (abs(d) - 0.04 * W) / (0.08 * W))
+    toward = -0.35 * d * min(1.0, 0.25 * W / max(abs(d), 1e-9))   # at most a quarter of the lip height
+    return p + Vector((0, 0, toward)) * w
+
+
 for name, fn in (("mouthSmile", k_smile), ("mouthStretch", k_stretch), ("mouthFunnel", k_round(0.06, 0.18)),
-                 ("mouthPucker", k_round(0.09, 0.35)), ("mouthUpperUp", k_lip(0.06, True)), ("mouthLowerDown", k_lip(-0.07, False))):
+                 ("mouthPucker", k_round(0.09, 0.35)), ("mouthUpperUp", k_lip(0.06, True)), ("mouthLowerDown", k_lip(-0.07, False)),
+                 ("mouthFrown", k_frown), ("mouthPress", k_press)):
     add_key(face, name, fn)
 
 

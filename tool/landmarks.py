@@ -154,7 +154,8 @@ def editor_page(src: Path, state: dict | None, rigged: Path | None = None, mode:
             "rigged": Path(rigged).resolve().as_posix() if rigged and Path(rigged).exists() else None,
             "rigged_v": int(Path(rigged).stat().st_mtime) if rigged and Path(rigged).exists() else 0,
             "names": {"mixamo": bone_names("mixamo"), "godot": bone_names("godot")},
-            "clips": face_clips(rigged) if rigged and Path(rigged).exists() else []}
+            "clips": face_clips(rigged) if rigged and Path(rigged).exists() else [],
+            "emotions": emotion_presets() if rigged and Path(rigged).exists() else []}
     # </script> inside JSON would end the tag early
     return (page.replace("@@DATA@@", json.dumps(data, ensure_ascii=False).replace("</", "<\\/"))
                 .replace("@@GLB@@", base64.b64encode((src if mode == "view" else clean_glb(src)).read_bytes()).decode("ascii")))
@@ -180,6 +181,28 @@ def viewable(src: Path, cfg) -> tuple[Path, dict]:
     if not info["meshes"]:
         raise RuntimeError("В FBX только скелет и анимация, модели нет. В Mixamo скачайте с параметром With Skin.")
     return dst, info
+
+
+EMOTION_RU = {"calm": "спокойствие", "dry": "сухо", "smirk": "ухмылка", "firm": "твёрдо", "excited": "воодушевление",
+              "awe": "восхищение", "mesmerized": "заворожён", "nervous": "нервозность", "nervous_laugh": "нервный смех",
+              "puzzled": "недоумение", "hushed": "шёпотом", "fear": "страх", "fear_freeze": "оцепенение",
+              "terror": "ужас", "shout": "крик", "alarm": "тревога", "pain": "боль", "sobbing": "рыдание",
+              "hysterical": "истерика", "breathless": "запыхался", "strain": "напряжение", "weak": "слабость",
+              "stunned": "ошеломлён"}
+
+
+def emotion_presets():
+    """[{name, label, keys: {ARKit control: value}}] from the vendored lipsync.py, the same offsets the game's lip
+    sync adds per emotion (paired names already split into Left/Right); [] when the script cannot be read."""
+    import importlib.util
+    try:
+        spec = importlib.util.spec_from_file_location("sf3d_lipsync_presets", ROOT / "vendor" / "lipsync" / "lipsync.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return [{"name": k, "label": EMOTION_RU.get(k, k), "keys": mod.expand(v.get("offsets", {}))}
+                for k, v in mod.EMOTION_PRESETS.items()]
+    except Exception:
+        return []
 
 
 def face_clips(rigged: Path):

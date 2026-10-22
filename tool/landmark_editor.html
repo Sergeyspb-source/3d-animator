@@ -150,6 +150,7 @@
     <div class="posebar" id="poseBar" hidden>
       <button id="pReset">Сбросить позу</button><button id="pCheck">Поза проверки</button><button id="pSquat">Присед</button><button id="pFist">Кулак</button><button id="pJaw">Открыть рот</button>
       <select id="pClipFace" hidden title="Реплики липсинка рядом с моделью"></select><button id="pSay" hidden>▶ Реплика</button>
+      <select id="pEmo" hidden title="Эмоция: те же смещения бровей, век и рта, что добавляет игровой липсинк"></select><input type="range" id="pEmoV" min="0" max="2" step="0.05" value="1" hidden style="width:80px" title="Сила эмоции (1 — как в игре)">
       <select id="pMorph" hidden title="Ключи формы модели (рот для речи)"></select><input type="range" id="pMorphV" min="0" max="1" step="0.01" value="0" hidden style="width:110px">
       <button id="pWeights" title="Раскрасить модель по весам кости под курсором (как Weight Paint в Blender)">Веса</button>
       <span class="legend" id="pLegend" hidden>0 <i></i> 1</span>
@@ -1532,6 +1533,11 @@ async function loadRigged() {
     $('pMorph').innerHTML = [...morphs].map((k) => `<option>${k}</option>`).join('');
     $('pMorph').hidden = $('pMorphV').hidden = false;
   }
+  const emos = (DATA.emotions || []).filter((e) => [...morphs].some((k) => emoValue(e.keys, k) > 0));
+  if (emos.length) {
+    $('pEmo').innerHTML = '<option value="">эмоция…</option>' + emos.map((e) => `<option value="${e.name}">${e.label}</option>`).join('');
+    $('pEmo').hidden = $('pEmoV').hidden = false;
+  }
   skelHelp = new THREE.SkeletonHelper(poseRoot); skelHelp.material.depthTest = false; skelHelp.material.transparent = true;
   skelHelp.material.opacity = .5; skelHelp.renderOrder = 996; scene.add(skelHelp);
 }
@@ -1703,7 +1709,7 @@ $('pPlay').onclick = () => {
 };
 $('pClip').onchange = () => { if (playing) { stopClip(); $('pPlay').onclick(); } };
 window.sf3dPose = { PB, PINFO, REST, poseMeshes, pickBone, camera, ray, tcO, ovalHelper, S };   // for debugging from the browser console
-$('pReset').onclick = () => { poseReset(); poseHighlight(); };
+$('pReset').onclick = () => { poseReset(); $('pEmo').value = ''; applyEmotion(); poseHighlight(); };
 const FW = new V3(0, 0, 1), UPV = new V3(0, 1, 0), BK = new V3(0, 0, -1);
 $('pCheck').onclick = () => {
   poseReset();
@@ -1740,6 +1746,22 @@ function setMorph(name, v) {
 $('pMorph').onchange = () => { const n = $('pMorph').value; const m = poseMeshes.find((x) => x.morphTargetDictionary && n in x.morphTargetDictionary);
   $('pMorphV').value = m ? m.morphTargetInfluences[m.morphTargetDictionary[n]] : 0; };
 $('pMorphV').oninput = () => setMorph($('pMorph').value, +$('pMorphV').value);
+// an emotion preset on the model's own keys: a key the model has once (mouthSmile) takes the mean of the preset's
+// Left/Right pair, as lipsync_link.py reduces the curves
+function emoValue(keys, k) {
+  if (k in keys) return keys[k];
+  const l = keys[k + 'Left'], r = keys[k + 'Right'];
+  return l === undefined && r === undefined ? 0 : ((l || 0) + (r || 0)) / 2;
+}
+function applyEmotion() {
+  const e = (DATA.emotions || []).find((x) => x.name === $('pEmo').value), f = +$('pEmoV').value;
+  const keys = new Set();
+  for (const m of poseMeshes) if (m.morphTargetDictionary) for (const k of Object.keys(m.morphTargetDictionary)) keys.add(k);
+  for (const k of keys) if (k !== 'jawOpen') setMorph(k, e ? Math.min(1, emoValue(e.keys, k) * f) : 0);
+  const sel = $('pMorph').value, m = poseMeshes.find((x) => x.morphTargetDictionary && sel in x.morphTargetDictionary);
+  if (m) $('pMorphV').value = m.morphTargetInfluences[m.morphTargetDictionary[sel]];
+}
+$('pEmo').onchange = applyEmotion; $('pEmoV').oninput = applyEmotion;
 // with a mouth plate the jawOpen key opens the mouth (as lip sync does); turning the Jaw bone as well would open it
 // twice and leave the plate floating in front of the chin. Without a plate the Jaw bone opens it.
 $('pJaw').onclick = () => {
