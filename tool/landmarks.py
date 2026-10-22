@@ -97,6 +97,30 @@ def clean_glb(src: Path) -> Path:
     return out
 
 
+def godot_scene(glb: Path) -> Path | None:
+    """<stem>.tscn next to the rigged GLB: the model instanced under a Node3D with sf3d_face_rig.gd (blinking on a
+    timer, say(line) for the lip-sync clips saved in the same folder). Paths are relative, so the folder can be
+    copied anywhere into a Godot project. Rewritten on every build (settings go on an instance of it)."""
+    script = ROOT / "godot" / "sf3d_face_rig.gd"
+    if not script.exists():
+        return None
+    stem = re.sub(r"_landmarks_rigged$", "", glb.stem)
+    (glb.parent / script.name).write_bytes(script.read_bytes())
+    node = re.sub(r"\W+", "_", stem).strip("_") or "Character"
+    out = glb.parent / f"{stem}.tscn"
+    out.write_text(f"""[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="{script.name}" id="1"]
+[ext_resource type="PackedScene" path="{glb.name}" id="2"]
+
+[node name="{node}" type="Node3D"]
+script = ExtResource("1")
+
+[node name="Model" parent="." instance=ExtResource("2")]
+""", encoding="utf-8")
+    return out
+
+
 def output_paths(src: Path, export_dir) -> tuple[Path, Path]:
     """(<name>_landmarks_rigged.glb, <name>_landmarks.json): next to an exported model, else export/character/<name>/."""
     export_dir = Path(export_dir).resolve()
@@ -356,9 +380,12 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=T
             yield "Глаза-шары не получились, модель без них: " + fail
     final.parent.mkdir(parents=True, exist_ok=True)
     final.write_bytes(model.read_bytes())
+    scene = godot_scene(final)
     saved.write_text(json.dumps({**landmarks, "source": str(src), "naming": naming}, ensure_ascii=False, indent=1),
                      encoding="utf-8")
-    yield f"Готово: {final}\nРазметка сохранена: {saved.name} (откроется в редакторе в следующий раз)."
+    yield (f"Готово: {final}\nРазметка сохранена: {saved.name} (откроется в редакторе в следующий раз)."
+           + (f"\nСцена для Godot: {scene.name} — модель, моргание и реплики липсинка из этой папки (say(\"имя\"))."
+              if scene else ""))
     yield {"glb": str(final), "landmarks": str(saved), "work": str(work),
            "images": [str(work / n) for n in ("rest.png", "pose_front.png", "pose_side.png", "hand_fist.png", "face_jaw.png")
                       if (work / n).exists()] + [p for p in images_extra if Path(p).exists()]}
