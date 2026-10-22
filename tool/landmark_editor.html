@@ -156,7 +156,7 @@
       <label>Поворот вокруг оси <input type="range" id="wTwist" min="-180" max="180" step="1" value="0"></label>
       <label>Зазор до кожи <input type="range" id="wGap" min="0" max="0.3" step="0.01" value="0.04"></label>
       <div class="row"><button id="wMove" title="Стрелки на вещи: сдвиг (G)">Сдвиг</button><button id="wRot" title="Поворот вокруг середины кости; зелёное кольцо — вокруг своей оси (R)">Поворот</button><button id="wScale" title="Размер: зелёная ось — длина, красная и синяя — толщина (S)">Размер</button></div>
-      <div class="row"><button id="wPoints" title="Клик по вещи ставит точку; тяните её — поверхность вокруг потянется">Точки</button><button id="wDel" title="Убрать выбранную точку (Delete)">Убрать</button><button id="wDelAll">Все точки</button></div>
+      <div class="row"><button id="wPoints" title="Клик по вещи ставит точку; тяните её — поверхность вокруг потянется">Точки</button><button id="wDel" title="Убрать выбранную точку (Delete)">Убрать</button><button id="wDelAll" title="Убрать все точки: вещь вернётся к исходной форме">Убрать все</button></div>
       <label>Радиус точки <input type="range" id="wRad" min="0.05" max="1" step="0.01" value="0.25"></label>
       <div class="row"><button id="wReset">Сбросить</button><button id="wApply" class="primary">Надеть</button></div>
       <div class="row"><button id="wCheck" title="Согнуть руки и ноги: надетая вещь должна идти за телом">Поза проверки</button><button id="wRest" title="Вернуть позу покоя">Сбросить позу</button></div>
@@ -1945,7 +1945,7 @@ tcW.addEventListener('dragging-changed', (e) => { orbit.enabled = !e.value; });
 tcW.addEventListener('objectChange', () => {
   if (!wear) return;
   if (tcW.object === wearPoint && wear.sel >= 0) {   // a surface point dragged: its offset in the piece's own space
-    const h = wear.handles[wear.sel], loc = wearPoint.position.clone().applyMatrix4(wear.M0.clone().invert());
+    const h = wear.handles[wear.sel], loc = wearPoint.position.clone().applyMatrix4(wearCopyM().clone().invert());
     h.d.copy(loc.sub(h.p)); wearDeform(); wearDraw(); return;
   }
   wear.off = wearHelper.position.clone().sub(wear.mid); wearDraw();
@@ -2061,12 +2061,12 @@ function wearDraw() {
   }
   wearGroup.updateMatrixWorld(true);
   if (!tcW.dragging && wear.mid) wearHelper.position.copy(wear.mid.clone().add(wear.off || new V3()));
-  const r = .007 * H / Math.max(1, camera.zoom);   // the surface points, on the first copy
-  wear.handles.forEach((hd, i) => {
+  const r = .011 * H / Math.max(1, camera.zoom);   // the surface points, on every copy
+  for (const { M } of wearMatrices()) wear.handles.forEach((hd, i) => {
     const sp = new THREE.Mesh(sphereGeo, i === wear.sel ? COL.sel : COL.bad); sp.scale.setScalar(r); sp.renderOrder = 999;
-    sp.position.copy(hd.p.clone().add(hd.d).applyMatrix4(wear.M0)); wearGroup.add(sp);
+    sp.position.copy(hd.p.clone().add(hd.d).applyMatrix4(M)); wearGroup.add(sp);
   });
-  if (wear.sel >= 0 && !tcW.dragging && tcW.object === wearPoint) wearPoint.position.copy(wear.handles[wear.sel].p.clone().add(wear.handles[wear.sel].d).applyMatrix4(wear.M0));
+  if (wear.sel >= 0 && !tcW.dragging && tcW.object === wearPoint) wearPoint.position.copy(wear.handles[wear.sel].p.clone().add(wear.handles[wear.sel].d).applyMatrix4(wearCopyM()));
 }
 // surface points: each pulls the piece around it (smooth falloff over its radius), all in the piece's own space,
 // so the mirrored copy and blender_wear_fit.py get the same shape
@@ -2086,25 +2086,30 @@ function wearDeform() {
     a.needsUpdate = true; p.geo.computeVertexNormals(); p.geo.computeBoundingSphere();
   }
 }
+const wearCopyM = () => { const all = wearMatrices(); return (all[wear.selCopy || 0] || all[0]).M; };   // the copy being edited
 function wearPick(e) {   // a click on the first copy: an existing point (by screen distance) or a new one on the surface
   const rc = canvas.getBoundingClientRect();
-  for (let i = 0; i < wear.handles.length; i++) {
-    const h = wear.handles[i], q = h.p.clone().add(h.d).applyMatrix4(wear.M0).project(camera);
-    if (Math.hypot(rc.left + (q.x + 1) / 2 * rc.width - e.clientX, rc.top + (1 - q.y) / 2 * rc.height - e.clientY) < 12) return wearSelect(i);
+  const mats = wearMatrices();
+  for (let c = 0; c < mats.length; c++) for (let i = 0; i < wear.handles.length; i++) {
+    const h = wear.handles[i], q = h.p.clone().add(h.d).applyMatrix4(mats[c].M).project(camera);
+    if (Math.hypot(rc.left + (q.x + 1) / 2 * rc.width - e.clientX, rc.top + (1 - q.y) / 2 * rc.height - e.clientY) < 12) return wearSelect(i, c);
   }
   const n = new THREE.Vector2(((e.clientX - rc.left) / rc.width) * 2 - 1, -((e.clientY - rc.top) / rc.height) * 2 + 1);
   const r = new THREE.Raycaster(); r.setFromCamera(n, camera);
-  const first = wearGroup.children[0]; if (!first) return;
-  const hit = r.intersectObject(first, true)[0]; if (!hit) return;
-  const loc = hit.point.clone().applyMatrix4(wear.M0.clone().invert());
+  // either copy: the point goes into the piece's own space through the matrix of the copy that was hit
+  const copies = wearGroup.children.filter((g) => g.isGroup);
+  const hit = r.intersectObjects(copies, true)[0]; if (!hit) { $('wStatus').textContent = 'Мимо вещи: кликните по самой броне.'; return; }
+  let g = hit.object; while (g.parent && g.parent !== wearGroup) g = g.parent;
+  const loc = hit.point.clone().applyMatrix4(g.matrix.clone().invert()), copy = copies.indexOf(g);
   wear.handles.push({ p: loc, d: new V3(), r: +$('wRad').value * wear.pca.L });
-  wearSelect(wear.handles.length - 1);
+  wearSelect(wear.handles.length - 1, copy);
+  $('wStatus').textContent = `Точка ${wear.handles.length} поставлена (жёлтая). Тяните её стрелками — поверхность вокруг потянется; радиус — ползунком.`;
 }
-function wearSelect(i) {
-  wear.sel = i; for (const id of ['wMove', 'wRot', 'wScale']) $(id).classList.remove('on');
+function wearSelect(i, copy = wear.selCopy || 0) {
+  wear.sel = i; wear.selCopy = copy; for (const id of ['wMove', 'wRot', 'wScale']) $(id).classList.remove('on');
   if (i >= 0) {
     const h = wear.handles[i]; $('wRad').value = h.r / wear.pca.L;
-    wearPoint.position.copy(h.p.clone().add(h.d).applyMatrix4(wear.M0)); wearPoint.quaternion.copy(wearHelper.quaternion);
+    wearPoint.position.copy(h.p.clone().add(h.d).applyMatrix4(wearCopyM())); wearPoint.quaternion.copy(wearHelper.quaternion);
     tcW.setMode('translate'); tcW.attach(wearPoint);
   } else tcW.detach();
   wearDraw();
