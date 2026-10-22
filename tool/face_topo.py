@@ -511,6 +511,19 @@ def build(C):
         prev = [h0[0].y if h0[0] is not None else M.y] * len(rim2)
         for sc in EYE_SCALES:
             lp = [new_vert(*eye_grow(c2, p, sc), ref_y=prev[i]) for i, p in enumerate(rim2)]
+            if sc > 1.0:
+                # under an overhanging brow the chained loop stays on the lid while the fill beyond lies on the brow,
+                # which tore into shards between them: the outer loops go up onto the overhang like the fill, so the
+                # fold is one clean band between the lid rim and the next loop
+                for i, v in enumerate(lp):
+                    pv = P(v)
+                    u_ = to_uv(pv)
+                    h = ray_rad(u_.x, u_.y)
+                    if h[0] is not None and (h[0] - C).length > (pv - C).length + 0.1 * ipd:
+                        nv_ = new_vert_uv(u_.x, u_.y)
+                        bm.verts.remove(v)
+                        lp[i] = nv_
+                        report["eye_loops_on_brow"] = report.get("eye_loops_on_brow", 0) + 1
             prev = [P(v).y for v in lp]
             loops.append(lp)
         ER_[sd] = (c2, loops)
@@ -693,10 +706,11 @@ def build(C):
                 target[v] = v.co.lerp(sum((n.co for n in nbs), Vector()) / len(nbs), 0.5)
         for v, t in target.items():
             v.co = t
-        for v in movable:   # back onto the original surface along the ray from the centre
-            d = (fw @ v.co) - C
-            h = outer_hit(C, d.normalized(), ipd * 6)
-            if h[0] is not None:
+        for v in movable:   # back onto the original surface: the nearest point, so a point stays on its own layer
+            h = skin_bvh.find_nearest(fw @ v.co)   # (a ray from the centre flipped between a brow and the lid under it)
+            # far from any surface = inside a deep fold (under a brow ridge): it stays where relaxing put it, so the
+            # fold is spanned smoothly instead of points alternating between its two sides in a saw-tooth
+            if h[0] is not None and h[3] < 0.05 * ipd:
                 v.co = finv @ h[0]
     for v in movable:       # skin weights where the point ended up
         p_ = fw @ v.co
@@ -746,8 +760,10 @@ def build(C):
     except AttributeError:
         pass
     sc.render.bake.use_selected_to_active = True
-    sc.render.bake.cage_extrusion = 0.12 * W
-    sc.render.bake.max_ray_distance = 0.4 * W
+    # the rays reach into folds the mask spans (under a brow ridge, a deep nostril): with a short reach those baked
+    # black
+    sc.render.bake.cage_extrusion = 0.25 * W
+    sc.render.bake.max_ray_distance = 1.0 * W
     sc.render.bake.margin = 8
     imgs = {}
     # the colour is baked as emission of the base colour: the DIFFUSE colour pass is base x (1 - metallic), which came

@@ -962,10 +962,32 @@ function detectOpenMouth(F) {
   while (a > 1 && diff(cs[a - 1], lipB) > .12) a--;
   return { top: ys[b], bot: ys[a] };
 }
+// up the middle of the forehead from above the brows: where the colour leaves the skin's for longer than a brow is
+// tall, the hair begins; the mask top goes a little below it. null without a texture or without a clear hairline.
+// Five verticals across the forehead: the second lowest hairline (one stray tuft does not pull it down, a centre
+// parting does not lift it over a fringe).
+function hairlineY(x, c, ipd) {
+  const skin = colourAt(x, c.y - .35 * ipd); if (!skin) return null;   // the nose bridge between the eyes
+  const off = (q) => !q || Math.hypot(q[0] - skin[0], q[1] - skin[1], q[2] - skin[2]) > .2;
+  const found = [];
+  for (const dx of [-.5, -.25, 0, .25, .5]) {
+    let start = null;
+    for (let y = c.y + .35 * ipd; y < c.y + 1.6 * ipd; y += .02 * ipd) {
+      if (off(colourAt(x + dx * ipd, y))) {
+        if (start === null) start = y;
+        if (y - start > .15 * ipd) { found.push(Math.max(c.y + .4 * ipd, start - .08 * ipd)); break; }
+      } else start = null;
+    }
+  }
+  if (found.length < 3) return null;
+  found.sort((a, b) => a - b);
+  return found[1];
+}
 function ovalInit() {
   const F = S.face;
-  if (!F.face_top && F.eye_L) {   // as face_topo.py: 0.62 ipd above the eyes, on the skin
-    const { c, ipd } = eyeMid(), x = S.sym ? cx : c.x, y = c.y + .62 * ipd;
+  if (!F.face_top && F.eye_L) {   // at the hairline found in the texture; else 0.62 ipd above the eyes (face_topo.py)
+    const { c, ipd } = eyeMid(), x = S.sym ? cx : c.x;
+    const y = hairlineY(x, c, ipd) ?? c.y + .62 * ipd;
     F.face_top = [x, y, skinZ(x, y, c.z)];
   }
   if (OVAL_KEYS.every((k) => F[k])) { openCheck(F); return; }
