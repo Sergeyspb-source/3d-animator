@@ -115,7 +115,8 @@ def wear(cfg, text):
     piece.write_bytes(base64.b64decode(req["glb"]))
     out = rigged.parent / f"{stem}_wear_{item}.glb"
     job = {"character": str(rigged), "armour": str(clean_glb(piece)), "out": str(out), "item": item,
-           "placements": req["placements"], "offset": float(req.get("offset", 0.0)), "report": str(work / "report.json")}
+           "placements": req["placements"], "offset": float(req.get("offset", 0.0)), "deforms": req.get("deforms", []),
+           "report": str(work / "report.json")}
     (work / "job.json").write_text(json.dumps(job, ensure_ascii=False), encoding="utf-8")
     blender = cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe"
     r = subprocess.run([blender, "-b", "--factory-startup", "-P", str(ROOT / "blender_wear_fit.py"), "--", str(work / "job.json")],
@@ -125,7 +126,7 @@ def wear(cfg, text):
     if line:
         rep = json.loads(line.split(" ", 1)[1])
         log = f"Надето: {out.name} — " + "; ".join(f"{k}: вытолкнуто из тела {v['pushed_out']} из {v['vertices']} вершин, кости {', '.join(v['bones'][:4])}"
-                                                 for k, v in rep.items())
+                                                 for k, v in rep.items() if isinstance(v, dict))
         ok = True
     else:
         log = "Не получилось: " + next((x for x in r.stdout.splitlines() if x.startswith("WEAR_FAIL")), (r.stdout + r.stderr)[-600:])

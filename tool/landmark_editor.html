@@ -155,7 +155,9 @@
       <label>Толщина <input type="range" id="wThick" min="0.6" max="1.6" step="0.01" value="1"></label>
       <label>Поворот вокруг оси <input type="range" id="wTwist" min="-180" max="180" step="1" value="0"></label>
       <label>Зазор до кожи <input type="range" id="wGap" min="0" max="0.3" step="0.01" value="0.04"></label>
-      <div class="row"><button id="wMove" title="Стрелки на вещи: сдвиг">Сдвиг</button><button id="wRot" title="Стрелки на вещи: поворот">Поворот</button><button id="wScale" title="Стрелки на вещи: размер по осям">Размер</button></div>
+      <div class="row"><button id="wMove" title="Стрелки на вещи: сдвиг (G)">Сдвиг</button><button id="wRot" title="Поворот вокруг середины кости; зелёное кольцо — вокруг своей оси (R)">Поворот</button><button id="wScale" title="Размер: зелёная ось — длина, красная и синяя — толщина (S)">Размер</button></div>
+      <div class="row"><button id="wPoints" title="Клик по вещи ставит точку; тяните её — поверхность вокруг потянется">Точки</button><button id="wDel" title="Убрать выбранную точку (Delete)">Убрать</button><button id="wDelAll">Все точки</button></div>
+      <label>Радиус точки <input type="range" id="wRad" min="0.05" max="1" step="0.01" value="0.25"></label>
       <div class="row"><button id="wReset">Сбросить</button><button id="wApply" class="primary">Надеть</button></div>
       <div class="small" id="wStatus">Выберите файл вещи.</div>
     </div>
@@ -1820,7 +1822,7 @@ canvas.addEventListener('pointermove', (e) => {
   });
 });
 canvas.addEventListener('pointerdown', (e) => {
-  if (!poseOn || e.button !== 0 || !hoverId || playing || tcW.axis) return;   // the armour gizmo has the click
+  if (!poseOn || e.button !== 0 || !hoverId || playing || tcW.axis || (wearOn && wear && !wear.fittedShown)) return;   // the armour is being placed
   dragId = hoverId; orbit.enabled = false; canvas.setPointerCapture(e.pointerId);
 });
 addEventListener('pointerup', () => { if (dragId) { dragId = null; orbit.enabled = true; poseHighlight(); } });
@@ -1936,9 +1938,17 @@ const WEAR_PARTS = { forearm: ['forearm', 'hand'], arm: ['arm', 'forearm'], hand
 let wear = null, wearOn = false;
 const wearGroup = new THREE.Group(); scene.add(wearGroup);
 const wearHelper = new THREE.Object3D(); scene.add(wearHelper);
-const tcW = new TransformControls(camera, canvas); tcW.setSpace('world'); tcW.setSize(.7); scene.add(tcW);
+const wearPoint = new THREE.Object3D(); scene.add(wearPoint);
+const tcW = new TransformControls(camera, canvas); tcW.setSpace('local'); tcW.setSize(.7); scene.add(tcW);
 tcW.addEventListener('dragging-changed', (e) => { orbit.enabled = !e.value; });
-tcW.addEventListener('objectChange', () => { if (wear) { wear.off = wearHelper.position.clone().sub(wear.c); wearDraw(); } });
+tcW.addEventListener('objectChange', () => {
+  if (!wear) return;
+  if (tcW.object === wearPoint && wear.sel >= 0) {   // a surface point dragged: its offset in the piece's own space
+    const h = wear.handles[wear.sel], loc = wearPoint.position.clone().applyMatrix4(wear.M0.clone().invert());
+    h.d.copy(loc.sub(h.p)); wearDeform(); wearDraw(); return;
+  }
+  wear.off = wearHelper.position.clone().sub(wear.mid); wearDraw();
+});
 const median = (a) => { const s = [...a].sort((x, y) => x - y); return s.length ? s[s.length >> 1] : 0; };
 
 function eigen3(c) {   // symmetric 3x3 (row-major array) -> [[value, vector] x3] by power iteration with deflation
@@ -1996,7 +2006,10 @@ function wearAuto() {
   const len = Math.min(P.L * s, .95 * L.len);
   $('wPos').value = Math.min(.75, Math.max(.3, .93 - len / 2 / L.len));   // the far end near the next joint
   $('wLen').value = 1; $('wThick').value = 1; $('wTwist').value = 0;
-  wear.s = s; wear.lenFit = len / (P.L * s); wear.off = new V3(); wearHelper.quaternion.identity(); wearHelper.scale.set(1, 1, 1);
+  wear.s = s; wear.lenFit = len / (P.L * s); wear.off = new V3(); wearHelper.scale.set(1, 1, 1);
+  // the gizmo's own frame: at the middle of the bone, its Y along the bone (turning about Y = about its own axis)
+  wear.q0 = new Q().setFromUnitVectors(new V3(0, 1, 0), L.u); wearHelper.quaternion.copy(wear.q0);
+  wear.mid = L.A.clone().addScaledVector(L.u, .5 * L.len);
   return true;
 }
 function wearPlacement(L) {   // armour space -> world, from the sliders (without the gizmo)
@@ -2016,10 +2029,13 @@ function wearMatrices() {
   const part = $('wPart').value, sd = $('wSide').value, L = limbOf(part, sd); if (!L) return [];
   const { M, c } = wearPlacement(L);
   wear.c = c;
-  // the gizmo: moved / turned / scaled about the piece's centre on the limb
-  const h = c.clone().add(wear.off || new V3());
-  const E = new THREE.Matrix4().compose(h, wearHelper.quaternion, wearHelper.scale).multiply(new THREE.Matrix4().makeTranslation(-c.x, -c.y, -c.z));
+  // the gizmo: moved / turned / scaled about the middle of the bone, in the bone's own frame
+  const mid = wear.mid, h = mid.clone().add(wear.off || new V3());
+  const E = new THREE.Matrix4().compose(h, wearHelper.quaternion, wearHelper.scale)
+    .multiply(new THREE.Matrix4().makeRotationFromQuaternion(wear.q0.clone().invert()))
+    .multiply(new THREE.Matrix4().makeTranslation(-mid.x, -mid.y, -mid.z));
   const M1 = E.multiply(M), out = [{ side: sd, M: M1 }];
+  wear.M0 = M1.clone();
   if ($('wMirror').checked) {   // mirrored about the body's middle, then onto the other limb as it really is
     const od = sd === 'L' ? 'R' : 'L', Lo = limbOf(part, od);
     if (Lo) {
@@ -2038,11 +2054,59 @@ function wearDraw() {
   for (const g of [...wearGroup.children]) wearGroup.remove(g);
   if (!wear) return;
   for (const { M } of wearMatrices()) {
-    const g = new THREE.Group(); g.matrixAutoUpdate = false; g.matrix.copy(M);
+    const g = new THREE.Group(); g.matrixAutoUpdate = false; g.matrix.copy(M); g.matrixWorldNeedsUpdate = true;
     for (const p of wear.parts) g.add(new THREE.Mesh(p.geo, p.mat));
     wearGroup.add(g);
   }
-  if (!tcW.dragging && wear.c) wearHelper.position.copy(wear.c.clone().add(wear.off || new V3()));
+  wearGroup.updateMatrixWorld(true);
+  if (!tcW.dragging && wear.mid) wearHelper.position.copy(wear.mid.clone().add(wear.off || new V3()));
+  const r = .007 * H / Math.max(1, camera.zoom);   // the surface points, on the first copy
+  wear.handles.forEach((hd, i) => {
+    const sp = new THREE.Mesh(sphereGeo, i === wear.sel ? COL.sel : COL.bad); sp.scale.setScalar(r); sp.renderOrder = 999;
+    sp.position.copy(hd.p.clone().add(hd.d).applyMatrix4(wear.M0)); wearGroup.add(sp);
+  });
+  if (wear.sel >= 0 && !tcW.dragging && tcW.object === wearPoint) wearPoint.position.copy(wear.handles[wear.sel].p.clone().add(wear.handles[wear.sel].d).applyMatrix4(wear.M0));
+}
+// surface points: each pulls the piece around it (smooth falloff over its radius), all in the piece's own space,
+// so the mirrored copy and blender_wear_fit.py get the same shape
+function wearDeform() {
+  for (const p of wear.parts) {
+    const o = p.geo.userData.orig, a = p.geo.attributes.position, arr = a.array;
+    arr.set(o);
+    for (const h of wear.handles) {
+      if (h.d.lengthSq() === 0) continue;
+      for (let i = 0; i < arr.length; i += 3) {
+        const dx = o[i] - h.p.x, dy = o[i + 1] - h.p.y, dz = o[i + 2] - h.p.z, x = Math.sqrt(dx * dx + dy * dy + dz * dz) / h.r;
+        if (x >= 1) continue;
+        const w = 1 - x * x * (3 - 2 * x);
+        arr[i] += h.d.x * w; arr[i + 1] += h.d.y * w; arr[i + 2] += h.d.z * w;
+      }
+    }
+    a.needsUpdate = true; p.geo.computeVertexNormals(); p.geo.computeBoundingSphere();
+  }
+}
+function wearPick(e) {   // a click on the first copy: an existing point (by screen distance) or a new one on the surface
+  const rc = canvas.getBoundingClientRect();
+  for (let i = 0; i < wear.handles.length; i++) {
+    const h = wear.handles[i], q = h.p.clone().add(h.d).applyMatrix4(wear.M0).project(camera);
+    if (Math.hypot(rc.left + (q.x + 1) / 2 * rc.width - e.clientX, rc.top + (1 - q.y) / 2 * rc.height - e.clientY) < 12) return wearSelect(i);
+  }
+  const n = new THREE.Vector2(((e.clientX - rc.left) / rc.width) * 2 - 1, -((e.clientY - rc.top) / rc.height) * 2 + 1);
+  const r = new THREE.Raycaster(); r.setFromCamera(n, camera);
+  const first = wearGroup.children[0]; if (!first) return;
+  const hit = r.intersectObject(first, true)[0]; if (!hit) return;
+  const loc = hit.point.clone().applyMatrix4(wear.M0.clone().invert());
+  wear.handles.push({ p: loc, d: new V3(), r: +$('wRad').value * wear.pca.L });
+  wearSelect(wear.handles.length - 1);
+}
+function wearSelect(i) {
+  wear.sel = i; for (const id of ['wMove', 'wRot', 'wScale']) $(id).classList.remove('on');
+  if (i >= 0) {
+    const h = wear.handles[i]; $('wRad').value = h.r / wear.pca.L;
+    wearPoint.position.copy(h.p.clone().add(h.d).applyMatrix4(wear.M0)); wearPoint.quaternion.copy(wearHelper.quaternion);
+    tcW.setMode('translate'); tcW.attach(wearPoint);
+  } else tcW.detach();
+  wearDraw();
 }
 async function wearLoad(file) {
   const buf = await file.arrayBuffer();
@@ -2056,6 +2120,7 @@ async function wearLoad(file) {
     if (o.geometry.attributes.uv) g.setAttribute('uv', o.geometry.attributes.uv.clone());
     if (o.geometry.index) g.setIndex(o.geometry.index.clone());
     g.applyMatrix4(o.matrixWorld);
+    g.userData.orig = g.attributes.position.array.slice();
     const mat = [].concat(o.material).map((m) => { const c = m.clone(); c.side = THREE.DoubleSide; c.skinning = false; return c; });
     parts.push({ geo: g, mat: mat.length === 1 ? mat[0] : mat });
   });
@@ -2063,7 +2128,7 @@ async function wearLoad(file) {
   let bin = ''; const u8 = new Uint8Array(buf);
   for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
   if (wear && wear.fitted) scene.remove(wear.fitted);
-  wear = { name: file.name.replace(/\.glb$/i, ''), b64: btoa(bin), parts, pca: wearShape(parts) };
+  wear = { name: file.name.replace(/\.glb$/i, ''), b64: btoa(bin), parts, pca: wearShape(parts), handles: [], sel: -1 };
   if (wearAuto()) { wearDraw(); $('wStatus').textContent = 'Вещь на месте. Поправьте ползунками или стрелками и нажмите «Надеть».'; }
   wearGroup.visible = true;
 }
@@ -2076,16 +2141,18 @@ async function wearMode(on) {
 }
 function wearGizmo(mode) {
   if (!wear) return;
-  const same = tcW.object && tcW.mode === mode; tcW.detach();
+  const same = tcW.object === wearHelper && tcW.mode === mode; tcW.detach();
   for (const id of ['wMove', 'wRot', 'wScale']) $(id).classList.remove('on');
   if (same) return;
-  tcW.setMode(mode); tcW.attach(wearHelper); $({ translate: 'wMove', rotate: 'wRot', scale: 'wScale' }[mode]).classList.add('on');
+  wear.sel = -1; wear.points = false; $('wPoints').classList.remove('on');
+  tcW.setMode(mode); tcW.attach(wearHelper); $({ translate: 'wMove', rotate: 'wRot', scale: 'wScale' }[mode]).classList.add('on'); wearDraw();
 }
 async function wearApply() {
   if (!wear) { $('wStatus').textContent = 'Сначала выберите файл вещи.'; return; }
   const L = limbOf($('wPart').value, $('wSide').value);
   const item = (wear.name.replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'item');
   const req = { id: Date.now(), rigged: DATA.rigged, item, glb: wear.b64, offset: wv('wGap') * .5 * L.r,
+                deforms: wear.handles.filter((h) => h.d.lengthSq() > 0).map((h) => ({ p: h.p.toArray(), d: h.d.toArray(), r: h.r })),
                 placements: wearMatrices().map((p) => ({ side: p.side, matrix: Array.from(p.M.elements) })) };
   try {
     const ta = window.parent.document.querySelector('#' + DATA.wear_target + ' textarea');
@@ -2134,6 +2201,23 @@ $('wGap').addEventListener('input', () => { if (wear && wearAuto()) wearDraw(); 
 $('wMove').onclick = () => wearGizmo('translate'); $('wRot').onclick = () => wearGizmo('rotate'); $('wScale').onclick = () => wearGizmo('scale');
 $('wReset').onclick = () => { if (wear && wearAuto()) wearDraw(); };
 $('wApply').onclick = wearApply;
+$('wPoints').onclick = () => { if (!wear) return; wear.points = !wear.points; $('wPoints').classList.toggle('on', wear.points);
+  if (!wear.points) wearSelect(-1); else { tcW.detach(); for (const id of ['wMove', 'wRot', 'wScale']) $(id).classList.remove('on'); }
+  $('wStatus').textContent = wear.points ? 'Кликните по вещи — появится точка; тяните её стрелками, вокруг потянется поверхность.' : ''; };
+$('wDel').onclick = () => { if (wear && wear.sel >= 0) { wear.handles.splice(wear.sel, 1); wearDeform(); wearSelect(-1); } };
+$('wDelAll').onclick = () => { if (wear) { wear.handles = []; wearDeform(); wearSelect(-1); } };
+$('wRad').addEventListener('input', () => { if (wear && wear.sel >= 0) { wear.handles[wear.sel].r = +$('wRad').value * wear.pca.L; wearDeform(); wearDraw(); } });
+canvas.addEventListener('pointerdown', (e) => {
+  if (!wearOn || !wear || !wear.points || e.button !== 0 || tcW.axis) return;
+  wearPick(e); e.stopImmediatePropagation();
+}, true);
+addEventListener('keydown', (e) => {   // G / R / S like the joints
+  if (!wearOn || !wear || e.target.tagName === 'INPUT' || e.ctrlKey || e.metaKey) return;
+  const k = e.key.toLowerCase();
+  if (k === 'g' || k === 'п') wearGizmo('translate'); else if (k === 'r' || k === 'к') wearGizmo('rotate');
+  else if (k === 's' || k === 'ы') wearGizmo('scale');
+  else if (e.key === 'Delete' && wear.sel >= 0) $('wDel').onclick();
+});
 
 // ---------------------------------------------------------------- start
 (async () => {

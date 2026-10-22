@@ -76,6 +76,16 @@ for o in new:
 # glTF (Y up, +Z forward) -> Blender (Z up, -Y forward): x' = x, y' = -z, z' = y
 CONV = Matrix(((1, 0, 0, 0), (0, 0, -1, 0), (0, 1, 0, 0), (0, 0, 0, 1)))
 
+# surface points pulled in the editor (piece space, glTF): the same smooth falloff as the editor's preview
+_orig = [v.co.copy() for v in src.data.vertices]
+for df in job.get("deforms", []):
+    p, d, r = CONV @ Vector(df["p"]), CONV.to_3x3() @ Vector(df["d"]), float(df["r"])
+    for v, o in zip(src.data.vertices, _orig):
+        x = (o - p).length / r
+        if x < 1:
+            v.co += d * (1 - x * x * (3 - 2 * x))
+report["deforms"] = len(job.get("deforms", []))
+
 # the body at rest, for the push-out and the weights
 verts, tris, owner = [], [], []
 for o in body:
