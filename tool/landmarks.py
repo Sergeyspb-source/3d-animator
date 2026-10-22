@@ -176,7 +176,8 @@ def face_kit_eyes(cfg, kit, work):
     return out / "eyes.glb", 0.012
 
 
-def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=True, kit="", face_topo=False, smooth=1):
+def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=True, kit="", face_topo=False, smooth=1,
+          eye_colour=True):
     """Generator of log lines; the last item is a dict with the result paths."""
     blender = cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe"
     final, saved = output_paths(src, cfg["export_dir"])
@@ -290,6 +291,8 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=T
         eyes_glb, kit_r = face_kit_eyes(cfg, kit, work)
         ej = {"source": str(model), "out": str(work / "model_eyes.glb"), "eyes_glb": str(eyes_glb), "kit_r": kit_r,
               "open_rim": topo_done,   # the face retopology already cut the eye openings
+              # the iris colour is read from the painted eyes of the rigged model, before any cut
+              "iris_from": str(work / "model.glb") if eye_colour else "",
               "head_bone": names["head"], "sym": bool(landmarks.get("sym", True)), "report": str(work / "eyes_report.json"),
               "preview": str(work / "eyes.png"),
               "sides": {s: {"outline": pts, "bone": names[f"eye_{s}"] if f"eye_{s}" in landmarks["joints"] else "",

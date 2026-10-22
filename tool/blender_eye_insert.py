@@ -80,6 +80,114 @@ for o in list(bpy.data.objects):
     if o.type == "MESH" and o.name.startswith("Eye_") and o is not kit:
         bpy.data.objects.remove(o, do_unlink=True)
 
+
+
+_px_cache = {}
+
+
+def base_pixels(mat):
+    """(pixels HxWx3, w, h, image node) of the image behind a material's base colour, or None (cached per material)"""
+    if mat is None or not mat.use_nodes:
+        return None
+    if mat.name not in _px_cache:
+        _px_cache[mat.name] = _base_pixels(mat)
+    return _px_cache[mat.name]
+
+
+def _base_pixels(mat):
+    bsdf = next((n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
+    stack = [l.from_node for l in bsdf.inputs["Base Color"].links] if bsdf else []
+    while stack:
+        n = stack.pop()
+        if n.type == "TEX_IMAGE" and n.image and n.image.size[0]:
+            import numpy as np
+            a_ = np.empty(n.image.size[0] * n.image.size[1] * 4, dtype=np.float32)
+            n.image.pixels.foreach_get(a_)
+            return a_.reshape(n.image.size[1], n.image.size[0], 4)[..., :3], n.image.size[0], n.image.size[1], n
+        stack += [l.from_node for i in n.inputs for l in i.links]
+    return None
+
+
+def iris_colour():
+    """the colour of the painted iris on the rigged model (before any cut): a grid of front rays inside each eye
+    outline; the white (sclera), the dark (pupil, lashes) and the grey are dropped, the median of the rest is the iris"""
+    src = job.get("iris_from")
+    if not src or not Path(src).exists():
+        return None
+    import numpy as np
+    from mathutils.geometry import barycentric_transform
+    before = set(bpy.data.objects)
+    bpy.ops.import_scene.gltf(filepath=src)
+    new = [o for o in bpy.data.objects if o not in before]
+    found = []
+    for o in new:
+        if o.type != "MESH":
+            continue
+        me = o.data; me.calc_loop_triangles()
+        wv = [o.matrix_world @ v.co for v in me.vertices]
+        tris = list(me.loop_triangles)
+        bvh_ = BVHTree.FromPolygons(wv, [tuple(t.vertices) for t in tris])
+        uvd = me.uv_layers.active.data if me.uv_layers.active else None
+        for spec in job["sides"].values():
+            pts = [bl(p) for p in spec["outline"]]
+            cx_ = sum(p.x for p in pts) / 4; cz_ = sum(p.z for p in pts) / 4
+            poly_ = [(cx_ + (p.x - cx_) * 0.8, cz_ + (p.z - cz_) * 0.8) for p in catmull(pts, 8)]
+            x0, x1 = min(q[0] for q in poly_), max(q[0] for q in poly_)
+            z0, z1 = min(q[1] for q in poly_), max(q[1] for q in poly_)
+            for i in range(16):
+                for j in range(16):
+                    x, z = x0 + (x1 - x0) * (i + 0.5) / 16, z0 + (z1 - z0) * (j + 0.5) / 16
+                    if not inside(poly_, x, z):
+                        continue
+                    h = bvh_.ray_cast(Vector((x, min(p.y for p in pts) - 10 * (x1 - x0), z)), Vector((0, 1, 0)), 100 * (x1 - x0))
+                    if h[0] is None or uvd is None:
+                        continue
+                    t = tris[h[2]]
+                    px = base_pixels(me.materials[t.material_index] if t.material_index < len(me.materials) else None)
+                    if px is None:
+                        continue
+                    A, B, C = (wv[k] for k in t.vertices)
+                    bc = barycentric_transform(h[0], A, B, C, Vector((1, 0, 0)), Vector((0, 1, 0)), Vector((0, 0, 1)))
+                    uv = sum((uvd[li].uv * max(0.0, w) for w, li in zip(bc, t.loops)), Vector((0, 0)))
+                    arr, w_, h_ = px[0], px[1], px[2]
+                    col = arr[int(min(h_ - 1, (uv.y % 1) * h_)), int(min(w_ - 1, (uv.x % 1) * w_))]
+                    v_ = float(col.max()); sat = (v_ - float(col.min())) / max(v_, 1e-6)
+                    if v_ > 0.12 and sat > 0.25 and not (v_ > 0.85 and sat < 0.3):
+                        found.append(col.copy())
+    for o in new:
+        if o.type == "MESH":
+            d = o.data
+            bpy.data.objects.remove(o, do_unlink=True)
+            bpy.data.meshes.remove(d)
+        else:
+            bpy.data.objects.remove(o, do_unlink=True)
+    if len(found) < 8:
+        return None
+    return np.median(np.array(found), axis=0)
+
+
+def tint_kit_iris(target):
+    """multiply the kit's saturated (iris) pixels so their median becomes the target; pupil, white and highlights stay"""
+    import numpy as np
+    mat = kit.material_slots[0].material if kit.material_slots else None
+    px = base_pixels(mat)
+    if px is None:
+        return None
+    arr, w_, h_, node = px
+    v_ = arr.max(axis=2); sat = (v_ - arr.min(axis=2)) / np.maximum(v_, 1e-6)
+    iris = (sat > 0.2) & (v_ > 0.08)
+    if iris.sum() < 50:
+        return None
+    med = np.median(arr[iris], axis=0)
+    out = arr.copy()
+    out[iris] = np.clip(arr[iris] * (np.asarray(target) / np.maximum(med, 1e-3)), 0, 1)
+    img = bpy.data.images.new("eye_iris_tinted", w_, h_, alpha=False)
+    img.pixels.foreach_set(np.concatenate([out, np.ones((h_, w_, 1), np.float32)], axis=2).ravel())
+    img.pack()
+    node.image = img
+    return [round(float(c), 3) for c in target]
+
+
 face = None
 balls = []
 solved = {}
@@ -163,7 +271,10 @@ for side, spec in job["sides"].items():
     r = 0.42 * width
     front_y, gap = min(front_y if hit[0] is not None else yl, yl), 0.02 * width
     solved[side] = dict(r=r, cx=cx, cz=cz, front_y=front_y, gap=gap, rim=rim_surf, width=width, kill=len(kill), bone=spec.get("bone"),
-                        ball=spec.get("ball"), ball_r=spec.get("ball_r"))
+                        ball=spec.get("ball"), ball_r=spec.get("ball_r"), curve=curve, corners=(rim3[0], rim3[2]))
+_iris = iris_colour()
+if _iris is not None:
+    report["iris_colour"] = tint_kit_iris(_iris)
 for side, sv in solved.items():
     r = sum(v["r"] for v in solved.values()) / len(solved) if job.get("sym", True) else sv["r"]
     cx, cz, front_y, gap, rim_surf, width = sv["cx"], sv["cz"], sv["front_y"], sv["gap"], sv["rim"], sv["width"]
@@ -183,6 +294,7 @@ for side, sv in solved.items():
     m = ball.modifiers.new("Armature", "ARMATURE"); m.object = arm
     ball.parent = arm; ball.matrix_parent_inverse = arm.matrix_world.inverted()
     balls.append((ball, bone, centre, r))
+    sv["centre"], sv["r_ball"] = centre, r
     rim_err = [abs((p - centre).length - r) for p in rim_surf]
     # dark socket behind the ball: what shows in the corners of the opening is a shadowed orbit, not the background
     bpy.ops.mesh.primitive_uv_sphere_add(segments=32, ring_count=16, radius=r * 1.12, location=centre)
@@ -203,6 +315,130 @@ for side, sv in solved.items():
     report["eyes"][side] = {"radius": round(r, 4), "opening_width": round(width, 4), "deleted_faces": sv["kill"],
                             "rim_off_ball_mean": round(sum(rim_err) / len(rim_err), 4)}
 bpy.data.objects.remove(kit, do_unlink=True)
+
+
+# ------------------------------------------------------------------ eyelid keys (ARKit names; lipsync.py drives them)
+def lid_keys():
+    """eyeBlink / eyeSquint / eyeWide per side. The lid skin turns about the ball centre on the lateral axis, so it
+    slides over the ball like a real lid; upper and lower lids meet a quarter of the way up from the lower lid.
+    Each vertex turns by the angle its nearest rim point needs, faded by its distance from the rim."""
+    if face.data.shape_keys is None:
+        face.shape_key_add(name="Basis")
+    fw_, inv_ = face.matrix_world, face.matrix_world.inverted()
+    pts = [fw_ @ v.co for v in face.data.vertices]
+    # glTF splits vertices along UV / normal seams: twins at one position are joined for the walk over the skin
+    tol = max((max(p.x for p in pts) - min(p.x for p in pts)) * 1e-5, 1e-9)
+    key_of, twins = {}, []
+    for i, p in enumerate(pts):
+        k_ = (round(p.x / tol), round(p.y / tol), round(p.z / tol))
+        if k_ not in key_of:
+            key_of[k_] = len(twins); twins.append([])
+        twins[key_of[k_]].append(i)
+    grp = [0] * len(pts)
+    for g_, members in enumerate(twins):
+        for i in members:
+            grp[i] = g_
+    nbr = [set() for _ in pts]
+    for e in face.data.edges:
+        a_, b_ = e.vertices
+        for i in twins[grp[a_]]:
+            nbr[i].add(b_)
+        for i in twins[grp[b_]]:
+            nbr[i].add(a_)
+    moves = {}                                   # key name -> {vertex index: new world position}
+    for side, sv in solved.items():
+        c, r, curve, width = sv["centre"], sv["r_ball"], sv["curve"], sv["width"]
+        ci, co = sv["corners"]
+        z_mid = lambda x: ci.z + (co.z - ci.z) * (x - ci.x) / ((co.x - ci.x) or 1e-9)
+        up = sorted([p for p in curve if p.z >= z_mid(p.x)], key=lambda p: p.x)
+        lo = sorted([p for p in curve if p.z < z_mid(p.x)], key=lambda p: p.x)
+        if len(up) < 3 or len(lo) < 3:
+            continue
+
+        def interp(seq, x, f):
+            if x <= seq[0].x:
+                return f(seq[0])
+            for a, b in zip(seq, seq[1:]):
+                if x <= b.x:
+                    t = (x - a.x) / ((b.x - a.x) or 1e-9)
+                    return f(a) * (1 - t) + f(b) * t
+            return f(seq[-1])
+        ang = lambda q: math.atan2(q.z - c.z, c.y - q.y)        # elevation about the ball centre (forward = -y)
+
+        def need(p, x):   # how far (radians, + = down) a rim point turns to reach the closed line at x
+            zc = interp(lo, x, lambda q: q.z) + 0.25 * (interp(up, x, lambda q: q.z) - interp(lo, x, lambda q: q.z))
+            rho = max((p - c).length, 1e-9)
+            return ang(p) - math.asin(max(-1.0, min(1.0, (zc - c.z) / rho)))
+        d_up = [(p.x, need(p, p.x)) for p in up]
+        d_lo = [(p.x, need(p, p.x)) for p in lo]
+
+        def dval(tab, x):
+            if x <= tab[0][0]:
+                return tab[0][1]
+            for (xa, va), (xb, vb) in zip(tab, tab[1:]):
+                if x <= xb:
+                    t = (x - xa) / ((xb - xa) or 1e-9)
+                    return va * (1 - t) + vb * t
+            return tab[-1][1]
+        x0_, x1_ = min(p.x for p in curve), max(p.x for p in curve)
+        # the lid skin = what is connected to the rim through the mesh within reach (a lock of hair lying in front of
+        # the eye touches it only far away); seeds: vertices on the rim, at the rim's own depth
+        import heapq
+        dist = {}
+        heap = []
+        for i, p in enumerate(pts):
+            if abs(p.x - sv["cx"]) > width or abs(p.z - sv["cz"]) > width:
+                continue
+            q = min(curve, key=lambda q_: math.hypot(p.x - q_.x, p.z - q_.z))
+            if math.hypot(p.x - q.x, p.z - q.z) < 0.06 * width and abs(p.y - q.y) < 0.3 * width and p.y < c.y:
+                dist[i] = 0.0; heap.append((0.0, i))
+        heapq.heapify(heap)
+        while heap:
+            d0, i = heapq.heappop(heap)
+            if d0 > dist.get(i, 1e9):
+                continue
+            for j in nbr[i]:
+                d1 = d0 + (pts[i] - pts[j]).length
+                if d1 < 0.6 * width and d1 < dist.get(j, 1e9):
+                    for t_ in twins[grp[j]]:
+                        dist[t_] = d1
+                    heapq.heappush(heap, (d1, j))
+        name = {"L": "Left", "R": "Right"}.get(side, side)
+        for key, a_up, a_lo in (("eyeBlink", 1.0, 1.0), ("eyeSquint", 0.18, 0.55), ("eyeWide", -0.35, -0.12)):
+            mv = moves.setdefault(key + name, {})
+            for i, gd in dist.items():
+                p = pts[i]
+                d = max(gd, min(math.hypot(p.x - q.x, p.z - q.z) for q in curve))
+                upper = p.z >= z_mid(p.x)
+                reach = (0.42 if upper else 0.3) * width
+                if d > reach:
+                    continue
+                t = min(1.0, (reach - d) / (0.88 * reach))      # the lid edge band moves fully
+                w = (t * t * (3 - 2 * t)) ** 1.4      # soft toward the brow: no fold under a brow ridge
+                xc = max(x0_, min(x1_, p.x))
+                dlt = (dval(d_up, xc) * a_up if upper else dval(d_lo, xc) * a_lo) * w
+                q = p - c
+                fwd, rho = -q.y, math.hypot(q.y, q.z)
+                phi = math.atan2(q.z, fwd) - dlt
+                nq = Vector((q.x, -rho * math.cos(phi), rho * math.sin(phi)))
+                lim = min(q.length, r * 1.03)     # the lid stays on the ball (skin already inside it at rest stays)
+                if nq.length < lim:
+                    nq = nq.normalized() * lim
+                mv[i] = c + nq
+    kb_names = []
+    for key, mv in moves.items():
+        old = face.data.shape_keys.key_blocks.get(key)
+        if old is not None:
+            face.shape_key_remove(old)
+        kb = face.shape_key_add(name=key, from_mix=False)
+        for i, q in mv.items():
+            kb.data[i].co = inv_ @ q
+        kb_names.append(key)
+    return kb_names
+
+
+if face is not None and job.get("lid_keys", True):
+    report["lid_keys"] = lid_keys()
 
 # eye bones to the ball centres (only the balls are weighted to them)
 bpy.ops.object.select_all(action="DESELECT"); arm.select_set(True); bpy.context.view_layer.objects.active = arm
@@ -225,7 +461,7 @@ for o in bpy.data.objects:
     o.select_set(o.type in ("ARMATURE", "MESH"))
 bpy.context.view_layer.objects.active = arm
 bpy.ops.export_scene.gltf(filepath=job["out"], export_format="GLB", use_selection=True, export_skins=True,
-                          export_animations=False, export_morph=True, export_morph_normal=False, export_influence_nb=4)
+                          export_animations=False, export_morph=True, export_morph_normal=True, export_influence_nb=4)
 
 if job.get("preview"):
     sc = bpy.context.scene

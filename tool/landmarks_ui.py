@@ -32,6 +32,8 @@ def mount(config_loader, asset, upload, accordion=True):
                 mouth = gr.Radio([("Пластина (быстро, для дальних планов)", "plate"), ("Разрез: губы, полость, зубы, язык", "cut"),
                                   ("Нет", "none")], value="cut", label="Рот для речи (если размечено лицо)")
                 eyes = gr.Checkbox(value=True, label="Вставить глаза-шары (если обведены глаза)")
+                eyecol = gr.Checkbox(value=True, label="Цвет радужки — с нарисованных глаз модели",
+                                     info="Выкл. — цвет из набора деталей лица")
             with gr.Row():
                 ftopo = gr.Checkbox(value=True, label="Ретопология лица: ровная сетка вокруг рта и глаз (рекомендуется)",
                                     info="Перестраивает сетку лица кольцами: гладкие края век и губ, без заломов при открытии рта, "
@@ -74,7 +76,7 @@ def mount(config_loader, asset, upload, accordion=True):
             return _frame(LM.editor_page(src, LM.initial_state(src, cfg["export_dir"], text),
                                          LM.output_paths(src, cfg["export_dir"])[0]))
 
-        def run(up, name, text, nm, do_weld, do_mouth, do_eyes, kit_name, do_topo, smooth_lvl):
+        def run(up, name, text, nm, do_weld, do_mouth, do_eyes, kit_name, do_topo, smooth_lvl, eye_col=True):
             cfg = config_loader()
             src = LM.source_path(up, name, cfg["export_dir"])
             lines = []
@@ -83,7 +85,8 @@ def mount(config_loader, asset, upload, accordion=True):
                 return
             try:
                 marks = LM.parse(text)
-                for step in LM.build(src, marks, NAMINGS[nm], cfg, do_weld, do_mouth, do_eyes, (kit_name or "").strip(), do_topo, smooth_lvl):
+                for step in LM.build(src, marks, NAMINGS[nm], cfg, do_weld, do_mouth, do_eyes, (kit_name or "").strip(), do_topo, smooth_lvl,
+                                     eye_col):
                     if isinstance(step, dict):  # reopen the editor in the pose mode on the fresh build
                         lines.append("Редактор открыт в режиме «Поза»: тяните мышью руки и ноги, чтобы проверить сгибы.")
                         state = json.loads(Path(step["landmarks"]).read_text(encoding="utf-8"))
@@ -117,7 +120,7 @@ def mount(config_loader, asset, upload, accordion=True):
         mouth.change(lambda m: gr.update(interactive=m == "cut", value=(m == "cut")), mouth, ftopo, show_progress="hidden")
         ftopo.change(lambda t, m: gr.update(value="cut") if t and m != "cut" else gr.update(), [ftopo, mouth], mouth,
                      show_progress="hidden")
-        go.click(run, [upload, asset, data, naming, weld, mouth, eyes, kit, ftopo, fsmooth], [log, view, files, shots, editor], concurrency_id="landmark_rig",
+        go.click(run, [upload, asset, data, naming, weld, mouth, eyes, kit, ftopo, fsmooth, eyecol], [log, view, files, shots, editor], concurrency_id="landmark_rig",
                  concurrency_limit=1)
         return data, editor
 

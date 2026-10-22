@@ -332,6 +332,8 @@ def build(C):
         """a thin sheet painted in hair colour (a lock fused to the forehead): never part of the mask"""
         if skin_col is None:
             return False
+        if any(abs(c.x - e.x) < 0.6 * ipd and e.z - 0.1 * ipd < c.z < e.z + 0.45 * ipd for e in (EL, ER)):
+            return False   # the brow band: a dark, thin brow ridge over the eye is skin, not a lock of hair
         hq = skin_bvh.find_nearest(c)
         cq = colour_at(hq[0], hq[2]) if hq[0] is not None else None
         if cq is None or (cq - skin_col).length <= 0.2:
@@ -443,8 +445,14 @@ def build(C):
     for sd, rim2 in rims.items():
         c2 = sum(rim2, Vector((0, 0))) / len(rim2)
         loops = []
+        # depth chained loop by loop from the eye's own surface (like the mouth rings): above the lid a front ray hits
+        # the overhanging brow ridge first, which left shards along the upper lid
+        h0 = ray(c2.x, c2.y)
+        prev = [h0[0].y if h0[0] is not None else M.y] * len(rim2)
         for sc in EYE_SCALES:
-            loops.append([new_vert(*eye_grow(c2, p, sc)) for p in rim2])
+            lp = [new_vert(*eye_grow(c2, p, sc), ref_y=prev[i]) for i, p in enumerate(rim2)]
+            prev = [P(v).y for v in lp]
+            loops.append(lp)
         ER_[sd] = (c2, loops)
         eye_outer[sd] = [tuple(to_uv(P(v))) for v in loops[-1]]
 
