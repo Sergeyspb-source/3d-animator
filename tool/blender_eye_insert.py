@@ -301,12 +301,47 @@ for side, sv in solved.items():
     sv["centre"], sv["r_ball"] = centre, r
     rim_err = [abs((p - centre).length - r) for p in rim_surf]
     # dark socket behind the ball: what shows in the corners of the opening is a shadowed orbit, not the background
-    bpy.ops.mesh.primitive_uv_sphere_add(segments=32, ring_count=16, radius=r * 1.12, location=centre)
-    sock = bpy.context.active_object; sock.name = sock.data.name = f"EyeSocket_{side}"
-    bm = bmesh.new(); bm.from_mesh(sock.data)
-    bmesh.ops.delete(bm, geom=[f for f in bm.faces if (sock.matrix_world @ f.calc_center_median()).y < centre.y - r * 0.35], context="FACES")
-    bmesh.ops.reverse_faces(bm, faces=bm.faces[:])            # seen from inside
-    bm.to_mesh(sock.data); bm.free()
+    # The cup runs from the eyelid edge itself back around the ball, so no angle shows a gap between the lid and the
+    # socket: per rim direction (azimuth about the gaze axis) a meridian from the lid edge, tucked just behind the
+    # skin, sweeps back to 1.12 r behind the ball and closes at the back pole.
+    sm_me = bpy.data.meshes.new(f"EyeSocket_{side}")
+    sock = bpy.data.objects.new(sm_me.name, sm_me); bpy.context.scene.collection.objects.link(sock)
+    bm = bmesh.new()
+    gz = Vector((0, -1, 0))                                   # gaze (forward)
+    rim_pts = [p for p in (sv.get("curve_surf") or rim_surf)]
+    rim_pts = rim_pts[::max(1, len(rim_pts) // 40)]
+    R1 = r * 1.12
+    meridians = []
+    for p in rim_pts:
+        d = p - centre
+        lat = d - gz * d.dot(gz)
+        if lat.length < 1e-9:
+            continue
+        ax = lat.normalized()
+        th0 = math.atan2(lat.length, d.dot(gz))               # angle of the lid edge from the gaze axis
+        rho0 = max(d.length - 0.04 * width, R1 * 0.98)        # just behind the lid skin
+        col = []
+        for k in range(9):
+            t = k / 8
+            th = th0 + (math.pi * 0.92 - th0) * t
+            rho = rho0 + (R1 - rho0) * min(1.0, t * 2.5)
+            col.append(bm.verts.new(centre + (gz * math.cos(th) + ax * math.sin(th)) * rho))
+        meridians.append(col)
+    pole = bm.verts.new(centre - gz * R1)
+    m_ = len(meridians)
+    for i in range(m_):
+        a_, b_ = meridians[i], meridians[(i + 1) % m_]
+        for k in range(len(a_) - 1):
+            bm.faces.new((a_[k], b_[k], b_[k + 1], a_[k + 1]))
+        bm.faces.new((a_[-1], b_[-1], pole))
+    bm.normal_update()
+    for f in bm.faces:                                        # seen from inside: normals toward the ball centre
+        if f.normal.dot(centre - f.calc_center_median()) < 0:
+            f.normal_flip()
+    bm.to_mesh(sm_me); bm.free()
+    for pl in sm_me.polygons:
+        pl.use_smooth = True
+    bpy.ops.object.select_all(action="DESELECT"); sock.select_set(True); bpy.context.view_layer.objects.active = sock
     if "eye_socket" not in bpy.data.materials:
         sm = bpy.data.materials.new("eye_socket"); sm.use_nodes = True
         sb = next(n for n in sm.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
