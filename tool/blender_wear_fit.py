@@ -9,6 +9,7 @@ job.json: {"character": rigged.glb, "armour": piece.glb, "out": out.glb, "item":
            "offset": gap to the skin (model units), "conform": 0..1, "rigidity": 0..1, "deforms": [...],
            "wall": {"k": wall thickness factor, "mid", "axis": the piece's tube axis in its own space},
            "rings": [{"c", "n", "r", "s", "b"}: openings drawn in, piece space],
+           "under": [fitted.glb, ...]: pieces already put on that this one goes over,
            "report": path.json}
 
 The editor (landmark_editor.html, mode «Броня») already placed each copy: along the limb between its joints, sized
@@ -18,6 +19,8 @@ negative determinant: its faces are flipped back), then:
   away from the axis so its inner wall clears the skin by the gap («conform» > 0 also draws loose cells in towards
   it). One smooth factor per cell moves the inner and the outer wall together, so the piece keeps its shape and
   wall thickness, instead of single vertices being snapped onto the skin;
+- goes over the pieces in "under": where one of them lies on the limb, its outer wall counts as the skin there, so
+  the new piece's inner wall clears it instead of cutting through it (a boot over a greave, a cuirass over a cuisse);
 - takes its skin weights from the nearest point of the body, only from the limb's own bone, its parent and its
   children (a bracer must not follow the fingers or the torso), smooths them over the piece and, by «rigidity»,
   draws them towards the limb's own bone (1 = the piece moves as one with the bone);
@@ -193,6 +196,29 @@ for o in body:
         tris.append(tuple(base + i for i in t.vertices))
         owner.append((o, tuple(t.vertices)))
 bvh = BVHTree.FromPolygons(verts, tris)
+
+# the pieces this one goes over, as they are put on (the rest pose: their skinned meshes as stored)
+under_bvh = None
+before = set(bpy.data.objects)
+uv, ut = [], []
+for path in job.get("under") or []:
+    if not Path(path).exists():
+        continue
+    bpy.ops.import_scene.gltf(filepath=path)
+    added = [o for o in bpy.data.objects if o not in before]
+    before |= set(added)
+    for o in added:
+        if o.type != "MESH":
+            continue
+        o.data.calc_loop_triangles()
+        base = len(uv)
+        uv += [o.matrix_world @ v.co for v in o.data.vertices]
+        ut += [tuple(base + i for i in t.vertices) for t in o.data.loop_triangles]
+    for o in added:
+        bpy.data.objects.remove(o, do_unlink=True)
+if ut:
+    under_bvh = BVHTree.FromPolygons(uv, ut)
+report["under"] = len(job.get("under") or [])
 offset = float(job.get("offset", 0.0))
 conform = min(1.0, max(0.0, float(job.get("conform", 0.0))))
 rigidity = min(1.0, max(0.0, float(job.get("rigidity", 0.0))))
@@ -303,6 +329,33 @@ def centred(limb):
     return Limb(c + d * (a - c).dot(d), c + d * (b - c).dot(d))
 
 
+def under_outer(o, d, skin_d, near_r):
+    """Where the pieces underneath reach along the ray from the limb axis: the outer wall of the first shell met,
+    if that shell lies on this limb (less than a limb radius of air between the skin and it, on this ray: the axis
+    is off the middle of a thin shin, so a fixed distance from it would drop one side); None otherwise. A shell on
+    another limb (the other leg's greave) is farther and does not count."""
+    if under_bvh is None:
+        return None
+    hits, start, gone = [], o.copy(), 0.0
+    for _ in range(12):
+        h = under_bvh.ray_cast(start, d, 4 * near_r)
+        if h[0] is None:
+            break
+        gone += h[3]
+        hits.append(gone)
+        step = 1e-4 * near_r
+        start = h[0] + d * step
+        gone += step
+    if not hits or hits[0] - skin_d > near_r:
+        return None
+    outer = hits[0]
+    for x in hits[1:]:   # the same shell: its walls close together (a gap of air under a skirt ends it)
+        if x - outer > .45 * near_r:
+            break
+        outer = x
+    return outer
+
+
 def fit_limb(me, limb):
     """Scale the piece about the limb's middle line, cell by cell, so its inner wall clears the skin by the offset."""
     shift = (centred(limb).axis(.5) - limb.axis(.5)).length
@@ -330,6 +383,19 @@ def fit_limb(me, limb):
     if near:
         far = 2.5 * near[len(near) // 2]
         skin = [[x if x is not None and x <= far else None for x in row] for row in skin]
+    # the pieces underneath: where one lies on the limb, its outer wall is the surface to clear
+    over = 0
+    if under_bvh is not None and near:
+        med = near[len(near) // 2]
+        for i in range(NT):
+            o = limb.axis(t0 + (i + .5) / NT * (t1 - t0))
+            for j in range(NA):
+                if skin[i][j] is None:
+                    continue
+                u = under_outer(o, limb.out(-math.pi + (j + .5) / NA * 2 * math.pi), skin[i][j], med)
+                if u is not None and u > skin[i][j]:
+                    skin[i][j] = u
+                    over += 1
     need, want = [[None] * NA for _ in range(NT)], [[None] * NA for _ in range(NT)]
     for i in range(NT):
         for j in range(NA):
@@ -352,12 +418,35 @@ def fit_limb(me, limb):
     # what is still too close (the skin varies inside a cell, or the limb is no tube there, as at the ankle under
     # a shoe): pushed out along the skin's normal, not away from the axis
     left = push_out(me, .6 * near[len(near) // 2] if near else .1 * limb.len)   # about the limb's radius
-    return {"close_to_skin": left, "axis_shift": round(shift / max(limb.len, 1e-9), 3)}
+    rep = {"close_to_skin": left, "axis_shift": round(shift / max(limb.len, 1e-9), 3), "over_cells": over}
+    # a piece underneath can stand off the limb farther than a cell may widen (a bulky greave under a boot that
+    # hugs the shin): what is still under it moves out along the ray from the axis, spread like the skin push
+    if under_bvh is not None and near:
+        rep["inside_under"] = push_out(me, .6 * near[len(near) // 2], under_need(limb, near[len(near) // 2]))
+    return rep
 
 
-def push_out(me, radius):
+def under_need(limb, med):
+    """The push for a vertex still under a piece underneath: along the ray from the limb axis through it, out to that
+    piece's outer wall plus the gap; None when it is clear (or no piece underneath lies on this limb there)."""
+    def need(co):
+        t, ang, rad = limb.cyl(co)
+        r = rad.length
+        if r < 1e-9:
+            return None
+        d = rad / r
+        o = co - rad
+        h = bvh.ray_cast(o, d, 4 * med)
+        u = under_outer(o, d, h[3] if h[0] is not None else r, med)
+        if u is None or r - u >= offset:
+            return None
+        return d * (offset - (r - u))
+    return need
+
+
+def push_out(me, radius, need_of=None):
     """Stage 2: what is under the skin or nearer than the offset moves out along the normal of the nearest skin
-    point. The push of every vertex spreads over its neighbours within the radius (on a sample of at most ~3000
+    point (or by need_of(co): a push vector or None). The push of every vertex spreads over its neighbours within the radius (on a sample of at most ~3000
     points, with a smooth falloff), so the inner and the outer wall move together and the piece keeps its shape
     instead of single vertices being snapped onto the skin. A few rounds; returns how many vertices are still too
     close."""
@@ -371,6 +460,11 @@ def push_out(me, radius):
     for _ in range(4):
         need = {}
         for v in me.vertices:
+            if need_of is not None:
+                p = need_of(v.co)
+                if p is not None:
+                    need[v.index] = p
+                continue
             loc, nrm, idx, dist = bvh.find_nearest(v.co)
             if loc is None:
                 continue

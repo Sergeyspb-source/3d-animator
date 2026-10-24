@@ -145,8 +145,11 @@ def _fit_entry(fit: Path) -> dict:
     """{item, fit, src, glb} for the editor's list of saved pieces (glb: the fitted result, None if not put on)."""
     base = fit.name[:-len(".fit.json")]
     glb = fit.with_name(base + ".glb")
-    return {"item": json.loads(fit.read_text(encoding="utf-8")).get("item") or base, "fit": fit.resolve().as_posix(),
-            "src": fit.with_name(base + ".src.glb").resolve().as_posix(), "glb": glb.resolve().as_posix() if glb.exists() else None}
+    saved = json.loads(fit.read_text(encoding="utf-8"))
+    return {"item": saved.get("item") or base, "fit": fit.resolve().as_posix(),
+            "src": fit.with_name(base + ".src.glb").resolve().as_posix(), "glb": glb.resolve().as_posix() if glb.exists() else None,
+            "under": (saved.get("state") or {}).get("under") or [],   # the pieces it was put on over
+            "part": (saved.get("state") or {}).get("part")}
 
 
 def saved_fits(rigged: Path) -> list:
@@ -174,7 +177,7 @@ def _wear(cfg, req, rigged: Path, item: str, put_on: bool) -> dict:
     job = {"character": str(rigged), "armour": str(clean_glb(piece)), "out": str(out), "item": item,
            "placements": req["placements"], "offset": float(req.get("offset", 0.0)), "deforms": req.get("deforms", []),
            "conform": float(req.get("conform", 0.5)), "rigidity": float(req.get("rigidity", 0.8)), "wall": req.get("wall"),
-           "rings": req.get("rings", []),
+           "rings": req.get("rings", []), "under": _under(rigged, item, req.get("under") or []),
            "report": str(work / "report.json")}
     (work / "job.json").write_text(json.dumps(job, ensure_ascii=False), encoding="utf-8")
     blender = cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe"
@@ -194,6 +197,8 @@ def _wear(cfg, req, rigged: Path, item: str, put_on: bool) -> dict:
         if not isinstance(v, dict):
             continue
         near = _t("lm.vertices_left_at_the_skin", v['close_to_skin']) if v.get("close_to_skin") else ""
+        if v.get("over_cells"):
+            near += _t("lm.over_other_pieces_cells", v["over_cells"])
         parts.append(_t("lm.vertices_bones", k, v['vertices'], near, ', '.join(b.split(':')[-1] for b in v['bones'][:4])))
     return {"ok": True, "glb": out.resolve().as_posix(), "fit": _fit_entry(rigged.parent / f"{stem}_wear_{item}.fit.json"),
             "log": _t("lm.put_on_and_saved", out.name) + "; ".join(parts)}
@@ -201,6 +206,18 @@ def _wear(cfg, req, rigged: Path, item: str, put_on: bool) -> dict:
 
 HY_PY = r"D:\conda\envs\hunyuan\python.exe"     # the same as sf3d_ui.HY_PY / HY_SRC
 HY_SRC = r"D:\My projects\SF3D\hunyuan3d-src"
+
+
+def _under(rigged: Path, item: str, items) -> list:
+    """The fitted results of the pieces this one goes over: only this character's, put on, and not the piece itself."""
+    stem = _stem(rigged)
+    out = []
+    for name in items:
+        name = re.sub(r"[^\w-]+", "_", str(name)).strip("_")
+        glb = rigged.parent / f"{stem}_wear_{name}.glb"
+        if name and name != item and glb.exists():
+            out.append(str(glb))
+    return out
 
 
 def _reference(cfg, item: str):

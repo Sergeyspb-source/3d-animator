@@ -178,6 +178,7 @@
       <label class="limbonly" title="{{ed.the_front_view_the_piece_was_made}}">{{ed.piece_picture}} <input type="file" id="wRef" accept="image/*"></label>
       <label class="limbonly">{{ed.point_radius}} <input type="range" id="wRad" min="0.05" max="1" step="0.01" value="0.25"></label>
       <div class="row limbonly"><button id="wFit" title="{{ed.find_the_position_tilt_thickness_and}}">{{ed.fit_to_the_skin}}</button></div>
+      <div id="wUnderBox" class="limbonly" hidden title="{{ed.under_hint}}"><div class="sub">{{ed.goes_over}}</div><div id="wUnder"></div></div>
       <div class="row"><button id="wReset">{{ed.reset}}</button><button id="wSave" title="{{ed.save_the_fitting_next_to_the}}">{{ed.save}}</button><button id="wApply" class="primary" title="{{ed.fit_in_blender_and_save}}">{{ed.put_on}}</button></div>
       <label class="chk" title="{{ed.pieces_put_on_before_for_example_a}}"><input type="checkbox" id="wOthers"> {{ed.show_the_other_pieces_put_on}}</label>
       <div class="row"><button id="wCheck" title="{{ed.bend_the_arms_and_legs_a_piece_put}}">{{ed.check_pose}}</button><button id="wRest" title="{{ed.back_to_the_rest_pose}}">{{ed.reset_the_pose}}</button></div>
@@ -2720,12 +2721,14 @@ function wearState() {
                off: (wear.off || new V3()).toArray(), q: wearHelper.quaternion.toArray(), sc: wearHelper.scale.toArray(),
                fit: Object.fromEntries(Object.entries(wear.fit || {}).map(([k, m]) => [k, Array.from(m.elements)])),
                handles: wear.handles.map((h) => ({ p: h.p.toArray(), d: h.d.toArray(), r: h.r })),
-               rings: (wear.rings || []).map((g) => ({ pts: g.pts.map((p) => p.toArray()), s: g.s, b: g.b, sym: g.sym })) };
+               rings: (wear.rings || []).map((g) => ({ pts: g.pts.map((p) => p.toArray()), s: g.s, b: g.b, sym: g.sym })),
+               under: wear.under ? [...wear.under] : null };
   for (const id of WEAR_SLIDERS) st[id] = wv(id);
   return st;
 }
 function wearRestore(st) {
   $('wPart').value = st.part; $('wSide').value = st.side; $('wMirror').checked = st.mirror !== false;
+  wear.under = st.under ? new Set(st.under) : null;
   if (!wearAuto()) return false;
   for (const id of WEAR_SLIDERS) if (st[id] != null) $(id).value = st[id];
   wear.off = new V3().fromArray(st.off || [0, 0, 0]);
@@ -2807,8 +2810,29 @@ async function wearShowOthers() {   // every other saved piece that is already p
   for (const g of [...wearOthers.children]) wearOthers.remove(g);
   for (const f of wearFits) {
     if (!f.glb || (wear && f.item === wear.item)) continue;
-    try { wearOthers.add(await wearSkinned(f.glb)); } catch (e) { /* the result was deleted: skip it */ }
+    try { const g = await wearSkinned(f.glb); g.userData.item = f.item; wearOthers.add(g); } catch (e) { /* the result was deleted: skip it */ }
   }
+  wearUnderList();
+}
+// «Поверх этих вещей»: the pieces already put on that this one goes over (a boot over a greave, a cuirass over a
+// cuisse): Blender takes their outer wall as the surface to clear. A new piece starts with the ones it overlaps
+function wearUnderList() {
+  const others = wearOthers.children.filter((g) => wear && g.userData.item && g.userData.item !== wear.item);
+  $('wUnderBox').hidden = !wear || !others.length;
+  if (!wear || !others.length) return;
+  if (!wear.under) {   // by default: the pieces whose box overlaps this one's by a good part, on another body part
+    // (two boots are alternatives, a greave under a boot is a layer), unless they went on over this one
+    const mine = new THREE.Box3().setFromObject(wearGroup, true), vol = (b) => { const d = b.getSize(new V3()); return d.x * d.y * d.z; };
+    const fit = (it) => wearFits.find((f) => f.item === it) || {};
+    wear.under = new Set(others.filter((g) => {
+      const f = fit(g.userData.item);
+      if ((f.under || []).includes(wear.item) || f.part === $('wPart').value) return false;
+      const b = new THREE.Box3().setFromObject(g, true), i = mine.clone().intersect(b);
+      return !i.isEmpty() && vol(i) > .05 * Math.min(vol(mine), vol(b));
+    }).map((g) => g.userData.item));
+  }
+  $('wUnder').innerHTML = others.map((g) => `<label class="chk"><input type="checkbox" data-item="${g.userData.item}"${wear.under.has(g.userData.item) ? ' checked' : ''}> ${g.userData.item}</label>`).join('');
+  for (const c of $('wUnder').querySelectorAll('input')) c.onchange = () => { if (c.checked) wear.under.add(c.dataset.item); else wear.under.delete(c.dataset.item); };
 }
 async function wearMode(on) {
   if (on && !poseOn) { await setPose(true); if (!poseOn) return; }
@@ -2873,6 +2897,7 @@ async function wearRequest() {   // the piece, where it sits and how to fit it: 
            wall: { k: wv('wWall'), mid: wear.pca.mid.toArray(), axis: wear.pca.axis.toArray() },
            deforms: wear.handles.filter((h) => h.d.lengthSq() > 0).map((h) => ({ p: h.p.toArray(), d: h.d.toArray(), r: h.r })),
            rings: ringList().map((g) => ({ c: g.c.toArray(), n: g.n.toArray(), r: g.r, s: g.s, b: g.b })),
+           under: [...(wear.under || [])],
            placements: wearMatrices().map((p) => ({ side: mid ? 'C' : p.side, matrix: Array.from(p.M.elements), bone: boneOf(p.side),
                                                     follow: $('wPart').value === 'boot' ? 'down' : 'up',
                                                     limb: { a: p.L.A.toArray(), b: p.L.B.toArray() } })),
