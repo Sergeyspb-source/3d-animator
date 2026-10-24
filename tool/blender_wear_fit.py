@@ -5,7 +5,9 @@
 job.json: {"character": rigged.glb, "armour": piece.glb, "out": out.glb, "item": name,
            "placements": [{"side": "L", "matrix": [16 floats, column-major, glTF space],
                            "limb": {"a": [x, y, z], "b": [x, y, z]} (the limb's two joints, glTF space),
-                           "bone": name of the limb's bone}, ...],
+                           "bone": name of the limb's bone,
+                           "weights": {bone: weight} (instead of "limb": a rigid piece, the same weights everywhere),
+                           "tight": [[x, y, z], ...] (the joints of neighbouring limbs: those sides fit closely)}, ...],
            "offset": gap to the skin (model units), "conform": 0..1, "rigidity": 0..1, "deforms": [...],
            "wall": {"k": wall thickness factor, "mid", "axis": the piece's tube axis in its own space},
            "rings": [{"c", "n", "r", "s", "b"}: openings drawn in, piece space],
@@ -197,6 +199,19 @@ for o in body:
         owner.append((o, tuple(t.vertices)))
 bvh = BVHTree.FromPolygons(verts, tris)
 
+
+def skin_of(idx, words):
+    """The share of a body triangle's weight on the bones whose names have one of the words (Arm, Hand: the arms)."""
+    o, tv = owner[idx]
+    names = [g.name for g in o.vertex_groups]
+    on = tot = 0.0
+    for vi in tv:
+        for g in o.data.vertices[vi].groups:
+            tot += g.weight
+            if any(w in names[g.group] for w in words):
+                on += g.weight
+    return on / tot if tot > 1e-9 else 0.0
+
 # the pieces this one goes over, as they are put on (the rest pose: their skinned meshes as stored)
 under_bvh = None
 before = set(bpy.data.objects)
@@ -356,33 +371,60 @@ def under_outer(o, d, skin_d, near_r):
     return outer
 
 
-def fit_limb(me, limb):
-    """Scale the piece about the limb's middle line, cell by cell, so its inner wall clears the skin by the offset."""
+def fit_limb(me, limb, tight=(), foreign=(), tube=True):
+    """Scale the piece about the limb's middle line, cell by cell, so its inner wall clears the skin by the offset.
+    tight: the joints of neighbouring limbs, a cuirass's shoulder joints: the cells facing them are drawn in onto the
+    skin fully, whatever «conform» is (a loose side stands out when the arm is raised), and there the body's own side
+    ends short of the joint: skin farther out on such a ray is the arm's (the shoulder's ball).
+    foreign: bone name words of other limbs: skin mostly weighted to them is not this limb's (a ray from the spine
+    through the armpit meets the arm, and the cuirass was widened to wrap it); it is not pushed out of either."""
     shift = (centred(limb).axis(.5) - limb.axis(.5)).length
     limb = centred(limb)
+    tdir = []   # (direction across the axis, distance of the joint from the axis)
+    for J in tight:
+        t, ang, rad = limb.cyl(J)
+        if rad.length > 1e-9:
+            tdir.append((rad.normalized(), rad.length))
     ts = [limb.cyl(v.co)[0] for v in me.vertices]
     t0, t1 = min(ts), max(ts)
     if t1 - t0 < 1e-6:
         return {}
     t1 += 1e-6
-    inner = [[None] * NA for _ in range(NT)]
-    for v in me.vertices:
-        i, j, r = cell(limb, t0, t1, v.co)
-        if r > 1e-9 and (inner[i][j] is None or r < inner[i][j]):
-            inner[i][j] = r
     skin = [[None] * NA for _ in range(NT)]
+    # the inner wall on the same ray as the skin: the drawing in goes by it (the nearest vertex of a cell is often a
+    # rim or a rivet bent inwards, and the wall beside it stands well off the skin); widening goes by the nearest one
+    wall = [[None] * NA for _ in range(NT)]
+    own = BVHTree.FromPolygons([v.co.copy() for v in me.vertices], [tuple(p.vertices) for p in me.polygons])
     for i in range(NT):
         o = limb.axis(t0 + (i + .5) / NT * (t1 - t0))
         for j in range(NA):
-            hit = bvh.ray_cast(o, limb.out(-math.pi + (j + .5) / NA * 2 * math.pi), limb.len)
-            if hit[0] is not None:
+            d = limb.out(-math.pi + (j + .5) / NA * 2 * math.pi)
+            hit = bvh.ray_cast(o, d, limb.len)
+            if hit[0] is not None and not (foreign and skin_of(hit[2], foreign) > .5) \
+                    and not any(d.dot(td) > .8 and hit[3] > .85 * rj for td, rj in tdir):
                 skin[i][j] = hit[3]
+            hit = own.ray_cast(o, d, limb.len)
+            if hit[0] is not None:
+                wall[i][j] = hit[3]
     # a ray that ran far is not this limb's skin (from the foot up inside the shin, along the arm into the torso):
     # such cells are unknown and take their neighbours' factor, or the piece would be stretched into a spike
     near = sorted(x for row in skin for x in row if x is not None)
     if near:
         far = 2.5 * near[len(near) // 2]
         skin = [[x if x is not None and x <= far else None for x in row] for row in skin]
+    # the inner wall: the vertices nearest to the axis in each cell, but not deeper than 3/4 of the skin's distance:
+    # that is what is left of a cap or a membrane across the tube (a closed image-to-3D piece opened up), hidden inside
+    # the limb; counted, it blew the piece's ends up into a funnel (pieces with a real inner side have none there)
+    # Not the very nearest vertex either but the tenth percentile of the cell: a few ragged bits poking in (a torn
+    # rim) do not widen the whole cell; what is left of them is pushed out below with its neighbours
+    rs, junk = [[[] for _ in range(NA)] for _ in range(NT)], set()
+    for v in me.vertices:
+        i, j, r = cell(limb, t0, t1, v.co)
+        if tube and skin[i][j] and r < .75 * skin[i][j]:   # not a boot: its rays from the shin meet the foot
+            junk.add(v.index)
+        elif r > 1e-9:
+            rs[i][j].append(r)
+    inner = [[sorted(c)[len(c) // 10] if c else None for c in row] for row in rs]
     # the pieces underneath: where one lies on the limb, its outer wall is the surface to clear
     over = 0
     if under_bvh is not None and near:
@@ -397,12 +439,16 @@ def fit_limb(me, limb):
                     skin[i][j] = u
                     over += 1
     need, want = [[None] * NA for _ in range(NT)], [[None] * NA for _ in range(NT)]
+    side = [max([0.0] + [min(1.0, max(0.0, (limb.out(-math.pi + (j + .5) / NA * 2 * math.pi).dot(d) - .5) / .4)) for d, _ in tdir])
+            for j in range(NA)]   # 1 within about 25° of a neighbour's direction, 0 from 60° off
     for i in range(NT):
         for j in range(NA):
             if inner[i][j] and skin[i][j]:
                 f = (skin[i][j] + offset) / inner[i][j]
-                need[i][j] = max(1.0, f)                                # never inside the skin
-                want[i][j] = f if f > 1 else 1 + conform * (f - 1)      # loose cells drawn in by «conform»
+                c = conform + (1 - conform) * side[j]
+                need[i][j] = f if f > 1 else 0.0                        # never inside the skin (a loose cell needs nothing)
+                fw = (skin[i][j] + offset) / wall[i][j] if wall[i][j] and wall[i][j] >= .75 * skin[i][j] else f
+                want[i][j] = f if f > 1 else 1 + c * (min(1.0, fw) - 1)   # loose cells drawn in by «conform»
     # a row with no skin around it (above the top of a head under a helmet's dome, past the end of a limb) stays as
     # it is: filled from its neighbours it would take their widening and blow the dome up into a brim
     for i in range(NT):
@@ -410,19 +456,20 @@ def fit_limb(me, limb):
             need[i] = [1.0] * NA
             want[i] = [1.0] * NA
     # the cells that must widen keep their need through the smoothing (max first); the rest follow «conform» only,
-    # so a widening near the elbow does not spread over the whole piece
+    # so a widening near the elbow does not spread over the whole piece (a loose cell's need is 0, not 1: with 1 the
+    # max below kept every cell at least as wide as it was, and «conform» never drew anything in)
     need = soften([[min(1.8, n) for n in row] for row in fill(need)])
     want = soften([[min(1.8, max(.6, w)) for w in row] for row in fill(want)], keep_max=False)
     grid = [[max(w, n) for w, n in zip(rw, rn)] for rw, rn in zip(want, need)]
     scale_radially(me, limb, t0, t1, grid)
     # what is still too close (the skin varies inside a cell, or the limb is no tube there, as at the ankle under
     # a shoe): pushed out along the skin's normal, not away from the axis
-    left = push_out(me, .6 * near[len(near) // 2] if near else .1 * limb.len)   # about the limb's radius
-    rep = {"close_to_skin": left, "axis_shift": round(shift / max(limb.len, 1e-9), 3), "over_cells": over}
+    left = push_out(me, .6 * near[len(near) // 2] if near else .1 * limb.len, foreign=foreign, skip=junk)   # about the limb's radius
+    rep = {"close_to_skin": left, "axis_shift": round(shift / max(limb.len, 1e-9), 3), "over_cells": over, "inside_limb": len(junk)}
     # a piece underneath can stand off the limb farther than a cell may widen (a bulky greave under a boot that
     # hugs the shin): what is still under it moves out along the ray from the axis, spread like the skin push
     if under_bvh is not None and near:
-        rep["inside_under"] = push_out(me, .6 * near[len(near) // 2], under_need(limb, near[len(near) // 2]))
+        rep["inside_under"] = push_out(me, .6 * near[len(near) // 2], under_need(limb, near[len(near) // 2]), skip=junk)
     return rep
 
 
@@ -444,7 +491,23 @@ def under_need(limb, med):
     return need
 
 
-def push_out(me, radius, need_of=None):
+def cap_under_need(J, near_r):
+    """under_need for a pauldron: along the ray from its shoulder joint through the vertex."""
+    def need(co):
+        d = co - J
+        r = d.length
+        if r < 1e-9:
+            return None
+        d = d / r
+        h = bvh.ray_cast(J, d, r + 4 * near_r)
+        u = under_outer(J, d, h[3] if h[0] is not None else r, near_r)
+        if u is None or r - u >= offset:
+            return None
+        return d * (offset - (r - u))
+    return need
+
+
+def push_out(me, radius, need_of=None, rigid=False, foreign=(), skip=()):
     """Stage 2: what is under the skin or nearer than the offset moves out along the normal of the nearest skin
     point (or by need_of(co): a push vector or None). The push of every vertex spreads over its neighbours within the radius (on a sample of at most ~3000
     points, with a smooth falloff), so the inner and the outer wall move together and the piece keeps its shape
@@ -460,13 +523,15 @@ def push_out(me, radius, need_of=None):
     for _ in range(4):
         need = {}
         for v in me.vertices:
+            if v.index in skip:   # left inside the limb on purpose (a cap's remnant): pushed out it spreads into a brim
+                continue
             if need_of is not None:
                 p = need_of(v.co)
                 if p is not None:
                     need[v.index] = p
                 continue
             loc, nrm, idx, dist = bvh.find_nearest(v.co)
-            if loc is None:
+            if loc is None or (foreign and skin_of(idx, foreign) > .5):   # another limb's skin (an arm by a cuirass)
                 continue
             gap = (v.co - loc).dot(nrm)
             if gap < offset:
@@ -495,7 +560,7 @@ def push_out(me, radius, need_of=None):
                 acc += at[k] * w
                 tot += w
             move = acc / tot if tot else Vector()
-            own = need.get(v.index)
+            own = None if rigid else need.get(v.index)   # a rigid piece only moves with its neighbourhood
             if own is not None:
                 u = own.normalized()
                 move += u * max(0.0, own.length - move.dot(u))
@@ -604,11 +669,16 @@ for pl in job["placements"]:
     limb = None
     if pl.get("limb"):
         limb = Limb((CONV @ Vector(pl["limb"]["a"]).to_4d()).to_3d(), (CONV @ Vector(pl["limb"]["b"]).to_4d()).to_3d())
-        rep.update(fit_limb(me, limb))
-    else:   # placed by the skeleton in the editor (a boot, a whole arm): no limb axis, only the push along the normal
+        tight = [(CONV @ Vector(p).to_4d()).to_3d() for p in pl.get("tight") or []]   # glTF -> Blender
+        rep.update(fit_limb(me, limb, tight, ("Arm", "Hand") if tight else (), pl.get("follow") != "down"))
+    else:   # placed by the skeleton in the editor (a boot, a whole arm), or a pauldron: no limb axis, only the push
+        # along the normal (a pauldron is rigid: its push spreads over a third of it, so it moves rather than dents)
         lo = Vector([min(v.co[i] for v in me.vertices) for i in range(3)])
         size = (Vector([max(v.co[i] for v in me.vertices) for i in range(3)]) - lo).length   # the piece's diagonal
-        rep["close_to_skin"] = push_out(me, max(.08 * size, 1e-6))
+        rep["close_to_skin"] = push_out(me, max((.3 if pl.get("weights") else .08) * size, 1e-6), rigid=bool(pl.get("weights")))
+        if under_bvh is not None and pl.get("joint"):   # a pauldron over a cuirass's straps
+            J = (CONV @ Vector(pl["joint"]).to_4d()).to_3d()
+            rep["inside_under"] = push_out(me, .3 * size, cap_under_need(J, float(pl.get("r", .1 * size))), rigid=True)
     me.update()
     radius = 0.0
     if limb:   # about half the limb's thickness: the piece bends smoothly, never vertex by vertex
@@ -616,7 +686,14 @@ for pl in job["placements"]:
         radius = min(.5 * rs[len(rs) // 2], .25 * limb.len)
     else:      # by the skeleton: a tenth of the piece, so a boot still bends at the ankle
         radius = .1 * size
-    rep["bones"] = skin_weights(o, me, pl.get("bone"), radius, pl.get("bones"), pl.get("follow") != "down")
+    if pl.get("weights"):   # the same weights for every vertex (a pauldron: between the collarbone and the arm)
+        ws = {n: w for n, w in pl["weights"].items() if n in arm.data.bones and w > 1e-3}
+        tot = sum(ws.values()) or 1.0
+        for n, w in ws.items():
+            o.vertex_groups.new(name=n).add(range(len(me.vertices)), w / tot, "REPLACE")
+        rep["bones"] = sorted(ws)
+    else:
+        rep["bones"] = skin_weights(o, me, pl.get("bone"), radius, pl.get("bones"), pl.get("follow") != "down")
     mod = o.modifiers.new("Armature", "ARMATURE"); mod.object = arm
     o.parent = arm; o.matrix_parent_inverse = arm.matrix_world.inverted()
     for p in me.polygons:

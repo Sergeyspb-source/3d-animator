@@ -1349,5 +1349,8 @@
  "va.speed": "Speed",
  "va.speed_1x": "1.0×",
  "va.time": "Time",
- "va.weapons_in_hand": "Weapons in hand"
+ "va.weapons_in_hand": "Weapons in hand",
+ "ed.pauldron": "Pauldron (a dome on the shoulder joint)",
+ "ed.follows_the_arm": "Follows the arm",
+ "ed.follows_the_arm_hint": "0: the pauldron stays on the collarbone and does not rise with the arm; 1: it turns with the upper arm bone. In between: halfway, as pauldrons usually do in games. The piece's shape does not bend."
 }

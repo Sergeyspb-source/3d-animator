@@ -151,6 +151,7 @@
         <option value="forearm">{{ed.forearm_bracers}}</option><option value="arm">{{ed.upper_arm}}</option><option value="hand">{{ed.hand_glove}}</option>
         <option value="upleg">{{ed.thigh}}</option><option value="leg">{{ed.shin_greaves}}</option><option value="foot">{{ed.foot_shoe}}</option>
         <option value="boot">{{ed.boot_stands_upright_the_shaft_on_the}}</option>
+        <option value="pauldron">{{ed.pauldron}}</option>
         <option value="torso">{{ed.torso_breastplate}}</option><option value="head">{{ed.head_helmet}}</option>
         <option value="skeleton">{{ed.the_whole_piece_by_its_own_skeleton}}</option></select></label>
       <label>{{ed.side_2}} <select id="wSide"><option value="L">{{ed.left_on_the_right_of_the_screen}}</option><option value="R">{{ed.right_on_the_left_of_the_screen}}</option></select></label>
@@ -162,7 +163,7 @@
       <label class="limbonly">{{ed.twist_about_the_axis}} <input type="range" id="wTwist" min="-180" max="180" step="1" value="0"></label>
       <label>{{ed.gap_to_the_skin}} <input type="range" id="wGap" min="0" max="0.3" step="0.01" value="0.04"></label>
       <label class="limbonly" title="{{ed.0_the_piece_s_shape_as_it_is_pushed}}">{{ed.fit_to_the_body}} <input type="range" id="wConform" min="0" max="1" step="0.05" value="0.5"></label>
-      <label class="limbonly" title="{{ed.1_the_piece_moves_with_the_bone_and}}">{{ed.rigidity}} <input type="range" id="wRigid" min="0" max="1" step="0.05" value="0.8"></label>
+      <label class="limbonly" title="{{ed.1_the_piece_moves_with_the_bone_and}}"><span id="wRigidName">{{ed.rigidity}}</span> <input type="range" id="wRigid" min="0" max="1" step="0.05" value="0.8"></label>
       <label class="chk limbonly" title="{{ed.nodes_of_the_inner_wall_red_under}}"><input type="checkbox" id="wInside" checked> {{ed.fit_nodes}}</label>
       <div class="small limbonly" id="wInfo"></div>
       <div class="row limbonly"><button id="wMove" title="{{ed.arrows_on_the_piece_move_g}}">{{ed.move}}</button><button id="wRot" title="{{ed.rotate_about_the_middle_of_the_bone}}">{{ed.rotate}}</button><button id="wScale" title="{{ed.size_the_green_axis_is_the_length}}">{{ed.size}}</button></div>
@@ -1962,8 +1963,8 @@ $('pSquat').onclick = () => {
 // next to the character (<stem>_wear_<item>.fit.json + the piece), so it can be opened again and corrected.
 const WEAR_PARTS = { forearm: ['forearm', 'hand'], arm: ['arm', 'forearm'], hand: ['hand', 'hand_end'],
                      upleg: ['upleg', 'leg'], leg: ['leg', 'foot'], foot: ['foot', 'toe_end'],
-                     boot: ['foot', 'leg'], torso: ['hips', 'neck'], head: ['head', 'head_top'] };
-const WEAR_RIGID = { forearm: .8, arm: .8, hand: .2, upleg: .8, leg: .8, foot: .5, boot: .3, torso: .5, head: 1 };   // gloves bend with the fingers, boots a little, a cuirass with the spine
+                     boot: ['foot', 'leg'], torso: ['hips', 'neck'], head: ['head', 'head_top'], pauldron: ['arm', 'forearm'] };
+const WEAR_RIGID = { forearm: .8, arm: .8, hand: .2, upleg: .8, leg: .8, foot: .5, boot: .3, torso: .5, head: 1, pauldron: .7 };   // gloves bend with the fingers, boots a little, a cuirass with the spine; a pauldron: how much it turns with the arm
 // the middle of the body: one piece, no side and no mirror; its axis is the piece's own vertical (a generated cuirass
 // or helmet stands upright), its weights go to this bone; pos: where its middle sits between the two joints
 const WEAR_MID = { torso: { bone: 'spine1', pos: .55 }, head: { bone: 'head', pos: .62 } };
@@ -1971,6 +1972,7 @@ const jointAt = (id, sd) => S.pos[id] || S.pos[id + '_' + sd];
 // pieces that stand upright as generated (their own vertical is their axis, their proportions are kept): the middle
 // of the body, and a boot (its shaft on the shin, its toe turned along the foot, its sole at the heel)
 const isUpright = (part) => !!WEAR_MID[part] || part === 'boot';
+const isCap = (part) => part === 'pauldron';   // a dome on the shoulder joint: rigid, between the collarbone and the arm
 const WEAR_BONE = { boot: 'leg' };   // the bone a piece follows when it is not its segment's first joint
 const WEAR_SLIDERS = ['wPos', 'wLen', 'wThick', 'wWall', 'wTwist', 'wGap', 'wConform', 'wRigid'];
 let wear = null, wearOn = false;
@@ -2038,6 +2040,48 @@ function wearShapeUpright(parts, boot) {   // the piece's own vertical as its ax
   for (const p of parts) { const a = p.geo.attributes.position, st = Math.max(1, Math.floor(a.count / 4000)); for (let i = 0; i < a.count; i += st) rs.push(Math.hypot(a.getX(i) - mid.x, a.getZ(i) - mid.z)); }
   rs.sort((x, y) => x - y);
   return { mid, axis: new V3(0, 1, 0), L: box.max.y - box.min.y, rin: rs[Math.floor(rs.length * .15)], upright: true, toe, boot: !!boot };
+}
+// a pauldron: a dome over the shoulder. It keeps the orientation it was made in (an extraction from a dressed body,
+// a generated piece «as worn», seen from the front: up is up). The sphere of its upper part (least squares; below it
+// a strap or a loop round the arm would mislead the fit) is its own shoulder ball: the centre goes onto the
+// character's shoulder joint, the radius onto the skin around it. The side it was made for: from its file name
+// (_L, left ...), else the left one (the generator is asked for a left pauldron); the other side gets it reflected.
+const capSideOf = (name) => (/(^|[^a-z])(r|right)([^a-z]|$)|прав/i.test(name.replace(/\.glb$/i, '')) ? 'R' : 'L');
+function wearShapeCap(parts, name) {
+  let P = [];
+  for (const p of parts) { const a = p.geo.attributes.position, st = Math.max(1, Math.floor(a.count / 4000)); for (let i = 0; i < a.count; i += st) P.push(new V3().fromBufferAttribute(a, i)); }
+  const all = P, box0 = new THREE.Box3().setFromPoints(P), h = box0.max.y - box0.min.y;
+  P = P.filter((p) => p.y > box0.max.y - .45 * h);   // the dome
+  const m = P.reduce((s, p) => s.add(p), new V3()).multiplyScalar(1 / P.length);
+  const H = Array.from({ length: 4 }, () => new Array(4).fill(0)), g = new Array(4).fill(0);   // |p|^2 = 2 c.p + k
+  for (const p of P) {
+    const q = p.clone().sub(m), row = [2 * q.x, 2 * q.y, 2 * q.z, 1], b = q.lengthSq();
+    for (let i = 0; i < 4; i++) { g[i] += row[i] * b; for (let j = 0; j < 4; j++) H[i][j] += row[i] * row[j]; }
+  }
+  const box = new THREE.Box3().setFromPoints(P), ext = box.getSize(new V3()).length();
+  const x = solve4(H, g);
+  let c = x ? m.clone().add(new V3(x[0], x[1], x[2])) : null, n = c ? m.clone().sub(c) : null;
+  if (!c || n.length() < 1e-6 * ext || c.distanceTo(m) > 1.5 * ext || n.y < .2 * n.length()) {   // flat, or not a dome over its centre: the thinnest direction, up; the centre under it
+    const cv = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+    for (const p of P) { const d = [p.x - m.x, p.y - m.y, p.z - m.z]; for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) cv[i * 3 + j] += d[i] * d[j] / P.length; }
+    n = eigen3(cv)[2][1].clone(); if (n.y < 0) n.negate();
+    c = m.clone().addScaledVector(n, -.5 * ext);
+  }
+  n.normalize();
+  const rs = P.map((p) => p.distanceTo(c)).sort((a, b) => a - b);
+  let t0 = Infinity, t1 = -Infinity; for (const p of all) { const t = p.clone().sub(c).dot(n); t0 = Math.min(t0, t); t1 = Math.max(t1, t); }
+  return { mid: c, axis: n, L: t1 - t0, rin: rs[Math.floor(rs.length * .15)], cap: true, side: capSideOf(name || '') };
+}
+function solve4(H, g) {   // H x = g, 4x4
+  const A = H.map((row, i) => [...row, g[i]]);
+  for (let c = 0; c < 4; c++) {
+    let p = c; for (let r = c + 1; r < 4; r++) if (Math.abs(A[r][c]) > Math.abs(A[p][c])) p = r;
+    [A[c], A[p]] = [A[p], A[c]]; if (Math.abs(A[c][c]) < 1e-18) return null;
+    for (let r = c + 1; r < 4; r++) { const f = A[r][c] / A[c][c]; for (let k = c; k <= 4; k++) A[r][k] -= f * A[c][k]; }
+  }
+  const x = [0, 0, 0, 0];
+  for (let r = 3; r >= 0; r--) { let s = A[r][4]; for (let k = r + 1; k < 4; k++) s -= A[r][k] * x[k]; x[r] = s / A[r][r]; }
+  return x;
 }
 function wearShape(parts, force = null) {   // force: the tube axis when it is known (wearOpenAxis)
   const P = [];
@@ -2221,13 +2265,19 @@ function limbSkin(L) {   // the limb's own skin only (triangles near its profile
   return (L.skin = g);
 }
 function skinSigned(L, p) {   // {d: distance to the skin, + outside, n: outward direction at the node} or null
+  if (wear.pca && wear.pca.cap) return capSigned(L, p);
   const g = limbSkin(L); if (!g || !g.boundsTree.closestPointToPoint(p, _near, 0, 3 * L.r)) return null;
   const [t, ang, r] = limbCyl(L, p.x, p.y, p.z), R = skinAt(L, t, ang), s = R && r < R ? -1 : 1, d = _near.distance;
   const n = d > 1e-9 ? p.clone().sub(_near.point).multiplyScalar(s / d)
     : p.clone().sub(L.A).addScaledVector(L.u, -p.clone().sub(L.A).dot(L.u)).normalize();
   return { d: s * d, n };
 }
+// deeper inside than 3/4 of the skin's distance from the axis is no wall to fit but what is left of a cap or a
+// membrane across the tube (a closed image-to-3D piece opened up): inside the limb it is hidden; counted, it drags the
+// piece off the middle and blows its ends up into a funnel (pieces with a real inner side have none there)
+const isJunk = (L, t, ang, r) => { const R = skinAt(L, t, ang); return R > 0 && r < .75 * R; };
 function wearNodes(M, L) {   // [[part, vertex]]: the vertex nearest to the axis in each cell of the placed piece
+  if (wear.pca && wear.pca.cap) return capNodes(M, L);
   const e = M.elements, all = [];
   let t0 = Infinity, t1 = -Infinity;
   wear.parts.forEach((p, pi) => {
@@ -2235,6 +2285,7 @@ function wearNodes(M, L) {   // [[part, vertex]]: the vertex nearest to the axis
     for (let i = 0; i < a.length; i += 3) {
       const x = a[i], y = a[i + 1], z = a[i + 2];
       const c = limbCyl(L, e[0] * x + e[4] * y + e[8] * z + e[12], e[1] * x + e[5] * y + e[9] * z + e[13], e[2] * x + e[6] * y + e[10] * z + e[14]);
+      if (isJunk(L, c[0], c[1], c[2])) continue;
       all.push(pi, i / 3, c[0], c[1], c[2]); t0 = Math.min(t0, c[0]); t1 = Math.max(t1, c[0]);
     }
   });
@@ -2273,6 +2324,7 @@ function solve8(H, g) {   // H x = g, 8x8, Gaussian elimination with partial piv
   return x;
 }
 function wearFitCopy(c) {   // fits one copy; its correction goes into wear.fit[side] in the piece's own space
+  if (wear.pca.cap) return wearFitCap(c);
   const L = c.L, F0 = wear.fit[c.side] || new THREE.Matrix4(), M = c.M0.clone().multiply(F0), G = wearGapDist(L), sig = .15 * L.r;
   let nodes = wearNodes(M, L); if (nodes.length < 30) return false;
   const pts0 = nodes.map((nd) => nodeAt(nd, M)), C = pts0.reduce((s, p) => s.add(p), new V3()).multiplyScalar(1 / pts0.length);
@@ -2318,6 +2370,121 @@ function wearNodeStats(c) {   // the nodes of a placed copy: positions, colours 
     if (sd.d < 0) { under++; col.push(.9, .28, .3); } else if (a > .2) { air++; col.push(.25, .5, .95); } else col.push(.25, .8, .4);
   }
   return { pos, col, under, air, n, meanAir: n ? sumAir / n : 0, wall: (nodes.wall || 0) / L.r };
+}
+// ---- a pauldron on the shoulder joint: the same fit, in cells of direction from the joint instead of a limb's
+// cylinder (a dome reaches over the top of the shoulder, where the arm's cylinder has no skin). The skin there: every
+// triangle of the character near the joint (the shoulder, the collarbone, the top of the chest and the back);
+// inside or outside: nearer to the joint than the skin on the ray from the joint through the point.
+const CAP_T = 18, CAP_A = 24, _capRc = new THREE.Raycaster(); _capRc.firstHitOnly = true;
+function capCells(M, L) {   // [part, vertex, r, r max, dx, dy, dz]: the nearest point to the joint in each cell of direction
+  const e = M.elements, T = L.A, pts = [], up = new V3();
+  wear.parts.forEach((p, pi) => {
+    const a = p.geo.attributes.position.array, st = 3 * Math.max(1, Math.floor(a.length / 3 / 8000));
+    for (let i = 0; i < a.length; i += st) {
+      const x = a[i], y = a[i + 1], z = a[i + 2];
+      const dx = e[0] * x + e[4] * y + e[8] * z + e[12] - T.x, dy = e[1] * x + e[5] * y + e[9] * z + e[13] - T.y, dz = e[2] * x + e[6] * y + e[10] * z + e[14] - T.z;
+      pts.push(pi, i / 3, dx, dy, dz); up.x += dx; up.y += dy; up.z += dz;
+    }
+  });
+  if (up.lengthSq() < 1e-24) return [];
+  up.normalize();   // the dome's top: towards the piece's middle
+  const p1 = (Math.abs(up.x) < .9 ? new V3(1, 0, 0) : new V3(0, 0, 1)).cross(up).normalize(), p2 = up.clone().cross(p1), best = new Map();
+  for (let k = 0; k < pts.length; k += 5) {
+    const dx = pts[k + 2], dy = pts[k + 3], dz = pts[k + 4], r = Math.hypot(dx, dy, dz); if (r < 1e-9) continue;
+    const th = Math.acos(Math.max(-1, Math.min(1, (dx * up.x + dy * up.y + dz * up.z) / r)));
+    const ph = Math.atan2(dx * p2.x + dy * p2.y + dz * p2.z, dx * p1.x + dy * p1.y + dz * p1.z);
+    const key = Math.min(CAP_T - 1, Math.floor(th / Math.PI * CAP_T)) * CAP_A + Math.min(CAP_A - 1, Math.floor((ph + Math.PI) / (2 * Math.PI) * CAP_A));
+    const b = best.get(key);
+    if (!b) best.set(key, [pts[k], pts[k + 1], r, r, dx, dy, dz]);
+    else { if (r < b[2]) { b[0] = pts[k]; b[1] = pts[k + 1]; b[2] = r; b[4] = dx; b[5] = dy; b[6] = dz; } b[3] = Math.max(b[3], r); }
+  }
+  return [...best.values()];
+}
+function capSkinDist(L, dir) {   // the skin's distance from the shoulder joint along a direction; 0: none
+  const g = capSkin(L); if (!g) return 0;
+  _capRc.set(L.A, dir); _capRc.far = 2 * L.len;
+  const h = g.boundsTree.raycastFirst(_capRc.ray, THREE.DoubleSide); return h && h.distance <= _capRc.far ? h.distance : 0;
+}
+function capNodes(M, L) {
+  const cells = capCells(M, L), nodes = cells.map((b) => [b[0], b[1]]);
+  nodes.wall = median(cells.map((b) => b[3] - b[2]));
+  return nodes;
+}
+function capSkin(L) {   // the character's triangles near the shoulder joint, and those of the pieces it goes over
+  const under = wearOthers.children.filter((g) => wear && wear.under && wear.under.has(g.userData.item)), key = under.map((g) => g.userData.item).sort().join('|');
+  if (L.capSkin !== undefined && L.capKey === key) return L.capSkin;
+  L.capKey = key;
+  const ms = [...meshes]; for (const g of under) g.traverse((o) => { if (o.isMesh) ms.push(o); });
+  const pos = [], v = [new V3(), new V3(), new V3()], c = new V3(), R = Math.max(4 * L.r, .9 * L.len);
+  for (const m of ms) {
+    const idx = m.geometry.index, n = idx ? idx.count : m.geometry.attributes.position.count;
+    for (let i = 0; i + 2 < n; i += 3) {
+      for (let k = 0; k < 3; k++) m.getVertexPosition(idx ? idx.getX(i + k) : i + k, v[k]).applyMatrix4(m.matrixWorld);
+      if (c.copy(v[0]).add(v[1]).add(v[2]).multiplyScalar(1 / 3).distanceTo(L.A) < R) for (const p of v) pos.push(p.x, p.y, p.z);
+    }
+  }
+  if (pos.length < 90) return (L.capSkin = null);
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.computeBoundsTree();
+  return (L.capSkin = g);
+}
+function capSigned(L, p) {
+  const g = capSkin(L); if (!g || !g.boundsTree.closestPointToPoint(p, _near, 0, 3 * L.r)) return null;
+  const dir = p.clone().sub(L.A), r = dir.length(); if (r < 1e-9) return null;
+  dir.multiplyScalar(1 / r);
+  const R = capSkinDist(L, dir), s = R && r < R ? -1 : 1, d = _near.distance;
+  return { d: s * d, n: d > 1e-9 ? p.clone().sub(_near.point).multiplyScalar(s / d) : dir };
+}
+function capClearance({ M, L }) {   // how much bigger the dome should be for its inner wall to clear the skin + gap (median cell)
+  const g = 1 + wv('wGap'), ratios = [];
+  for (const b of capCells(M, L)) {
+    const sk = capSkinDist(L, new V3(b[4], b[5], b[6]).normalize());
+    if (sk) ratios.push(sk * g / b[2]);
+  }
+  if (ratios.length < 12) return 0;
+  ratios.sort((p, q) => p - q);
+  return Math.min(1.6, Math.max(.6, ratios[ratios.length >> 1]));
+}
+function wearAutoCap(L) {   // a pauldron: made for the other shoulder -> reflected; sized on the shoulder, then fitted
+  const P = wear.pca;
+  wear.flip = P.side !== $('wSide').value;
+  wear.mid = L.A.clone(); wear.lenFit = 1; wear.tooLong = false;
+  $('wPos').value = 0;
+  wear.s = 1.25 * L.r * (1 + wv('wGap')) / Math.max(P.rin, 1e-9);   // first guess: a shoulder a quarter wider than the arm
+  for (let it = 0; it < 4; it++) { const k = capClearance(wearMatrices()[0]); if (!k || Math.abs(k - 1) < .01) break; wear.s *= k; }
+  wearFitAll();
+  return true;
+}
+function wearFitCap(c) {   // shift, turn and one scale for the whole piece (a pauldron keeps its proportions)
+  const L = c.L, F0 = wear.fit[c.side] || new THREE.Matrix4(), M = c.M0.clone().multiply(F0), G = wearGapDist(L), sig = .15 * L.r;
+  let nodes = capNodes(M, L); if (nodes.length < 20) return false;
+  const C = nodes.map((nd) => nodeAt(nd, M)).reduce((s, p) => s.add(p), new V3()).multiplyScalar(1 / nodes.length);
+  const P = new Array(8).fill(0);   // shift along x y z (in limb radii), turn about x y z, log scale, (unused)
+  const LIM = [.6, .6, .6, .35, .35, .35, .3, 0], PRIOR = [.02, .02, .02, .05, .05, .05, .02, 1];
+  const K = () => {
+    const rv = new V3(P[3], P[4], P[5]), ang = rv.length(), s = Math.exp(P[6]);
+    const R = ang > 1e-12 ? new THREE.Matrix4().makeRotationAxis(rv.clone().normalize(), ang) : new THREE.Matrix4();
+    return new THREE.Matrix4().makeTranslation(C.x + P[0] * L.r, C.y + P[1] * L.r, C.z + P[2] * L.r).multiply(R)
+      .multiply(new THREE.Matrix4().makeScale(s, s, s)).multiply(new THREE.Matrix4().makeTranslation(-C.x, -C.y, -C.z));
+  };
+  for (let it = 0; it < 30; it++) {
+    const Mk = K().multiply(M);
+    if (it && it % 8 === 0) nodes = capNodes(Mk, L);
+    const H = Array.from({ length: 8 }, () => new Array(8).fill(0)), g = new Array(8).fill(0);
+    for (const nd of nodes) {
+      const p = nodeAt(nd, Mk), sd = capSigned(L, p); if (!sd) continue;
+      const res = sd.d - G, w = res < 0 ? 10 : 1 / (1 + (res / sig) ** 2), n = sd.n, dp = p.clone().sub(C), x = dp.clone().cross(n);
+      const J = [n.x * L.r, n.y * L.r, n.z * L.r, x.x, x.y, x.z, n.dot(dp), 0];
+      for (let a = 0; a < 8; a++) { g[a] += w * J[a] * res; for (let b = 0; b < 8; b++) H[a][b] += w * J[a] * J[b]; }
+    }
+    const h = Math.max(1e-12, H.reduce((s, row, i) => s + row[i], 0) / 8);
+    for (let a = 0; a < 8; a++) { H[a][a] += PRIOR[a] * h + 1e-3 * H[a][a]; g[a] += PRIOR[a] * h * P[a]; }
+    const d = solve8(H, g.map((x) => -x)); if (!d) break;
+    let step = 0;
+    for (let a = 0; a < 8; a++) { const v = Math.max(-LIM[a], Math.min(LIM[a], P[a] + Math.max(-.1, Math.min(.1, d[a])))); step = Math.max(step, Math.abs(v - P[a])); P[a] = v; }
+    if (step < 1e-4) break;
+  }
+  wear.fit[c.side] = c.M0.clone().invert().multiply(K()).multiply(c.M0).multiply(F0);
+  return true;
 }
 function wearFitAll() {   // «Подогнать по коже»: every copy against its own limb
   if (!wear) return;
@@ -2432,9 +2599,12 @@ function wearAuto() {
     wear.fit = {}; wear.off = new V3(); tcW.detach(); wearRetargetAll(); return true;
   }
   const part = $('wPart').value, L = limbOf(part, $('wSide').value);
-  const up = isUpright(part);
-  if (!!(wear.pca && wear.pca.upright) !== up || !!(wear.pca && wear.pca.boot) !== (part === 'boot')) {   // another axis (and its wall grid)
-    wear.pca = up ? wearShapeUpright(wear.parts, part === 'boot') : wearShape(wear.parts, wear.openAxis); wear.wall = wallGrid(wear.parts, wear.pca); wearDeform();
+  const up = isUpright(part), cap = isCap(part);
+  $('wRigidName').textContent = cap ? '{{js:ed.follows_the_arm}}' : '{{js:ed.rigidity}}';
+  $('wRigidName').parentNode.title = cap ? '{{js:ed.follows_the_arm_hint}}' : '{{js:ed.1_the_piece_moves_with_the_bone_and}}';
+  if (!!(wear.pca && wear.pca.upright) !== up || !!(wear.pca && wear.pca.boot) !== (part === 'boot') || !!(wear.pca && wear.pca.cap) !== cap) {   // another axis (and its wall grid)
+    wear.pca = cap ? wearShapeCap(wear.parts, wear.name) : up ? wearShapeUpright(wear.parts, part === 'boot') : wearShape(wear.parts, wear.openAxis);
+    wear.wall = wallGrid(wear.parts, wear.pca); wearDeform();
   }
   const P = wear.pca;
   if (!L) { $('wStatus').textContent = '{{js:ed.the_character_has_no_joints_for_this}}'; return false; }
@@ -2444,6 +2614,7 @@ function wearAuto() {
   // the gizmo's own frame: at the middle of the bone, its Y along the bone (turning about Y = about its own axis)
   wear.q0 = new Q().setFromUnitVectors(new V3(0, 1, 0), L.u); wearHelper.quaternion.copy(wear.q0);
   wear.mid = L.A.clone().addScaledVector(L.u, .5 * L.len);
+  if (cap) return wearAutoCap(L);
   const size = (s) => {   // the scale s; the length capped by the limb; the far end at the next joint (a bracer at the wrist)
     const len = up ? P.L * s : Math.min(P.L * s, .95 * L.len);   // a helmet or a cuirass keeps its proportions
     wear.s = s; wear.lenFit = len / (P.L * s); $('wPos').value = Math.min(.8, Math.max(.3, .97 - len / 2 / L.len));
@@ -2487,7 +2658,7 @@ function wearClearance({ M, L }, minT = -Infinity) {   // minT: only the part ab
       const dx = e[0] * x + e[4] * y + e[8] * z + e[12] - A.x, dy = e[1] * x + e[5] * y + e[9] * z + e[13] - A.y, dz = e[2] * x + e[6] * y + e[10] * z + e[14] - A.z;
       const along = dx * u.x + dy * u.y + dz * u.z, rx = dx - u.x * along, ry = dy - u.y * along, rz = dz - u.z * along, r = Math.hypot(rx, ry, rz);
       const t = along / L.len, ang = Math.atan2(rx * L.p2.x + ry * L.p2.y + rz * L.p2.z, rx * L.p1.x + ry * L.p1.y + rz * L.p1.z);
-      if (r > 1e-9 && t >= minT) pts.push(t, ang, r);
+      if (r > 1e-9 && t >= minT && !isJunk(L, t, ang, r)) pts.push(t, ang, r);
     }
   }
   if (pts.length < 60) return 0;
@@ -2502,13 +2673,27 @@ function wearClearance({ M, L }, minT = -Infinity) {   // minT: only the part ab
   ratios.sort((p, q) => p - q);
   return Math.min(1.5, Math.max(.75, ratios[ratios.length >> 1]));
 }
-function wearPlacement(L) {   // armour space -> world, from the sliders (without the gizmo)
-  const P = wear.pca, a = P.axis;
-  const sr = wear.s * wv('wThick'), sa = wear.s * wv('wThick') * wear.lenFit * wv('wLen'), k = sa - sr;
-  const S3 = new THREE.Matrix4().set(
+function axisScale(a, sr, sa) {   // sr across the axis a, sa along it
+  const k = sa - sr;
+  return new THREE.Matrix4().set(
     sr + k * a.x * a.x, k * a.x * a.y, k * a.x * a.z, 0,
     k * a.y * a.x, sr + k * a.y * a.y, k * a.y * a.z, 0,
     k * a.z * a.x, k * a.z * a.y, sr + k * a.z * a.z, 0, 0, 0, 0, 1);
+}
+function wearPlacement(L) {   // armour space -> world, from the sliders (without the gizmo)
+  const P = wear.pca, a = P.axis;
+  if (P.cap) {   // a pauldron: its own orientation (reflected when made for the other shoulder), its sphere's centre
+    // on the shoulder joint; «Длина» scales it along the dome's normal, the twist turns it about that normal
+    const f = wear.flip ? -1 : 1, af = new V3(f * a.x, a.y, a.z), s = wear.s * wv('wThick');
+    const q = new Q().setFromAxisAngle(af, THREE.MathUtils.degToRad(wv('wTwist')));
+    const c = L.A.clone().addScaledVector(L.u, wv('wPos') * L.len);
+    const M = new THREE.Matrix4().makeTranslation(c.x, c.y, c.z).multiply(new THREE.Matrix4().makeRotationFromQuaternion(q))
+      .multiply(axisScale(af, s, s * wv('wLen'))).multiply(new THREE.Matrix4().makeScale(f, 1, 1))
+      .multiply(new THREE.Matrix4().makeTranslation(-P.mid.x, -P.mid.y, -P.mid.z));
+    return { M, c };
+  }
+  const sr = wear.s * wv('wThick'), sa = wear.s * wv('wThick') * wear.lenFit * wv('wLen');
+  const S3 = axisScale(a, sr, sa);
   let q = new Q().setFromUnitVectors(a, L.u);
   if (P.toe && L.toe) {   // a boot: its toe turned about the shin onto the foot's direction
     const t = P.toe.clone().applyQuaternion(q), f = L.toe;
@@ -2743,7 +2928,7 @@ function wearRestore(st) {
 // the body part a piece without its own skeleton is meant for, from its file name (generated pieces are named after
 // what they are); null when the name says nothing, and the choice stays as it was
 const WEAR_NAMES = [[/boot|shoe|sabaton|сапог|ботин/i, 'boot'], [/cuisse|thigh|бедр|набедр/i, 'upleg'],
-  [/greave|shin|понож|голен/i, 'leg'], [/rerebrace|pauldron|shoulder|upper_?arm|наплеч/i, 'arm'],
+  [/greave|shin|понож|голен/i, 'leg'], [/pauldron|spaulder|shoulder|наплеч/i, 'pauldron'], [/rerebrace|upper_?arm/i, 'arm'],
   [/gauntlet|glove|перчат|рукавиц/i, 'hand'], [/bracer|vambrace|forearm|наруч/i, 'forearm'],
   [/helm|hat|hood|head|шлем|голов/i, 'head'], [/cuirass|breast|chest|vest|torso|armou?r_?plate|нагруд|кирас|торс/i, 'torso']];
 const wearGuessPart = (name) => (WEAR_NAMES.find(([re]) => re.test(name)) || [])[1] || null;
@@ -2776,11 +2961,12 @@ async function wearLoad(buf, name, state, keepPart = false) {
     const a = wear.openAxis = wearOpenAxis(parts, wear.pca);
     if (a) { wear.pca = wearShape(parts, a); wear.wall = wallGrid(parts, wear.pca); }
   }
-  if (!state && !keepPart && wear.skel) {   // a piece with its own skeleton: on one limb segment, or the whole piece by the skeleton
+  const guess = wearGuessPart(name);
+  if (!state && !keepPart && wear.skel && guess !== 'pauldron') {   // a piece with its own skeleton (a pauldron: a dome, never a tube): on one limb segment, or the whole piece by the skeleton
     console.log('piece skeleton', wear.skel.part, wear.skel.side, wear.skel.topShare.toFixed(2), 'tube on', wear.skel.tube);
     $('wSide').value = wear.skel.side;
     $('wPart').value = wear.skel.tube || 'skeleton';   // a tube on one limb segment by the skin; feet, hands and longer pieces by the skeleton
-  } else if (!state && !keepPart && wearGuessPart(name)) $('wPart').value = wearGuessPart(name);
+  } else if (!state && !keepPart && guess) { $('wPart').value = guess; if (wear.skel) $('wSide').value = wear.skel.side; }
   $('wearPanel').classList.toggle('skel', isSkelMode());
   if (state ? wearRestore(state) : wearAuto()) {
     wearDraw();
@@ -2827,6 +3013,7 @@ function wearUnderList() {
     wear.under = new Set(others.filter((g) => {
       const f = fit(g.userData.item);
       if ((f.under || []).includes(wear.item) || f.part === $('wPart').value) return false;
+      if (isCap(f.part) && !isCap($('wPart').value)) return false;   // a pauldron is the outer layer: a cuirass goes under it
       const b = new THREE.Box3().setFromObject(g, true), i = mine.clone().intersect(b);
       return !i.isEmpty() && vol(i) > .05 * Math.min(vol(mine), vol(b));
     }).map((g) => g.userData.item));
@@ -2884,6 +3071,11 @@ async function wearSend(action, extra, wait) {
   $('wStatus').textContent = '{{js:ed.sf3d_did_not_answer_see_the_armour}}';
   return null;
 }
+const wearArmJoints = () => ['L', 'R'].map((sd) => jointAt('arm', sd)).filter(Boolean).map((a) => V(a).toArray());   // a cuirass's sides fit closely towards them
+function capWeights(sd) {   // a pauldron moves as one piece: the same weights everywhere, the arm's share by the slider
+  const k = wv('wRigid'), sh = PBNAME['shoulder_' + sd], ar = PBNAME['arm_' + sd];
+  return sh && ar ? { [sh]: 1 - k, [ar]: k } : { [sh || ar]: 1 };
+}
 async function wearRequest() {   // the piece, where it sits and how to fit it: for «Надеть» and «Сохранить»
   if (isSkelMode()) {   // the copies as shown; the original piece goes along for «Открыть»
     const Ld = limbOf(wear.skel.part in WEAR_PARTS ? wear.skel.part : 'forearm', $('wSide').value);
@@ -2900,7 +3092,9 @@ async function wearRequest() {   // the piece, where it sits and how to fit it: 
            under: [...(wear.under || [])],
            placements: wearMatrices().map((p) => ({ side: mid ? 'C' : p.side, matrix: Array.from(p.M.elements), bone: boneOf(p.side),
                                                     follow: $('wPart').value === 'boot' ? 'down' : 'up',
-                                                    limb: { a: p.L.A.toArray(), b: p.L.B.toArray() } })),
+                                                    ...(wear.pca.cap ? { weights: capWeights(p.side), joint: p.L.A.toArray(), r: p.L.r }
+                                                      : { limb: { a: p.L.A.toArray(), b: p.L.B.toArray() } }),
+                                                    ...($('wPart').value === 'torso' ? { tight: wearArmJoints() } : {}) })),
            state: wearState() };
 }
 async function wearApply() {
