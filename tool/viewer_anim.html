@@ -51,7 +51,7 @@
     <div class="box ctl">
       <div class="top"><button type="button" id="play">{{va.pause}}</button>
         <div class="row"><span><b>{{va.time}}</b><em id="tval">{{va.0_00_s}}</em></span><input type="range" id="scrub" min="0" max="1000" value="0" aria-label="{{va.clip_time}}"></div></div>
-      <div class="row"><span><b>{{va.speed}}</b><em id="sval">1,0×</em></span><input type="range" id="speed" min="10" max="200" value="100" aria-label="{{va.speed}}"></div>
+      <div class="row"><span><b>{{va.speed}}</b><em id="sval">{{va.speed_1x}}</em></span><input type="range" id="speed" min="10" max="200" value="100" aria-label="{{va.speed}}"></div>
       <label><input type="checkbox" id="inplace" checked> {{va.remove_the_torso_s_travel_over_the}}</label>
       <label><input type="checkbox" id="back" checked> {{va.return_to_the_stance_after_an_action}}</label>
       <label><input type="checkbox" id="spin"> {{va.orbit_the_camera}}</label>
@@ -72,7 +72,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 const $ = (id) => document.getElementById(id);
-const fmt = (x, d = 2) => x.toFixed(d).replace('.', ',');
+const fmt = (x, d = 2) => document.documentElement.lang === 'ru' ? x.toFixed(d).replace('.', ',') : x.toFixed(d);   // the page's language
 const DATA = JSON.parse($('d-data').textContent);          // { clips: [{id, label, group, loop, weapons?: [weapon ids]}], ref_height? }
 const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const bytes = (id) => { const s = atob($(id).textContent.trim()); const u = new Uint8Array(s.length);

@@ -1344,6 +1344,7 @@
  "va.s": "<span>${c.label || c.id}</span><small>${fmt(plain[c.id].duration)} s</small>",
  "va.s_2": " s",
  "va.speed": "Speed",
+ "va.speed_1x": "1.0×",
  "va.time": "Time",
  "va.weapons_in_hand": "Weapons in hand"
 }
