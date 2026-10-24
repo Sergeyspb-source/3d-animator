@@ -26,6 +26,7 @@
   .wearpanel .row { display:flex; gap:6px; flex-wrap:wrap; }
   .wearpanel button.on { background:var(--accent); color:var(--accent-fg); }
   .wearpanel .small { color:var(--muted); font-size:12px; }
+  .wearpanel.skel .limbonly { display:none; }
   body.wear #mWear { background:var(--accent); color:var(--accent-fg); }
   .stage { position:relative; flex:1; background:var(--stage); border:1px solid var(--line); border-radius:10px; overflow:hidden; min-height:320px; }
   /* tool bar over the stage: view and display, then the pose check */
@@ -145,21 +146,42 @@
     <div class="wearpanel" id="wearPanel" hidden>
       <b>Броня: подгонка вещи</b>
       <label>Вещь (GLB) <input type="file" id="wFile" accept=".glb"></label>
+      <div class="row" id="wSavedRow" hidden><select id="wSaved" title="Вещи, сохранённые для этого персонажа"></select><button id="wOpen" title="Открыть сохранённую подгонку: положение, ползунки и точки">Открыть</button></div>
       <label>Часть тела <select id="wPart">
         <option value="forearm">Предплечье (наручи)</option><option value="arm">Плечо</option><option value="hand">Кисть (перчатка)</option>
-        <option value="upleg">Бедро</option><option value="leg">Голень (поножи)</option><option value="foot">Стопа (сапог)</option></select></label>
+        <option value="upleg">Бедро</option><option value="leg">Голень (поножи)</option><option value="foot">Стопа (сапог)</option>
+        <option value="boot">Сапог (стоит прямо: голенище на голень, носок по стопе)</option>
+        <option value="torso">Торс (нагрудник)</option><option value="head">Голова (шлем)</option>
+        <option value="skeleton">Вся вещь по её скелету (сапог, рука целиком)</option></select></label>
       <label>Сторона <select id="wSide"><option value="L">левая (справа на экране)</option><option value="R">правая (слева на экране)</option></select></label>
       <label class="chk"><input type="checkbox" id="wMirror" checked> Зеркально на вторую сторону</label>
-      <label>Положение вдоль <input type="range" id="wPos" min="0" max="1" step="0.01"></label>
-      <label>Длина <input type="range" id="wLen" min="0.5" max="2" step="0.01" value="1"></label>
-      <label>Толщина <input type="range" id="wThick" min="0.6" max="1.6" step="0.01" value="1"></label>
-      <label>Поворот вокруг оси <input type="range" id="wTwist" min="-180" max="180" step="1" value="0"></label>
+      <label class="limbonly">Положение вдоль <input type="range" id="wPos" min="-0.3" max="1.2" step="0.01"></label>
+      <label class="limbonly">Длина <input type="range" id="wLen" min="0.5" max="2" step="0.01" value="1"></label>
+      <label class="limbonly" title="Масштаб поперёк руки: вся вещь шире или уже, вместе со стенкой">Обхват <input type="range" id="wThick" min="0.6" max="1.6" step="0.01" value="1"></label>
+      <label class="limbonly" title="Толщина самой брони (подложки): внутренняя стенка остаётся на месте, двигается только внешняя поверхность">Толщина стенки <input type="range" id="wWall" min="0.3" max="1.6" step="0.01" value="1"></label>
+      <label class="limbonly">Поворот вокруг оси <input type="range" id="wTwist" min="-180" max="180" step="1" value="0"></label>
       <label>Зазор до кожи <input type="range" id="wGap" min="0" max="0.3" step="0.01" value="0.04"></label>
-      <div class="row"><button id="wMove" title="Стрелки на вещи: сдвиг (G)">Сдвиг</button><button id="wRot" title="Поворот вокруг середины кости; зелёное кольцо — вокруг своей оси (R)">Поворот</button><button id="wScale" title="Размер: зелёная ось — длина, красная и синяя — толщина (S)">Размер</button></div>
-      <div class="row"><button id="wPoints" title="Клик по вещи ставит точку; тяните её — поверхность вокруг потянется">Точки</button><button id="wDel" title="Убрать выбранную точку (Delete)">Убрать</button><button id="wDelAll" title="Убрать все точки: вещь вернётся к исходной форме">Убрать все</button></div>
-      <label>Радиус точки <input type="range" id="wRad" min="0.05" max="1" step="0.01" value="0.25"></label>
-      <div class="row"><button id="wReset">Сбросить</button><button id="wApply" class="primary">Надеть</button></div>
+      <label class="limbonly" title="0 — форма вещи как есть, раздвигается только там, где ушла под кожу; 1 — облегает руку по всей длине">Прилегание к телу <input type="range" id="wConform" min="0" max="1" step="0.05" value="0.5"></label>
+      <label class="limbonly" title="1 — вещь движется вместе с костью и не гнётся (наручи, поножи); 0 — гнётся как кожа (перчатки)">Жёсткость <input type="range" id="wRigid" min="0" max="1" step="0.05" value="0.8"></label>
+      <label class="chk limbonly" title="Узлы внутренней стенки: красные — под кожей (при «Надеть» там раздвинется), зелёные — на коже, синие — с воздухом"><input type="checkbox" id="wInside" checked> Узлы прилегания</label>
+      <div class="small limbonly" id="wInfo"></div>
+      <div class="row limbonly"><button id="wMove" title="Стрелки на вещи: сдвиг (G)">Сдвиг</button><button id="wRot" title="Поворот вокруг середины кости; зелёное кольцо — вокруг своей оси (R)">Поворот</button><button id="wScale" title="Размер: зелёная ось — длина, красная и синяя — толщина (S)">Размер</button></div>
+      <div class="row limbonly"><button id="wPoints" title="Клик по вещи ставит точку; тяните её — поверхность вокруг потянется">Точки</button><button id="wDel" title="Убрать выбранную точку (Delete)">Убрать</button><button id="wDelAll" title="Убрать все точки: вещь вернётся к исходной форме">Убрать все</button></div>
+      <div class="row limbonly"><button id="wRing" title="Кликайте по краю отверстия (пройма, горловина): по 3 и больше точкам строится окружность">Отверстие</button><button id="wRingDel" title="Убрать выбранное отверстие">Убрать отверстие</button></div>
+      <label class="limbonly" title="Стягивает край выбранного отверстия к его центру: пройма ближе к плечу, горловина к шее">Сузить отверстие <input type="range" id="wRingS" min="0" max="0.6" step="0.01" value="0"></label>
+      <label class="limbonly" title="Насколько широко вокруг края броня тянется за ним (больше — плавнее)">Ширина края <input type="range" id="wRingB" min="0.2" max="1.5" step="0.05" value="0.6"></label>
+      <label class="chk limbonly"><input type="checkbox" id="wRingSym" checked> И симметричное отверстие</label>
+      <div class="row limbonly"><select id="wOpenEnd" title="Какой конец вещи закрыт. У вещи на руке или ноге нижний конец — дальний от тела (у кисти, у колена); у сапога, нагрудника и шлема — как вещь стоит">
+        <option value="bottom">нижний конец</option><option value="top">верхний конец</option><option value="both">оба конца</option></select>
+        <button id="wHollow" title="Сгенерированная вещь бывает закрыта с конца, как горшок: срезать этот конец, чтобы рука или нога прошла. Своя стенка вещи остаётся; у сплошной болванки делается стенка внутрь. Текстура сохраняется">Вскрыть</button></div>
+      <div class="row limbonly"><button id="wRepaint" title="Hunyuan3D-Paint заново рисует текстуру на изменённой форме (отверстия, точки, стенка): без растяжения, невидимые на картинке стороны дорисовываются. 3–6 минут">Перекрасить по форме</button></div>
+      <label class="limbonly" title="Вид спереди, по которому вещь делалась. Для брони из generated_armour находится сама">Картинка вещи <input type="file" id="wRef" accept="image/*"></label>
+      <label class="limbonly">Радиус точки <input type="range" id="wRad" min="0.05" max="1" step="0.01" value="0.25"></label>
+      <div class="row limbonly"><button id="wFit" title="Подобрать положение, наклон, толщину и овал по всей внутренней стенке вещи, не меняя её формы">Подогнать по коже</button></div>
+      <div class="row"><button id="wReset">Сбросить</button><button id="wSave" title="Сохранить подгонку рядом с персонажем, не надевая">Сохранить</button><button id="wApply" class="primary" title="Подогнать в Blender и сохранить">Надеть</button></div>
+      <label class="chk" title="Вещи, надетые раньше (например, перчатка вместе с наручами). Без галочки видна только текущая"><input type="checkbox" id="wOthers"> Показывать другие надетые вещи</label>
       <div class="row"><button id="wCheck" title="Согнуть руки и ноги: надетая вещь должна идти за телом">Поза проверки</button><button id="wRest" title="Вернуть позу покоя">Сбросить позу</button></div>
+      <div class="row"><button id="wGodot" title="Персонаж со всеми надетыми вещами в Godot: анимации, вращение камеры, вещи вкл/выкл">Примерочная в Godot</button></div>
       <div class="small" id="wStatus">Выберите файл вещи.</div>
     </div>
     <div class="mouse" id="mouseHelp" hidden>
@@ -274,6 +296,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
 // a bounding-volume tree per mesh: rays test a few triangles instead of all of them (the oval rings cast hundreds)
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
@@ -1629,7 +1652,7 @@ for (const s of SIDES) Object.assign(TAILOF, { ['shoulder_' + s]: 'arm_' + s, ['
 const BALL = { spine: 30, spine1: 30, spine2: 30, neck: 45, head: 50, shoulder: 30, arm: 175, upleg: 120, eye: 35 };
 Object.assign(TAILOF, { jaw: 'jaw_end', eye_L: 'eye_end_L', eye_R: 'eye_end_R' });   // max swing from rest, °
 let poseRoot = null, skelHelp = null, poseOn = false, hoverId = null, dragId = null;
-const poseMeshes = [], PB = {}, PINFO = {}, REST = new Map(), BONE2ID = new Map();
+const poseMeshes = [], PB = {}, PBNAME = {}, PINFO = {}, REST = new Map(), RESTW = new Map(), BONE2ID = new Map();   // RESTW: bone name -> world position at rest   // PBNAME: joint id -> bone name as in the GLB
 const poseHelp = new THREE.Group(); scene.add(poseHelp);
 const hlMat = new THREE.MeshBasicMaterial({ color: 0xffd31a, transparent: true, opacity: .85, depthTest: false });
 
@@ -1645,11 +1668,11 @@ async function loadRigged() {
   }
   const byName = {};
   poseRoot.traverse((o) => {
-    if (o.isBone) { byName[o.name] = o; REST.set(o, o.quaternion.clone()); }
+    if (o.isBone) { byName[o.name] = o; REST.set(o, o.quaternion.clone()); RESTW.set(o.name, o.getWorldPosition(new V3())); }
     if (o.isMesh) { poseMeshes.push(o); for (const mt of [].concat(o.material)) mt.side = THREE.DoubleSide; }
   });
   for (const tbl of Object.values(DATA.names || {})) for (const [id, n] of Object.entries(tbl)) {
-    const b = byName[THREE.PropertyBinding.sanitizeNodeName(n)]; if (b && !PB[id]) { PB[id] = b; BONE2ID.set(b, id); }
+    const b = byName[THREE.PropertyBinding.sanitizeNodeName(n)]; if (b && !PB[id]) { PB[id] = b; PBNAME[id] = n; BONE2ID.set(b, id); }
   }
   const keepGetter = posGetter;   // palm normals from the loaded skeleton (also works for Mixamo FBX)
   posGetter = (id) => (PB[id] ? PB[id].getWorldPosition(new V3) : S.pos[id] ? V(S.pos[id]) : null);
@@ -1932,12 +1955,27 @@ $('pSquat').onclick = () => {
 // The built character stays as it is (the pose mode's model); the piece is placed on a limb segment between two
 // joints: its tube axis (the eigen axis of its point cloud whose other two spreads are most alike) along the limb,
 // its wide end at the joint nearer the body, its inner wall on the skin (limb radius from rays out of the bone
-// axis), then the sliders and the gizmo. «Надеть» hands the matrices to blender_wear_fit.py through SF3D and loads
-// the skinned result back onto this skeleton for the pose check.
+// axis), then the sliders and the gizmo. Red dots mark the vertices that are under the skin. «Надеть» hands the
+// matrices, the limb's joints and bone to blender_wear_fit.py through SF3D (it spreads the piece off the skin cell by
+// cell and skins it) and loads the skinned result back onto this skeleton for the pose check. Every fitting is saved
+// next to the character (<stem>_wear_<item>.fit.json + the piece), so it can be opened again and corrected.
 const WEAR_PARTS = { forearm: ['forearm', 'hand'], arm: ['arm', 'forearm'], hand: ['hand', 'hand_end'],
-                     upleg: ['upleg', 'leg'], leg: ['leg', 'foot'], foot: ['foot', 'toe_end'] };
+                     upleg: ['upleg', 'leg'], leg: ['leg', 'foot'], foot: ['foot', 'toe_end'],
+                     boot: ['foot', 'leg'], torso: ['hips', 'neck'], head: ['head', 'head_top'] };
+const WEAR_RIGID = { forearm: .8, arm: .8, hand: .2, upleg: .8, leg: .8, foot: .5, boot: .3, torso: .5, head: 1 };   // gloves bend with the fingers, boots a little, a cuirass with the spine
+// the middle of the body: one piece, no side and no mirror; its axis is the piece's own vertical (a generated cuirass
+// or helmet stands upright), its weights go to this bone; pos: where its middle sits between the two joints
+const WEAR_MID = { torso: { bone: 'spine1', pos: .55 }, head: { bone: 'head', pos: .62 } };
+const jointAt = (id, sd) => S.pos[id] || S.pos[id + '_' + sd];
+// pieces that stand upright as generated (their own vertical is their axis, their proportions are kept): the middle
+// of the body, and a boot (its shaft on the shin, its toe turned along the foot, its sole at the heel)
+const isUpright = (part) => !!WEAR_MID[part] || part === 'boot';
+const WEAR_BONE = { boot: 'leg' };   // the bone a piece follows when it is not its segment's first joint
+const WEAR_SLIDERS = ['wPos', 'wLen', 'wThick', 'wWall', 'wTwist', 'wGap', 'wConform', 'wRigid'];
 let wear = null, wearOn = false;
+const wearFits = [...(DATA.fits || [])];   // the saved fittings of this character: {item, fit, src, glb}
 const wearGroup = new THREE.Group(); scene.add(wearGroup);
+const wearOthers = new THREE.Group(); scene.add(wearOthers);   // the other pieces already put on, for the pose check
 const wearHelper = new THREE.Object3D(); scene.add(wearHelper);
 const wearPoint = new THREE.Object3D(); scene.add(wearPoint);
 const tcW = new TransformControls(camera, canvas); tcW.setSpace('local'); tcW.setSize(.7); scene.add(tcW);
@@ -1968,7 +2006,39 @@ function eigen3(c) {   // symmetric 3x3 (row-major array) -> [[value, vector] x3
   const a = [v3.x, v3.y, v3.z]; let lam3 = 0; for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) lam3 += a[i] * c[i * 3 + j] * a[j];
   out.push([lam3, v3]); return out;
 }
-function wearShape(parts) {
+function wearShapeUpright(parts, boot) {   // the piece's own vertical as its axis (glTF +Y), for a cuirass, a helmet, a boot
+  const box = new THREE.Box3(); for (const p of parts) { p.geo.computeBoundingBox(); box.union(p.geo.boundingBox); }
+  const mid = box.getCenter(new V3()), rs = [];
+  let toe = null;
+  if (boot) {   // the shaft's middle (the top third) is the axis; the toe: the sole's long axis, at its end farther from the shaft
+    const h = box.max.y - box.min.y, top = new V3(), bot = new V3(), sole = []; let nt = 0;
+    for (const p of parts) { const a = p.geo.attributes.position; for (let i = 0; i < a.count; i++) {
+      const y = a.getY(i);
+      if (y > box.max.y - h / 3) { top.x += a.getX(i); top.z += a.getZ(i); nt++; }
+      if (y < box.min.y + h / 5) { bot.x += a.getX(i); bot.z += a.getZ(i); sole.push(a.getX(i), a.getZ(i)); }
+    } }
+    const nb = sole.length / 2;
+    if (nt && nb) {
+      top.multiplyScalar(1 / nt); bot.multiplyScalar(1 / nb);
+      mid.x = top.x; mid.z = top.z;
+      toe = new V3(bot.x - top.x, 0, bot.z - top.z);   // a round sole has no long axis: then where the bottom reaches out
+      let sxx = 0, sxz = 0, szz = 0;
+      for (let i = 0; i < sole.length; i += 2) { const dx = sole[i] - bot.x, dz = sole[i + 1] - bot.z; sxx += dx * dx; sxz += dx * dz; szz += dz * dz; }
+      const tr = sxx + szz, l1 = tr / 2 + Math.sqrt((sxx - szz) ** 2 / 4 + sxz * sxz), l2 = tr - l1;
+      if (l1 > 1.5 * Math.max(l2, 1e-12)) {   // an elongated sole (an image-to-3D boot is often turned 3/4, so the bottom's
+        const ax = Math.abs(sxz) > 1e-12 ? new V3(l1 - szz, 0, sxz) : new V3(sxx >= szz ? 1 : 0, 0, sxx >= szz ? 0 : 1);   // middle is no guide)
+        ax.normalize(); let lo = Infinity, hi = -Infinity;
+        for (let i = 0; i < sole.length; i += 2) { const t = (sole[i] - top.x) * ax.x + (sole[i + 1] - top.z) * ax.z; lo = Math.min(lo, t); hi = Math.max(hi, t); }
+        toe = hi >= -lo ? ax : ax.negate();
+      }
+      toe = toe.lengthSq() > 1e-12 ? toe.normalize() : null;
+    }
+  }
+  for (const p of parts) { const a = p.geo.attributes.position, st = Math.max(1, Math.floor(a.count / 4000)); for (let i = 0; i < a.count; i += st) rs.push(Math.hypot(a.getX(i) - mid.x, a.getZ(i) - mid.z)); }
+  rs.sort((x, y) => x - y);
+  return { mid, axis: new V3(0, 1, 0), L: box.max.y - box.min.y, rin: rs[Math.floor(rs.length * .15)], upright: true, toe, boot: !!boot };
+}
+function wearShape(parts, force = null) {   // force: the tube axis when it is known (wearOpenAxis)
   const P = [];
   for (const p of parts) { const a = p.geo.attributes.position, st = Math.max(1, Math.floor(a.count / 4000)); for (let i = 0; i < a.count; i += st) P.push(new V3().fromBufferAttribute(a, i)); }
   const m = P.reduce((s, p) => s.add(p), new V3()).multiplyScalar(1 / P.length);
@@ -1977,41 +2047,459 @@ function wearShape(parts) {
   const E = eigen3(c);
   let best = 0, bs = Infinity;   // the tube axis: the other two spreads alike
   for (let i = 0; i < 3; i++) { const o = E.filter((_, k) => k !== i).map((e) => e[0]); const s = Math.abs(o[0] - o[1]) / Math.max(o[0], o[1], 1e-30); if (s < bs) { bs = s; best = i; } }
-  let v = E[best][1];
+  let v = force || E[best][1];
   let t0 = Infinity, t1 = -Infinity;
   const td = P.map((p) => { const d = p.clone().sub(m), t = d.dot(v); t0 = Math.min(t0, t); t1 = Math.max(t1, t); return [t, d.addScaledVector(v, -t).length()]; });
   const L = t1 - t0, mid = m.clone().addScaledVector(v, (t0 + t1) / 2);
   const endR = (lo, hi) => median(td.filter(([t]) => t >= lo && t <= hi).map((q) => q[1]));
   if (endR(t1 - .2 * L, t1) > endR(t0, t0 + .2 * L)) v = v.clone().negate();   // the wide end first
   const rs = td.map((q) => q[1]).sort((a, b) => a - b);
-  return { mid, axis: v, L, rin: rs[Math.floor(rs.length * .15)] };
+  return { mid, axis: v, L, rin: rs[Math.floor(rs.length * .15)], E };
 }
-function limbOf(part, sd) {
-  const [a, b] = WEAR_PARTS[part], pa = S.pos[a + '_' + sd], pb = S.pos[b + '_' + sd];
-  if (!pa || !pb) return null;
-  const A = V(pa), B = V(pb), u = B.clone().sub(A), len = u.length(); u.normalize();
-  const p1 = (Math.abs(u.x) < .9 ? new V3(1, 0, 0) : new V3(0, 0, 1)).cross(u).normalize(), p2 = u.clone().cross(p1);
-  const rc = new THREE.Raycaster(), rs = [];
-  for (const t of [.3, .45, .6, .75]) for (let k = 0; k < 8; k++) {
-    const d = p1.clone().multiplyScalar(Math.cos(k / 8 * 2 * Math.PI)).addScaledVector(p2, Math.sin(k / 8 * 2 * Math.PI));
-    rc.set(A.clone().addScaledVector(u, t * len), d); rc.far = len;
-    const h = rc.intersectObjects(meshes, false)[0]; if (h) rs.push(h.distance);
+// a tube is open along its axis: rays from a small grid about the middle of its box go straight through both ways.
+// A piece about as tall as it is wide (a short cuisse) has no clear principal axes, so the piece's own x, y, z are
+// tried too (generated pieces stand upright). The axis most rays pass along, when at least half of them do and
+// clearly more than along the shape's axis; null otherwise (a boot, a glove, a closed piece: the shape decides)
+function wearOpenAxis(parts, P) {
+  const box = new THREE.Box3(); for (const p of parts) { p.geo.computeBoundingBox(); box.union(p.geo.boundingBox); }
+  const c = box.getCenter(new V3()), mat = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
+  const meshes = parts.map((p) => {   // copies: the piece's own geometry is deformed later and picked by rays (rings)
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', p.geo.attributes.position.clone());
+    if (p.geo.index) g.setIndex(p.geo.index.clone()); g.computeBoundsTree(); return new THREE.Mesh(g, mat);
+  });
+  const rc = new THREE.Raycaster(); rc.firstHitOnly = true;
+  const through = (a) => {
+    const p = (Math.abs(a.x) < .9 ? new V3(1, 0, 0) : new V3(0, 0, 1)).cross(a).normalize(), q = a.clone().cross(p);
+    let pl = Infinity, ph = -Infinity, ql = Infinity, qh = -Infinity;
+    for (const pt of [box.min, box.max]) for (const x of [box.min.x, box.max.x]) for (const z of [box.min.z, box.max.z]) {
+      const k = new V3(x, pt.y, z), dp = k.dot(p), dq = k.dot(q); pl = Math.min(pl, dp); ph = Math.max(ph, dp); ql = Math.min(ql, dq); qh = Math.max(qh, dq);
+    }
+    let free = 0;
+    for (const x of [-.25, -.125, 0, .125, .25]) for (const y of [-.25, -.125, 0, .125, .25]) {
+      const o = c.clone().addScaledVector(p, x * (ph - pl) / 2).addScaledVector(q, y * (qh - ql) / 2);
+      let ok = true;
+      for (const sg of [1, -1]) { rc.set(o, a.clone().multiplyScalar(sg)); if (rc.intersectObjects(meshes, false).length) { ok = false; break; } }
+      free += ok;
+    }
+    return free / 25;
+  };
+  const cands = [...P.E.map((e) => e[1].clone().normalize()), new V3(1, 0, 0), new V3(0, 1, 0), new V3(0, 0, 1)];
+  const scores = cands.map(through), own = through(P.axis.clone().normalize());
+  for (const m of meshes) m.geometry.disposeBoundsTree();
+  const i = scores.indexOf(Math.max(...scores));
+  return scores[i] >= .5 && scores[i] > own + .3 ? cands[i] : null;
+}
+// «Толщина стенки»: about the piece's own tube axis, in cells (12 along x 24 around), the inner wall is the nearest
+// point to the axis; every vertex keeps its depth below the outer side scaled by k: r -> r_in + (r - r_in) * k, so
+// the inner wall (where the fit put it) stays and only the outer surface moves. The same in blender_wear_fit.py.
+const WALL_T = 12, WALL_A = 24;
+function wallFrame(P) { const a = P.axis, p1 = (Math.abs(a.x) < .9 ? new V3(1, 0, 0) : new V3(0, 0, 1)).cross(a).normalize(); return [a, p1, a.clone().cross(p1)]; }
+function wallGrid(parts, P) {   // {t0, t1, grid}: the inner radius per cell of the piece as it came
+  const [a, p1, p2] = wallFrame(P), m = P.mid, cyl = [];
+  let t0 = Infinity, t1 = -Infinity;
+  for (const p of parts) {
+    const o = p.geo.userData.orig;
+    for (let i = 0; i < o.length; i += 3) {
+      const dx = o[i] - m.x, dy = o[i + 1] - m.y, dz = o[i + 2] - m.z, t = dx * a.x + dy * a.y + dz * a.z;
+      const rx = dx - a.x * t, ry = dy - a.y * t, rz = dz - a.z * t;
+      cyl.push(t, Math.atan2(rx * p2.x + ry * p2.y + rz * p2.z, rx * p1.x + ry * p1.y + rz * p1.z), Math.hypot(rx, ry, rz));
+      t0 = Math.min(t0, t); t1 = Math.max(t1, t);
+    }
   }
-  return { A, B, u, len, r: median(rs) || .12 * len };
+  t1 += 1e-9 * (1 + Math.abs(t1));
+  const g = new Array(WALL_T * WALL_A).fill(null);
+  for (let k = 0; k < cyl.length; k += 3) {
+    const i = Math.min(WALL_T - 1, Math.floor((cyl[k] - t0) / (t1 - t0) * WALL_T)), j = Math.min(WALL_A - 1, Math.floor((cyl[k + 1] + Math.PI) / (2 * Math.PI) * WALL_A));
+    if (g[i * WALL_A + j] === null || cyl[k + 2] < g[i * WALL_A + j]) g[i * WALL_A + j] = cyl[k + 2];
+  }
+  for (let pass = 0; pass < WALL_T + WALL_A && g.includes(null); pass++) {   // empty cells: the mean of filled neighbours
+    const upd = [];
+    for (let i = 0; i < WALL_T; i++) for (let j = 0; j < WALL_A; j++) {
+      if (g[i * WALL_A + j] !== null) continue;
+      const nb = [[i - 1, j], [i + 1, j], [i, j - 1], [i, j + 1]].filter(([ii]) => ii >= 0 && ii < WALL_T).map(([ii, jj]) => g[ii * WALL_A + (jj + WALL_A) % WALL_A]).filter((x) => x !== null);
+      if (nb.length) upd.push([i * WALL_A + j, nb.reduce((s, x) => s + x, 0) / nb.length]);
+    }
+    if (!upd.length) break;
+    for (const [k, x] of upd) g[k] = x;
+  }
+  return { t0, t1, grid: g.map((x) => (x === null ? 0 : x)) };
+}
+function wallApply(arr, o, P, W, k) {   // arr = o with the wall thickness scaled by k
+  const [a, p1, p2] = wallFrame(P), m = P.mid, G = W.grid;
+  for (let i = 0; i < o.length; i += 3) {
+    const dx = o[i] - m.x, dy = o[i + 1] - m.y, dz = o[i + 2] - m.z, t = dx * a.x + dy * a.y + dz * a.z;
+    const rx = dx - a.x * t, ry = dy - a.y * t, rz = dz - a.z * t, r = Math.hypot(rx, ry, rz);
+    if (r < 1e-12) continue;
+    const ang = Math.atan2(rx * p2.x + ry * p2.y + rz * p2.z, rx * p1.x + ry * p1.y + rz * p1.z);
+    const x = Math.min(WALL_T - 1, Math.max(0, (t - W.t0) / (W.t1 - W.t0) * WALL_T - .5)), i0 = Math.floor(x), i1 = Math.min(WALL_T - 1, i0 + 1), fx = x - i0;
+    const y = (ang + Math.PI) / (2 * Math.PI) * WALL_A - .5, jf = Math.floor(y), fy = y - jf, j0 = ((jf % WALL_A) + WALL_A) % WALL_A, j1 = (j0 + 1) % WALL_A;
+    const rin = (G[i0 * WALL_A + j0] * (1 - fy) + G[i0 * WALL_A + j1] * fy) * (1 - fx) + (G[i1 * WALL_A + j0] * (1 - fy) + G[i1 * WALL_A + j1] * fy) * fx;
+    const f = (rin + (r - rin) * k) / r - 1;
+    arr[i] += rx * f; arr[i + 1] += ry * f; arr[i + 2] += rz * f;
+  }
+}
+// the skin around a limb: distances from its axis in cells, from 20% before joint a to 20% after joint b, for the
+// red «under the skin» dots (a limb is measured once per mode: the markup does not change while the armour is on).
+// The axis is the limb's real middle line, not the line between the joints: those sit off the middle of the flesh
+// (often by a fifth of the radius), and a piece centred on them has air on one side and is pressed on the other.
+const WT = 15, WA = 16, limbCache = new Map();
+function limbOf(part, sd) {
+  const key = part + '_' + sd; if (limbCache.has(key)) return limbCache.get(key);
+  const [a, b] = WEAR_PARTS[part], pa = jointAt(a, sd), pb = jointAt(b, sd);
+  if (!pa || !pb) return null;
+  let A = V(pa), B = V(pb), u = B.clone().sub(A), len = u.length(); u.normalize();
+  const frame = () => { const p1 = (Math.abs(u.x) < .9 ? new V3(1, 0, 0) : new V3(0, 0, 1)).cross(u).normalize(); return [p1, u.clone().cross(p1)]; };
+  let [p1, p2] = frame();
+  const rc = new THREE.Raycaster(), rs = [];
+  const hit = (t, ang) => {
+    rc.set(A.clone().addScaledVector(u, t * len), p1.clone().multiplyScalar(Math.cos(ang)).addScaledVector(p2, Math.sin(ang))); rc.far = len;
+    return rc.intersectObjects(meshes, false)[0];
+  };
+  const ray = (t, ang) => { const h = hit(t, ang); return h ? h.distance : 0; };
+  const centres = [];   // the middle of the skin, slice by slice
+  for (let i = 0; i < 9; i++) {
+    const t = .1 + .8 * i / 8, pts = [];
+    for (let k = 0; k < 16; k++) { const h = hit(t, k / 16 * 2 * Math.PI); if (h) pts.push(h.point); }
+    if (pts.length >= 12) centres.push(pts.reduce((m, p) => m.add(p), new V3()).multiplyScalar(1 / pts.length));
+  }
+  if (centres.length >= 3) {
+    const c = centres.reduce((m, p) => m.add(p), new V3()).multiplyScalar(1 / centres.length);
+    let d = u.clone();
+    for (let it = 0; it < 20; it++) {   // the main direction of the centres, started at the bone
+      const w = new V3(); for (const p of centres) { const q = p.clone().sub(c); w.addScaledVector(q, q.dot(d)); }
+      if (w.lengthSq() < 1e-24) break; d = w.normalize();
+    }
+    if (d.dot(u) < 0) d.negate();
+    if (d.dot(u) < .9) d = u.clone();   // a bent or stubby limb: keep the bone's direction, move only to the middle
+    const a2 = c.clone().addScaledVector(d, A.clone().sub(c).dot(d)), b2 = c.clone().addScaledVector(d, B.clone().sub(c).dot(d));
+    A = a2; B = b2; u = d; len = B.distanceTo(A); [p1, p2] = frame();
+  }
+  for (const t of [.3, .45, .6, .75]) for (let k = 0; k < 8; k++) { const d = ray(t, k / 8 * 2 * Math.PI); if (d) rs.push(d); }
+  const prof = new Float32Array(WT * WA);
+  for (let i = 0; i < WT; i++) for (let k = 0; k < WA; k++) prof[i * WA + k] = ray(-.2 + 1.4 * i / (WT - 1), k / WA * 2 * Math.PI);
+  const L = { A, B, u, p1, p2, len, r: median(rs) || .12 * len, prof };   // A, B: the joints moved onto the middle line
+  if (part === 'boot') { const t = jointAt('toe_end', sd) || jointAt('toe', sd); if (t) L.toe = V(t).sub(V(pa)); }   // ankle -> toes
+  limbCache.set(key, L); return L;
+}
+function skinAt(L, t, ang) {   // the skin's distance from the axis, bilinear between the cells; 0: unknown
+  const x = (t + .2) / 1.4 * (WT - 1); if (x < 0 || x > WT - 1) return 0;
+  const i0 = Math.min(WT - 2, Math.floor(x)), fx = x - i0;
+  const y = ((ang / (2 * Math.PI)) % 1 + 1) % 1 * WA, j0 = Math.floor(y) % WA, j1 = (j0 + 1) % WA, fy = y - Math.floor(y);
+  const P = L.prof, a = P[i0 * WA + j0], b = P[i0 * WA + j1], c = P[(i0 + 1) * WA + j0], d = P[(i0 + 1) * WA + j1];
+  if (!a || !b || !c || !d) return 0;
+  return (a * (1 - fy) + b * fy) * (1 - fx) + (c * (1 - fy) + d * fy) * fx;
+}
+// ---- the fit by the whole inner wall («Подогнать по коже»), stage 1: the piece keeps its shape
+// Nodes: in every cell of the piece (12 along the limb x 24 around it) the vertex nearest to the limb's axis, i.e.
+// the inner wall as it really is, flares and dents included. Each node's signed distance to the limb's own skin
+// (the nearest point of it; inside or outside by the skin profile around the axis) should be the gap. A correction
+// in the limb's frame (shift 3, tilt 2, twist 1, scale across the limb, oval-ness along the limb's own section) is
+// found by point-to-plane Gauss-Newton, i.e. ICP with a one-sided penalty: under the skin costs ten times more than
+// air, and far air (a flared cuff) counts less and less (Cauchy weights), so it does not pull the piece into the arm.
+const NODE_MAT = new THREE.PointsMaterial({ size: 5, sizeAttenuation: false, depthTest: false, transparent: true, opacity: .9, vertexColors: true });
+const FIT_T = 12, FIT_A = 24, _near = { point: new V3(), distance: 0, faceIndex: 0 };
+function limbCyl(L, x, y, z) {   // [t along the limb 0..1, angle around it, distance from the axis]
+  const dx = x - L.A.x, dy = y - L.A.y, dz = z - L.A.z, along = dx * L.u.x + dy * L.u.y + dz * L.u.z;
+  const rx = dx - L.u.x * along, ry = dy - L.u.y * along, rz = dz - L.u.z * along;
+  return [along / L.len, Math.atan2(rx * L.p2.x + ry * L.p2.y + rz * L.p2.z, rx * L.p1.x + ry * L.p1.y + rz * L.p1.z), Math.hypot(rx, ry, rz)];
+}
+function limbSkin(L) {   // the limb's own skin only (triangles near its profile), so a hip next to the hand does not count
+  if (L.skin !== undefined) return L.skin;
+  const pos = [], v = [new V3(), new V3(), new V3()];
+  for (const m of meshes) {
+    const idx = m.geometry.index, n = idx ? idx.count : m.geometry.attributes.position.count;
+    for (let i = 0; i + 2 < n; i += 3) {
+      for (let k = 0; k < 3; k++) m.getVertexPosition(idx ? idx.getX(i + k) : i + k, v[k]).applyMatrix4(m.matrixWorld);
+      const [t, ang, r] = limbCyl(L, (v[0].x + v[1].x + v[2].x) / 3, (v[0].y + v[1].y + v[2].y) / 3, (v[0].z + v[1].z + v[2].z) / 3);
+      const R = skinAt(L, t, ang);
+      if (R && Math.abs(r - R) < .3 * R) for (const p of v) pos.push(p.x, p.y, p.z);
+    }
+  }
+  if (pos.length < 90) return (L.skin = null);
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.computeBoundsTree();
+  return (L.skin = g);
+}
+function skinSigned(L, p) {   // {d: distance to the skin, + outside, n: outward direction at the node} or null
+  const g = limbSkin(L); if (!g || !g.boundsTree.closestPointToPoint(p, _near, 0, 3 * L.r)) return null;
+  const [t, ang, r] = limbCyl(L, p.x, p.y, p.z), R = skinAt(L, t, ang), s = R && r < R ? -1 : 1, d = _near.distance;
+  const n = d > 1e-9 ? p.clone().sub(_near.point).multiplyScalar(s / d)
+    : p.clone().sub(L.A).addScaledVector(L.u, -p.clone().sub(L.A).dot(L.u)).normalize();
+  return { d: s * d, n };
+}
+function wearNodes(M, L) {   // [[part, vertex]]: the vertex nearest to the axis in each cell of the placed piece
+  const e = M.elements, all = [];
+  let t0 = Infinity, t1 = -Infinity;
+  wear.parts.forEach((p, pi) => {
+    const a = p.geo.attributes.position.array;
+    for (let i = 0; i < a.length; i += 3) {
+      const x = a[i], y = a[i + 1], z = a[i + 2];
+      const c = limbCyl(L, e[0] * x + e[4] * y + e[8] * z + e[12], e[1] * x + e[5] * y + e[9] * z + e[13], e[2] * x + e[6] * y + e[10] * z + e[14]);
+      all.push(pi, i / 3, c[0], c[1], c[2]); t0 = Math.min(t0, c[0]); t1 = Math.max(t1, c[0]);
+    }
+  });
+  t1 += 1e-9;
+  const best = new Map();
+  for (let k = 0; k < all.length; k += 5) {
+    const ci = Math.min(FIT_T - 1, Math.floor((all[k + 2] - t0) / (t1 - t0) * FIT_T));
+    const cj = Math.min(FIT_A - 1, Math.floor(((all[k + 3] / (2 * Math.PI)) % 1 + 1) % 1 * FIT_A)), key = ci * FIT_A + cj;
+    const b = best.get(key); if (!b) best.set(key, [all[k], all[k + 1], all[k + 4], all[k + 4]]);
+    else { if (all[k + 4] < b[2]) { b[0] = all[k]; b[1] = all[k + 1]; b[2] = all[k + 4]; } b[3] = Math.max(b[3], all[k + 4]); }
+  }
+  const cells = [...best.values()], nodes = cells.map(([pi, vi]) => [pi, vi]);
+  nodes.wall = median(cells.map((c) => c[3] - c[2]));   // inner wall to outer side, the median cell
+  return nodes;
+}
+const nodeAt = ([pi, vi], M) => new V3().fromBufferAttribute(wear.parts[pi].geo.attributes.position, vi).applyMatrix4(M);
+const wearGapDist = (L) => wv('wGap') * .5 * L.r;   // the same gap blender_wear_fit.py keeps
+function limbOval(L, t0, t1) {   // the main direction of the limb's section where the piece sits (from the skin profile)
+  let sxx = 0, syy = 0, sxy = 0;
+  for (let i = 0; i < WT; i++) {
+    const t = -.2 + 1.4 * i / (WT - 1); if (t < t0 - .05 || t > t1 + .05) continue;
+    for (let k = 0; k < WA; k++) { const R = L.prof[i * WA + k], a = k / WA * 2 * Math.PI; if (!R) continue; const x = R * Math.cos(a), y = R * Math.sin(a); sxx += x * x; syy += y * y; sxy += x * y; }
+  }
+  const phi = .5 * Math.atan2(2 * sxy, sxx - syy), q1 = L.p1.clone().multiplyScalar(Math.cos(phi)).addScaledVector(L.p2, Math.sin(phi));
+  return [q1, L.u.clone().cross(q1).normalize()];
+}
+function solve8(H, g) {   // H x = g, 8x8, Gaussian elimination with partial pivoting
+  const n = 8, A = H.map((row, i) => [...row, g[i]]);
+  for (let c = 0; c < n; c++) {
+    let p = c; for (let r = c + 1; r < n; r++) if (Math.abs(A[r][c]) > Math.abs(A[p][c])) p = r;
+    [A[c], A[p]] = [A[p], A[c]]; if (Math.abs(A[c][c]) < 1e-18) return null;
+    for (let r = c + 1; r < n; r++) { const f = A[r][c] / A[c][c]; for (let k = c; k <= n; k++) A[r][k] -= f * A[c][k]; }
+  }
+  const x = new Array(n).fill(0);
+  for (let r = n - 1; r >= 0; r--) { let s = A[r][n]; for (let k = r + 1; k < n; k++) s -= A[r][k] * x[k]; x[r] = s / A[r][r]; }
+  return x;
+}
+function wearFitCopy(c) {   // fits one copy; its correction goes into wear.fit[side] in the piece's own space
+  const L = c.L, F0 = wear.fit[c.side] || new THREE.Matrix4(), M = c.M0.clone().multiply(F0), G = wearGapDist(L), sig = .15 * L.r;
+  let nodes = wearNodes(M, L); if (nodes.length < 30) return false;
+  const pts0 = nodes.map((nd) => nodeAt(nd, M)), C = pts0.reduce((s, p) => s.add(p), new V3()).multiplyScalar(1 / pts0.length);
+  const ts = pts0.map((p) => limbCyl(L, p.x, p.y, p.z)[0]), [q1, q2] = limbOval(L, Math.min(...ts), Math.max(...ts)), u = L.u;
+  const P = new Array(8).fill(0);   // shift along q1 q2 u (in limb radii), turn about q1 q2 u, log scale across, oval
+  const LIM = [.5, .5, .25 * L.len / L.r, .25, .25, .35, .35, .2];
+  const K = () => {
+    const B = new THREE.Matrix4().makeBasis(q1, q2, u), s = Math.exp(P[6]);
+    const S = B.clone().multiply(new THREE.Matrix4().makeScale(s * Math.exp(P[7]), s * Math.exp(-P[7]), 1)).multiply(B.clone().transpose());
+    const rv = q1.clone().multiplyScalar(P[3]).addScaledVector(q2, P[4]).addScaledVector(u, P[5]), ang = rv.length();
+    const R = ang > 1e-12 ? new THREE.Matrix4().makeRotationAxis(rv.clone().normalize(), ang) : new THREE.Matrix4();
+    const t = C.clone().addScaledVector(q1, P[0] * L.r).addScaledVector(q2, P[1] * L.r).addScaledVector(u, P[2] * L.r);
+    return new THREE.Matrix4().makeTranslation(t.x, t.y, t.z).multiply(R).multiply(S).multiply(new THREE.Matrix4().makeTranslation(-C.x, -C.y, -C.z));
+  };
+  const PRIOR = [.02, .02, .05, .05, .05, 1, .02, .1];   // twist mostly kept: it is the user's (where the decor faces)
+  for (let it = 0; it < 30; it++) {
+    const Mk = K().multiply(M);
+    if (it && it % 8 === 0) nodes = wearNodes(Mk, L);
+    const H = Array.from({ length: 8 }, () => new Array(8).fill(0)), g = new Array(8).fill(0);
+    for (const nd of nodes) {
+      const p = nodeAt(nd, Mk), sd = skinSigned(L, p); if (!sd) continue;
+      const res = sd.d - G, w = res < 0 ? 10 : 1 / (1 + (res / sig) ** 2), n = sd.n, dp = p.clone().sub(C), x = dp.clone().cross(n);
+      const perp = dp.clone().addScaledVector(u, -dp.dot(u)), ov = q1.clone().multiplyScalar(dp.dot(q1)).addScaledVector(q2, -dp.dot(q2));
+      const J = [n.dot(q1) * L.r, n.dot(q2) * L.r, n.dot(u) * L.r, x.dot(q1), x.dot(q2), x.dot(u), n.dot(perp), n.dot(ov)];
+      for (let a = 0; a < 8; a++) { g[a] += w * J[a] * res; for (let b = 0; b < 8; b++) H[a][b] += w * J[a] * J[b]; }
+    }
+    const h = Math.max(1e-12, H.reduce((s, row, i) => s + row[i], 0) / 8);
+    for (let a = 0; a < 8; a++) { H[a][a] += PRIOR[a] * h + 1e-3 * H[a][a]; g[a] += PRIOR[a] * h * P[a]; }
+    const d = solve8(H, g.map((x) => -x)); if (!d) break;
+    let step = 0;
+    for (let a = 0; a < 8; a++) { const v = Math.max(-LIM[a], Math.min(LIM[a], P[a] + Math.max(-.1, Math.min(.1, d[a])))); step = Math.max(step, Math.abs(v - P[a])); P[a] = v; }
+    if (step < 1e-4) break;
+  }
+  wear.fit[c.side] = c.M0.clone().invert().multiply(K()).multiply(c.M0).multiply(F0);
+  return true;
+}
+function wearNodeStats(c) {   // the nodes of a placed copy: positions, colours and counts for the panel
+  const L = c.L, G = wearGapDist(L), pos = [], col = [], nodes = wearNodes(c.M, L); let under = 0, air = 0, n = 0, sumAir = 0;
+  for (const nd of nodes) {
+    const p = nodeAt(nd, c.M), sd = skinSigned(L, p); if (!sd) continue;
+    n++; pos.push(p.x, p.y, p.z);
+    const a = (sd.d - G) / L.r; sumAir += Math.max(0, sd.d) / L.r;
+    if (sd.d < 0) { under++; col.push(.9, .28, .3); } else if (a > .2) { air++; col.push(.25, .5, .95); } else col.push(.25, .8, .4);
+  }
+  return { pos, col, under, air, n, meanAir: n ? sumAir / n : 0, wall: (nodes.wall || 0) / L.r };
+}
+function wearFitAll() {   // «Подогнать по коже»: every copy against its own limb
+  if (!wear) return;
+  for (const c of wearMatrices()) if (c.L) wearFitCopy(c);
+}
+// ---- a piece with its own skeleton (made on another body: a boot over the shin and the foot, a whole arm)
+// It is moved from its skeleton onto the character's, bone by bone, the way skinning moves skin: every source bone
+// maps its head onto the character's same bone and turns and scales its direction onto it; each vertex takes the
+// blend of its bones' moves by its own weights. The other side: the piece reflected about its body's middle with
+// Left and Right swapped. The result goes to Blender as it is shown (the push out of the skin and the weights).
+const swapLR = (n) => n.replace(/Left|Right/, (m) => (m === 'Left' ? 'Right' : 'Left'));
+const SEG = [[/HandThumb|HandIndex|HandMiddle|HandRing|HandPinky|Hand$/, 'hand'], [/ForeArm$/, 'forearm'], [/Arm$/, 'arm'],
+             [/UpLeg$/, 'upleg'], [/Leg$/, 'leg'], [/Foot$|ToeBase$|Toe_?End$/, 'foot']];
+const segOf = (n) => { for (const [re, p] of SEG) if (re.test(n)) return p; return 'body'; };
+function wearSkelRead(gltf, parts, P) {   // the piece's own skeleton, if its bones are the character's ones
+  const pos = new Map(), parent = new Map(), child = new Map();
+  gltf.scene.traverse((o) => {
+    if (!o.isBone) return;
+    pos.set(o.name, o.getWorldPosition(new V3()));
+    if (o.parent && o.parent.isBone) parent.set(o.name, o.parent.name);
+    const kid = o.children.find((c) => c.isBone); if (kid) child.set(o.name, kid.name);
+  });
+  const known = [...pos.keys()].filter((n) => RESTW.has(n));
+  if (known.length < 2 || !parts.some((p) => p.skin)) return null;
+  const share = {};   // the weight per body segment, for the mode and the side
+  for (const p of parts) if (p.skin) {
+    const I = p.skin.index.array, W = p.skin.weight.array;
+    for (let k = 0; k < W.length; k++) if (W[k] > 0) { const n = p.skin.bones[I[k]]; const key = segOf(n) + (/Left/.test(n) ? '_L' : /Right/.test(n) ? '_R' : ''); share[key] = (share[key] || 0) + W[k]; }
+  }
+  const tot = Object.values(share).reduce((s, x) => s + x, 0) || 1, top = Object.entries(share).sort((a, b) => b[1] - a[1]);
+  const hips = [...pos.keys()].find((n) => /Hips$/.test(n));
+  // where the piece sits: the limb segment (bone head to its child) nearest to its middle, and whether it is no
+  // longer than that segment (weights alone mislead: a bracer is often weighted mostly to the hand)
+  let seg = null, best = Infinity;
+  for (const [n, h] of pos) {
+    const part = segOf(n), c = child.get(n); if (part === 'body' || !c) continue;
+    const e = pos.get(c), d = e.clone().sub(h), t = Math.max(0, Math.min(1, P.mid.clone().sub(h).dot(d) / d.lengthSq()));
+    const dist = P.mid.distanceTo(h.clone().addScaledVector(d, t));
+    if (dist < best) { best = dist; seg = { part, side: /Left/.test(n) ? 'L' : 'R', len: d.length() }; }
+  }
+  return { pos, parent, child, cx: hips ? pos.get(hips).x : 0, side: seg ? seg.side : /_R$/.test(top[0][0]) ? 'R' : 'L',
+           part: top[0][0].replace(/_[LR]$/, ''), topShare: top[0][1] / tot,
+           tube: seg && ['forearm', 'arm', 'upleg', 'leg'].includes(seg.part) && P.L <= 1.15 * seg.len ? seg.part : null };
+}
+function wearBoneM(n, mirror, cache) {   // the move of source bone n onto the character (mirror: onto the other side)
+  const key = n + (mirror ? '|m' : ''); if (cache.has(key)) return cache.get(key);
+  const K = wear.skel, tn = mirror ? swapLR(n) : n, refl = (v) => (mirror ? new V3(2 * K.cx - v.x, v.y, v.z) : v.clone());
+  let M = null;
+  const sh = K.pos.get(n), th = RESTW.get(tn), ch = K.child.get(n), tc = ch && RESTW.get(mirror ? swapLR(ch) : ch);
+  if (sh && th) {
+    let R, s;
+    if (ch && K.pos.get(ch) && tc) {
+      const ds = refl(K.pos.get(ch)).sub(refl(sh)), dt = tc.clone().sub(th);
+      s = dt.length() / Math.max(ds.length(), 1e-12); R = new Q().setFromUnitVectors(ds.normalize(), dt.normalize());
+    } else if (K.parent.get(n)) {   // an end bone: its parent's turn and scale, about its own head
+      const P = wearBoneM(K.parent.get(n), mirror, cache); R = new Q().setFromRotationMatrix(new THREE.Matrix4().extractRotation(P)); s = new V3().setFromMatrixScale(P).x;
+    } else { R = new Q(); s = 1; }
+    const S0 = refl(sh);
+    M = new THREE.Matrix4().makeTranslation(th.x, th.y, th.z).multiply(new THREE.Matrix4().makeRotationFromQuaternion(R))
+      .multiply(new THREE.Matrix4().makeScale(s, s, s)).multiply(new THREE.Matrix4().makeTranslation(-S0.x, -S0.y, -S0.z));
+    if (mirror) M.multiply(new THREE.Matrix4().set(-1, 0, 0, 2 * K.cx, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1));
+  } else if (K.parent.get(n)) M = wearBoneM(K.parent.get(n), mirror, cache).clone();   // a bone the character lacks
+  else M = mirror ? new THREE.Matrix4().set(-1, 0, 0, 2 * K.cx, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1) : new THREE.Matrix4();
+  cache.set(key, M); return M;
+}
+function wearRetarget(mirror) {   // geometries of the piece on the character, one per part
+  const cache = new Map(), v = new V3(), acc = new V3(), tmp = new V3();
+  return wear.parts.map((p) => {
+    const g = p.geo.clone(), a = p.geo.attributes.position.array, out = g.attributes.position.array;
+    const S = p.skin, fallback = wearBoneM([...wear.skel.pos.keys()].find((n) => /Hips$/.test(n)) || [...wear.skel.pos.keys()][0], mirror, cache);
+    for (let i = 0, k = 0; i < a.length; i += 3, k += 4) {
+      v.set(a[i], a[i + 1], a[i + 2]); acc.set(0, 0, 0); let tw = 0;
+      if (S) for (let j = 0; j < 4; j++) {
+        const w = S.weight.array[k + j]; if (w <= 0) continue;
+        acc.addScaledVector(tmp.copy(v).applyMatrix4(wearBoneM(S.bones[S.index.array[k + j]], mirror, cache)), w); tw += w;
+      }
+      if (tw > 1e-9) acc.multiplyScalar(1 / tw); else acc.copy(v).applyMatrix4(fallback);
+      out[i] = acc.x; out[i + 1] = acc.y; out[i + 2] = acc.z;
+    }
+    if (mirror && g.index) { const ix = g.index.array; for (let i = 0; i < ix.length; i += 3) { const t = ix[i + 1]; ix[i + 1] = ix[i + 2]; ix[i + 2] = t; } }
+    g.attributes.position.needsUpdate = true; g.computeVertexNormals(); g.computeBoundingSphere();
+    return g;
+  });
+}
+function wearRetargetAll() {   // every copy: its side, mirrored when the piece was made for the other one
+  const sd = $('wSide').value, od = sd === 'L' ? 'R' : 'L';
+  wear.rgeo = { [sd]: wearRetarget(sd !== wear.skel.side) };
+  if ($('wMirror').checked) wear.rgeo[od] = wearRetarget(od !== wear.skel.side);
+}
+const isSkelMode = () => $('wPart').value === 'skeleton';
+function wearSkelBones() {   // the character's bones the piece follows (Blender takes the weights only from them)
+  const used = new Set(), names = new Map();
+  for (const tbl of Object.values(DATA.names || {})) for (const n of Object.values(tbl)) names.set(THREE.PropertyBinding.sanitizeNodeName(n), n);
+  for (const p of wear.parts) if (p.skin) for (let k = 0; k < p.skin.weight.array.length; k++) if (p.skin.weight.array[k] > .02) used.add(p.skin.bones[p.skin.index.array[k]]);
+  const out = new Set();
+  for (const n of used) for (const m of [n, swapLR(n)]) if (RESTW.has(m)) out.add(names.get(m) || m);
+  return [...out];
+}
+async function wearExport() {   // the copies as shown, as one GLB (plain meshes; Blender skins them)
+  const sc = new THREE.Scene();
+  for (const c of wearMatrices()) c.geos.forEach((g, i) => sc.add(new THREE.Mesh(g, wear.parts[i].mat)));
+  const buf = await new GLTFExporter().parseAsync(sc, { binary: true });
+  let bin = ''; const u8 = new Uint8Array(buf);
+  for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+  return btoa(bin);
 }
 const wv = (id) => +$(id).value;
 function wearAuto() {
-  const L = limbOf($('wPart').value, $('wSide').value), P = wear.pca;
+  $('wearPanel').classList.toggle('skel', isSkelMode());
+  if (isSkelMode()) {
+    if (!wear.skel) { $('wStatus').textContent = 'У вещи нет своего скелета с костями персонажа: выберите часть тела.'; return false; }
+    wear.fit = {}; wear.off = new V3(); tcW.detach(); wearRetargetAll(); return true;
+  }
+  const part = $('wPart').value, L = limbOf(part, $('wSide').value);
+  const up = isUpright(part);
+  if (!!(wear.pca && wear.pca.upright) !== up || !!(wear.pca && wear.pca.boot) !== (part === 'boot')) {   // another axis (and its wall grid)
+    wear.pca = up ? wearShapeUpright(wear.parts, part === 'boot') : wearShape(wear.parts, wear.openAxis); wear.wall = wallGrid(wear.parts, wear.pca); wearDeform();
+  }
+  const P = wear.pca;
   if (!L) { $('wStatus').textContent = 'У персонажа нет суставов этой части тела.'; return false; }
-  const s = L.r * (1 + wv('wGap')) / Math.max(P.rin, 1e-9);   // the inner wall on the skin plus the gap
-  const len = Math.min(P.L * s, .95 * L.len);
-  $('wPos').value = Math.min(.75, Math.max(.3, .93 - len / 2 / L.len));   // the far end near the next joint
-  $('wLen').value = 1; $('wThick').value = 1; $('wTwist').value = 0;
-  wear.s = s; wear.lenFit = len / (P.L * s); wear.off = new V3(); wearHelper.scale.set(1, 1, 1);
+  $('wLen').value = 1; $('wThick').value = 1; $('wWall').value = 1; $('wTwist').value = 0; $('wRigid').value = WEAR_RIGID[part];
+  wearDeform();
+  wear.off = new V3(); wear.fit = {}; wearHelper.scale.set(1, 1, 1);
   // the gizmo's own frame: at the middle of the bone, its Y along the bone (turning about Y = about its own axis)
   wear.q0 = new Q().setFromUnitVectors(new V3(0, 1, 0), L.u); wearHelper.quaternion.copy(wear.q0);
   wear.mid = L.A.clone().addScaledVector(L.u, .5 * L.len);
+  const size = (s) => {   // the scale s; the length capped by the limb; the far end at the next joint (a bracer at the wrist)
+    const len = up ? P.L * s : Math.min(P.L * s, .95 * L.len);   // a helmet or a cuirass keeps its proportions
+    wear.s = s; wear.lenFit = len / (P.L * s); $('wPos').value = Math.min(.8, Math.max(.3, .97 - len / 2 / L.len));
+  };
+  size(L.r * (1 + wv('wGap')) / Math.max(P.rin, 1e-9));   // first guess: the inner wall on the limb's mean radius
+  // the middle of the body: a helmet's top at the top of the head (it goes down over the skull from there), a cuirass
+  // at its own place on the spine
+  const fixPos = () => {
+    if (!up) return;
+    const half = wear.lenFit * wear.s * P.L / 2 / L.len;
+    if (part === 'boot') {   // the sole at the heel (or a little under the ankle when the markup has no heel)
+      // the sole on the ground under this foot: the lowest point of the character's skin
+      const ground = new THREE.Box3().setFromObject(model).min.y, foot = L.A.clone(); foot.y = ground;
+      const ts = foot.sub(L.A).dot(L.u) / L.len;
+      $('wPos').value = ts + half;
+    } else $('wPos').value = part === 'head' ? Math.max(.3, 1.04 - half) : WEAR_MID[part].pos;
+  };
+  fixPos();
+  // then by the skin where the piece really sits (a limb is thicker near the body); a boot only by its shaft on the
+  // shin (its foot part has no limb axis to be measured on, and its height would feed back into its size)
+  for (let it = 0; it < 3; it++) {
+    const k = wearClearance(wearMatrices()[0], part === 'boot' ? .15 : -Infinity); if (!k || Math.abs(k - 1) < .01) break;
+    size(wear.s * k); fixPos();
+  }
+  // then by the whole inner wall against the skin; not a boot: its foot part would lift it off the ground
+  if (part !== 'boot') wearFitAll();
+  // a piece much longer than this segment (a boot, a whole arm) cannot sit on one bone: it would be blown up
+  wear.tooLong = P.L * wear.s > 1.6 * L.len;
   return true;
+}
+// how much wider the piece should be for its inner wall to sit on the skin + gap where it typically is: the inner
+// wall is the nearest vertex to the axis in each cell (along x around); the median cell decides. Blender widens the
+// cells still under the skin and draws in the loose ones, so the auto-size aims at the typical cell, not the worst
+function wearClearance({ M, L }, minT = -Infinity) {   // minT: only the part above this place on the limb (a boot's shaft)
+  const e = M.elements, A = L.A, u = L.u, g = 1 + wv('wGap'), CT = 12, CA = 16, inner = new Float32Array(CT * CA).fill(Infinity), skin = new Float32Array(CT * CA);
+  const pts = [];
+  for (const p of wear.parts) {
+    const a = p.geo.attributes.position.array, st = 3 * Math.max(1, Math.floor(a.length / 3 / 3000));
+    for (let i = 0; i < a.length; i += st) {
+      const x = a[i], y = a[i + 1], z = a[i + 2];
+      const dx = e[0] * x + e[4] * y + e[8] * z + e[12] - A.x, dy = e[1] * x + e[5] * y + e[9] * z + e[13] - A.y, dz = e[2] * x + e[6] * y + e[10] * z + e[14] - A.z;
+      const along = dx * u.x + dy * u.y + dz * u.z, rx = dx - u.x * along, ry = dy - u.y * along, rz = dz - u.z * along, r = Math.hypot(rx, ry, rz);
+      const t = along / L.len, ang = Math.atan2(rx * L.p2.x + ry * L.p2.y + rz * L.p2.z, rx * L.p1.x + ry * L.p1.y + rz * L.p1.z);
+      if (r > 1e-9 && t >= minT) pts.push(t, ang, r);
+    }
+  }
+  if (pts.length < 60) return 0;
+  let t0 = Infinity, t1 = -Infinity; for (let i = 0; i < pts.length; i += 3) { t0 = Math.min(t0, pts[i]); t1 = Math.max(t1, pts[i]); }
+  t1 += 1e-6;
+  for (let i = 0; i < pts.length; i += 3) {
+    const ci = Math.min(CT - 1, Math.floor((pts[i] - t0) / (t1 - t0) * CT)), cj = Math.min(CA - 1, Math.floor(((pts[i + 1] / (2 * Math.PI)) % 1 + 1) % 1 * CA)), k = ci * CA + cj;
+    if (pts[i + 2] < inner[k]) { inner[k] = pts[i + 2]; skin[k] = skinAt(L, pts[i], pts[i + 1]); }
+  }
+  const ratios = []; for (let k = 0; k < CT * CA; k++) if (skin[k] && inner[k] < Infinity) ratios.push(skin[k] * g / inner[k]);
+  if (ratios.length < 20) return 0;
+  ratios.sort((p, q) => p - q);
+  return Math.min(1.5, Math.max(.75, ratios[ratios.length >> 1]));
 }
 function wearPlacement(L) {   // armour space -> world, from the sliders (without the gizmo)
   const P = wear.pca, a = P.axis;
@@ -2020,14 +2508,28 @@ function wearPlacement(L) {   // armour space -> world, from the sliders (withou
     sr + k * a.x * a.x, k * a.x * a.y, k * a.x * a.z, 0,
     k * a.y * a.x, sr + k * a.y * a.y, k * a.y * a.z, 0,
     k * a.z * a.x, k * a.z * a.y, sr + k * a.z * a.z, 0, 0, 0, 0, 1);
-  const q = new Q().setFromAxisAngle(L.u, THREE.MathUtils.degToRad(wv('wTwist'))).multiply(new Q().setFromUnitVectors(a, L.u));
+  let q = new Q().setFromUnitVectors(a, L.u);
+  if (P.toe && L.toe) {   // a boot: its toe turned about the shin onto the foot's direction
+    const t = P.toe.clone().applyQuaternion(q), f = L.toe;
+    t.addScaledVector(L.u, -t.dot(L.u)); const fp = f.clone().addScaledVector(L.u, -f.dot(L.u));
+    if (t.lengthSq() > 1e-12 && fp.lengthSq() > 1e-12) {
+      t.normalize(); fp.normalize();
+      q = new Q().setFromAxisAngle(L.u, Math.atan2(t.clone().cross(fp).dot(L.u), t.dot(fp))).multiply(q);
+    }
+  }
+  q = new Q().setFromAxisAngle(L.u, THREE.MathUtils.degToRad(wv('wTwist'))).multiply(q);
   const c = L.A.clone().addScaledVector(L.u, wv('wPos') * L.len);
   const M = new THREE.Matrix4().makeTranslation(c.x, c.y, c.z).multiply(new THREE.Matrix4().makeRotationFromQuaternion(q))
     .multiply(S3).multiply(new THREE.Matrix4().makeTranslation(-P.mid.x, -P.mid.y, -P.mid.z));
   return { M, c };
 }
-function wearMatrices() {
-  const part = $('wPart').value, sd = $('wSide').value, L = limbOf(part, sd); if (!L) return [];
+function wearMatrices() {   // [{side, M, M0, L}]: every copy (M0 as placed, M with its fit by the skin) and its limb
+  const part = $('wPart').value, sd = $('wSide').value;
+  if (part === 'skeleton') {   // already on the character: geometries per copy, no limb
+    if (!wear.rgeo) return [];
+    return Object.entries(wear.rgeo).map(([side, geos]) => ({ side, M: new THREE.Matrix4(), M0: new THREE.Matrix4(), L: null, geos }));
+  }
+  const L = limbOf(part, sd); if (!L) return [];
   const { M, c } = wearPlacement(L);
   wear.c = c;
   // the gizmo: moved / turned / scaled about the middle of the bone, in the bone's own frame
@@ -2035,9 +2537,8 @@ function wearMatrices() {
   const E = new THREE.Matrix4().compose(h, wearHelper.quaternion, wearHelper.scale)
     .multiply(new THREE.Matrix4().makeRotationFromQuaternion(wear.q0.clone().invert()))
     .multiply(new THREE.Matrix4().makeTranslation(-mid.x, -mid.y, -mid.z));
-  const M1 = E.multiply(M), out = [{ side: sd, M: M1 }];
-  wear.M0 = M1.clone();
-  if ($('wMirror').checked) {   // mirrored about the body's middle, then onto the other limb as it really is
+  const M1 = E.multiply(M), out = [{ side: sd, M0: M1, L }];
+  if ($('wMirror').checked && !WEAR_MID[part]) {   // mirrored about the body's middle, then onto the other limb as it really is
     const od = sd === 'L' ? 'R' : 'L', Lo = limbOf(part, od);
     if (Lo) {
       const refl = new THREE.Matrix4().set(-1, 0, 0, 2 * cx, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1);
@@ -2046,27 +2547,39 @@ function wearMatrices() {
       const align = new THREE.Matrix4().makeTranslation(co.x, co.y, co.z)
         .multiply(new THREE.Matrix4().makeRotationFromQuaternion(new Q().setFromUnitVectors(um, Lo.u)))
         .multiply(new THREE.Matrix4().makeTranslation(-cm.x, -cm.y, -cm.z));
-      out.push({ side: od, M: align.multiply(refl).multiply(M1.clone()) });
+      out.push({ side: od, M0: align.multiply(refl).multiply(M1.clone()), L: Lo });
     }
   }
+  for (const c of out) c.M = wear.fit && wear.fit[c.side] ? c.M0.clone().multiply(wear.fit[c.side]) : c.M0;
   return out;
 }
 function wearDraw() {
-  for (const g of [...wearGroup.children]) wearGroup.remove(g);
+  for (const g of [...wearGroup.children]) { wearGroup.remove(g); if (g.isPoints) g.geometry.dispose(); }
   if (!wear) return;
-  for (const { M } of wearMatrices()) {
+  const mats = wearMatrices();
+  for (const { M, geos } of mats) {
     const g = new THREE.Group(); g.matrixAutoUpdate = false; g.matrix.copy(M); g.matrixWorldNeedsUpdate = true;
-    for (const p of wear.parts) g.add(new THREE.Mesh(p.geo, p.mat));
+    wear.parts.forEach((p, i) => g.add(new THREE.Mesh(geos ? geos[i] : p.geo, p.mat)));
     wearGroup.add(g);
   }
   wearGroup.updateMatrixWorld(true);
   if (!tcW.dragging && wear.mid) wearHelper.position.copy(wear.mid.clone().add(wear.off || new V3()));
   const r = .011 * H / Math.max(1, camera.zoom);   // the surface points, on every copy
-  for (const { M } of wearMatrices()) wear.handles.forEach((hd, i) => {
+  for (const { M, L } of mats) if (L) wear.handles.forEach((hd, i) => {
     const sp = new THREE.Mesh(sphereGeo, i === wear.sel ? COL.sel : COL.bad); sp.scale.setScalar(r); sp.renderOrder = 999;
     sp.position.copy(hd.p.clone().add(hd.d).applyMatrix4(M)); wearGroup.add(sp);
   });
+  ringDraw(mats);
   if (wear.sel >= 0 && !tcW.dragging && tcW.object === wearPoint) wearPoint.position.copy(wear.handles[wear.sel].p.clone().add(wear.handles[wear.sel].d).applyMatrix4(wearCopyM()));
+  // the inner wall's nodes, seen through the body: red under the skin, green on it, blue with air
+  const st = $('wInside').checked ? mats.filter((c) => c.L).map(wearNodeStats) : [];
+  for (const k of st) {
+    if (!k.pos.length) continue;
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(k.pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(k.col, 3));
+    const dots = new THREE.Points(g, NODE_MAT); dots.renderOrder = 998; wearGroup.add(dots);
+  }
+  const k = st[0];
+  $('wInfo').textContent = !k || !k.n ? '' : `Внутренняя стенка: под кожей ${Math.round(100 * k.under / k.n)}% узлов (красные), с воздухом ${Math.round(100 * k.air / k.n)}% (синие); воздух в среднем ${Math.round(100 * k.meanAir)}%, стенка ${Math.round(100 * k.wall)}% радиуса руки.`;
 }
 // surface points: each pulls the piece around it (smooth falloff over its radius), all in the piece's own space,
 // so the mirrored copy and blender_wear_fit.py get the same shape
@@ -2074,6 +2587,8 @@ function wearDeform() {
   for (const p of wear.parts) {
     const o = p.geo.userData.orig, a = p.geo.attributes.position, arr = a.array;
     arr.set(o);
+    if (wear.wall && Math.abs(wv('wWall') - 1) > 1e-3) wallApply(arr, o, wear.pca, wear.wall, wv('wWall'));
+    ringApply(arr, o, ringList());
     for (const h of wear.handles) {
       if (h.d.lengthSq() === 0) continue;
       for (let i = 0; i < arr.length; i += 3) {
@@ -2087,7 +2602,92 @@ function wearDeform() {
   }
 }
 const wearCopyM = () => { const all = wearMatrices(); return (all[wear.selCopy || 0] || all[0]).M; };   // the copy being edited
+// ---- openings («Отверстие»): clicks around the rim of an arm hole or a neck give its circle (a plane by the points'
+// spread, a circle fitted in it); «Сузить» draws everything near that circle towards its axis, the inner and the outer
+// wall together (a generated shell's rim is thick and closed, no open edge to find), with a smooth falloff over a band,
+// so a strap closes in on the shoulder instead of standing off it. In the piece's own space like the surface points:
+// the mirrored copy and blender_wear_fit.py (job "rings") get the same shape.
+function ringFit(pts) {   // [V3] (3 or more) -> {c, n, r} or null
+  if (pts.length < 3) return null;
+  const m = pts.reduce((s, p) => s.add(p), new V3()).multiplyScalar(1 / pts.length);
+  const C = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+  for (const p of pts) { const d = [p.x - m.x, p.y - m.y, p.z - m.z]; for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) C[i * 3 + j] += d[i] * d[j]; }
+  const E = eigen3(C).sort((a, b) => b[0] - a[0]);
+  const e1 = E[0][1].clone().normalize(), n = E[2][1].clone().normalize(), e2 = n.clone().cross(e1).normalize();
+  // the circle in the plane: x² + y² + D x + E y + F = 0, least squares (Kåsa)
+  const A = [[0, 0, 0], [0, 0, 0], [0, 0, 0]], b = [0, 0, 0];
+  for (const p of pts) {
+    const d = p.clone().sub(m), x = d.dot(e1), y = d.dot(e2), row = [x, y, 1], rhs = -(x * x + y * y);
+    for (let i = 0; i < 3; i++) { b[i] += row[i] * rhs; for (let j = 0; j < 3; j++) A[i][j] += row[i] * row[j]; }
+  }
+  const det = (M) => M[0][0] * (M[1][1] * M[2][2] - M[1][2] * M[2][1]) - M[0][1] * (M[1][0] * M[2][2] - M[1][2] * M[2][0]) + M[0][2] * (M[1][0] * M[2][1] - M[1][1] * M[2][0]);
+  const d0 = det(A); if (Math.abs(d0) < 1e-24) return null;
+  const sol = [0, 1, 2].map((k) => det(A.map((row, i) => row.map((v, j) => (j === k ? b[i] : v)))) / d0);
+  const cx = -sol[0] / 2, cy = -sol[1] / 2, r = Math.sqrt(Math.max(cx * cx + cy * cy - sol[2], 1e-24));
+  return { c: m.clone().addScaledVector(e1, cx).addScaledVector(e2, cy), n, r };
+}
+function ringList() {   // the rings to apply, each mirrored too when asked (an upright piece: left-right is its X)
+  const out = [];
+  for (const g of wear.rings || []) {
+    const f = ringFit(g.pts); if (!f || !g.s) continue;
+    const one = { c: f.c, n: f.n, r: f.r, s: g.s, b: g.b * f.r };
+    out.push(one);
+    if (g.sym) { const mx = wear.pca.mid.x; out.push({ ...one, c: new V3(2 * mx - f.c.x, f.c.y, f.c.z), n: new V3(-f.n.x, f.n.y, f.n.z) }); }
+  }
+  return out;
+}
+function ringApply(arr, o, rings) {   // arr += every ring's pull, measured on the piece as it came (o)
+  for (const g of rings) {
+    const { c, n, r, s, b } = g;
+    for (let i = 0; i < o.length; i += 3) {
+      const qx = o[i] - c.x, qy = o[i + 1] - c.y, qz = o[i + 2] - c.z, h = qx * n.x + qy * n.y + qz * n.z;
+      const rx = qx - n.x * h, ry = qy - n.y * h, rz = qz - n.z * h, rho = Math.hypot(rx, ry, rz);
+      if (rho < 1e-12) continue;
+      const d = Math.hypot(h, rho - r); if (d >= b) continue;
+      const t = d / b, w = 1 - t * t * (3 - 2 * t), k = -s * r * w / rho;
+      arr[i] += rx * k; arr[i + 1] += ry * k; arr[i + 2] += rz * k;
+    }
+  }
+}
+function ringPick(e) {   // a click on either copy adds a rim point to the opening being marked
+  const rc = canvas.getBoundingClientRect();
+  const n = new THREE.Vector2(((e.clientX - rc.left) / rc.width) * 2 - 1, -((e.clientY - rc.top) / rc.height) * 2 + 1);
+  const r = new THREE.Raycaster(); r.setFromCamera(n, camera);
+  const copies = wearGroup.children.filter((g) => g.isGroup);
+  const hit = r.intersectObjects(copies, true)[0]; if (!hit) { $('wStatus').textContent = 'Мимо вещи: кликайте по краю отверстия на самой броне.'; return; }
+  let g = hit.object; while (g.parent && g.parent !== wearGroup) g = g.parent;
+  const ring = wear.rings[wear.ringSel];
+  ring.pts.push(hit.point.clone().applyMatrix4(g.matrix.clone().invert()));
+  $('wStatus').textContent = ring.pts.length < 3 ? `Точка края ${ring.pts.length}: нужно хотя бы 3 по окружности отверстия.`
+    : `Отверстие размечено (${ring.pts.length} точек). Ползунок «Сузить отверстие» стягивает его край; можно добавить ещё точек.`;
+  wearDeform(); wearDraw();
+}
+function ringDraw(mats) {   // the rim points and the fitted circles, on every copy
+  const r = .008 * H / Math.max(1, camera.zoom);
+  (wear.rings || []).forEach((g, gi) => {
+    const f = ringFit(g.pts);
+    for (const { M, L } of mats) {
+      if (!L) continue;
+      for (const p of g.pts) {
+        const sp = new THREE.Mesh(sphereGeo, gi === wear.ringSel ? COL.sel : COL.derived); sp.scale.setScalar(r); sp.renderOrder = 999;
+        sp.position.copy(p.clone().applyMatrix4(M)); wearGroup.add(sp);
+      }
+      if (!f) continue;
+      const e1 = (Math.abs(f.n.x) < .9 ? new V3(1, 0, 0) : new V3(0, 1, 0)).cross(f.n).normalize(), e2 = f.n.clone().cross(e1);
+      const rr = f.r * (1 - g.s), pts = [];
+      for (let k = 0; k <= 48; k++) { const a = k / 48 * 2 * Math.PI; pts.push(f.c.clone().addScaledVector(e1, rr * Math.cos(a)).addScaledVector(e2, rr * Math.sin(a)).applyMatrix4(M)); }
+      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: gi === wear.ringSel ? 0xffd31a : 0x3f8fe6, depthTest: false }));
+      line.renderOrder = 999; wearGroup.add(line);
+    }
+  });
+}
+function ringUi() {   // the sliders show the selected opening
+  const g = wear && wear.rings && wear.rings[wear.ringSel];
+  $('wRingS').value = g ? g.s : 0; $('wRingB').value = g ? g.b : .6; $('wRingSym').checked = g ? g.sym : true;
+  $('wRing').classList.toggle('on', !!(wear && wear.ringMode));
+}
 function wearPick(e) {   // a click on the first copy: an existing point (by screen distance) or a new one on the surface
+  if (isSkelMode()) { $('wStatus').textContent = 'Точки — для вещи на одной части тела.'; return; }
   const rc = canvas.getBoundingClientRect();
   const mats = wearMatrices();
   for (let c = 0; c < mats.length; c++) for (let i = 0; i < wear.handles.length; i++) {
@@ -2114,13 +2714,43 @@ function wearSelect(i, copy = wear.selCopy || 0) {
   } else tcW.detach();
   wearDraw();
 }
-async function wearLoad(file) {
-  const buf = await file.arrayBuffer();
+// a fitting as it is now: what «Сохранить» writes to <stem>_wear_<item>.fit.json and «Открыть» puts back
+function wearState() {
+  const st = { part: $('wPart').value, side: $('wSide').value, mirror: $('wMirror').checked,
+               off: (wear.off || new V3()).toArray(), q: wearHelper.quaternion.toArray(), sc: wearHelper.scale.toArray(),
+               fit: Object.fromEntries(Object.entries(wear.fit || {}).map(([k, m]) => [k, Array.from(m.elements)])),
+               handles: wear.handles.map((h) => ({ p: h.p.toArray(), d: h.d.toArray(), r: h.r })),
+               rings: (wear.rings || []).map((g) => ({ pts: g.pts.map((p) => p.toArray()), s: g.s, b: g.b, sym: g.sym })) };
+  for (const id of WEAR_SLIDERS) st[id] = wv(id);
+  return st;
+}
+function wearRestore(st) {
+  $('wPart').value = st.part; $('wSide').value = st.side; $('wMirror').checked = st.mirror !== false;
+  if (!wearAuto()) return false;
+  for (const id of WEAR_SLIDERS) if (st[id] != null) $(id).value = st[id];
+  wear.off = new V3().fromArray(st.off || [0, 0, 0]);
+  if (st.q) wearHelper.quaternion.fromArray(st.q);
+  if (st.sc) wearHelper.scale.fromArray(st.sc);
+  wear.fit = Object.fromEntries(Object.entries(st.fit || {}).map(([k, m]) => [k, new THREE.Matrix4().fromArray(m)]));
+  wear.handles = (st.handles || []).map((h) => ({ p: new V3().fromArray(h.p), d: new V3().fromArray(h.d), r: h.r }));
+  wear.rings = (st.rings || []).map((g) => ({ pts: g.pts.map((p) => new V3().fromArray(p)), s: g.s, b: g.b, sym: g.sym }));
+  wear.ringSel = wear.rings.length - 1; ringUi();
+  wearDeform(); return true;
+}
+// the body part a piece without its own skeleton is meant for, from its file name (generated pieces are named after
+// what they are); null when the name says nothing, and the choice stays as it was
+const WEAR_NAMES = [[/boot|shoe|sabaton|сапог|ботин/i, 'boot'], [/cuisse|thigh|бедр|набедр/i, 'upleg'],
+  [/greave|shin|понож|голен/i, 'leg'], [/rerebrace|pauldron|shoulder|upper_?arm|наплеч/i, 'arm'],
+  [/gauntlet|glove|перчат|рукавиц/i, 'hand'], [/bracer|vambrace|forearm|наруч/i, 'forearm'],
+  [/helm|hat|hood|head|шлем|голов/i, 'head'], [/cuirass|breast|chest|vest|torso|armou?r_?plate|нагруд|кирас|торс/i, 'torso']];
+const wearGuessPart = (name) => (WEAR_NAMES.find(([re]) => re.test(name)) || [])[1] || null;
+const wearItem = (name) => name.replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'item';
+async function wearLoad(buf, name, state, keepPart = false) {
   const gltf = await new Promise((res, rej) => new GLTFLoader().parse(buf, '', res, rej));
   gltf.scene.updateMatrixWorld(true);
   const parts = [];
   gltf.scene.traverse((o) => {
-    if (!o.isMesh || /icosphere/i.test(o.name)) return;
+    if (!o.isMesh || /icosphere|-(conv)?colonly$|-col$/i.test(o.name)) return;   // a helper sphere, a collision hull
     const g = new THREE.BufferGeometry(); g.setAttribute('position', o.geometry.attributes.position.clone());
     if (o.geometry.attributes.normal) g.setAttribute('normal', o.geometry.attributes.normal.clone());
     if (o.geometry.attributes.uv) g.setAttribute('uv', o.geometry.attributes.uv.clone());
@@ -2128,63 +2758,40 @@ async function wearLoad(file) {
     g.applyMatrix4(o.matrixWorld);
     g.userData.orig = g.attributes.position.array.slice();
     const mat = [].concat(o.material).map((m) => { const c = m.clone(); c.side = THREE.DoubleSide; c.skinning = false; return c; });
-    parts.push({ geo: g, mat: mat.length === 1 ? mat[0] : mat });
+    const skin = o.isSkinnedMesh && o.geometry.attributes.skinIndex && o.skeleton
+      ? { index: o.geometry.attributes.skinIndex.clone(), weight: o.geometry.attributes.skinWeight.clone(), bones: o.skeleton.bones.map((b) => b.name) } : null;
+    parts.push({ geo: g, mat: mat.length === 1 ? mat[0] : mat, skin });
   });
   if (!parts.length) throw new Error('в файле нет сетки');
   let bin = ''; const u8 = new Uint8Array(buf);
   for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
   if (wear && wear.fitted) scene.remove(wear.fitted);
-  wear = { name: file.name.replace(/\.glb$/i, ''), b64: btoa(bin), parts, pca: wearShape(parts), handles: [], sel: -1 };
-  if (wearAuto()) { wearDraw(); $('wStatus').textContent = 'Вещь на месте. Поправьте ползунками или стрелками и нажмите «Надеть».'; }
-  wearGroup.visible = true;
-}
-async function wearMode(on) {
-  if (on && !poseOn) { await setPose(true); if (!poseOn) return; }
-  wearOn = on; document.body.classList.toggle('wear', on);
-  $('wearPanel').hidden = !on; wearGroup.visible = on && !!wear && !(wear && wear.fitted && wear.fittedShown);
-  if (wear && wear.fitted) wear.fitted.visible = on;
-  // only the armour tools: no bones, no bone highlight, no pose bar (the pose check has its two buttons in the panel)
-  if (skelHelp) skelHelp.visible = !on && poseOn;
-  $('poseBar').hidden = on || !poseOn;
-  hoverId = dragId = null; poseHighlight();
-  if (!on) tcW.detach();
-}
-function wearGizmo(mode) {
-  if (!wear) return;
-  const same = tcW.object === wearHelper && tcW.mode === mode; tcW.detach();
-  for (const id of ['wMove', 'wRot', 'wScale']) $(id).classList.remove('on');
-  if (same) return;
-  wear.sel = -1; wear.points = false; $('wPoints').classList.remove('on');
-  tcW.setMode(mode); tcW.attach(wearHelper); $({ translate: 'wMove', rotate: 'wRot', scale: 'wScale' }[mode]).classList.add('on'); wearDraw();
-}
-async function wearApply() {
-  if (!wear) { $('wStatus').textContent = 'Сначала выберите файл вещи.'; return; }
-  const L = limbOf($('wPart').value, $('wSide').value);
-  const item = (wear.name.replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'item');
-  const req = { id: Date.now(), rigged: DATA.rigged, item, glb: wear.b64, offset: wv('wGap') * .5 * L.r,
-                deforms: wear.handles.filter((h) => h.d.lengthSq() > 0).map((h) => ({ p: h.p.toArray(), d: h.d.toArray(), r: h.r })),
-                placements: wearMatrices().map((p) => ({ side: p.side, matrix: Array.from(p.M.elements) })) };
-  try {
-    const ta = window.parent.document.querySelector('#' + DATA.wear_target + ' textarea');
-    ta.value = JSON.stringify(req); ta.dispatchEvent(new Event('input', { bubbles: true }));
-    await new Promise((r) => setTimeout(r, 400));
-    window.parent.document.querySelector('#' + DATA.wear_go).click();
-  } catch (e) { $('wStatus').textContent = 'Не удалось передать в SF3D: ' + e.message; return; }
-  $('wStatus').textContent = 'Blender надевает вещь: выталкивает из тела и переносит веса (около минуты)…';
-  const stem = DATA.rigged.split('/').pop().replace(/_landmarks_rigged\.glb$/i, '').replace(/\.glb$/i, '');
-  const status = DATA.rigged.replace(/[^/]*$/, '') + stem + '_wear_' + item + '.wear.json';
-  for (let k = 0; k < 400; k++) {
-    await new Promise((r) => setTimeout(r, 1500));
-    let js = null;
-    try { const r = await fetch(fileUrl(status) + '?t=' + Date.now()); if (r.ok) js = await r.json(); } catch (e) { /* not yet */ }
-    if (!js || js.id !== req.id) continue;
-    $('wStatus').textContent = js.log;
-    if (js.ok) await wearShowFitted(js.glb);
-    return;
+  wear = { name, item: wearItem(name), b64: btoa(bin), parts, pca: wearShape(parts), handles: [], sel: -1, fit: {}, rings: [], ringSel: -1 };
+  wear.wall = wallGrid(parts, wear.pca);
+  wear.skel = wearSkelRead(gltf, parts, wear.pca);
+  if (!wear.skel) {   // a piece without a skeleton sits on one limb as a tube: along the way it is open
+    const a = wear.openAxis = wearOpenAxis(parts, wear.pca);
+    if (a) { wear.pca = wearShape(parts, a); wear.wall = wallGrid(parts, wear.pca); }
   }
-  $('wStatus').textContent = 'SF3D не ответил: смотрите поле «Броня» под редактором.';
+  if (!state && !keepPart && wear.skel) {   // a piece with its own skeleton: on one limb segment, or the whole piece by the skeleton
+    console.log('piece skeleton', wear.skel.part, wear.skel.side, wear.skel.topShare.toFixed(2), 'tube on', wear.skel.tube);
+    $('wSide').value = wear.skel.side;
+    $('wPart').value = wear.skel.tube || 'skeleton';   // a tube on one limb segment by the skin; feet, hands and longer pieces by the skeleton
+  } else if (!state && !keepPart && wearGuessPart(name)) $('wPart').value = wearGuessPart(name);
+  $('wearPanel').classList.toggle('skel', isSkelMode());
+  if (state ? wearRestore(state) : wearAuto()) {
+    wearDraw();
+    $('wStatus').textContent = state ? 'Сохранённая подгонка открыта.' : 'Вещь на месте. Поправьте ползунками или стрелками и нажмите «Надеть».';
+    if (wear.tooLong && !isSkelMode()) $('wStatus').textContent = 'Вещь намного длиннее этой части тела (сапог, рука целиком?): на одну кость она не сядет.' + (wear.skel ? ' Выберите «Вся вещь по её скелету».' : '');
+  }
+  wearGroup.visible = true;
+  wearShowOthers();
 }
-async function wearShowFitted(path) {
+function wearListFits() {
+  $('wSavedRow').hidden = !wearFits.length;
+  $('wSaved').innerHTML = wearFits.map((f, i) => `<option value="${i}">${f.item}${f.glb ? '' : ' (не надета)'}</option>`).join('');
+}
+async function wearSkinned(path) {   // a fitted piece (skeleton + skinned meshes) driven by the pose mode's skeleton
   const g = await new GLTFLoader().loadAsync(fileUrl(path) + '?t=' + Date.now());
   const byName = {}; poseRoot.traverse((o) => { if (o.isBone) byName[o.name] = o; });
   g.scene.traverse((o) => {
@@ -2194,23 +2801,127 @@ async function wearShowFitted(path) {
     o.frustumCulled = false;
     for (const m of [].concat(o.material)) m.side = THREE.DoubleSide;
   });
+  return g.scene;
+}
+async function wearShowOthers() {   // every other saved piece that is already put on
+  for (const g of [...wearOthers.children]) wearOthers.remove(g);
+  for (const f of wearFits) {
+    if (!f.glb || (wear && f.item === wear.item)) continue;
+    try { wearOthers.add(await wearSkinned(f.glb)); } catch (e) { /* the result was deleted: skip it */ }
+  }
+}
+async function wearMode(on) {
+  if (on && !poseOn) { await setPose(true); if (!poseOn) return; }
+  wearOn = on; document.body.classList.toggle('wear', on);
+  $('wearPanel').hidden = !on; wearGroup.visible = on && !!wear && !(wear && wear.fitted && wear.fittedShown);
+  if (wear && wear.fitted) wear.fitted.visible = on;
+  wearOthers.visible = on && $('wOthers').checked;
+  if (on) { wearListFits(); if (!wearOthers.children.length) wearShowOthers(); }
+  // only the armour tools: no bones, no bone highlight, no pose bar (the pose check has its two buttons in the panel)
+  if (skelHelp) skelHelp.visible = !on && poseOn;
+  $('poseBar').hidden = on || !poseOn;
+  hoverId = dragId = null; poseHighlight();
+  if (!on) tcW.detach();
+}
+function wearGizmo(mode) {
+  if (!wear || isSkelMode()) return;
+  const same = tcW.object === wearHelper && tcW.mode === mode; tcW.detach();
+  for (const id of ['wMove', 'wRot', 'wScale']) $(id).classList.remove('on');
+  if (same) return;
+  wear.sel = -1; wear.points = false; $('wPoints').classList.remove('on');
+  tcW.setMode(mode); tcW.attach(wearHelper); $({ translate: 'wMove', rotate: 'wRot', scale: 'wScale' }[mode]).classList.add('on'); wearDraw();
+}
+// SF3D does the work: the request goes through a hidden textbox and button, the answer comes back as a status file
+// next to the character (<stem>_wear_<item>.wear.json, <stem>_wardrobe.wear.json for the Godot fitting room)
+async function wearSend(action, extra, wait) {
+  const req = Object.assign({ id: Date.now(), action, rigged: DATA.rigged }, extra);
+  try {
+    const ta = window.parent.document.querySelector('#' + DATA.wear_target + ' textarea');
+    ta.value = JSON.stringify(req); ta.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 400));
+    window.parent.document.querySelector('#' + DATA.wear_go).click();
+  } catch (e) { $('wStatus').textContent = 'Не удалось передать в SF3D: ' + e.message; return null; }
+  $('wStatus').textContent = wait;
+  const stem = DATA.rigged.split('/').pop().replace(/_landmarks_rigged\.glb$/i, '').replace(/\.glb$/i, '');
+  const status = DATA.rigged.replace(/[^/]*$/, '') + stem + (action === 'wardrobe' ? '_wardrobe' : '_wear_' + req.item) + '.wear.json';
+  for (let k = 0; k < 400; k++) {
+    await new Promise((r) => setTimeout(r, 1500));
+    let js = null;
+    try { const r = await fetch(fileUrl(status) + '?t=' + Date.now()); if (r.ok) js = await r.json(); } catch (e) { /* not yet */ }
+    if (!js || js.id !== req.id) continue;
+    $('wStatus').textContent = js.log;
+    if (js.fit) {   // the saved fitting: into the list (replacing the same item)
+      const i = wearFits.findIndex((f) => f.item === js.fit.item);
+      if (i >= 0) wearFits[i] = js.fit; else wearFits.push(js.fit);
+      wearListFits(); $('wSaved').value = String(wearFits.findIndex((f) => f.item === js.fit.item));
+    }
+    return js;
+  }
+  $('wStatus').textContent = 'SF3D не ответил: смотрите поле «Броня» под редактором.';
+  return null;
+}
+async function wearRequest() {   // the piece, where it sits and how to fit it: for «Надеть» and «Сохранить»
+  if (isSkelMode()) {   // the copies as shown; the original piece goes along for «Открыть»
+    const Ld = limbOf(wear.skel.part in WEAR_PARTS ? wear.skel.part : 'forearm', $('wSide').value);
+    return { item: wear.item, glb: await wearExport(), src_glb: wear.b64, offset: wv('wGap') * .5 * (Ld ? Ld.r : .05 * H), conform: 0, rigidity: 0,
+             deforms: [], placements: [{ side: Object.keys(wear.rgeo).join(''), matrix: Array.from(new THREE.Matrix4().elements), bones: wearSkelBones() }],
+             state: wearState() };
+  }
+  const L = limbOf($('wPart').value, $('wSide').value), mid = WEAR_MID[$('wPart').value];
+  const part = WEAR_BONE[$('wPart').value] || WEAR_PARTS[$('wPart').value][0], boneOf = (sd) => (mid ? PBNAME[mid.bone] : PBNAME[part + '_' + sd]) || null;
+  return { item: wear.item, glb: wear.b64, offset: wv('wGap') * .5 * L.r, conform: wv('wConform'), rigidity: wv('wRigid'),
+           wall: { k: wv('wWall'), mid: wear.pca.mid.toArray(), axis: wear.pca.axis.toArray() },
+           deforms: wear.handles.filter((h) => h.d.lengthSq() > 0).map((h) => ({ p: h.p.toArray(), d: h.d.toArray(), r: h.r })),
+           rings: ringList().map((g) => ({ c: g.c.toArray(), n: g.n.toArray(), r: g.r, s: g.s, b: g.b })),
+           placements: wearMatrices().map((p) => ({ side: mid ? 'C' : p.side, matrix: Array.from(p.M.elements), bone: boneOf(p.side),
+                                                    follow: $('wPart').value === 'boot' ? 'down' : 'up',
+                                                    limb: { a: p.L.A.toArray(), b: p.L.B.toArray() } })),
+           state: wearState() };
+}
+async function wearApply() {
+  if (!wear) { $('wStatus').textContent = 'Сначала выберите файл вещи.'; return; }
+  const js = await wearSend('wear', await wearRequest(), 'Blender надевает вещь: подгоняет по телу и переносит веса…');
+  if (js && js.ok) await wearShowFitted(js.glb);
+}
+async function wearShowFitted(path) {
+  const g = await wearSkinned(path);
   if (wear.fitted) scene.remove(wear.fitted);
-  wear.fitted = g.scene; wear.fittedShown = true; scene.add(g.scene);
-  wearGroup.visible = false; tcW.detach();
+  wear.fitted = g; wear.fittedShown = true; scene.add(g);
+  wearGroup.visible = false; tcW.detach(); $('wInfo').textContent = '';
   $('wStatus').textContent += ' Проверьте в позе: «Поза проверки» или тяните руку мышью.';
 }
+const wearEdited = () => { if (wear) { wear.fittedShown = false; wearGroup.visible = true; if (wear.fitted) wear.fitted.visible = false; wearDraw(); } };
 $('mWear').onclick = () => wearMode(!wearOn);
 $('wFile').onchange = async () => {
   const f = $('wFile').files[0]; if (!f) return;
   $('wStatus').textContent = 'Загружаю…';
-  try { await wearLoad(f); } catch (e) { $('wStatus').textContent = 'Не удалось открыть: ' + e.message; }
+  try { await wearLoad(await f.arrayBuffer(), f.name.replace(/\.glb$/i, '')); } catch (e) { $('wStatus').textContent = 'Не удалось открыть: ' + e.message; }
 };
-for (const id of ['wPos', 'wLen', 'wThick', 'wTwist', 'wMirror']) $(id).addEventListener('input', () => { if (wear) { wear.fittedShown = false; wearGroup.visible = true; if (wear.fitted) wear.fitted.visible = false; wearDraw(); } });
-for (const id of ['wPart', 'wSide']) $(id).addEventListener('change', () => { if (wear && wearAuto()) wearDraw(); });
-$('wGap').addEventListener('input', () => { if (wear && wearAuto()) wearDraw(); });
+$('wOpen').onclick = async () => {
+  const f = wearFits[+$('wSaved').value]; if (!f) return;
+  $('wStatus').textContent = 'Открываю…';
+  try {
+    const st = await (await fetch(fileUrl(f.fit) + '?t=' + Date.now())).json();
+    await wearLoad(await (await fetch(fileUrl(f.src) + '?t=' + Date.now())).arrayBuffer(), f.item, st.state);
+    if (f.glb) await wearShowFitted(f.glb);
+  } catch (e) { $('wStatus').textContent = 'Не удалось открыть сохранённую: ' + e.message; }
+};
+for (const id of ['wPos', 'wLen', 'wThick', 'wTwist', 'wGap']) $(id).addEventListener('input', wearEdited);
+$('wMirror').addEventListener('input', () => { if (wear && isSkelMode()) wearRetargetAll(); wearEdited(); });
+$('wWall').addEventListener('input', () => { if (wear) { wearDeform(); wearEdited(); } });
+$('wInside').addEventListener('change', () => { if (wear) wearDraw(); });
+$('wOthers').addEventListener('change', () => { wearOthers.visible = wearOn && $('wOthers').checked; });
+for (const id of ['wPart', 'wSide']) $(id).addEventListener('change', () => {
+  if (!wear || !wearAuto()) return;
+  wearEdited();
+  if (wear.tooLong && !isSkelMode()) $('wStatus').textContent = 'Вещь намного длиннее этой части тела: на одну кость она не сядет.' + (wear.skel ? ' Выберите «Вся вещь по её скелету».' : '');
+});
 $('wMove').onclick = () => wearGizmo('translate'); $('wRot').onclick = () => wearGizmo('rotate'); $('wScale').onclick = () => wearGizmo('scale');
-$('wReset').onclick = () => { if (wear && wearAuto()) wearDraw(); };
+$('wReset').onclick = () => { if (wear && wearAuto()) wearEdited(); };
+$('wFit').onclick = () => { if (!wear) return; wearFitAll(); wearEdited(); $('wStatus').textContent = 'Подогнано по коже по всей внутренней стенке; форма вещи та же.'; };
 $('wApply').onclick = wearApply;
+$('wSave').onclick = async () => { if (wear) wearSend('save', await wearRequest(), 'Сохраняю…'); else $('wStatus').textContent = 'Сначала выберите файл вещи.'; };
+$('wGodot').onclick = () => wearSend('wardrobe', {}, 'Собираю примерочную в Godot (первый раз Godot импортирует модели, около минуты)…');
 $('wCheck').onclick = () => { tcW.detach(); $('pCheck').onclick(); };
 $('wRest').onclick = () => { poseReset(); poseHighlight(); };
 $('wPoints').onclick = () => { if (!wear) return; wear.points = !wear.points; $('wPoints').classList.toggle('on', wear.points);
@@ -2218,8 +2929,70 @@ $('wPoints').onclick = () => { if (!wear) return; wear.points = !wear.points; $(
   $('wStatus').textContent = wear.points ? 'Кликните по вещи — появится точка; тяните её стрелками, вокруг потянется поверхность.' : ''; };
 $('wDel').onclick = () => { if (wear && wear.sel >= 0) { wear.handles.splice(wear.sel, 1); wearDeform(); wearSelect(-1); } };
 $('wDelAll').onclick = () => { if (wear) { wear.handles = []; wearDeform(); wearSelect(-1); } };
+$('wRing').onclick = () => {
+  if (!wear) return;
+  wear.ringMode = !wear.ringMode;
+  if (wear.ringMode) {   // a new opening, unless the selected one has fewer than 3 points yet
+    const cur = wear.rings[wear.ringSel];
+    if (!cur || cur.pts.length >= 3) { wear.rings.push({ pts: [], s: 0, b: +$('wRingB').value, sym: !!WEAR_MID[$('wPart').value] || $('wRingSym').checked }); wear.ringSel = wear.rings.length - 1; }
+    wear.points = false; $('wPoints').classList.remove('on'); tcW.detach();
+    $('wStatus').textContent = 'Кликайте по краю отверстия на броне: 3 и больше точек по окружности. Ещё раз «Отверстие» — закончить.';
+  } else {
+    wear.rings = wear.rings.filter((g) => g.pts.length >= 3); wear.ringSel = wear.rings.length - 1;
+    $('wStatus').textContent = wear.rings.length ? 'Двигайте «Сузить отверстие». Для другого отверстия снова нажмите «Отверстие».' : '';
+  }
+  ringUi(); wearDraw();
+};
+async function wearShapeGlb() {   // the piece as reshaped now, in its own space (no placement), as one GLB
+  const sc = new THREE.Scene(), plain = new THREE.MeshStandardMaterial();   // the shape only: the painter makes its own UVs
+  for (const p of wear.parts) { const g = new THREE.BufferGeometry(); g.setAttribute('position', p.geo.attributes.position); if (p.geo.index) g.setIndex(p.geo.index); sc.add(new THREE.Mesh(g, plain)); }
+  const buf = await new GLTFExporter().parseAsync(sc, { binary: true });
+  let bin = ''; const u8 = new Uint8Array(buf);
+  for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+$('wRepaint').onclick = async () => {
+  if (!wear) { $('wStatus').textContent = 'Сначала выберите файл вещи.'; return; }
+  const f = $('wRef').files[0];
+  let image = null, glb = null;
+  try {
+    image = f ? await new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(f); }) : null;
+    glb = await wearShapeGlb();
+  } catch (e) { $('wStatus').textContent = 'Не удалось подготовить форму: ' + e.message; return; }
+  const js = await wearSend('repaint', { item: wear.item, glb, image },
+                            'Hunyuan3D-Paint перекрашивает вещь по новой форме (3–6 минут, видеокарта занята)…');
+  if (!js || !js.ok) return;
+  // the new piece carries its shape: the openings, the points and the wall are in it now, the placement stays
+  const st = wearState(); st.rings = []; st.handles = []; st.wWall = 1;
+  const buf = await (await fetch(fileUrl(js.src) + '?t=' + Date.now())).arrayBuffer();
+  await wearLoad(buf, wear.name, st);
+  $('wStatus').textContent = js.log;
+};
+$('wHollow').onclick = async () => {
+  if (!wear) { $('wStatus').textContent = 'Сначала выберите файл вещи.'; return; }
+  // the end to cut, in the piece's own space: an upright piece by its own vertical; a piece on a limb by its tube
+  // axis, which points from the end at the body to the far one (the wrist, the knee)
+  const end = $('wOpenEnd').value, P = wear.pca;
+  const down = P.upright ? new V3(0, -1, 0) : P.axis.clone().normalize();
+  const axis = end === 'top' ? down.clone().negate() : down;
+  const js = await wearSend('hollow', { item: wear.item, glb: wear.b64, open: end === 'both' ? 'both' : 'top', axis: axis.toArray() },
+                            'Blender вскрывает вещь (около минуты)…');
+  if (!js || !js.ok) return;
+  // the shape changed (a tube can be found now where a pot was): placed anew, on the same part and side
+  const part = $('wPart').value, side = $('wSide').value;
+  const buf = await (await fetch(fileUrl(js.src) + '?t=' + Date.now())).arrayBuffer();
+  $('wPart').value = part; $('wSide').value = side;
+  await wearLoad(buf, wear.name, null, true);
+  $('wStatus').textContent = js.log;
+};
+window.sf3dWearTest = () => ({ wear, V3, wearMatrices, wearDeform, wearDraw, ringUi, ringFit });   // for the automated checks
+$('wRingDel').onclick = () => { if (!wear || wear.ringSel < 0) return; wear.rings.splice(wear.ringSel, 1); wear.ringSel = wear.rings.length - 1; wear.ringMode = false; ringUi(); wearDeform(); wearEdited(); };
+for (const [id, key] of [['wRingS', 's'], ['wRingB', 'b']]) $(id).addEventListener('input', () => {
+  const g = wear && wear.rings[wear.ringSel]; if (!g) return; g[key] = +$(id).value; wearDeform(); wearEdited(); });
+$('wRingSym').addEventListener('change', () => { const g = wear && wear.rings[wear.ringSel]; if (!g) return; g.sym = $('wRingSym').checked; wearDeform(); wearEdited(); });
 $('wRad').addEventListener('input', () => { if (wear && wear.sel >= 0) { wear.handles[wear.sel].r = +$('wRad').value * wear.pca.L; wearDeform(); wearDraw(); } });
 canvas.addEventListener('pointerdown', (e) => {
+  if (wearOn && wear && wear.ringMode && e.button === 0 && !tcW.axis) { ringPick(e); e.stopImmediatePropagation(); return; }
   if (!wearOn || !wear || !wear.points || e.button !== 0 || tcW.axis) return;
   wearPick(e); e.stopImmediatePropagation();
 }, true);

@@ -6,6 +6,7 @@ computed there and stay editable. blender_landmark_rig.py builds the armature wi
 from __future__ import annotations
 
 import base64
+import glob
 import json
 import re
 import subprocess
@@ -101,21 +102,77 @@ WEAR_ID = "sf3d_wear_json"      # textbox the editor's armour mode writes into
 WEAR_GO = "sf3d_wear_go"        # hidden button the editor clicks
 
 
+def _stem(rigged: Path) -> str:
+    return re.sub(r"_landmarks_rigged$", "", Path(rigged).stem)
+
+
 def wear(cfg, text):
-    """Put a piece of armour on a built character as placed in the editor (mode «Броня»). text: JSON from the editor
-    {id, rigged, item, glb (base64 of the piece), placements, offset}. Writes <stem>_wear_<item>.glb and a
-    .wear.json (id + log; the editor waits for it) next to the character. Returns the log text."""
+    """The editor's armour mode (mode «Броня») asks through a hidden textbox. text: JSON {id, action, rigged, ...}:
+    action "wear" (default): put the piece on as placed — {item, glb (base64 of the piece), placements, offset,
+    conform, rigidity, deforms, state}; writes <stem>_wear_<item>.glb and saves the fitting. "save": only save the
+    fitting (<stem>_wear_<item>.fit.json with the editor state + the piece as <stem>_wear_<item>.src.glb, so it opens
+    again for corrections). "wardrobe": build and open the Godot fitting room with every piece put on. "repaint": paint
+    the reshaped piece anew (_repaint). "hollow": cut a closed end of the piece open (_hollow).
+    The answer goes to a status file next to the character (the editor waits for it): <stem>_wear_<item>.wear.json,
+    <stem>_wardrobe.wear.json. Returns the log text."""
     req = json.loads(text)
     rigged = Path(req["rigged"])
+    action = req.get("action") or "wear"
     item = re.sub(r"[^\w-]+", "_", req.get("item") or "item").strip("_") or "item"
-    stem = re.sub(r"_landmarks_rigged$", "", rigged.stem)
+    status = rigged.parent / f"{_stem(rigged)}_{'wardrobe' if action == 'wardrobe' else 'wear_' + item}.wear.json"
+    try:
+        res = (wardrobe(cfg, rigged) if action == "wardrobe" else _repaint(cfg, req, rigged, item) if action == "repaint"
+               else _hollow(cfg, req, rigged, item) if action == "hollow" else _wear(cfg, req, rigged, item, action == "wear"))
+    except Exception as e:  # noqa: BLE001  (the editor must hear back, or it waits for minutes)
+        res = {"ok": False, "log": f"Ошибка: {e}"}
+    status.write_text(json.dumps({"id": req.get("id"), **res}, ensure_ascii=False), encoding="utf-8")
+    return res["log"]
+
+
+def _save_fit(rigged: Path, item: str, piece: bytes, state) -> dict:
+    stem = _stem(rigged)
+    src = rigged.parent / f"{stem}_wear_{item}.src.glb"
+    fit = rigged.parent / f"{stem}_wear_{item}.fit.json"
+    src.write_bytes(piece)
+    fit.write_text(json.dumps({"item": item, "src": src.name, "saved": datetime.now().isoformat(timespec="seconds"),
+                               "state": state}, ensure_ascii=False, indent=1), encoding="utf-8")
+    return _fit_entry(fit)
+
+
+def _fit_entry(fit: Path) -> dict:
+    """{item, fit, src, glb} for the editor's list of saved pieces (glb: the fitted result, None if not put on)."""
+    base = fit.name[:-len(".fit.json")]
+    glb = fit.with_name(base + ".glb")
+    return {"item": json.loads(fit.read_text(encoding="utf-8")).get("item") or base, "fit": fit.resolve().as_posix(),
+            "src": fit.with_name(base + ".src.glb").resolve().as_posix(), "glb": glb.resolve().as_posix() if glb.exists() else None}
+
+
+def saved_fits(rigged: Path) -> list:
+    out = []
+    for f in sorted(Path(rigged).parent.glob(glob.escape(_stem(rigged)) + "_wear_*.fit.json")):
+        try:
+            if f.with_name(f.name[:-len(".fit.json")] + ".src.glb").exists():
+                out.append(_fit_entry(f))
+        except (OSError, ValueError):
+            continue
+    return out
+
+
+def _wear(cfg, req, rigged: Path, item: str, put_on: bool) -> dict:
+    stem = _stem(rigged)
+    piece_bytes = base64.b64decode(req["glb"])   # by the skeleton: the copies as the editor placed them
+    entry = _save_fit(rigged, item, base64.b64decode(req["src_glb"]) if req.get("src_glb") else piece_bytes, req.get("state"))
+    if not put_on:
+        return {"ok": True, "log": f"Сохранено: {stem}_wear_{item}.fit.json", "fit": entry}
     work = Path(cfg["work_dir"]) / "wear" / f"{stem}_{item}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     work.mkdir(parents=True, exist_ok=True)
     piece = work / "piece.glb"
-    piece.write_bytes(base64.b64decode(req["glb"]))
+    piece.write_bytes(piece_bytes)
     out = rigged.parent / f"{stem}_wear_{item}.glb"
     job = {"character": str(rigged), "armour": str(clean_glb(piece)), "out": str(out), "item": item,
            "placements": req["placements"], "offset": float(req.get("offset", 0.0)), "deforms": req.get("deforms", []),
+           "conform": float(req.get("conform", 0.5)), "rigidity": float(req.get("rigidity", 0.8)), "wall": req.get("wall"),
+           "rings": req.get("rings", []),
            "report": str(work / "report.json")}
     (work / "job.json").write_text(json.dumps(job, ensure_ascii=False), encoding="utf-8")
     blender = cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe"
@@ -123,18 +180,183 @@ def wear(cfg, text):
                        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=900,
                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     line = next((x for x in r.stdout.splitlines() if x.startswith("WEAR_OK")), None)
-    if line:
-        rep = json.loads(line.split(" ", 1)[1])
-        log = f"Надето: {out.name} — " + "; ".join(f"{k}: вытолкнуто из тела {v['pushed_out']} из {v['vertices']} вершин, кости {', '.join(v['bones'][:4])}"
-                                                 for k, v in rep.items() if isinstance(v, dict))
-        ok = True
+    if not line:
+        return {"ok": False, "fit": entry,
+                "log": "Не получилось: " + next((x for x in r.stdout.splitlines() if x.startswith("WEAR_FAIL")), (r.stdout + r.stderr)[-600:])}
+    rep = json.loads(line.split(" ", 1)[1])
+    equip = ROOT / "godot" / "sf3d_equip.gd"   # the folder goes into a Godot project as is: SF3DEquip.wear() puts it on
+    if equip.exists():
+        (rigged.parent / equip.name).write_bytes(equip.read_bytes())
+    parts = []
+    for k, v in rep.items():
+        if not isinstance(v, dict):
+            continue
+        near = f", у кожи осталось {v['close_to_skin']} вершин" if v.get("close_to_skin") else ""
+        parts.append(f"{k}: {v['vertices']} вершин{near}, кости {', '.join(b.split(':')[-1] for b in v['bones'][:4])}")
+    return {"ok": True, "glb": out.resolve().as_posix(), "fit": _fit_entry(rigged.parent / f"{stem}_wear_{item}.fit.json"),
+            "log": f"Надето и сохранено: {out.name} — " + "; ".join(parts)}
+
+
+HY_PY = r"D:\conda\envs\hunyuan\python.exe"     # the same as sf3d_ui.HY_PY / HY_SRC
+HY_SRC = r"D:\My projects\SF3D\hunyuan3d-src"
+
+
+def _reference(cfg, item: str):
+    """The front view a piece was generated from: export/equipment/**/refs_mv/<item>/front.png (the 4-view armour)."""
+    base = Path(cfg["export_dir"]) / "equipment"
+    for name in (item, re.sub(r"^(mv|gen|sc|kp|cm)_", "", item)):
+        found = sorted(base.rglob(f"refs_mv/{glob.escape(name)}/front.png")) if base.exists() else []
+        if found:
+            return found[0]
+    return None
+
+
+def _repaint(cfg, req, rigged: Path, item: str) -> dict:
+    """«Перекрасить по форме»: the piece as reshaped in the editor (openings drawn in, wall, points; its own space) is
+    painted anew by Hunyuan3D-Paint from its reference picture, so the texture follows the new shape instead of being
+    stretched over it, and the sides the picture does not show are made up by the model. The result becomes the
+    fitting's source piece (<stem>_wear_<item>.src.glb)."""
+    stem = _stem(rigged)
+    work = Path(cfg["work_dir"]) / "wear" / f"{stem}_{item}_repaint_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    work.mkdir(parents=True, exist_ok=True)
+    (work / "shape.glb").write_bytes(base64.b64decode(req["glb"]))
+    if req.get("image"):
+        ref = work / "reference.png"
+        ref.write_bytes(base64.b64decode(req["image"].split(",", 1)[-1]))
     else:
-        log = "Не получилось: " + next((x for x in r.stdout.splitlines() if x.startswith("WEAR_FAIL")), (r.stdout + r.stderr)[-600:])
-        ok = False
-    (rigged.parent / f"{stem}_wear_{item}.wear.json").write_text(
-        json.dumps({"id": req.get("id"), "ok": ok, "glb": out.resolve().as_posix() if ok else None, "log": log}, ensure_ascii=False),
-        encoding="utf-8")
-    return log
+        ref = _reference(cfg, item)
+    if ref is None:
+        return {"ok": False, "log": "Нет картинки вещи: выберите её в поле «Картинка вещи» (вид спереди, по которому вещь делалась)."}
+    env = dict(__import__("os").environ, HF_HOME=cfg.get("hf_home") or r"D:\conda\hf", HF_HUB_OFFLINE="1",
+               HY3DGEN_MODELS=r"D:\conda\hy3dgen", TMP=r"D:\conda\tmp", TEMP=r"D:\conda\tmp", PYTHONIOENCODING="utf-8")
+    out = work / "textured.glb"
+    for _ in range(2):   # a native crash while the paint models load now and then goes away on a retry
+        r = subprocess.run([HY_PY, str(ROOT / "hy_texture_mv.py"), str(work / "shape.glb"), str(ref), str(out), "--tex", "2048"],
+                           cwd=HY_SRC, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                           timeout=1800, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        (work / "paint.log").write_text(r.stdout + r.stderr, encoding="utf-8")
+        if out.exists():
+            break
+    if not out.exists():
+        return {"ok": False, "log": "Hunyuan3D-Paint не перекрасил вещь: " + (r.stdout + r.stderr)[-400:]}
+    from glbfix import set_metallic
+    set_metallic(out, 0.3, 0.8)   # the painter leaves no metallic factor: a viewer would show the piece as a dark mirror
+    src = rigged.parent / f"{stem}_wear_{item}.src.glb"
+    src.write_bytes(out.read_bytes())
+    return {"ok": True, "src": src.resolve().as_posix(),
+            "log": f"Перекрашено по новой форме ({ref.name}): форма вещи теперь своя, текстура по ней. Нажмите «Надеть»."}
+
+
+def _hollow(cfg, req, rigged: Path, item: str) -> dict:
+    """«Вскрыть»: a generated piece closed at an end (Hunyuan3D sometimes makes a cuisse like a pot, SF3D caps a
+    bracer at both ends) is cut open there by blender_armour_hollow.py, texture and all. req: {glb (base64 of the
+    piece as loaded), open: "top" (one end: the one axis points to) | "both", axis: [x, y, z] in the piece's space}.
+    The wall is left as it is when the piece has one, else one is made inwards. The result becomes the fitting's source
+    piece (<stem>_wear_<item>.src.glb)."""
+    stem = _stem(rigged)
+    work = Path(cfg["work_dir"]) / "wear" / f"{stem}_{item}_open_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    work.mkdir(parents=True, exist_ok=True)
+    (work / "piece.glb").write_bytes(base64.b64decode(req["glb"]))
+    out = work / "open.glb"
+    args = [f"open={req.get('open') or 'both'}", "wall=auto"]
+    if req.get("axis"):
+        args.append("axis=" + ",".join(f"{float(x):.6f}" for x in req["axis"]))
+    blender = cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe"
+    r = subprocess.run([blender, "-b", "--factory-startup", "-P", str(ROOT / "blender_armour_hollow.py"), "--",
+                        str(work / "piece.glb"), str(out), *args],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    (work / "blender.log").write_text(r.stdout + r.stderr, encoding="utf-8")
+    line = next((x for x in r.stdout.splitlines() if x.startswith("HOLLOW_OK")), None)
+    if not line or not out.exists():
+        return {"ok": False, "log": "Не получилось вскрыть: " + (r.stdout + r.stderr)[-400:]}
+    rep = json.loads(line.split(" ", 1)[1])
+    src = rigged.parent / f"{stem}_wear_{item}.src.glb"
+    src.write_bytes(out.read_bytes())
+    wall = "стенка своя" if not rep["wall"] else "добавлена стенка внутрь"
+    return {"ok": True, "src": src.resolve().as_posix(),
+            "log": f"Вскрыто: убрано {rep['caps_removed']} граней, {wall}. Вещь поставлена заново: проверьте и нажмите «Надеть»."}
+
+
+def _slug(text: str) -> str:   # the same as sf3d_tool.slug: how the animation tabs name their outputs
+    return re.sub(r"[^a-z0-9_]+", "_", text.lower()).strip("_") or "asset"
+
+
+def _animated_model(cfg, rigged: Path, work: Path) -> Path:
+    """The character with animations for the fitting room: the procedural clips (tab «Анимации») or the retargeted
+    Mixamo clips if they were made for this model, else the procedural clips are made now (about 10 s)."""
+    import hanim as HA
+    export = Path(cfg["export_dir"]) / "character"
+    names = {_slug(n) for n in (rigged.stem.replace("_rigged", ""), _stem(rigged))}
+    found = [p for n in names for p in (export / n / f"{n}_anim.glb", export / n / f"{n}_fbx.glb") if p.exists()]
+    if found:
+        return max(found, key=lambda p: p.stat().st_mtime)
+    out = work.parent / f"{work.name}_anim.glb"   # outside the Godot project: only its copy is imported
+    if not out.exists() or out.stat().st_mtime < rigged.stat().st_mtime:
+        HA.animate(cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe", rigged, out,
+                   ["idle_loop", "walk_loop", "run_loop", "attack_slash", "attack_overhead", "cast", "block_loop", "hit"])
+    return out
+
+
+def wardrobe(cfg, rigged: Path) -> dict:
+    """A small Godot project (work_dir/wardrobe/<stem>) with the character, every fitted piece put on through
+    SF3DEquip (godot/sf3d_equip.gd) and godot/sf3d_wardrobe.gd: clips to play, pieces on/off, an orbiting camera.
+    Godot imports it headless, then opens it."""
+    import shutil
+    godot = cfg.get("godot_exe")
+    if not godot or not Path(godot).exists():
+        raise RuntimeError("не найден Godot: укажите godot_exe в настройках")
+    stem = _stem(rigged)
+    pieces = [p for p in sorted(rigged.parent.glob(glob.escape(stem) + "_wear_*.glb")) if re.fullmatch(re.escape(stem) + r"_wear_[\w-]+\.glb", p.name)]
+    if not pieces:
+        raise RuntimeError("ещё ни одна вещь не надета: подгоните вещь и нажмите «Надеть»")
+    proj = Path(cfg["work_dir"]) / "wardrobe" / _slug(stem)
+    proj.mkdir(parents=True, exist_ok=True)
+    model = _animated_model(cfg, rigged, proj)
+    files = {"character.glb": model, **{f"wear_{p.name[len(stem) + 6:]}": p for p in pieces}}
+    for old in proj.glob("wear_*.glb"):   # a piece taken off since the last time
+        if old.name not in files:
+            old.unlink()
+            Path(str(old) + ".import").unlink(missing_ok=True)
+    for name, srcp in files.items():
+        dst = proj / name
+        if srcp.resolve() != dst.resolve() and (not dst.exists() or dst.stat().st_mtime < srcp.stat().st_mtime or dst.stat().st_size != srcp.stat().st_size):
+            shutil.copy2(srcp, dst)
+    for gd in ("sf3d_equip.gd", "sf3d_wardrobe.gd"):
+        (proj / gd).write_bytes((ROOT / "godot" / gd).read_bytes())
+    (proj / "project.godot").write_text(f"""config_version=5
+
+[application]
+
+config/name="Примерочная: {stem}"
+run/main_scene="res://wardrobe.tscn"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=800
+""", encoding="utf-8")
+    names = [n for n in files if n.startswith("wear_")]
+    ext = "\n".join(f'[ext_resource type="PackedScene" path="res://{n}" id="{i + 3}"]' for i, n in enumerate(names))
+    (proj / "wardrobe.tscn").write_text(f"""[gd_scene load_steps={len(names) + 3} format=3]
+
+[ext_resource type="Script" path="res://sf3d_wardrobe.gd" id="1"]
+[ext_resource type="PackedScene" path="res://character.glb" id="2"]
+{ext}
+
+[node name="Wardrobe" type="Node3D"]
+script = ExtResource("1")
+character = ExtResource("2")
+pieces = Array[PackedScene]([{", ".join(f'ExtResource("{i + 3}")' for i in range(len(names)))}])
+""", encoding="utf-8")
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    r = subprocess.run([godot, "--headless", "--path", str(proj), "--import"], capture_output=True, text=True,
+                       encoding="utf-8", errors="replace", timeout=600, creationflags=flags)
+    if not (proj / ".godot" / "imported").exists():
+        raise RuntimeError("Godot не импортировал модели: " + (r.stdout + r.stderr)[-600:])
+    gui = Path(godot).with_name(Path(godot).name.replace("_console", ""))   # the window build, without a console
+    subprocess.Popen([str(gui if gui.exists() else godot), "--path", str(proj)], cwd=str(proj))
+    return {"ok": True, "log": f"Примерочная открыта в Godot: {len(names)} вещ., анимации из {model.name}. Проект: {proj}"}
 
 
 def godot_scene(glb: Path) -> Path | None:
@@ -195,7 +417,8 @@ def editor_page(src: Path, state: dict | None, rigged: Path | None = None, mode:
             "rigged_v": int(Path(rigged).stat().st_mtime) if rigged and Path(rigged).exists() else 0,
             "names": {"mixamo": bone_names("mixamo"), "godot": bone_names("godot")},
             "clips": face_clips(rigged) if rigged and Path(rigged).exists() else [],
-            "emotions": emotion_presets() if rigged and Path(rigged).exists() else []}
+            "emotions": emotion_presets() if rigged and Path(rigged).exists() else [],
+            "fits": saved_fits(Path(rigged)) if rigged and Path(rigged).exists() else []}
     # </script> inside JSON would end the tag early
     return (page.replace("@@DATA@@", json.dumps(data, ensure_ascii=False).replace("</", "<\\/"))
                 .replace("@@GLB@@", base64.b64encode((src if mode == "view" else clean_glb(src)).read_bytes()).decode("ascii")))

@@ -20,6 +20,7 @@ It glues several open-source models together (Stable Fast 3D, Hunyuan3D-2, UniRi
 | Персонаж → Анимации: процедурные | 12 procedural clips for any rigged humanoid (idle, walk, run, jump, attacks, cast, block, hit, death…) | Blender |
 | Персонаж → Анимации: Mixamo (FBX) | Retarget Mixamo FBX clips (without skin) onto your rig, in-place option, three.js viewer | Blender |
 | Персонаж → Экипировка (Equipment) | Move an outfit from a dressed character onto the base body, or fit a single armour piece and skin it to the shared skeleton | Blender + Robust Weight Transfer |
+| Скелет по ориентирам → Броня (Armour) | Fit a piece (bracer, greave, glove, boot) onto a limb of the built character in the editor, skin it in Blender, save the fitting, try it on in a Godot fitting room with the character's clips | three.js + Blender + Godot |
 | Окружение → Поверхности (Surfaces) | Seamless ground/floor/wall materials (albedo, normal, height, roughness, AO) | numpy |
 | Окружение → Эффекты (Effects) | Particle flipbooks (explosion, fire, smoke, magic) + ready Godot scenes | numpy + Godot |
 | Окружение → Модульные наборы (Modular kits) | Procedural dungeon kit (walls, arches, stairs, doors) + ASCII plan → Godot scene | Blender + Godot |
@@ -132,12 +133,12 @@ D:\conda\envs\sf3d\python.exe -m pip install --target tool\vendor\rwt\deps libig
 
 ### 4b. Lip sync (optional, rigging tab → «Липсинк реплики»)
 
-Self-contained: `toolendor\lipsync	ranscribe.py` (local Whisper) and `lipsync.py` (ARKit face curves) run in the
+Self-contained: `tool\vendor\lipsync\transcribe.py` (local Whisper) and `lipsync.py` (ARKit face curves) run in the
 `sf3d` env (numpy, scipy, torch, transformers; `soundfile` or ffmpeg for mp3/ogg). The `openai/whisper-small` model
 (~1 GB) is downloaded on the first run into `hf_home` from `tool\config.json` (default `D:/conda/hf`); an existing
 Hugging Face cache is reused. Output: `<model folder>\<voice>.face.json` + the audio copy.
 
-In Godot: copy `tool\godotace_curves_clip.gd` and `face_curves_player.gd` into your project, add a
+In Godot: copy `tool\godot\face_curves_clip.gd` and `face_curves_player.gd` into your project, add a
 `FaceCurvesPlayer` node (`audio` = the voice `AudioStreamPlayer3D`, `face_root` = the character, `clip_path` = the
 `.face.json`). It drives the blend shapes of the character's mouth plate (`jawOpen`, `mouthSmile`, …) from the audio clock.
 
@@ -182,6 +183,49 @@ On first start, `tool\config.example.json` is used. To change the paths, copy it
 
 ---
 
+## Armour fitting and Godot
+
+In the landmark editor's pose mode, **«Броня»** opens the armour panel:
+
+1. Pick the piece's GLB and the body part. A piece without its own skeleton gets the part from its file name (cuisse/thigh → thigh, greave → shin, bracer/vambrace → forearm, rerebrace → upper arm, gauntlet → hand, boot → «Сапог», helmet → head, chest/cuirass → torso, in English or Russian); otherwise the choice stays as it was. The tube axis of a piece without a skeleton is the way it is open (rays from its middle pass straight through; the piece's own x/y/z are tried as well as its principal axes, since a short wide piece has no clear ones). The piece is placed along the limb's real middle line, then fitted by its whole inner wall. Nodes, one per cell of the piece (12 along × 24 around), are matched to the skin by ICP with a one-sided penalty: shift, tilt, scale across the limb and oval-ness change, the shape does not. «Подогнать по коже» runs it again after manual changes. The nodes are shown red (under the skin), green (on it) and blue (air).
+2. Adjust it with the sliders, the gizmo (G / R / S) or surface points. The sliders are position, length, «Обхват» (girth: the whole piece wider or narrower), «Толщина стенки» (wall thickness: the inner wall stays, only the outer surface moves; the same about the piece's own axis in the editor and in Blender), twist and gap. The info line shows the air and the wall thickness as shares of the limb's radius.
+3. **«Надеть»** runs `tool/blender_wear_fit.py`. The piece is scaled away from the limb axis cell by cell, so the inner wall clears the skin and the wall keeps its shape. What is still under the skin is then pushed out along the skin's normal, spread over its neighbours, so the inner and outer wall move together. «Прилегание» (conform) draws loose parts in towards the limb. Skin weights come only from the limb's own bones and are smoothed over the piece. «Жёсткость» (rigidity) makes it move with the bone (0.8 for bracers and greaves, 0.2 for gloves). The result is `<character>_wear_<item>.glb`: the character's skeleton plus the skinned piece.
+   A piece made on another body that carries its own skeleton (the Tripo extractions in `export/equipment`) is read with it. On one limb segment it is placed as above; over several segments (a boot over the shin and the foot, a whole arm) the part «Вся вещь по её скелету» is chosen. Then each vertex moves from the piece's bones onto the character's same bones by its own weights, the way skinning moves skin, and the other side is the mirror with Left and Right swapped. Blender gets the moved copies, pushes them out of the skin, and weights them only to the bones the piece used.
+   Upright pieces as generated keep their own vertical as their axis and their proportions:
+   - «Торс (нагрудник)»: no mirror, weights on the spine, never on the arms;
+   - «Голова (шлем)»: the helmet's top at the top of the head, rigid on the head bone;
+   - «Сапог»: the shaft on the shin, sized by it; the toe turned along the foot (the long axis of its sole, at the end farther from the shaft); the sole at the heel.
+   «Отверстие»: clicks around the rim of an arm hole or a neck give its circle. «Сузить отверстие» draws the rim and the surface near it towards the circle's axis, both walls together, with a smooth falloff; «И симметричное» does the other side too. This happens in the piece's own space, so the editor, the mirrored copy and Blender get the same shape.
+   «Вскрыть» (нижний конец / верхний конец / оба конца): a generated piece closed at an end (a 4-view cuisse made like a pot, an SF3D bracer capped at both ends) is cut open there by `blender_armour_hollow.py`, texture and all, and placed again. On a limb the lower end is the one away from the body (the wrist, the knee); an upright piece goes by its own vertical. The piece's own wall stays; a solid blank gets one inwards (rays from the middle out pass two surfaces when it has a wall).
+   «Перекрасить по форме»: Hunyuan3D-Paint paints the reshaped piece anew from its reference picture (found in `refs_mv`, or chosen in «Картинка вещи»), so the texture follows the new shape instead of being stretched (3–6 min on the GPU). The result becomes the fitting's source piece.
+   Hunyuan3D from four views (Codex draws them: `export/equipment/generated_armour/make_refs_mv.py`) gives hollow armour that sits without any opening step.
+   A piece generated from one picture (SF3D, Hunyuan3D) is a closed solid with no hole for the limb. `tool/blender_armour_hollow.py in.glb out.glb [open=both|top|bottom] [axis=auto|z] [wall=0.08]` cuts its ends open (both ends for a tube, only the top for a boot, only the bottom for a helmet or a 4-view piece closed below like a pot) and gives it a wall inwards; a 4-view Hunyuan3D piece already has its wall and takes `wall=0`. This works for simple tubes; plates, boots and gauntlets made this way rarely fit (see `work/armour_report`).
+4. Every fitting is saved next to the character as `<character>_wear_<item>.fit.json` + `.src.glb`. «Открыть» brings it back with all the sliders and points, and «Сохранить» saves without fitting.
+5. **«Примерочная в Godot»** builds `work/wardrobe/<character>/`: the character with its clips (the procedural ones are made if none exist), every fitted piece on, pieces on/off, and an orbit camera. It then opens the project in Godot.
+
+In your own Godot project, copy `tool/godot/sf3d_equip.gd` and the GLBs, then:
+
+```gdscript
+var bracers := SF3DEquip.wear($Goblin, preload("res://goblin_wear_bracer.glb"))   # put on (meshes move under the character's Skeleton3D)
+SF3DEquip.take_off(bracers)                                                      # take off
+```
+
+The piece follows every animation of the character by bone names. It must come from the same rigged model.
+
+---
+
+## Animation gallery
+
+`tool/anim_gallery.py` puts the Mesh2Motion clips (`Animations/Mesh2Motion`, CC0) and the procedural two-handed and shield clips on a rigged character. The result is one self-contained HTML page with about 90 clips in groups: locomotion, jumps, dodges and rolls, sword, sword and shield, two-handed sword, defence, magic, unarmed, bow and throwing, hits and deaths, emotes. The page holds the GLB inside, so it opens with a double click.
+
+```powershell
+D:\conda\envs\sf3d\python.exe tool\anim_gallery.py "<character>_landmarks_rigged.glb" Animations\goblin_gallery.html
+```
+
+`blender_retarget_fbx.py` reads the clips straight from the Mesh2Motion GLBs: Unreal-style bone names are mapped onto Mixamo ones. The weapons in the hands are approximate, because their presets were set on another goblin; the checkbox «Оружие в руках» hides them.
+
+---
+
 ## Repository layout
 
 ```
@@ -195,10 +239,11 @@ tool/
   sf3d_tool.py, batch_cli.py  CLI and post-processing (pivot, scale, collision, materials)
   hy_*.py                     Hunyuan3D workers (run in the hunyuan env)
   rigging.py, outfit.py, hanim.py, fbxanim.py, materials.py, surfaces.py,
-  fx_flipbook.py, modkit.py, destruct.py, refgen.py, rwt_*.py   feature modules
+  fx_flipbook.py, modkit.py, destruct.py, refgen.py, anim_gallery.py, rwt_*.py   feature modules
   landmarks*.py, landmark_editor.html   skeleton from hand-placed landmarks (three.js editor)
   blender_*.py                headless Blender scripts (blender -b -P tool\blender_x.py -- args)
-  godot/                      Godot scripts and shaders used by generated scenes (incl. FaceCurvesPlayer for lip sync)
+  godot/                      Godot scripts and shaders used by generated scenes (incl. FaceCurvesPlayer for lip sync,
+                              SF3DEquip to put fitted armour on, the armour fitting room)
   rig_scripts/                Git-Bash wrappers for UniRig
   vendor/rwt/                 Robust Weight Transfer (GPL-3.0)
   vendor/lipsync/             Whisper word timings + lip-sync curves (vendored, see its README)
