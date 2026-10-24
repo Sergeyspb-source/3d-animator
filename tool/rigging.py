@@ -15,6 +15,7 @@ import subprocess
 from pathlib import Path
 
 import numpy as np
+from i18n import t as _t
 
 ROOT = Path(__file__).resolve().parent
 UNIRIG_ENV = Path(r"D:\conda\envs\unirig")
@@ -377,7 +378,7 @@ def split_parts(src, dst, blender):
     lines = r.stdout.splitlines()
     if not any(x.startswith("SPLIT_OK") for x in lines):
         fail = next((x for x in lines if x.startswith("SPLIT_FAIL")), (r.stdout + r.stderr)[-300:])
-        raise RuntimeError(f"не удалось разбить на части: {fail}")
+        raise RuntimeError(_t("rig.could_not_split_into_parts", fail))
     parts = {}
     for x in lines:
         if x.startswith("SPLIT_PART"):
@@ -404,7 +405,7 @@ def fit_armour(body_parts_glb, armour_glb, slot, dst, blender, options=None, hid
                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     lines = [x for x in r.stdout.splitlines() if x.startswith("FIT_")]
     if not any(x.startswith("FIT_OK") for x in lines):
-        raise RuntimeError("подгонка не удалась: " + (" | ".join(lines) or (r.stdout + r.stderr)[-300:]))
+        raise RuntimeError(_t("rig.fitting_failed") + (" | ".join(lines) or (r.stdout + r.stderr)[-300:]))
     # Open armour (vests, straps, armholes) keeps the body under it: hiding it would leave a hole visible through
     # the openings. Closed armour can hide the covered regions to avoid any poke-through in extreme poses.
     covers = [f"Body_{p}" for p in ARMOUR_SLOTS[slot]]
@@ -445,7 +446,7 @@ def rig_steps(src, dst, naming="mixamo", name="model", strip=False, blender=None
     shutil.rmtree(STAGE / "in" / name, ignore_errors=True)
     staged = STAGE / "in" / f"{name}.glb"
     if strip:
-        yield "снимаю существующий скелет (Blender)...", False
+        yield _t("rig.removing_the_existing_skeleton"), False
         strip_rig(src, staged, blender)
     else:
         shutil.copy2(src, staged)
@@ -453,7 +454,7 @@ def rig_steps(src, dst, naming="mixamo", name="model", strip=False, blender=None
     best = None  # (score, seed, fbx path, detail)
     skel = STAGE / "out" / f"{name}_skel.fbx"
     for attempt, seed in enumerate(SEEDS[:max(1, min(tries, len(SEEDS)))], 1):
-        yield f"предсказываю скелет, попытка {attempt} из {tries} (около минуты)...", False
+        yield _t("rig.predicting_the_skeleton_attempt_of", attempt, tries), False
         if skel.exists():
             skel.unlink()
         _run_bash("run_skel.sh", [name, 50000, seed])
@@ -466,34 +467,33 @@ def rig_steps(src, dst, naming="mixamo", name="model", strip=False, blender=None
             score, detail = 1, dict(bones=len(tree_from_npz(npz)[0]))
         keep = STAGE / "out" / f"{name}_skel_s{seed}.fbx"
         shutil.copy2(skel, keep)
-        fing = "пальцы есть" if detail.get("left") else "без пальцев"
-        yield (f"попытка {attempt}: {detail.get('bones', '?')} костей, {fing}"
-               f"{'' if score > 0 else ' (неудачный скелет)'}"), False
+        fing = _t("rig.has_fingers") if detail.get("left") else _t("rig.no_fingers")
+        yield (_t("rig.attempt_bones", attempt, detail.get('bones', '?'), fing, '' if score > 0 else ' (неудачный скелет)')), False
         if best is None or score > best[0]:
             best = (score, seed, keep, detail)
         if score >= 100 or kind != "humanoid":
             break  # symmetric five-finger hands: good enough, stop early
     if best is None or best[0] < 0:
-        raise RuntimeError("скелет не создан ни в одной попытке (UniRig не записал FBX или скелет не похож на человека)")
+        raise RuntimeError(_t("rig.no_skeleton_was_made_in_any_attempt"))
     shutil.copy2(best[2], skel)
-    yield f"выбран скелет попытки с зерном {best[1]}: {best[3].get('bones')} костей", False
+    yield _t("rig.chose_the_skeleton_of_the_attempt", best[1], best[3].get('bones')), False
 
-    yield "считаю веса кожи и склеиваю с текстурами (1–2 мин)...", False
+    yield _t("rig.computing_the_skin_weights_and"), False
     rigged = STAGE / "out" / f"{name}_rigged.glb"
     out = ""
     for retry in range(2):  # the weights step occasionally dies on a memory spike; one more try usually works
         out = _run_bash("run_skin_merge.sh", [name])
         if rigged.exists() and rigged.stat().st_size >= 1000:
             break
-        yield "шаг весов не записал файл, пробую ещё раз...", False
+        yield _t("rig.the_weights_step_wrote_no_file"), False
     if not rigged.exists() or rigged.stat().st_size < 1000:
         key = [x.strip()[:160] for x in out.splitlines()
                if any(w in x for w in ("Error", "error", "out of memory", "Traceback", "Exception", "failed"))]
-        raise RuntimeError("риг не создан (шаг весов или склейки не записал GLB). Из вывода UniRig: "
-                           + (" | ".join(key[-3:]) or "ошибок в выводе нет"))
+        raise RuntimeError(_t("rig.the_rig_was_not_made_the_weights_or")
+                           + (" | ".join(key[-3:]) or _t("rig.no_errors_in_the_output")))
     seams = None
     if weld and blender:
-        yield "сшиваю стыки между частями модели (веса и нормали)...", False
+        yield _t("rig.stitching_the_seams_between_the"), False
         welded = STAGE / "out" / f"{name}_welded.glb"
         try:
             seams = weld_seams(rigged, welded, blender)
@@ -507,12 +507,12 @@ def rig_steps(src, dst, naming="mixamo", name="model", strip=False, blender=None
         yield dict(path=str(dst), mapping={}, info=dict(seed=best[1], bones=best[3].get("bones"), seams=seams,
                                                         kind=kind)), True
         return
-    yield f"даю костям стандартные имена ({naming})...", False
+    yield _t("rig.giving_the_bones_standard_names", naming), False
     try:
         mapping, info = rename_bones(rigged, dst, naming)
     except Exception as e:  # noqa: BLE001  (unusual skeleton: keep UniRig's names, still a valid rig)
         shutil.copy2(rigged, dst)
-        mapping, info = {}, dict(warning=f"имена костей не заданы: {e}")
+        mapping, info = {}, dict(warning=_t("rig.bone_names_not_set", e))
     info["seed"] = best[1]
     info["fingers"] = best[3]
     info["seams"] = seams
@@ -528,7 +528,7 @@ def creature_auto(src, dst, blender):
     lines = r.stdout.splitlines()
     if not any(x.startswith("AUTO_OK") for x in lines):
         fail = next((x for x in lines if x.startswith("AUTO_FAIL")), (r.stdout + r.stderr)[-300:])
-        raise RuntimeError(f"не удалось разобрать скелет существа: {fail}")
+        raise RuntimeError(_t("rig.could_not_read_the_creature_s", fail))
     names = json.loads(next(x for x in lines if x.startswith("AUTO_NAMES ")).split(" ", 1)[1])
     jaw = json.loads(next(x for x in lines if x.startswith("AUTO_JAW ")).split(" ", 1)[1])
     return names, jaw
@@ -553,7 +553,7 @@ def creature_finish(src, dst, blender, names, jaw=None, line_mm=0.0, hinge_mm=0.
                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     lines = r.stdout.splitlines()
     if not any(x.startswith("CREATURE_OK") for x in lines):
-        raise RuntimeError("челюсть и имена не записаны: " + (r.stdout + r.stderr)[-300:])
+        raise RuntimeError(_t("rig.the_jaw_and_names_were_not_written") + (r.stdout + r.stderr)[-300:])
     out = {"jaw_vertices": 0, "previews": []}
     for x in lines:
         if x.startswith("CREATURE_JAW"):

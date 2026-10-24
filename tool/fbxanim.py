@@ -15,11 +15,13 @@ import re
 import struct
 import subprocess
 from pathlib import Path
+import i18n
+from i18n import t as _t
 
 ROOT = Path(__file__).resolve().parent
 NOFLAGS = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-HEADERS = ["Файл", "Имя клипа", "Цикл", "Скорость", "На месте", "Группа"]
-GROUPS = [("sword and shield", "Меч и щит"), ("great sword", "Двуручный меч")]
+HEADERS = [_t("fbx.file"), _t("fbx.clip_name"), _t("fbx.loop"), _t("fbx.speed"), _t("fbx.in_place"), _t("fbx.group")]
+GROUPS = [("sword and shield", _t("anim.sword_and_shield")), ("great sword", _t("anim.two_handed_sword"))]
 LOOP_WORDS = ("idle", "walk", "run", "walking", "running", "strafe")
 
 
@@ -36,7 +38,7 @@ def _is_mirror(stem):
 
 def _guess(stem):
     low = stem.lower()
-    group = next((g for k, g in GROUPS if k in low), "Прочее")
+    group = next((g for k, g in GROUPS if k in low), _t("fbx.other"))
     loop = any(w in low.split() or low.endswith(w) for w in LOOP_WORDS)
     return dict(name=_slug(stem), loop=loop, speed=1.0, inplace="death" not in low, group=group, **({"mirror": True} if _is_mirror(stem) else {}))
 
@@ -54,7 +56,7 @@ def table_rows(folder):
         spec = _guess(f.stem)
         spec.update(saved.get(f.stem, {}))
         rows.append([f.stem, spec["name"], bool(spec.get("loop")), float(spec.get("speed", 1.0)),
-                     bool(spec.get("inplace", True)), spec.get("group", "Прочее")])
+                     bool(spec.get("inplace", True)), spec.get("group", _t("fbx.other"))])
     return rows
 
 
@@ -68,7 +70,7 @@ def rows_to_map(rows):
         except (TypeError, ValueError):
             speed = 1.0
         out[str(r[0])] = dict(name=_slug(str(r[1])) if str(r[1]).strip() else _slug(str(r[0])), loop=bool(r[2]),
-                              speed=speed if speed > 0 else 1.0, inplace=bool(r[4]), group=str(r[5] or "Прочее"))
+                              speed=speed if speed > 0 else 1.0, inplace=bool(r[4]), group=str(r[5] or _t("fbx.other")))
         if _is_mirror(str(r[0])):
             out[str(r[0])]["mirror"] = True      # a copy of another clip's file named "... Right" is its mirror image
     return out
@@ -90,7 +92,7 @@ def retarget(blender, model, folder, out):
     text = r.stdout + r.stderr
     if not out.exists():
         err = [x for x in text.splitlines() if "Error" in x or "Traceback" in x]
-        raise RuntimeError("перенос не удался: " + (err[-1] if err else text[-400:]))
+        raise RuntimeError(_t("fbx.retargeting_failed") + (err[-1] if err else text[-400:]))
     info = json.loads(Path(str(out) + ".json").read_text(encoding="utf-8"))
     rest = [x for x in text.splitlines() if x.startswith("RETARGET_REST")]
     miss = sorted({m for c in info for m in c.get("missing", [])})
@@ -136,18 +138,18 @@ def shrink_glb(src, max_side=1024, quality=84):
 # Held weapon presets for the viewer (numbers are those of the game's WeaponProfile / skeleton specs; rotations are Godot
 # Euler YXZ degrees in the bone's own frame, scale/grip/offset in rig units).
 WEAPON_SETS = {
-    "Нет": [],
-    "Гоблин: меч и щит": [
+    _t("fbx.none"): [],
+    _t("anim.goblin_sword_and_shield"): [
         dict(model="weapon_rusty_sword", bone="RightHand", scale=0.30, rot=[33.3, 131.6, 71.1], grip=[0, -0.62, 0], palm=True),
         dict(model="weapon_rusty_shield", bone="LeftForeArm", scale=0.17, rot=[-13.5, -2.1, -104.6], grip=[0, 0, 0],
              offset=[0, 0.085, 0])],
-    "Гоблин: двуручный меч": [
+    _t("anim.goblin_two_handed_sword"): [
         dict(model="weapon_rusty_greatsword", bone="RightHand", scale=0.45, rot=[54.7, -8.9, -73.8], grip=[0, -0.60, 0], palm=True)],
-    "Скелет-воин: меч и щит": [
+    _t("fbx.skeleton_warrior_sword_and_shield"): [
         dict(model="weapon_rusty_sword", bone="RightHand", scale=0.5, rot=[-18.3, 87.2, -71.2], grip=[0, -0.62, 0], palm=True),
         dict(model="weapon_rusty_shield", bone="LeftForeArm", scale=0.38, rot=[-13.5, 69.7, -104.6], grip=[0, 0, 0],
              offset=[0, 0.127, 0])],
-    "Скелет-рыцарь: двуручный меч": [
+    _t("fbx.skeleton_knight_two_handed_sword"): [
         dict(model="weapon_rusty_greatsword", bone="RightHand", scale=0.8, rot=[-8.1, 125.1, -78.0], grip=[0, -0.60, 0], palm=True)],
 }
 
@@ -169,7 +171,7 @@ def _weapon_glb(name):
 
 def _weapons_json(weapon_set):
     out = []
-    for w in WEAPON_SETS.get(weapon_set or "Нет", []):
+    for w in WEAPON_SETS.get(weapon_set or _t("fbx.none"), []):
         from glbfix import set_metallic  # noqa: PLC0415  (the exported item GLBs lack metallicFactor: they render as mirrors)
         import tempfile  # noqa: PLC0415
         src = _weapon_glb(w["model"])
@@ -190,9 +192,9 @@ def viewer_html(glb, info, map_rows=None, weapon_set=None):
     clips = []
     for c in info["clips"]:
         s = by_name.get(c["name"], {})
-        clips.append(dict(id=c["name"], label=c["name"], group=s.get("group", "Прочее"), loop=bool(c.get("loop"))))
+        clips.append(dict(id=c["name"], label=c["name"], group=s.get("group", _t("fbx.other")), loop=bool(c.get("loop"))))
     clips.sort(key=lambda c: ([g for _, g in GROUPS].index(c["group"]) if c["group"] in [g for _, g in GROUPS] else 99))
-    tpl = (ROOT / "viewer_anim.html").read_text(encoding="utf-8")
+    tpl = i18n.fill((ROOT / "viewer_anim.html").read_text(encoding="utf-8"))
     data = base64.b64encode(shrink_glb(glb)).decode()
     return (tpl.replace("@@DATA@@", json.dumps(dict(clips=clips), ensure_ascii=False)).replace("@@GLB@@", data)
             .replace("@@WEAPONS@@", _weapons_json(weapon_set)))

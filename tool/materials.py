@@ -13,31 +13,32 @@ from __future__ import annotations
 
 import numpy as np
 from PIL import Image, ImageDraw
+from i18n import t as _t
 
 # key: (russian label, [CLIP prompts], roughness, metallic)
 MATERIALS = {
-    "wood":        ("Дерево", ["a photo of wood planks", "a close-up of wood grain", "a wooden beam",
+    "wood":        (_t("mat.wood"), ["a photo of wood planks", "a close-up of wood grain", "a wooden beam",
                                "a hand-painted game texture of wooden planks", "stylized dark wood texture"], 0.75, 0.0),
-    "metal":       ("Металл (сталь, железо)", ["a photo of steel metal", "a close-up of brushed iron", "a metal blade",
+    "metal":       (_t("mat.metal_steel_iron"), ["a photo of steel metal", "a close-up of brushed iron", "a metal blade",
                                                "a hand-painted game texture of steel", "a shiny grey metal plate"], 0.40, 1.0),
-    "dark_metal":  ("Тёмный/ржавый металл", ["a photo of rusty iron", "a close-up of corroded dark metal",
+    "dark_metal":  (_t("mat.dark_rusty_metal"), ["a photo of rusty iron", "a close-up of corroded dark metal",
                                              "a hand-painted game texture of rusty metal"], 0.60, 0.85),
-    "gold":        ("Золото, латунь, бронза", ["a photo of polished brass", "a photo of gold metal", "bronze metal"], 0.30, 1.0),
-    "stone":       ("Камень", ["a photo of rough stone", "a stone wall", "a close-up of cobblestone",
+    "gold":        (_t("mat.gold_brass_bronze"), ["a photo of polished brass", "a photo of gold metal", "bronze metal"], 0.30, 1.0),
+    "stone":       (_t("mat.stone"), ["a photo of rough stone", "a stone wall", "a close-up of cobblestone",
                                "a hand-painted game texture of stone bricks"], 0.90, 0.0),
-    "thatch":      ("Солома, тростник", ["a photo of thatch roof", "dry straw", "a close-up of reeds",
+    "thatch":      (_t("mat.straw_reed"), ["a photo of thatch roof", "dry straw", "a close-up of reeds",
                                          "a hand-painted game texture of a thatched roof"], 0.95, 0.0),
-    "plaster":     ("Штукатурка, глина", ["a photo of a plaster wall", "a close-up of clay", "a whitewashed wall",
+    "plaster":     (_t("mat.plaster_clay"), ["a photo of a plaster wall", "a close-up of clay", "a whitewashed wall",
                                           "a hand-painted game texture of beige plaster"], 0.90, 0.0),
-    "fabric":      ("Ткань", ["a photo of woven cloth", "a close-up of fabric", "a canvas banner", "burlap",
+    "fabric":      (_t("mat.fabric"), ["a photo of woven cloth", "a close-up of fabric", "a canvas banner", "burlap",
                               "a hand-painted game texture of cloth"], 0.92, 0.0),
-    "leather":     ("Кожа (материал)", ["a photo of leather", "a close-up of brown leather",
+    "leather":     (_t("mat.leather_material"), ["a photo of leather", "a close-up of brown leather",
                                         "a hand-painted game texture of leather"], 0.60, 0.0),
-    "skin":        ("Кожа (человек, существо)", ["a photo of human skin", "a close-up of skin"], 0.55, 0.0),
-    "glass":       ("Стекло", ["a photo of clear glass", "a glass window"], 0.12, 0.0),
-    "wax_plastic": ("Воск, пластик", ["a photo of smooth wax", "a close-up of plastic", "a candle"], 0.50, 0.0),
-    "light":       ("Свет, огонь (светящееся)", ["a glowing lantern flame", "a lit window at night"], 0.50, 0.0),
-    "other":       ("Прочее", ["a photo of an object"], 0.80, 0.0),
+    "skin":        (_t("mat.skin_human_creature"), ["a photo of human skin", "a close-up of skin"], 0.55, 0.0),
+    "glass":       (_t("mat.glass"), ["a photo of clear glass", "a glass window"], 0.12, 0.0),
+    "wax_plastic": (_t("mat.wax_plastic"), ["a photo of smooth wax", "a close-up of plastic", "a candle"], 0.50, 0.0),
+    "light":       (_t("mat.light_fire_glowing"), ["a glowing lantern flame", "a lit window at night"], 0.50, 0.0),
+    "other":       (_t("fbx.other"), ["a photo of an object"], 0.80, 0.0),
 }
 KEYS = list(MATERIALS)
 # which materials make sense for each asset category (CLIP picks only among these)

@@ -21,27 +21,29 @@ import sf3d_tool as T  # noqa: E402  (заодно добавляет sf3d-src �
 import rwt_ui  # GPT: Mount isolated weight repair without extending rig generation.
 import landmarks_ui  # hand-placed landmark skeleton (Mixamo-like)
 import face_parts_ui  # procedural eyes, teeth, tongue
+import i18n
+from i18n import t as _t
 PORT = 7861
 _state = {"model": None, "rembg": None, "on_gpu": False}
 
 HY_PY = r"D:\conda\envs\hunyuan\python.exe"
 HY_SRC = r"D:\My projects\SF3D\hunyuan3d-src"
-ENGINE_SF3D = "SF3D — одна картинка, около 20 секунд"
-ENGINE_HY = "Hunyuan3D — 1–4 картинки, лучшая форма, около 7 минут"
+ENGINE_SF3D = _t("ui.sf3d_one_picture_about_20_seconds")
+ENGINE_HY = _t("ui.hunyuan3d_1_4_pictures_the_best")
 
 # Ключ категории в config.json -> подпись в интерфейсе
 CATEGORY_LABELS = {
-    "item": "Предмет инвентаря",
-    "prop": "Пропс / окружение",
-    "building": "Здание",
-    "character": "Персонаж",
-    "vegetation": "Растительность (деревья, кусты, трава)",
+    "item": _t("ui.inventory_item"),
+    "prop": _t("ui.prop_environment"),
+    "building": _t("ui.building"),
+    "character": _t("ui.character"),
+    "vegetation": _t("ui.vegetation_trees_bushes_grass"),
 }
 LABEL_TO_KEY = {v: k for k, v in CATEGORY_LABELS.items()}
-PIVOT_LABELS = {"авто (по категории)": None, "у основания": "bottom", "в центре": "center"}
-COLLISION_LABELS = {"по категории": None, "нет": "none",
-                    "выпуклая оболочка (предметы, пропсы)": "convex",
-                    "упрощённый меш (здания)": "simplified"}
+PIVOT_LABELS = {_t("ui.auto_by_category"): None, _t("ui.at_the_base"): "bottom", _t("ui.at_the_centre"): "center"}
+COLLISION_LABELS = {_t("ui.by_category"): None, _t("ui.none"): "none",
+                    _t("ui.convex_hull_items_props"): "convex",
+                    _t("ui.simplified_mesh_buildings"): "simplified"}
 
 
 # ------------------------------------------------------------------ модель
@@ -76,7 +78,7 @@ def unload_model():
         _state["on_gpu"] = False
     gc.collect()
     torch.cuda.empty_cache()
-    return "Модель перенесена в оперативную память, видеопамять освобождена."
+    return _t("ui.the_model_moved_to_ram_video_memory")
 
 
 def gpu_free_mb():
@@ -91,11 +93,11 @@ def gpu_free_mb():
 
 
 # ------------------------------------------------------------------ кто занимает видеопамять
-GPU_NEEDS = [("SF3D: предмет, пропс, персонаж", 6400),
-             ("Hunyuan3D: форма", 6200),
-             ("Hunyuan3D: покраска текстурой", 7000),
-             ("Риггинг (UniRig)", 4500)]
-GPU_SHORT = ["SF3D", "Hunyuan: форма", "Hunyuan: краска", "Риггинг"]  # same order as GPU_NEEDS, for the status strip
+GPU_NEEDS = [(_t("ui.sf3d_item_prop_character"), 6400),
+             (_t("ui.hunyuan3d_shape"), 6200),
+             (_t("ui.hunyuan3d_texture_painting"), 7000),
+             (_t("ui.rigging_unirig"), 4500)]
+GPU_SHORT = ["SF3D", _t("ui.hunyuan_shape"), _t("ui.hunyuan_paint"), _t("ui.rigging")]  # same order as GPU_NEEDS, for the status strip
 # never offered for closing: Windows itself and the things that would log the user out or break the GPU driver
 PROTECTED = {"claude", "system", "idle", "registry", "dwm", "csrss", "winlogon", "wininit", "services", "lsass", "smss",
              "svchost", "explorer", "fontdrvhost", "audiodg", "memory compression", "nvcontainer",
@@ -120,22 +122,22 @@ def _friendly(name, cmd, title):
     c = (cmd or "").lower()
     if n.startswith("python"):
         if "sf3d_ui" in c:
-            return "Это окно SF3D (его нельзя закрыть отсюда)", "self"
+            return _t("ui.this_sf3d_window_it_cannot_be_closed"), "self"
         if "gradio_app" in c:
-            return "Старое демо SF3D (sf3d-gradio.bat)", "ours"
+            return _t("ui.old_sf3d_demo_sf3d_gradio_bat"), "ours"
         if "hy_pipeline" in c or "hy_texture" in c or "hy_test" in c:
-            return "Hunyuan3D (идёт генерация)", "ours"
+            return _t("ui.hunyuan3d_generating"), "ours"
         if "unirig" in c or "run.py" in c:
-            return "UniRig (идёт риггинг)", "ours"
+            return _t("ui.unirig_rigging"), "ours"
         if "batch_cli" in c:
-            return "Пакетная обработка SF3D", "ours"
+            return _t("ui.sf3d_batch_processing"), "ours"
         return f"Python: {cmd[-70:] if cmd else name}", "other"
     if n == "blender":
         return "Blender" + (f" — {title}" if title else ""), "other"
     if n in ("chrome", "msedge", "firefox", "brave", "opera", "vivaldi"):
-        return f"Браузер {name}" + (f" — {title[:50]}" if title else " (служебный процесс)"), "other"
+        return _t("ui.browser", name) + (f" — {title[:50]}" if title else _t("ui.service_process")), "other"
     if n in PROTECTED:
-        return "Системный процесс Windows (рабочий стол и т. п.)", "system"
+        return _t("ui.windows_system_process_desktop_and"), "system"
     return name + (f" — {title[:50]}" if title else ""), "other"
 
 
@@ -154,7 +156,7 @@ def gpu_holders():
     for d in data:
         label, kind = _friendly(d.get("name"), d.get("cmd"), d.get("title"))
         if d.get("pid") == os.getpid():
-            label, kind = "Это окно SF3D (его нельзя закрыть отсюда)", "self"
+            label, kind = _t("ui.this_sf3d_window_it_cannot_be_closed"), "self"
         # the counter of the desktop compositor counts virtual surfaces and is far above the card size: not trusted
         reliable = kind != "system" and d["mb"] < 8200
         out.append(dict(pid=d["pid"], mb=d["mb"] if reliable else None, name=d.get("name"), label=label, kind=kind))
@@ -171,52 +173,51 @@ def gpu_status():
                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         used, total = (int(x) for x in r.stdout.strip().splitlines()[0].split(","))
     except Exception:  # noqa: BLE001
-        return "Не удалось прочитать данные видеокарты (`nvidia-smi`).", gr.update(choices=[], value=None)
-    lines = [f"**Видеопамять: занято {used / 1024:.1f} из {total / 1024:.1f} ГБ, свободно {free / 1024:.1f} ГБ.**", ""]
+        return _t("ui.could_not_read_the_gpu_data_nvidia"), gr.update(choices=[], value=None)
+    lines = [_t("ui.video_memory_of_gb_used_gb_free", used / 1024, total / 1024, free / 1024), ""]
     for what, need in GPU_NEEDS:
         if free >= need + 500:
-            mark = "✅ хватит"
+            mark = _t("ui.fits")
         elif free >= need:
-            mark = "⚠️ впритык, лучше освободить"
+            mark = _t("ui.tight_better_free_some")
         else:
-            mark = f"❌ не хватит (не хватает ещё {(need - free) / 1024:.1f} ГБ)"
-        lines.append(f"- {what} (около {need / 1024:.1f} ГБ): {mark}")
+            mark = _t("ui.will_not_fit_another_gb_short", (need - free) / 1024)
+        lines.append(_t("ui.about_gb", what, need / 1024, mark))
     holders = gpu_holders()
     choices = []
     if holders:
-        lines += ["", "**Что занимает память** (по данным Windows):", ""]
+        lines += ["", _t("ui.what_uses_the_memory_according_to"), ""]
         for h in holders:
-            size = f"{h['mb']} МБ" if h["mb"] is not None else "—"
-            tag = {"system": " 🔒 системное", "self": " 🔒 это окно"}.get(h["kind"], "")
+            size = _t("ui.mb_2", h['mb']) if h["mb"] is not None else "—"
+            tag = {"system": _t("ui.system"), "self": _t("ui.this_window")}.get(h["kind"], "")
             lines.append(f"- {size}: {h['label']} (PID {h['pid']}){tag}")
             if h["kind"] in ("other", "ours"):
                 choices.append((f"{h['label']} — {size} (PID {h['pid']})", h["pid"]))
     if _state["model"] is not None:
-        lines += ["", f"Модель SF3D сейчас {'в видеопамяти' if _state['on_gpu'] else 'в оперативной памяти'}."]
+        lines += ["", _t("ui.the_sf3d_model_is_now", 'в видеопамяти' if _state['on_gpu'] else 'в оперативной памяти')]
     return "\n".join(lines), gr.update(choices=choices, value=None)
 
 
 def gpu_close_proc(pid, force):
     """Close a program that holds GPU memory. Gentle by default (the program may ask to save its work)."""
     if not pid:
-        return "Сначала выберите программу в списке.", *gpu_status()
+        return _t("ui.first_choose_a_program_in_the_list"), *gpu_status()
     pid = int(pid)
     holders = {h["pid"]: h for h in gpu_holders()}
     h = holders.get(pid)
     if h is None:
-        return "Эта программа уже не занимает видеопамять.", *gpu_status()
+        return _t("ui.this_program_no_longer_uses_video"), *gpu_status()
     if h["kind"] not in ("other", "ours") or (h["name"] or "").lower() in PROTECTED or pid == os.getpid():
-        return f"«{h['label']}» закрывать нельзя.", *gpu_status()
+        return _t("ui.must_not_be_closed", h['label']), *gpu_status()
     flags = ["/F"] if force else []
     subprocess.run(["taskkill", "/PID", str(pid), *flags], capture_output=True, text=True,
                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     for _ in range(12):  # up to ~6 s for a polite close
         time.sleep(0.5)
         if pid not in {x["pid"] for x in gpu_holders()}:
-            return f"Закрыто: {h['label']}.", *gpu_status()
-    msg = (f"«{h['label']}» не закрылась: возможно, она спрашивает про сохранение. Закройте её сами, либо отметьте "
-           f"«Принудительно» (несохранённое пропадёт) и повторите." if not force
-           else f"«{h['label']}» не удалось закрыть даже принудительно.")
+            return _t("ui.closed", h['label']), *gpu_status()
+    msg = (_t("ui.did_not_close_it_may_be_asking_about", h['label']) if not force
+           else _t("ui.could_not_be_closed_even_by_force", h['label']))
     return msg, *gpu_status()
 
 
@@ -229,19 +230,19 @@ def vram_gate(need_mb, log, emit, label, timeout_s=900):
     free = gpu_free_mb()
     if free is None or free >= need_mb:
         return True
-    names = ", ".join(f"{h['label']} ({h['mb']} МБ)" for h in gpu_holders()[:3] if h["mb"])
-    log.append(f"{label}: свободно {free} МБ видеопамяти, нужно около {need_mb}. Жду, пока освободится."
-               + (f" Сейчас её занимают: {names}." if names else "")
-               + " Закройте лишнее или откройте меню «Опции → Видеопамять».")
+    names = ", ".join(_t("ui.mb", h['label'], h['mb']) for h in gpu_holders()[:3] if h["mb"])
+    log.append(_t("ui.mb_of_video_memory_free_about_needed", label, free, need_mb)
+               + (_t("ui.now_it_is_used_by", names) if names else "")
+               + _t("ui.close_what_you_do_not_need_or_open"))
     t0 = time.time()
     while time.time() - t0 < timeout_s:
         yield emit()
         time.sleep(10)
         free = gpu_free_mb()
         if free is None or free >= need_mb:
-            log.append(f"{label}: видеопамять освободилась ({free} МБ), продолжаю.")
+            log.append(_t("ui.video_memory_freed_mb_continuing", label, free))
             return True
-    log.append(f"{label}: видеопамять так и не освободилась за {timeout_s // 60} мин, пропускаю.")
+    log.append(_t("ui.the_video_memory_was_not_freed", label, timeout_s // 60))
     return False
 
 
@@ -250,11 +251,10 @@ def vram_text():
         import torch
 
         free, total = torch.cuda.mem_get_info()
-        loaded = "загружена" if _state["model"] else "не загружена"
-        return (f"Видеопамять: занято {(total - free) / 1024**3:.1f} из {total / 1024**3:.1f} ГБ "
-                f"(модель {loaded})")
+        loaded = _t("ui.loaded") if _state["model"] else _t("ui.not_loaded")
+        return (_t("ui.video_memory_of_gb_used_model", (total - free) / 1024**3, total / 1024**3, loaded))
     except Exception as e:  # noqa: BLE001
-        return f"Не удалось получить данные о GPU: {e}"
+        return _t("ui.could_not_get_the_gpu_data", e)
 
 
 # ------------------------------------------------------------------ генерация
@@ -272,12 +272,12 @@ def generate(files, category_label, name, height, width, depth, pivot_label, col
         return "\n".join(log), results, last_glb, previews
 
     if not files:
-        log.append("Сначала добавьте хотя бы одну картинку.")
+        log.append(_t("ui.add_at_least_one_picture_first"))
         yield emit()
         return
     paths = T.collect_images([f if isinstance(f, str) else f.name for f in files])
     preset = cfg["categories"][category]
-    log.append(f"Картинок: {len(paths)}, категория «{category_label}».")
+    log.append(_t("ui.pictures_category", len(paths), category_label))
     yield emit()
 
     import rembg
@@ -292,7 +292,7 @@ def generate(files, category_label, name, height, width, depth, pivot_label, col
         work = Path(cfg["work_dir"]) / category / stem
         final = Path(cfg["export_dir"]) / category / stem / f"{stem}.glb"
         if final.exists() and not overwrite:
-            log.append(f"[пропуск] {stem}: уже экспортировано (включите «Перезаписать», чтобы переделать).")
+            log.append(_t("ui.skip_already_exported_turn_on", stem))
             last_glb = str(final)
             yield emit()
             continue
@@ -305,17 +305,17 @@ def generate(files, category_label, name, height, width, depth, pivot_label, col
             image = Image.open(img_path).convert("RGBA")
             if remove_bg:
                 _state["rembg"] = _state["rembg"] or rembg.new_session(providers=["CPUExecutionProvider"])
-                log.append(f"[{stem}] удаляю фон...")
+                log.append(_t("ui.removing_the_background", stem))
                 yield emit()
                 image = remove_background(image, _state["rembg"])
             image = resize_foreground(image, fg_ratio)
             image.save(work / "input.png")
             previews.append((str(work / "input.png"), stem))
-            log.append(f"[{stem}] генерирую 3D (при первом запуске загружается модель, около минуты)...")
+            log.append(_t("ui.generating_3d_on_the_first_run_the", stem))
             yield emit()
 
             if not _state["on_gpu"] and not (yield from vram_gate(5500, log, emit, f"[{stem}]")):
-                raise RuntimeError("не хватает свободной видеопамяти")
+                raise RuntimeError(_t("ui.not_enough_free_video_memory"))
             model = get_model()
             torch.cuda.reset_peak_memory_stats()
             with torch.no_grad(), torch.autocast(device_type="cuda", dtype=torch.bfloat16):
@@ -345,7 +345,7 @@ def generate(files, category_label, name, height, width, depth, pivot_label, col
             last_glb = str(final)
             results.append([stem, category_label, stats["faces"],
                             " x ".join(map(str, stats["size_m"])), stats["seconds"], str(final)])
-            log.append(f"[{stem}] готово за {stats['seconds']} с, пик видеопамяти {stats['peak_vram_mb']} МБ.")
+            log.append(_t("ui.done_in_s_peak_video_memory_mb", stem, stats['seconds'], stats['peak_vram_mb']))
             if make_preview:
                 yield emit()
                 previews += make_previews(final, work, stem, cfg, log)
@@ -353,23 +353,22 @@ def generate(files, category_label, name, height, width, depth, pivot_label, col
                 if category == "character":
                     rig_queue.append((final, stem))
                 else:
-                    log.append(f"[{stem}] скелет делается только для категории «Персонаж», пропускаю.")
+                    log.append(_t("ui.skeletons_are_made_only_for_the", stem))
         except torch.cuda.OutOfMemoryError:
             torch.cuda.empty_cache()
-            log.append(f"[{stem}] НЕ ХВАТИЛО ВИДЕОПАМЯТИ. Закройте другие программы, использующие GPU, "
-                       f"уменьшите размер текстуры или нажмите «Выгрузить модель» и повторите.")
+            log.append(_t("ui.out_of_video_memory_close_other", stem))
         except Exception as e:  # noqa: BLE001
-            log.append(f"[{stem}] ОШИБКА: {type(e).__name__}: {e}")
+            log.append(_t("ui.error_4", stem, type(e).__name__, e))
         yield emit()
     if rig_queue:
         # this frame still references the SF3D model and its tensors; drop them or the VRAM is never released
         model = mesh = image = None
-        log.append(f"Генерация закончена, делаю скелеты: {len(rig_queue)} шт.")
+        log.append(_t("ui.generation_finished_making_skeletons", len(rig_queue)))
         yield emit()
         rigged = yield from rig_queue_run(rig_queue, cfg, rig_naming_label, rig_tries, log, emit)
         if rigged:
             last_glb = rigged[-1]
-    log.append("Готово.")
+    log.append(_t("ui.done"))
     yield emit()
 
 
@@ -401,7 +400,7 @@ def pp_call(src, final, preset, pp, materials=None):
     return stats
 
 
-VEG_KINDS = {"Дерево": "tree", "Куст": "bush", "Трава / цветы": "grass"}
+VEG_KINDS = {_t("mat.wood"): "tree", _t("ui.bush"): "bush", _t("ui.grass_flowers"): "grass"}
 VEG_STATE = {"kind": "tree"}  # chosen in the generation tab; one user, one generation at a time
 
 
@@ -414,7 +413,7 @@ def vegetation_pass(final, kind="tree"):
                        errors="replace", timeout=900, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     lines = [x for x in r.stdout.splitlines() if x.startswith("VEG_")]
     if not tmp.exists() or not any(x.startswith("VEG_OK") for x in lines):
-        raise RuntimeError("ветер не добавлен: " + (r.stdout + r.stderr)[-300:])
+        raise RuntimeError(_t("ui.wind_not_added") + (r.stdout + r.stderr)[-300:])
     os.replace(tmp, final)
     # the Godot side: shader + script next to the export folder, copied once
     gd = Path(cfg["export_dir"]) / "_godot"
@@ -435,10 +434,10 @@ def make_previews(final, work, stem, cfg, log):
     try:
         res = T.render_previews(final, work, final.parent / f"{stem}_icon.png", cfg)
     except Exception as e:  # noqa: BLE001
-        log.append(f"[{stem}] превью и иконка не созданы: {e}")
+        log.append(_t("ui.preview_and_icon_not_made", stem, e))
         return []
-    log.append(f"[{stem}] иконка для инвентаря: {res['icon']}")
-    return [(res["preview"], f"{stem}: 4 вида"), (res["icon"], f"{stem}: иконка")]
+    log.append(_t("ui.inventory_icon", stem, res['icon']))
+    return [(res["preview"], _t("ui.4_views", stem)), (res["icon"], _t("ui.icon", stem))]
 
 
 def _hy_run(cmd, env, log, live, emit):
@@ -454,7 +453,7 @@ def _hy_run(cmd, env, log, live, emit):
         if line.startswith("@@ "):
             live[0] = ""
             log.append(line[3:])
-            if "генерация формы" in line:
+            if _t("ui.generating_the_shape") in line:
                 started = True
             yield emit()
             continue
@@ -490,14 +489,14 @@ def generate_hy(front, back, left, right, category_label, name, height, width, d
         return "\n".join(lines), results, last_glb, previews
 
     if not front:
-        log.append("Нужна минимум картинка «Спереди».")
+        log.append(_t("ui.at_least_the_front_picture_is_needed"))
         yield emit()
         return
     stem = T.slug(name or Path(front).stem)
     work = Path(cfg["work_dir"]) / "hunyuan" / category / stem
     final = Path(cfg["export_dir"]) / category / stem / f"{stem}.glb"
     if final.exists() and not overwrite:
-        log.append(f"[пропуск] {stem}: уже экспортировано (включите «Перезаписать», чтобы переделать).")
+        log.append(_t("ui.skip_already_exported_turn_on", stem))
         last_glb = str(final)
         yield emit()
         return
@@ -506,7 +505,7 @@ def generate_hy(front, back, left, right, category_label, name, height, width, d
     views = {k: v for k, v in (("front", front), ("back", back), ("left", left), ("right", right)) if v}
     for k, v in views.items():  # Gradio uploads live in a temp dir; keep our own copies
         shutil.copy2(v, work / f"source_{k}{Path(v).suffix.lower()}")
-    log.append(f"Hunyuan3D, виды: {', '.join(views)}. Освобождаю видеопамять от SF3D...")
+    log.append(_t("ui.hunyuan3d_views_freeing_video_memory", ', '.join(views)))
     yield emit()
     unload_model()
     if not (yield from vram_gate(5500, log, emit, stem)):
@@ -528,12 +527,12 @@ def generate_hy(front, back, left, right, category_label, name, height, width, d
             break
         # a native crash (0xC0000005 / 0xC0000409) while the model loads happens now and then on this machine and
         # goes away on a plain retry; the shape itself was not started, so nothing is lost
-        log.append(f"Hunyuan упал при загрузке модели (код {code:#x}), повторяю ({attempt + 2} из 3)...")
+        log.append(_t("ui.hunyuan_crashed_while_loading_the", code, attempt + 2))
         yield emit()
     live[0] = ""
     if code != 0 and paint and (work / "shape.glb").exists() and not (work / "textured.glb").exists():
         # the shape is done, only the paint stage fell over (it loads the heaviest models): paint it alone
-        log.append(f"Покраска упала (код {code:#x}), форма готова. Докрашиваю отдельным процессом...")
+        log.append(_t("ui.painting_crashed_code_the_shape_is", code))
         yield emit()
         for attempt in range(2):
             r = subprocess.run([HY_PY, str(T.ROOT / "hy_texture_mv.py"), str(work / "shape.glb"),
@@ -541,16 +540,15 @@ def generate_hy(front, back, left, right, category_label, name, height, width, d
                                cwd=HY_SRC, env=env, capture_output=True, text=True, encoding="utf-8",
                                errors="replace", creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             if (work / "textured.glb").exists():
-                log.append("Текстура готова.")
+                log.append(_t("ui.texture_ready"))
                 code = 0
                 break
             tail = deque((r.stdout + r.stderr).splitlines()[-8:], maxlen=25)
         yield emit()
     if code != 0:
-        log.append(f"ОШИБКА: процесс Hunyuan завершился с кодом {code}. Последние строки:")
+        log.append(_t("ui.error_the_hunyuan_process_ended_with", code))
         log += [f"  {x}" for x in list(tail)[-8:]]
-        log.append("Частая причина — нехватка видеопамяти или оперативной памяти: закройте Blender, браузер и "
-                   "другие тяжёлые программы.")
+        log.append(_t("ui.a_frequent_cause_is_too_little_video"))
         yield emit()
         return
 
@@ -559,15 +557,14 @@ def generate_hy(front, back, left, right, category_label, name, height, width, d
     if not textured:
         src = work / "shape.glb"
     if not src.exists():
-        log.append("ОШИБКА: модель не создана, смотрите сообщения выше.")
+        log.append(_t("ui.error_the_model_was_not_made_see_the"))
         yield emit()
         return
     if not textured and paint:
-        log.append("Внимание: покраска не получилась, экспортирована форма без текстуры.")
+        log.append(_t("ui.warning_painting_failed_the_shape"))
     h = height if height and height > 0 else None
     if h is None and preset.get("height_m") is None:
-        log.append("Высота не задана: размер остаётся как у модели (Hunyuan нормирует объект примерно до 2 единиц). "
-                   "Задайте высоту в метрах в блоке «Размер и pivot».")
+        log.append(_t("ui.no_height_set_the_size_stays_as_the"))
     pp = dict(
         height=h, pivot=PIVOT_LABELS[pivot_label],
         metallic=metallic if override else None, roughness=roughness if override else None,
@@ -589,8 +586,7 @@ def generate_hy(front, back, left, right, category_label, name, height, width, d
     last_glb = str(final)
     results.append([stem, category_label, stats["faces"], " x ".join(map(str, stats["size_m"])),
                     stats["seconds"], str(final)])
-    log.append(f"Готово за {stats['seconds']} с: {stats['faces']} граней, "
-               f"{'с текстурой' if textured else 'без текстуры'} → {final}")
+    log.append(_t("ui.done_in_s_faces", stats['seconds'], stats['faces'], 'с текстурой' if textured else 'без текстуры', final))
     if make_preview:
         yield emit()
         previews = make_previews(final, work, stem, cfg, log) + previews
@@ -601,7 +597,7 @@ def generate_hy(front, back, left, right, category_label, name, height, width, d
             if rigged:
                 last_glb = rigged[-1]
         else:
-            log.append(f"[{stem}] скелет делается только для категории «Персонаж», пропускаю.")
+            log.append(_t("ui.skeletons_are_made_only_for_the", stem))
     yield emit()
 
 
@@ -681,17 +677,17 @@ def batch_table(jobs):
         done = (Path(cfg["export_dir"]) / j["category"] / j["name"] / f"{j['name']}.glb").exists()
         src = ", ".join(j["views"]) if j["kind"] == "hy" else Path(j["files"][0]).name
         rows.append([j["name"], CATEGORY_LABELS[j["category"]],
-                     "Hunyuan3D" if j["kind"] == "hy" else "SF3D", src, "уже готово" if done else "в очереди"])
+                     "Hunyuan3D" if j["kind"] == "hy" else "SF3D", src, _t("ui.already_done") if done else _t("ui.queued")])
     return rows
 
 
 def on_scan(root, default_label):
     jobs = scan_batch(root, LABEL_TO_KEY[default_label])
     if not jobs:
-        return [], "Ничего не найдено. Ожидается папка вида: <корень>\\<категория>\\картинка.png или <корень>\\<категория>\\<объект>\\front.png"
+        return [], _t("ui.nothing_found_a_folder_like_this_is")
     n_hy = sum(j["kind"] == "hy" for j in jobs)
     est = (len(jobs) - n_hy) * 0.5 + n_hy * 10
-    return batch_table(jobs), f"Найдено: {len(jobs)} (SF3D: {len(jobs) - n_hy}, Hunyuan3D: {n_hy}). Оценка времени: около {est:.0f} мин."
+    return batch_table(jobs), _t("ui.found_sf3d_hunyuan3d_estimated_time", len(jobs), len(jobs) - n_hy, n_hy, est)
 
 
 def batch_run(root, default_label, overwrite, make_preview, auto_materials=False,
@@ -702,33 +698,33 @@ def batch_run(root, default_label, overwrite, make_preview, auto_materials=False
     jobs = scan_batch(root, LABEL_TO_KEY[default_label])
     log, results, last_glb, previews = [], [], None, []
     if not jobs:
-        yield "Ничего не найдено. Проверьте папку и схему имён.", results, last_glb, previews
+        yield _t("ui.nothing_found_check_the_folder_and"), results, last_glb, previews
         return
     quiet = lambda *a, **k: None  # noqa: E731
     ok = skipped = failed = 0
     failed_names = []
     t_start = time.time()
-    log.append(f"Пакет: {len(jobs)} задач. SF3D сначала, потом Hunyuan3D.")
+    log.append(_t("ui.batch_jobs_sf3d_first_then_hunyuan3d", len(jobs)))
     yield "\n".join(log), results, last_glb, previews
     for i, j in enumerate(jobs, 1):
         cat_label = CATEGORY_LABELS[j["category"]]
         final = Path(cfg["export_dir"]) / j["category"] / j["name"] / f"{j['name']}.glb"
         head = f"[{i}/{len(jobs)}] {j['name']} ({'Hunyuan3D' if j['kind'] == 'hy' else 'SF3D'}, {cat_label})"
         if final.exists() and not overwrite:
-            log.append(f"{head}: уже готово, пропускаю")
+            log.append(_t("ui.already_done_skipping", head))
             skipped += 1
             yield "\n".join(log), results, last_glb, previews
             continue
-        log.append(f"{head}: начинаю")
+        log.append(_t("ui.starting", head))
         base = len(log)
         if j["kind"] == "sf3d":
-            inner = generate(j["files"], cat_label, j["name"], 0, 0, 0, "авто (по категории)", "по категории",
+            inner = generate(j["files"], cat_label, j["name"], 0, 0, 0, _t("ui.auto_by_category"), _t("ui.by_category"),
                              False, 0.0, 0.8, cfg["texture_resolution"], cfg["foreground_ratio"], True, "none",
                              overwrite, make_preview, 0.0, 1.0, 1.0, auto_materials, progress=quiet)
         else:
             v = j["views"]
             inner = generate_hy(v.get("front"), v.get("back"), v.get("left"), v.get("right"), cat_label,
-                                j["name"], 0, 0, 0, "авто (по категории)", "по категории", False, 0.0, 0.8,
+                                j["name"], 0, 0, 0, _t("ui.auto_by_category"), _t("ui.by_category"), False, 0.0, 0.8,
                                 2048, 50000, 50, True, overwrite, make_preview, 0.0, 1.0, 1.0, auto_materials)
         for ilog, irows, iglb, iprev in inner:
             live = log[:base] + [f"   {x}" for x in ilog.splitlines()[-3:]]
@@ -740,11 +736,11 @@ def batch_run(root, default_label, overwrite, make_preview, auto_materials=False
             results += irows
             last_glb = str(final)
             previews = iprev
-            log.append(f"{head}: готово")
+            log.append(_t("ui.done_3", head))
         else:
             failed += 1
             failed_names.append(j["name"])
-            log.append(f"{head}: НЕ УДАЛОСЬ")
+            log.append(_t("ui.failed", head))
             log += [f"   {x}" for x in ilog.splitlines()[-4:]]
         yield "\n".join(log), results, last_glb, previews
     rig_ok = rig_failed = 0
@@ -757,7 +753,7 @@ def batch_run(root, default_label, overwrite, make_preview, auto_materials=False
             if fin.exists() and (overwrite or not fin.with_name(f"{j['name']}_rigged.glb").exists()):
                 todo.append((fin, j["name"]))
         if todo:
-            log.append(f"Скелеты для персонажей: {len(todo)} шт.")
+            log.append(_t("ui.skeletons_for_characters", len(todo)))
             yield "\n".join(log), results, last_glb, previews
             rig_log = log  # rig_core appends to it directly
             emit_b = lambda: ("\n".join(log), results, last_glb, previews)  # noqa: E731
@@ -767,14 +763,14 @@ def batch_run(root, default_label, overwrite, make_preview, auto_materials=False
             if rigged:
                 last_glb = rigged[-1]
     mins = (time.time() - t_start) / 60
-    log.append(f"ИТОГО за {mins:.1f} мин: готово {ok}, пропущено {skipped}, ошибок {failed}"
+    log.append(_t("ui.total_in_min_done_skipped_errors", mins, ok, skipped, failed)
                + (f" ({', '.join(failed_names)})" if failed_names else "")
-               + (f"; скелеты: {rig_ok} из {rig_ok + rig_failed}" if auto_rig and (rig_ok + rig_failed) else ""))
+               + (_t("ui.skeletons_of", rig_ok, rig_ok + rig_failed) if auto_rig and (rig_ok + rig_failed) else ""))
     yield "\n".join(log), results, last_glb, previews
 
 
 # ------------------------------------------------------------------ риггинг
-RIG_NAMINGS = {"Mixamo (под анимации из Mixamo)": "mixamo", "Godot (профиль Humanoid)": "godot"}
+RIG_NAMINGS = {_t("lm.mixamo_for_mixamo_animations"): "mixamo", _t("lm.godot_humanoid_profile"): "godot"}
 
 
 def _export_assets():
@@ -806,8 +802,8 @@ def rig_core(src, dst, name, cfg, naming_key, tries, log, emit, kind="humanoid")
     except Exception:  # noqa: BLE001
         has_rig = False
     if has_rig:
-        log.append(f"[{name}] в файле уже есть скелет, он будет удалён перед автоматическим риггингом.")
-    log.append(f"[{name}] риггинг начат, это займёт 3–5 минут.")
+        log.append(_t("ui.the_file_already_has_a_skeleton_it", name))
+    log.append(_t("ui.rigging_started_it_takes_3_5_minutes", name))
     yield emit()
     t0 = time.time()
     result = None
@@ -821,26 +817,23 @@ def rig_core(src, dst, name, cfg, naming_key, tries, log, emit, kind="humanoid")
                 yield emit()
         info = result["info"]
         if kind != "humanoid":
-            log.append(f"[{name}] скелет готов за {time.time() - t0:.0f} с: {info.get('bones', '?')} костей.")
+            log.append(_t("ui.skeleton_ready_in_s_bones", name, time.time() - t0, info.get('bones', '?')))
             yield emit()
             return result
         fing = info.get("named_fingers", 0)
-        log.append(f"[{name}] скелет готов за {time.time() - t0:.0f} с: {info.get('bones', '?')} костей, "
-                   f"стандартные имена получили {len(result['mapping'])}"
-                   + (f" (из них {fing} костей пальцев)." if fing else ". Пальцев в этом скелете нет: "
-                      "можно повторить с большим числом попыток."))
+        log.append(_t("ui.skeleton_ready_in_s_bones_standard", name, time.time() - t0, info.get('bones', '?'), len(result['mapping']))
+                   + (_t("ui.of_them_finger_bones", fing) if fing else _t("ui.this_skeleton_has_no_fingers_you_can")))
         sm = info.get("seams")
         if sm:
-            log.append(f"[{name}] стыки между частями сшиты: {sm['clusters']} мест, "
-                       f"разрыв в тестовой позе {sm['gap_before_mm']:.1f} мм → {sm['gap_after_mm']:.1f} мм.")
+            log.append(_t("ui.seams_between_parts_stitched_places", name, sm['clusters'], sm['gap_before_mm'], sm['gap_after_mm']))
         if info.get("warning"):
-            log.append(f"[{name}] ВНИМАНИЕ: {info['warning']}")
-        log.append(f"[{name}] файл со скелетом: {dst}")
+            log.append(_t("ui.warning", name, info['warning']))
+        log.append(_t("ui.file_with_the_skeleton", name, dst))
         (dst.parent / f"{name}_rig.json").write_text(
             json.dumps(dict(source=str(src), naming=naming_key, **result), indent=2, ensure_ascii=False),
             encoding="utf-8")
     except Exception as e:  # noqa: BLE001
-        log.append(f"[{name}] ОШИБКА риггинга: {type(e).__name__}: {e}")
+        log.append(_t("ui.rigging_error", name, type(e).__name__, e))
         result = None
     yield emit()
     return result
@@ -864,24 +857,22 @@ def seam_run(upload, asset):
         if not src.exists():  # rigged exports are not in the dropdown, but allow typing/choosing a plain one
             src = src.with_name(f"{nm}_rigged.glb")
     else:
-        log.append("Выберите готовую модель или загрузите GLB со скелетом.")
+        log.append(_t("ui.choose_a_finished_model_or_load_a_3"))
         yield emit()
         return
     dst = src.with_name(f"{src.stem}_seams.glb")
-    log.append(f"Сшиваю стыки: {src.name} (около 30 секунд)...")
+    log.append(_t("ui.stitching_the_seams_about_30_seconds", src.name))
     yield emit()
     try:
         sm = RG.weld_seams(src, dst, cfg.get("blender_exe"))
     except Exception as e:  # noqa: BLE001
         sm = None
-        log.append(f"ОШИБКА: {type(e).__name__}: {e}")
+        log.append(_t("ui.error", type(e).__name__, e))
     if sm:
-        log.append(f"Готово: стыков {sm['clusters']}, разрыв в тестовой позе {sm['gap_before_mm']:.1f} мм → "
-                   f"{sm['gap_after_mm']:.1f} мм. Файл: {dst}")
+        log.append(_t("ui.done_seams_gap_in_the_test_pose_mm", sm['clusters'], sm['gap_before_mm'], sm['gap_after_mm'], dst))
         last[0] = str(dst)
-    elif not log or not log[-1].startswith("ОШИБКА"):
-        log.append("Стыков между частями не найдено (модель из одного куска или у частей нет общих вершин), "
-                   "исправлять нечего.")
+    elif not log or not log[-1].startswith(_t("ui.error_5")):
+        log.append(_t("ui.no_seams_between_parts_found_the"))
     yield emit()
 
 
@@ -904,27 +895,27 @@ def split_run(upload, asset):
         if not src.exists():
             src = base / f"{nm}.glb"
     else:
-        log.append("Выберите модель со скелетом или загрузите GLB.")
+        log.append(_t("ui.choose_a_model_with_a_skeleton_or"))
         yield emit()
         return
     dst = src.with_name(f"{src.stem.removesuffix('_rigged')}_parts.glb")
-    log.append(f"Разбиваю на части: {src.name} (около 15 секунд)...")
+    log.append(_t("ui.splitting_into_parts_about_15", src.name))
     yield emit()
     try:
         parts = RG.split_parts(src, dst, cfg.get("blender_exe"))
-        log.append(f"Готово: {len(parts)} частей на общем скелете: "
-                   + ", ".join(f"{k.replace('Body_', '')} ({v} треуг.)" for k, v in parts.items()))
-        log.append(f"Файл: {dst}")
+        log.append(_t("ui.done_parts_on_a_shared_skeleton", len(parts))
+                   + ", ".join(_t("ui.tris", k.replace('Body_', ''), v) for k, v in parts.items()))
+        log.append(_t("ui.file", dst))
         (dst.with_suffix(".parts.json")).write_text(
             json.dumps(dict(source=str(src), parts=parts), indent=2, ensure_ascii=False), encoding="utf-8")
         last[0] = str(dst)
     except Exception as e:  # noqa: BLE001
-        log.append(f"ОШИБКА: {e}")
+        log.append(_t("ui.error_2", e))
     yield emit()
 
 
-SLOT_LABELS = {"Нагрудник": "chest", "Шлем": "helmet", "Перчатки": "gloves", "Сапоги": "boots",
-               "Штаны / поножи": "pants", "Наручи": "bracers", "Наплечники": "pauldrons"}
+SLOT_LABELS = {_t("ui.breastplate"): "chest", _t("ui.helmet"): "helmet", _t("ui.gloves"): "gloves", _t("ui.boots"): "boots",
+               _t("ui.trousers_greaves"): "pants", _t("ui.bracers"): "bracers", _t("ui.pauldrons"): "pauldrons"}
 
 
 def _parts_bodies():
@@ -932,17 +923,17 @@ def _parts_bodies():
     return [str(p) for p in sorted(Path(cfg["export_dir"]).rglob("*_parts.glb"))]
 
 
-LENGTH_LABELS = {"по умолчанию для слота": "", "до груди": "chest", "до талии": "waist", "до бёдер": "hips",
-                 "до колен": "knees", "до щиколоток": "ankles"}
+LENGTH_LABELS = {_t("ui.slot_default"): "", _t("ui.to_the_chest"): "chest", _t("ui.to_the_waist"): "waist", _t("ui.to_the_hips"): "hips",
+                 _t("ui.to_the_knees"): "knees", _t("ui.to_the_ankles"): "ankles"}
 
 
-FIT_MODES = {"только масштаб (пропорции брони сохраняются)": "uniform",
-             "по ориентирам скелета (вписать между ориентирами)": "landmarks"}
+FIT_MODES = {_t("ui.scale_only_the_armour_keeps_its"): "uniform",
+             _t("ui.by_the_skeleton_s_landmarks_fit"): "landmarks"}
 
 
-def fit_run(body, armour_upload, armour_asset, slot_label, length_label="по умолчанию для слота",
+def fit_run(body, armour_upload, armour_asset, slot_label, length_label=_t("ui.slot_default"),
             width=100, height=100, depth=100, up_cm=0, gap_mm=6, scale=100,
-            mode_label="только масштаб (пропорции брони сохраняются)", hide_body=False, shrink_pct=0):
+            mode_label=_t("ui.scale_only_the_armour_keeps_its"), hide_body=False, shrink_pct=0):
     """The 'Подогнать броню' button. Sliders are percentages / centimetres / millimetres."""
     import rigging as RG
 
@@ -953,7 +944,7 @@ def fit_run(body, armour_upload, armour_asset, slot_label, length_label="по у
         return "\n".join(log), last[0], pics[0]
 
     if not body:
-        log.append("Выберите тело, разбитое на части (кнопка «Разбить тело на части» в блоке «Риггинг»).")
+        log.append(_t("ui.choose_a_body_split_into_parts_the"))
         yield emit()
         return
     if armour_upload:
@@ -962,7 +953,7 @@ def fit_run(body, armour_upload, armour_asset, slot_label, length_label="по у
         cat, nm = armour_asset.split("/", 1)
         src = Path(cfg["export_dir"]) / cat / nm / f"{nm}.glb"
     else:
-        log.append("Выберите модель брони или загрузите GLB.")
+        log.append(_t("ui.choose_an_armour_model_or_load_a_glb"))
         yield emit()
         return
     slot = SLOT_LABELS[slot_label]
@@ -972,23 +963,22 @@ def fit_run(body, armour_upload, armour_asset, slot_label, length_label="по у
     opts = dict(length=LENGTH_LABELS.get(length_label, ""), width=width / 100, height=height / 100,
                 depth=depth / 100, up=up_cm / 100, offset=gap_mm / 1000, scale=scale / 100,
                 mode=FIT_MODES.get(mode_label, "uniform"), shrink=(shrink_pct or 0) / 100)
-    log.append(f"Подгоняю «{src.name}» как {slot_label.lower()} на {body_name} (около 30 секунд)...")
+    log.append(_t("ui.fitting_as_onto_about_30_seconds", src.name, slot_label.lower(), body_name))
     yield emit()
     try:
         man = RG.fit_armour(body, src, slot, dst, cfg.get("blender_exe"), opts, hide_body=bool(hide_body))
         log += [f"  {x}" for x in man["log"]]
-        log.append(f"Готово: {dst}. Прячет: {', '.join(man['hides']) or 'ничего (тело остаётся под бронёй)'}. "
-                   f"Манифест: {dst.with_suffix('.item.json').name}")
-        log.append("Не нравится посадка? Поменяйте длину или ползунки и нажмите кнопку ещё раз.")
+        log.append(_t("ui.done_hides_manifest", dst, ', '.join(man['hides']) or 'ничего (тело остаётся под бронёй)', dst.with_suffix('.item.json').name))
+        log.append(_t("ui.don_t_like_the_fit_change_the_length"))
         last[0] = str(dst)
-        pics[0] = [(p, "спереди" if "front" in p else "сбоку") for p in man.get("previews", [])]
+        pics[0] = [(p, _t("ui.front") if "front" in p else _t("ui.side")) for p in man.get("previews", [])]
     except Exception as e:  # noqa: BLE001
-        log.append(f"ОШИБКА: {e}")
+        log.append(_t("ui.error_2", e))
     yield emit()
 
 
-RIG_KINDS = {"Человекоподобный (две ноги, руки, пальцы)": "humanoid",
-             "Существо (четыре лапы, хвост, морда с пастью)": "creature"}
+RIG_KINDS = {_t("ui.humanoid_two_legs_arms_fingers"): "humanoid",
+             _t("ui.creature_four_paws_a_tail_a_muzzle"): "creature"}
 
 
 def _src_of(upload, asset):
@@ -1023,7 +1013,7 @@ def creature_run(upload, asset, line_mm=0, hinge_mm=0):
 
     src, name, folder = _src_of(upload, asset)
     if not src or not src.exists():
-        log.append("Выберите готовую модель или загрузите GLB.")
+        log.append(_t("ui.choose_a_finished_model_or_load_a"))
         yield emit()
         return
     folder.mkdir(parents=True, exist_ok=True)
@@ -1032,19 +1022,18 @@ def creature_run(upload, asset, line_mm=0, hinge_mm=0):
     if not result:
         yield emit()
         return
-    log.append(f"[{name}] разбираю скелет: где лапы, голова и хвост; ищу линию рта...")
+    log.append(_t("ui.reading_the_skeleton_where_the_paws", name))
     yield emit()
     try:
         auto = folder / f"{name}_auto.glb"
         names, jaw = RG.creature_auto(raw, auto, cfg.get("blender_exe"))
         legs = sorted({v[:6] for v in names.values() if v.startswith("leg_")})
         tails = sum(1 for v in names.values() if v.startswith("tail_"))
-        log.append(f"[{name}] лапы: {', '.join(x[4:] for x in legs)}; костей хвоста: {tails}; "
-                   f"голова: {'есть' if 'head' in names.values() else 'не найдена'}.")
+        log.append(_t("ui.paws_tail_bones_head", name, ', '.join(x[4:] for x in legs), tails, 'есть' if 'head' in names.values() else 'не найдена'))
         state[0] = dict(auto=str(auto), names=names, jaw=jaw, folder=str(folder), name=name)
         yield from _creature_jaw(state[0], line_mm, hinge_mm, log, last, pics, emit)
     except Exception as e:  # noqa: BLE001
-        log.append(f"[{name}] ОШИБКА: {e}")
+        log.append(_t("ui.error_3", name, e))
     yield emit()
 
 
@@ -1054,14 +1043,13 @@ def _creature_jaw(st, line_mm, hinge_mm, log, last, pics, emit):
     cfg = T.load_config()
     folder, name = Path(st["folder"]), st["name"]
     dst = folder / f"{name}_rigged.glb"
-    log.append(f"[{name}] делаю челюсть (линия рта {line_mm:+.0f} мм, шарнир {hinge_mm:+.0f} мм) и превью...")
+    log.append(_t("ui.making_the_jaw_mouth_line_mm_hinge", name, line_mm, hinge_mm))
     yield emit()
     res = RG.creature_finish(st["auto"], dst, cfg.get("blender_exe"), st["names"], st["jaw"], line_mm, hinge_mm,
                              preview=str(folder / f"{name}_jaw.png"))
-    log.append(f"[{name}] готово: {dst.name}. В челюсть вошло вершин: {res['jaw_vertices']}. Посмотрите превью: "
-               "если пасть открывается не по линии губ, подвиньте ползунки и нажмите «Пересобрать челюсть».")
-    labels = {"0_side": "закрыта, сбоку", "0_front": "закрыта, спереди", "30_side": "открыта, сбоку",
-              "30_front": "открыта, спереди"}
+    log.append(_t("ui.done_vertices_in_the_jaw_look_at_the", name, dst.name, res['jaw_vertices']))
+    labels = {"0_side": _t("ui.closed_side"), "0_front": _t("ui.closed_front"), "30_side": _t("ui.open_side"),
+              "30_front": _t("ui.open_front")}
     pics[0] = [(p, labels.get(Path(p).stem.split("_jaw_")[-1], "")) for p in res["previews"]]
     last[0] = str(dst)
     (folder / f"{name}_rig.json").write_text(json.dumps(dict(kind="creature", names=st["names"], jaw=st["jaw"],
@@ -1078,13 +1066,13 @@ def creature_rejaw(state, line_mm, hinge_mm):
         return "\n".join(log), last[0], pics[0], st[0]
 
     if not state:
-        log.append("Сначала создайте скелет существа.")
+        log.append(_t("ui.make_the_creature_s_skeleton_first"))
         yield emit()
         return
     try:
         yield from _creature_jaw(state, line_mm, hinge_mm, log, last, pics, emit)
     except Exception as e:  # noqa: BLE001
-        log.append(f"ОШИБКА: {e}")
+        log.append(_t("ui.error_2", e))
     yield emit()
 
 
@@ -1115,11 +1103,11 @@ def rig_run(upload, asset, naming_label, tries=3):
         name = T.slug(nm)
         dst = src.with_name(f"{nm}_rigged.glb")
     else:
-        log.append("Выберите готовую модель или загрузите GLB.")
+        log.append(_t("ui.choose_a_finished_model_or_load_a"))
         yield emit()
         return
     if not src.exists():
-        log.append(f"Файл не найден: {src}")
+        log.append(_t("ui.file_not_found", src))
         yield emit()
         return
     result = yield from rig_core(src, dst, name, cfg, RIG_NAMINGS[naming_label], tries, log, emit)
@@ -1143,20 +1131,18 @@ def outfit_scan(model):
 
     hidden = [gr.update(visible=False, value=None) for _ in range(MAX_SEGS)]
     if not model:
-        return "Загрузите GLB одетой модели с сегментами (из Tripo).", [], [], "", *hidden
+        return _t("ui.load_the_glb_of_a_dressed_model_with"), [], [], "", *hidden
     model = Path(model if isinstance(model, str) else model.name)
     cfg = T.load_config()
     try:
         segs = OF.scan(model, _outfit_work(model), cfg.get("blender_exe"))
     except Exception as e:  # noqa: BLE001
-        return f"ОШИБКА: {e}", [], [], "", *hidden
+        return _t("ui.error_2", e), [], [], "", *hidden
     segs = segs[:MAX_SEGS]
-    dd = [gr.update(visible=True, value=s["label"], label=f"{s['name']} ({s['faces']} гр.)") for s in segs]
+    dd = [gr.update(visible=True, value=s["label"], label=_t("ui.faces", s['name'], s['faces'])) for s in segs]
     dd += hidden[len(segs):]
     pics = [(s["thumb"], f"{s['name']}") for s in segs]
-    note = (f"Сегментов: {len(segs)}. Проверьте слоты под картинками: несколько сегментов с одинаковым слотом "
-            "станут одной вещью (лицо + шлем = голова целиком, обмотка + ботинок = сапог). "
-            "Кожу и тело не берите.")
+    note = (_t("ui.segments_check_the_slots_under_the", len(segs)))
     return note, pics, [s["name"] for s in segs], T.slug(model.stem), *dd
 
 
@@ -1171,11 +1157,11 @@ def outfit_run(model, body, set_name, names, *labels):
         return "\n".join(log), last[0], pics[0]
 
     if not model or not names:
-        log.append("Сначала загрузите модель и нажмите «Разобрать на сегменты».")
+        log.append(_t("ui.load_a_model_first_and_press_split"))
         yield emit()
         return
     if not body:
-        log.append("Выберите тело, на которое надевать (файл *_parts.glb).")
+        log.append(_t("ui.choose_the_body_to_dress_a_parts_glb"))
         yield emit()
         return
     model = Path(model if isinstance(model, str) else model.name)
@@ -1189,8 +1175,7 @@ def outfit_run(model, body, set_name, names, *labels):
                                      RIG_NAMINGS[list(RIG_NAMINGS)[0]], 3, log, emit)
         return bool(result)
 
-    log.append(f"Переношу сет «{out_dir.name}» на {body_name}. Первый раз с риггингом одетой модели это "
-               "10–15 минут, повторно 3–5 минут.")
+    log.append(_t("ui.transferring_the_set_onto_the_first", out_dir.name, body_name))
     yield emit()
     for x in OF.transfer(model, assign, body, out_dir, _outfit_work(model), blender, rig_dressed):
         if isinstance(x, str):
@@ -1200,20 +1185,19 @@ def outfit_run(model, body, set_name, names, *labels):
             yield x
     prev = out_dir / "set_preview_front.png"
     if prev.exists():
-        pics[0] = [(str(prev), "весь сет спереди"), (str(out_dir / "set_preview_side.png"), "сбоку")]
+        pics[0] = [(str(prev), _t("ui.the_whole_set_from_the_front")), (str(out_dir / "set_preview_side.png"), _t("ui.side"))]
         pics[0] += [(str(p), p.stem.replace("_preview_front", ""))
                     for p in sorted(out_dir.glob("*_preview_front.png")) if not p.name.startswith("set_")]
-        log.append("Для Godot: у каждой вещи рядом .item.json (слот, что прятать) и .mask.json (какие треугольники "
-                   "тела убрать, пока вещь надета); весь сет описан в set.json.")
+        log.append(_t("ui.for_godot_each_piece_has_a_item_json"))
     yield emit()
 
 
 # ------------------------------------------------------------------ референсы (картинки для 3D)
-REF_PROVIDERS = {"Подписка ChatGPT через Codex (без ключа, ~2 мин на картинку)": "codex",
-                 "OpenRouter (по ключу; Nano Banana и другие)": "openrouter"}
-REF_CATEGORIES = {"Предмет / оружие": "item", "Объект окружения": "prop", "Здание": "building",
-                  "Растение (дерево, куст, трава)": "vegetation",
-                  "Персонаж (A-поза)": "character", "Существо / монстр": "creature"}
+REF_PROVIDERS = {_t("ui.chatgpt_subscription_through_codex"): "codex",
+                 _t("ui.openrouter_with_a_key_nano_banana"): "openrouter"}
+REF_CATEGORIES = {_t("ui.item_weapon"): "item", _t("ui.environment_object"): "prop", _t("ui.building"): "building",
+                  _t("ui.plant_tree_bush_grass"): "vegetation",
+                  _t("ui.character_a_pose"): "character", _t("ui.creature_monster"): "creature"}
 REF_TO_GEN = {"item": "item", "prop": "prop", "building": "building", "character": "character", "vegetation": "vegetation",
               "creature": "character"}
 
@@ -1236,7 +1220,7 @@ def ref_style_load():
 def ref_style_save(text, files):
     import refgen as RF
     st = RF.save_style(T.load_config()["work_dir"], text, _paths(files))
-    return f"Стиль сохранён: описание {len(st['text'])} знаков, эталонных картинок {len(st['refs'])}."
+    return _t("ui.style_saved_description_characters", len(st['text']), len(st['refs']))
 
 
 def ref_describe(provider_label, files):
@@ -1244,7 +1228,7 @@ def ref_describe(provider_label, files):
     cfg = T.load_config()
     imgs = _paths(files)
     if not imgs:
-        return gr.update(), "Добавьте 1–5 эталонных картинок стиля."
+        return gr.update(), _t("ui.add_1_5_style_reference_pictures")
     try:
         if REF_PROVIDERS[provider_label] == "codex":
             text = RF.codex_describe(imgs, out_dir=Path(cfg["work_dir"]) / "refgen")
@@ -1252,8 +1236,8 @@ def ref_describe(provider_label, files):
             text = RF.openrouter_describe(cfg.get("openrouter_key", ""),
                                           cfg.get("openrouter_text_model", "google/gemini-2.5-flash"), imgs)
     except Exception as e:  # noqa: BLE001
-        return gr.update(), f"ОШИБКА: {e}"
-    return text, "Описание стиля готово. Поправьте, если нужно, и нажмите «Сохранить стиль»."
+        return gr.update(), _t("ui.error_2", e)
+    return text, _t("ui.the_style_description_is_ready")
 
 
 def _ref_one(provider, prompt, images, out_png):
@@ -1276,7 +1260,7 @@ def ref_generate(provider_label, obj, cat_label, variants, style_text, style_fil
         return "\n".join(log), pics, [p for p, _ in pics]
 
     if not (obj or "").strip():
-        log.append("Опишите объект, например: «покосившийся деревянный забор с коваными накладками».")
+        log.append(_t("ui.describe_the_object_for_example_a"))
         yield emit()
         return
     provider, category = REF_PROVIDERS[provider_label], REF_CATEGORIES[cat_label]
@@ -1287,24 +1271,24 @@ def ref_generate(provider_label, obj, cat_label, variants, style_text, style_fil
     (folder / "prompt.txt").write_text(prompt, encoding="utf-8")
     for k in range(int(variants)):
         t0 = time.time()
-        log.append(f"Вариант {k + 1} из {int(variants)}: генерирую...")
+        log.append(_t("ui.variant_of_generating", k + 1, int(variants)))
         yield emit()
         try:
             out = _ref_one(provider, prompt, refs, folder / f"front_{int(time.time())}.png")
-            pics.append((str(out), f"вариант {len(pics) + 1}"))
-            log[-1] = f"Вариант {k + 1} готов за {time.time() - t0:.0f} с."
+            pics.append((str(out), _t("ui.variant", len(pics) + 1)))
+            log[-1] = _t("ui.variant_ready_in_s", k + 1, time.time() - t0)
         except Exception as e:  # noqa: BLE001
-            log[-1] = f"Вариант {k + 1}: ОШИБКА: {e}"
+            log[-1] = _t("ui.variant_error", k + 1, e)
             yield emit()
             return
         yield emit()
-    log.append("Выберите лучший вариант щелчком, затем «Сделать виды сзади и сбоку» или сразу «Отправить в 3D».")
+    log.append(_t("ui.pick_the_best_variant_with_a_click"))
     yield emit()
 
 
 def ref_pick(paths, evt: gr.SelectData):
     p = paths[evt.index] if paths and evt.index < len(paths) else None
-    return p, (f"Выбран вариант {evt.index + 1}." if p else "")
+    return p, (_t("ui.variant_chosen", evt.index + 1) if p else "")
 
 
 def ref_views(provider_label, front, obj, cat_label, style_text, style_files, want):
@@ -1317,27 +1301,27 @@ def ref_views(provider_label, front, obj, cat_label, style_text, style_files, wa
         return "\n".join(log), [(v, k) for k, v in views.items() if v], views
 
     if not front:
-        log.append("Сначала выберите вариант (щелчок по картинке).")
+        log.append(_t("ui.first_choose_a_variant_click_a"))
         yield emit()
         return
     provider, category = REF_PROVIDERS[provider_label], REF_CATEGORIES[cat_label]
     refs = _paths(style_files)
     folder = Path(front).parent
-    names = {"сзади": "back", "слева": "left", "справа": "right"}
+    names = {_t("ui.back"): "back", _t("ui.left"): "left", _t("ui.right"): "right"}
     for label in want or []:
         v = names[label]
         t0 = time.time()
-        log.append(f"Вид {label}: генерирую...")
+        log.append(_t("ui.view_generating", label))
         yield emit()
         prompt = RF.build_prompt(obj or "the object in the first picture", category, style_text, v,
                                  has_style_refs=bool(refs), has_front=True)
         try:
             views[v] = str(_ref_one(provider, prompt, [front] + refs, folder / f"{v}_{int(time.time())}.png"))
-            log[-1] = f"Вид {label} готов за {time.time() - t0:.0f} с."
+            log[-1] = _t("ui.view_ready_in_s", label, time.time() - t0)
         except Exception as e:  # noqa: BLE001
-            log[-1] = f"Вид {label}: ОШИБКА: {e}"
+            log[-1] = _t("ui.view_error", label, e)
         yield emit()
-    log.append("Проверьте, что на всех видах один и тот же объект, и нажмите «Отправить в 3D».")
+    log.append(_t("ui.check_that_all_views_show_the_same"))
     yield emit()
 
 
@@ -1362,7 +1346,7 @@ def ref_save_keys(key, img_model, txt_model):
     cfg["openrouter_image_model"] = (img_model or "").strip() or "google/gemini-2.5-flash-image"
     cfg["openrouter_text_model"] = (txt_model or "").strip() or "google/gemini-2.5-flash"
     (T.ROOT / "config.json").write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
-    return "Настройки OpenRouter сохранены." + (" Ключ задан." if cfg.get("openrouter_key") else " Ключ не задан.")
+    return _t("ui.openrouter_settings_saved") + (_t("ui.key_set") if cfg.get("openrouter_key") else _t("ui.key_not_set"))
 
 # ------------------------------------------------------------------ бесшовные материалы поверхностей
 def surface_run(provider_label, desc, own_file, tile_m, strength, size, name):
@@ -1377,8 +1361,7 @@ def surface_run(provider_label, desc, own_file, tile_m, strength, size, name):
 
     own = _paths([own_file])[0] if own_file else None
     if not own and not (desc or "").strip():
-        log.append("Опишите поверхность (например: «утоптанная земля с травинками и мелкими камнями») "
-                   "или загрузите свою картинку.")
+        log.append(_t("ui.describe_the_surface_for_example"))
         yield emit()
         return
     stem = T.slug(name or desc or Path(own).stem)[:40]
@@ -1386,38 +1369,36 @@ def surface_run(provider_label, desc, own_file, tile_m, strength, size, name):
     folder.mkdir(parents=True, exist_ok=True)
     if own:
         src = Path(own)
-        log.append(f"Беру вашу картинку: {src.name}")
+        log.append(_t("ui.taking_your_picture", src.name))
     else:
         st = RF.load_style(cfg["work_dir"])
         prompt = RF.build_prompt(desc, "surface", st["text"], has_style_refs=bool(st["refs"]))
         (folder / "prompt.txt").write_text(prompt, encoding="utf-8")
-        log.append("Генерирую текстуру (вид сверху)...")
+        log.append(_t("ui.generating_the_texture_top_view"))
         yield emit()
         t0 = time.time()
         try:
             src = _ref_one(REF_PROVIDERS[provider_label], prompt, st["refs"], folder / f"src_{int(time.time())}.png")
         except Exception as e:  # noqa: BLE001
-            log.append(f"ОШИБКА: {e}")
+            log.append(_t("ui.error_2", e))
             yield emit()
             return
-        log[-1] = f"Текстура готова за {time.time() - t0:.0f} с."
-    log.append("Делаю бесшовной и считаю карты (нормали, высота, шероховатость, затенение)...")
+        log[-1] = _t("ui.texture_ready_in_s", time.time() - t0)
+    log.append(_t("ui.making_it_seamless_and_computing_the"))
     yield emit()
     out = Path(cfg["export_dir"]) / "materials" / stem
     info = S.make_material(src, out, stem, size=int(size), strength=float(strength), tile_m=float(tile_m))
     fixed = info["seam_before"] > 1.15
-    log.append(f"Готово: {out}. Шов на краях: {info['seam_before']} → {info['seam_after']} "
-               f"({'сшит' if fixed else 'генератор сделал бесшовно сам'}; 1,0 — как внутри картинки).")
-    log.append(f"В Godot: скопируйте папку «{stem}» в проект и назначьте {stem}.tres как материал. "
-               f"Плитка повторяется каждые {tile_m:g} м (меняется в материале: uv1_scale).")
-    pics.append((str(out / f"{stem}_preview.png"), "слева 3×3 плитки (швы видны бы сразу), справа рельеф под светом"))
-    pics.append((str(out / info["files"]["normal"]), "карта нормалей"))
-    pics.append((str(out / info["files"]["roughness"]), "шероховатость"))
+    log.append(_t("ui.done_seam_at_the_edges_1_0_as_inside", out, info['seam_before'], info['seam_after'], 'сшит' if fixed else 'генератор сделал бесшовно сам'))
+    log.append(_t("ui.in_godot_copy_the_folder_into_the", stem, stem, tile_m))
+    pics.append((str(out / f"{stem}_preview.png"), _t("ui.left_3_3_tiles_seams_would_show_at")))
+    pics.append((str(out / info["files"]["normal"]), _t("ui.normal_map")))
+    pics.append((str(out / info["files"]["roughness"]), _t("ui.roughness")))
     yield emit()
 
 # ------------------------------------------------------------------ эффекты (листы для частиц, спрайты, сцены Godot)
-FX_KINDS = {"Взрыв (один раз)": "explosion", "Дым (один раз)": "smoke", "Огонь (цикл)": "fire",
-            "Магическая вспышка (один раз)": "magic", "Искра / уголёк (один кадр)": "spark"}
+FX_KINDS = {_t("ui.explosion_once"): "explosion", _t("ui.smoke_once"): "smoke", _t("ui.fire_loop"): "fire",
+            _t("ui.magic_flash_once"): "magic", _t("ui.spark_ember_one_frame"): "spark"}
 FX_SCENES = ["explosion", "fire", "smoke", "magic_circle", "hit_sparks"]
 
 
@@ -1442,11 +1423,10 @@ def fx_flip_run(kind_label, color, grid, size, seed, speed, name):
     info = F.make_flipbook(kind, out, grid=int(grid), size=int(size), seed=int(seed), tint=_hex_rgb(color),
                            speed=float(speed))
     view = F.preview(out, Path(T.load_config()["work_dir"]) / f"fx_{stem}_view.png", int(grid))
-    note = (f"Готово: {out}. Кадров {info['frames']} ({info['grid']}×{info['grid']})"
-            + (", лист зациклен" if info.get("loop") else "") + ". В Godot у материала частиц: "
-            f"Particles Anim H/V Frames = {info['grid']}, у частиц Anim Speed = 1.")
+    note = (_t("ui.done_frames", out, info['frames'], info['grid'], info['grid'])
+            + (_t("ui.the_sheet_loops") if info.get("loop") else "") + _t("ui.in_godot_on_the_particle_material", info['grid']))
     if stem in ("explosion", "smoke", "fire", "magic", "spark"):
-        note += " Имя совпадает со стандартным: после «Собрать сцены» эффекты подхватят новый лист."
+        note += _t("ui.the_name_matches_the_standard_one")
     return note, [(str(view), stem)]
 
 
@@ -1455,7 +1435,7 @@ def fx_sprite_run(provider_label, desc, name):
     import numpy as np
     from PIL import Image
     if not (desc or "").strip():
-        return "Опишите спрайт, например: «светящаяся руна огня», «круг призыва с рунами».", []
+        return _t("ui.describe_the_sprite_for_example_a"), []
     stem = T.slug(name or desc)[:40]
     work = Path(T.load_config()["work_dir"]) / "refgen" / f"fx_{stem}"
     work.mkdir(parents=True, exist_ok=True)
@@ -1465,7 +1445,7 @@ def fx_sprite_run(provider_label, desc, name):
     try:
         src = _ref_one(REF_PROVIDERS[provider_label], prompt, [], work / f"src_{int(time.time())}.png")
     except Exception as e:  # noqa: BLE001
-        return f"ОШИБКА: {e}", []
+        return _t("ui.error_2", e), []
     a = np.asarray(Image.open(src).convert("RGB")).astype(np.float32) / 255
     alpha = np.clip((a.max(-1) - 0.04) / 0.96, 0, 1)
     rgb = np.where(alpha[..., None] > 1e-3, a / np.maximum(alpha[..., None], 1e-3), 0)
@@ -1479,9 +1459,9 @@ def fx_sprite_run(provider_label, desc, name):
     bg.alpha_composite(im)
     view = work / "view.png"
     bg.convert("RGB").resize((600, 600)).save(view)
-    note = f"Готово: {out}. Чёрный фон стал прозрачностью: в Godot используйте сложение (Blend Mode = Add)."
+    note = _t("ui.done_the_black_background_became", out)
     if stem == "magic_circle":
-        note += " Имя стандартное: «Собрать сцены» подставит его в magic_circle.tscn."
+        note += _t("ui.the_name_is_standard_build_the")
     return note, [(str(view), stem)]
 
 
@@ -1490,7 +1470,7 @@ def fx_build_scenes():
     cfg = T.load_config()
     godot = cfg.get("godot_exe")
     if not godot or not Path(godot).exists():
-        return "Не найден Godot: укажите godot_exe в tool/config.json.", []
+        return _t("ui.godot_not_found_set_godot_exe_in"), []
     src = _fx_dir()
     need = ["explosion.png", "smoke.png", "fire.png", "magic.png", "spark.png", "magic_circle.png"]
     missing = [n for n in need if not (src / n).exists()]
@@ -1503,8 +1483,7 @@ def fx_build_scenes():
                                 tint=(0.55, 0.85, 1.0) if k == "magic" else (1.0, 0.85, 0.55) if k == "spark" else
                                 (1, 1, 1))
         if not (src / "magic_circle.png").exists():
-            return ("Нет текстуры magic_circle.png: сделайте спрайт с именем «magic_circle» (например, «круг призыва "
-                    "с рунами») и нажмите ещё раз."), []
+            return (_t("ui.no_magic_circle_png_texture_make_a")), []
     proj = Path(cfg["work_dir"]) / "fx_build"
     (proj / "sf3d_fx").mkdir(parents=True, exist_ok=True)
     if not (proj / "project.godot").exists():
@@ -1525,18 +1504,13 @@ def fx_build_scenes():
         shutil.copy2(proj / "sf3d_fx" / f, src / f)
     shutil.copy2(T.ROOT / "godot" / "fx_player.gd", src / "fx_player.gd")
     (src / "README.md").write_text(
-        "# Эффекты SF3D\n\nСкопируйте папку `sf3d_fx` в корень проекта Godot (путь должен быть `res://sf3d_fx/`).\n"
-        "Сцены: explosion, fire, smoke, magic_circle, hit_sparks. Перетащите сцену в уровень или создайте из кода:\n"
-        "`var fx = preload(\"res://sf3d_fx/explosion.tscn\").instantiate(); add_child(fx)`.\n"
-        "У корня сцены свойство Auto Free: одноразовый эффект удалится сам после окончания.\n"
-        "Цвет и размер меняются в инспекторе у частиц (Draw Pass, Process Material).\n", encoding="utf-8")
+        _t("ui.sf3d_effects_copy_the_sf3d_fx_folder"), encoding="utf-8")
     if not built:
-        return "Сцены не собрались: " + (r.stdout + r.stderr)[-400:], []
-    return (f"Собрано сцен: {len(built)} ({', '.join(built)}) в {src}. Скопируйте папку sf3d_fx в корень "
-            "проекта Godot (res://sf3d_fx/)."), []
+        return _t("ui.the_scenes_were_not_built") + (r.stdout + r.stderr)[-400:], []
+    return (_t("ui.scenes_built_in_copy_the_sf3d_fx", len(built), ', '.join(built), src)), []
 
 # ------------------------------------------------------------------ модульные наборы (подземелье)
-KIT_PROC = "(процедурный камень)"
+KIT_PROC = _t("ui.procedural_stone")
 
 
 def _mat_folders():
@@ -1572,33 +1546,32 @@ def kit_build(cell, height, seed, wall, floor, wood):
         return "\n".join(log), pics or []
 
     if not floor or not wood:
-        log.append("Выберите материалы пола и дерева (их можно сделать во вкладке «Поверхности»).")
+        log.append(_t("ui.choose_the_floor_and_wood_materials"))
         yield emit()
         return
     if not wall or wall == KIT_PROC:
         wall = "dungeon_block"
         if not (mats / wall / f"{wall}_albedo.png").exists():
-            log.append("Делаю процедурный камень для блоков...")
+            log.append(_t("ui.making_procedural_stone_for_the"))
             yield emit()
             src = S.procedural_stone(Path(cfg["work_dir"]) / "refgen" / "dungeon_block_src.png", 1024, 3,
                                      (0.32, 0.303, 0.26))
             S.make_material(src, mats / wall, wall, size=1024, strength=0.45, tile_m=2.0)
     out = _kit_dir()
     out.mkdir(parents=True, exist_ok=True)
-    log.append("Blender собирает детали набора (около минуты)...")
+    log.append(_t("ui.blender_is_building_the_kit_pieces"))
     yield emit()
     pv = out / "preview.png"
     try:
         lines = MK.build_kit(cfg["blender_exe"], out, mats, cell=float(cell), height=float(height), seed=int(seed),
                              preview=str(pv), wall=wall, floor=floor, wood=wood)
     except Exception as e:  # noqa: BLE001
-        log.append(f"ОШИБКА: {e}")
+        log.append(_t("ui.error_2", e))
         yield emit()
         return
     n = sum(1 for x in lines if x.startswith("KIT_PIECE"))
-    log[-1] = (f"Готово: {n} деталей в {out} (kit.glb + kit.json). Теперь «Построить сцену» по плану ниже. "
-               "Ячейка {:g} м, этаж {:g} м.".format(float(cell), float(height)))
-    yield emit([(str(pv), "детали набора: пол, потолок, стены, дверной проём, арка, окно, углы, колонна, лестница, дверь")]
+    log[-1] = (_t("ui.done_pieces_in_kit_glb_kit_json_now", n, out).format(float(cell), float(height)))
+    yield emit([(str(pv), _t("ui.kit_pieces_floor_ceiling_walls"))]
                if pv.exists() else [])
 
 
@@ -1608,10 +1581,10 @@ def kit_scene(plan_text, ceilings):
     cfg = T.load_config()
     kit = _kit_dir()
     if not (kit / "kit.glb").exists():
-        return "Сначала соберите детали набора (кнопка выше).", []
+        return _t("ui.build_the_kit_pieces_first_the"), []
     godot = cfg.get("godot_exe")
     if not godot or not Path(godot).exists():
-        return "Не найден Godot: укажите godot_exe в tool/config.json.", []
+        return _t("ui.godot_not_found_set_godot_exe_in"), []
     try:
         plan = MK.parse_plan(plan_text)
     except ValueError as e:
@@ -1621,7 +1594,7 @@ def kit_scene(plan_text, ceilings):
     try:
         ok, raw = MK.build_godot(godot, kit, cfg["work_dir"], plan)
     except Exception as e:  # noqa: BLE001
-        return f"ОШИБКА: {e}", []
+        return _t("ui.error_2", e), []
     shots = []
     try:
         shots = MK.render_shots(godot, kit, cfg["work_dir"], plan)
@@ -1631,10 +1604,7 @@ def kit_scene(plan_text, ceilings):
     from collections import Counter
     cnt = Counter(p["piece"] for p in plan["pieces"])
     txt = ", ".join(f"{k} ×{v}" for k, v in cnt.most_common())
-    return (f"Готово: {kit}\nВ плане {plan['levels']} эт., деталей {len(plan['pieces'])}: {txt}. "
-            f"Дверей {plan['doors']}, факелов {len(plan['lights'])}.\n"
-            "Скопируйте папку dungeon_kit в проект Godot (res://dungeon_kit/). Откройте dungeon_demo.tscn; "
-            "детали лежат в pieces/, библиотека для GridMap: dungeon_kit.meshlib."), [(s, Path(s).stem) for s in shots]
+    return (_t("ui.done_the_plan_has_storey_s_pieces", kit, plan['levels'], len(plan['pieces']), txt, plan['doors'], len(plan['lights']))), [(s, Path(s).stem) for s in shots]
 
 
 # ------------------------------------------------------------------ разрушаемые объекты
@@ -1649,11 +1619,11 @@ def destr_run(upload, asset, chunks, seed, auto_in, in_color, mass, health, burs
         return "\n".join(log), pics or []
 
     if not src or not Path(src).exists():
-        log.append("Выберите готовую модель или загрузите GLB (бочка, ящик, ваза...).")
+        log.append(_t("ui.choose_a_finished_model_or_load_a_2"))
         yield emit()
         return
     stem = T.slug(name or nm)
-    log.append("Работаю...")
+    log.append(_t("ui.working"))
     yield emit()
     lines = []
 
@@ -1686,13 +1656,12 @@ def destr_run(upload, asset, chunks, seed, auto_in, in_color, mass, health, burs
         if "e" in res:
             raise res["e"]
     except Exception as e:  # noqa: BLE001
-        log.append(f"ОШИБКА: {e}")
+        log.append(_t("ui.error_2", e))
         yield emit()
         return
     r = res["r"]
-    log.append(f"Готово: {r['scene']}\nСкопируйте папку {r['folder']} в корень проекта Godot "
-               "(res://sf3d_destructibles/). Пример кода и свойства — в README рядом.")
-    cap = ["цел", "0,12 с после удара", "0,4 с", "через 1,4 с"]
+    log.append(_t("ui.done_copy_the_folder_into_the_root", r['scene'], r['folder']))
+    cap = [_t("ui.intact"), _t("ui.0_12_s_after_the_hit"), _t("ui.0_4_s"), _t("ui.after_1_4_s")]
     yield emit([(p, cap[i] if i < len(cap) else "") for i, p in enumerate(r["shots"])])
 
 
@@ -1726,28 +1695,25 @@ def hanim_run(upload, asset, clip_labels):
     src = Path(upload if isinstance(upload, str) else upload.name) if upload else (
         _rigged_path(asset) if asset else None)
     if not src or not src.exists():
-        yield "Выберите модель со скелетом (из вкладки «Скелет») или загрузите свой GLB со скелетом.", [], None
+        yield _t("ui.choose_a_model_with_a_skeleton_from"), [], None
         return
     inv = {v: k for k, v in HA.CLIPS.items()}
     clips = [inv[c] for c in clip_labels if c in inv] or list(HA.CLIPS)
     name = T.slug(src.stem.replace("_rigged", "").replace("_wings", ""))
     dst = Path(cfg["export_dir"]) / "character" / name / f"{name}_anim.glb"
     prev = Path(cfg["work_dir"]) / "hanim" / name / "prev"
-    log = [f"Добавляю {len(clips)} анимаций к «{src.name}» (около минуты)..."]
+    log = [_t("ui.adding_animations_to_about_a_minute", len(clips), src.name)]
     yield "\n".join(log), [], None
     try:
         info = HA.animate(cfg["blender_exe"], src, dst, clips, prev)
     except Exception as e:  # noqa: BLE001
-        yield f"ОШИБКА: {e}", [], None
+        yield _t("ui.error_2", e), [], None
         return
     pics = HA.sheets(prev, clips, Path(cfg["work_dir"]) / "hanim" / name / "sheets")
     names = ", ".join(c["name"].replace("_loop", "") for c in info["clips"])
-    log = [f"Готово: {dst}", f"Клипы: {names}.",
-           "В Godot импорт сам включит зацикливание у idle, walk, run, fall, block (по суффиксу _loop в файле). "
-           f"Скорость, под которую рассчитаны шаги: ходьба ≈ {info['walk_speed']} м/с, бег ≈ {info['run_speed']} м/с "
-           f"(для роста {info['height']:.2f} м). Анимация прыжка включает подъём корпуса: не поднимайте персонажа "
-           "физикой в тот же момент либо берите fall и land отдельно.",
-           "Анимации «на месте»: перемещение делает ваш код (CharacterBody3D)."]
+    log = [_t("ui.done_2", dst), _t("ui.clips", names),
+           _t("ui.on_import_godot_turns_on_looping_for", info['walk_speed'], info['run_speed'], info['height']),
+           _t("ui.in_place_animations_your_code_moves")]
     yield "\n".join(log), pics, str(dst)
 
 
@@ -1761,12 +1727,11 @@ def fbx_scan(folder):
     import fbxanim as FA
     p = Path((folder or "").strip() or _fbx_dir())
     if not p.exists():
-        return [], f"Папка не найдена: {p}"
+        return [], _t("ui.folder_not_found", p)
     rows = FA.table_rows(p)
     if not rows:
-        return [], f"В папке {p} нет .fbx. Скачайте анимации из Mixamo (формат FBX, Without Skin) и положите сюда."
-    return rows, (f"Найдено файлов: {len(rows)}. Имя клипа и группу можно править, «Цикл» отмечайте у стоек, шага и бега, "
-                  "«Скорость» больше 1 ускоряет клип (например подбор с земли), «На месте» убирает смещение корпуса по земле.")
+        return [], _t("ui.the_folder_has_no_fbx_download", p)
+    return rows, (_t("ui.files_found_the_clip_name_and_group", len(rows)))
 
 
 def _viewer_frame(page):
@@ -1775,7 +1740,7 @@ def _viewer_frame(page):
             'allow="fullscreen"></iframe>' % _html.escape(page, quote=True))
 
 
-def fbx_run(upload, asset, folder, rows, weapon_set="Нет"):
+def fbx_run(upload, asset, folder, rows, weapon_set=_t("fbx.none")):
     """'Перенести на модель': Blender copies the FBX motions onto the chosen skeleton; the result opens in the viewer."""
     import fbxanim as FA
     cfg = T.load_config()
@@ -1783,30 +1748,30 @@ def fbx_run(upload, asset, folder, rows, weapon_set="Нет"):
     src = Path(upload if isinstance(upload, str) else upload.name) if upload else (
         _rigged_path(asset) if asset else None)
     if not src or not src.exists():
-        yield "Выберите модель со скелетом (из списка или свой GLB).", gr.update(), None
+        yield _t("ui.choose_a_model_with_a_skeleton_from_2"), gr.update(), None
         return
     if not rows or not len(rows):
-        yield "Сначала нажмите «Прочитать папку».", gr.update(), None
+        yield _t("ui.first_press_read_the_folder"), gr.update(), None
         return
     rows = [list(r) for r in (rows.values.tolist() if hasattr(rows, "values") else rows)]
     FA.save_map(p, rows)
     name = T.slug(src.stem.replace("_rigged", "").replace("_wings", ""))
     dst = Path(cfg["export_dir"]) / "character" / name / f"{name}_fbx.glb"
-    yield f"Blender переносит {len(rows)} анимаций на «{src.name}» (около минуты)...", gr.update(), None
+    yield _t("ui.blender_is_retargeting_animations", len(rows), src.name), gr.update(), None
     try:
         info = FA.retarget(cfg["blender_exe"], src, p, dst)
     except Exception as e:  # noqa: BLE001
-        yield f"ОШИБКА: {e}", gr.update(), None
+        yield _t("ui.error_2", e), gr.update(), None
         return
-    log = [f"Готово: {dst}", "Клипы: " + ", ".join(f"{c['name']} ({c['seconds']:.2f} с)" for c in info["clips"]) + "."]
+    log = [_t("ui.done_2", dst), _t("ui.clips_2") + ", ".join(_t("ui.s", c['name'], c['seconds']) for c in info["clips"]) + "."]
     if info["missing"]:
-        log.append("У модели нет костей, которые есть в FBX, они остаются в покое: " + ", ".join(info["missing"][:8]))
+        log.append(_t("ui.the_model_lacks_bones_that_are_in") + ", ".join(info["missing"][:8]))
     if info["rest"]:
         m = re.search(r"max head difference ([0-9.]+) m", info["rest"])
         if m:
-            log.append("Позы покоя модели и FBX различаются на %s м (у Mixamo T-поза): это учтено при переносе."
+            log.append(_t("ui.the_rest_poses_of_the_model_and_the")
                        % m.group(1).replace(".", ","))
-    log.append("Справа можно смотреть каждый клип. Тот же GLB уже можно подключать в Godot (имена клипов — из таблицы).")
+    log.append(_t("ui.each_clip_can_be_watched_on_the"))
     yield "\n".join(log), _viewer_frame(FA.viewer_html(dst, info, rows, weapon_set)), str(dst)
 
 
@@ -1814,10 +1779,10 @@ def fbx_save(folder, rows):
     import fbxanim as FA
     p = Path((folder or "").strip() or _fbx_dir())
     if not rows or not len(rows):
-        return "Таблица пуста."
+        return _t("ui.the_table_is_empty")
     rows = [list(r) for r in (rows.values.tolist() if hasattr(rows, "values") else rows)]
     FA.save_map(p, rows)
-    return f"Настройки сохранены в {p / 'map.json'}"
+    return _t("ui.settings_saved_to", p / 'map.json')
 
 
 # ------------------------------------------------------------------ редактор материалов
@@ -1860,8 +1825,7 @@ def _hidden_groups():
 def mat_analyze(asset):
     work, d = _mat_params(asset)
     if d is None:
-        return (None, "Выберите ассет из списка (нажмите «Обновить список»). В списке есть только то, что создано "
-                      "этой версией программы.", *_hidden_groups())
+        return (None, _t("ui.choose_an_asset_from_the_list_press"), *_hidden_groups())
     import trimesh
 
     scene = trimesh.load(d["src"], force="scene")
@@ -1869,7 +1833,7 @@ def mat_analyze(asset):
               if getattr(getattr(g.visual, "material", None), "baseColorTexture", None) is not None
               and getattr(g.visual, "uv", None) is not None), None)
     if g is None:
-        return None, "У этой модели нет цветной текстуры, распознавать нечего.", *_hidden_groups()
+        return None, _t("ui.this_model_has_no_colour_texture"), *_hidden_groups()
     tex = g.visual.material.baseColorTexture
     an = MT.analyze(tex, g.visual.uv, g.faces, k=6, category=d["category"])
     groups = []
@@ -1880,22 +1844,20 @@ def mat_analyze(asset):
             r, gg, b = (int(v) for v in st["rgb"])
             groups.append(gr.update(
                 visible=True, value=key,
-                label=f"Группа {j + 1} — {st['share'] * 100:.0f}% текстуры, средний цвет ({r}, {gg}, {b}); "
-                      f"предложено: {MT.MATERIALS[key][0]} ({conf:.0%})"))
+                label=_t("ui.group_of_the_texture_mean_colour", j + 1, st['share'] * 100, r, gg, b, MT.MATERIALS[key][0], conf)))
         else:
             groups.append(gr.update(visible=False, value=None))
-    note = (f"Найдено групп: {an['k']}. Цвета на картинке слева соответствуют номерам групп. "
-            f"Проверьте названия и нажмите «Применить».")
+    note = (_t("ui.groups_found_the_colours_in_the", an['k']))
     return MT.overlay(tex, an), note, *groups
 
 
 def mat_apply(asset, *values):
     work, d = _mat_params(asset)
     if d is None:
-        return "Сначала выберите ассет и нажмите «Проанализировать».", None, []
+        return _t("ui.first_choose_an_asset_and_press"), None, []
     assign = [v for v in values if v]
     if not assign:
-        return "Нет групп: нажмите «Проанализировать».", None, []
+        return _t("ui.no_groups_press_analyse"), None, []
     cfg = T.load_config()
     preset = cfg["categories"][d["category"]]
     final = Path(d["final"])
@@ -1912,34 +1874,34 @@ def mat_apply(asset, *values):
     log = []
     previews = make_previews(final, work, d["name"], cfg, log) if cfg.get("blender_exe") else []
     rows = "; ".join(f"{m['cluster']}: {m['label']}" for m in stats["materials"])
-    return f"Применено ({rows}). Файл обновлён: {final}", str(final), previews
+    return _t("ui.applied_file_updated", rows, final), str(final), previews
 
 
 # ------------------------------------------------------------------ настройки
 def save_settings(export_dir):
     export_dir = (export_dir or "").strip().strip('"')
     if not export_dir:
-        return "Путь к папке экспорта пуст."
+        return _t("ui.the_export_folder_path_is_empty")
     cfg = T.load_config()
     cfg["export_dir"] = export_dir.replace("\\", "/")
     (T.ROOT / "config.json").write_text(json.dumps(cfg, indent=2), encoding="utf-8")
-    return f"Сохранено. Теперь экспорт идёт в: {export_dir}"
+    return _t("ui.saved_export_now_goes_to", export_dir)
 
 
 def open_export(export_dir):
     p = Path((export_dir or T.load_config()["export_dir"]).strip().strip('"'))
     p.mkdir(parents=True, exist_ok=True)
     os.startfile(str(p))
-    return f"Открыта папка {p}"
+    return _t("ui.opened_folder", p)
 
 
 def on_category(category_label):
     p = T.load_config()["categories"][LABEL_TO_KEY[category_label]]
-    pivot = {"bottom": "у основания", "center": "в центре"}[p["pivot"]]
-    h = f"{p['height_m']} м" if p["height_m"] else "не меняется"
-    m = p["metallic"] if p["metallic"] is not None else "как сгенерировано"
-    r = p["roughness"] if p["roughness"] is not None else "как сгенерировано"
-    return f"Пресет: pivot {pivot}, высота {h}, металличность {m}, шероховатость {r}"
+    pivot = {"bottom": _t("ui.at_the_base"), "center": _t("ui.at_the_centre")}[p["pivot"]]
+    h = _t("ui.m", p['height_m']) if p["height_m"] else _t("ui.unchanged")
+    m = p["metallic"] if p["metallic"] is not None else _t("ui.as_generated")
+    r = p["roughness"] if p["roughness"] is not None else _t("ui.as_generated")
+    return _t("ui.preset_pivot_height_metallic", pivot, h, m, r)
 
 
 # ------------------------------------------------------------------ интерфейс
@@ -1986,33 +1948,13 @@ UI_CSS = """
 
 UI_HEAD = """<script>document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
-  for (const b of document.querySelectorAll('.dlg-close')) if (b.offsetParent) { b.click(); break; } });</script>"""
+  for (const b of document.querySelectorAll('.dlg-close')) if (b.offsetParent) { b.click(); break; } });</script>
+<script>/* Gradio's own texts (upload areas, buttons) follow the browser's language: make it the interface's */
+for (const k of ['language', 'languages']) Object.defineProperty(navigator, k, { get: () => k === 'language' ? '@@LANG@@' : ['@@LANG@@'] });</script>""".replace("@@LANG@@", i18n.LANG)
 
-RIG_MODES = ["Автоматически (UniRig, нужна видеокарта)", "Вручную по ориентирам (как в Mixamo, видеокарта не нужна)"]
+RIG_MODES = [_t("ui.automatic_unirig_needs_a_gpu"), _t("ui.by_hand_with_landmarks_like_mixamo")]
 
-HELP_TEXT = """\
-Окно разбито на три раздела, внутри каждого вкладки идут в порядке работы.
-
-**Создание**
-1. **Референс**: картинка и виды будущей модели по описанию.
-2. **Создать модель**: SF3D (одна картинка, 20 секунд) или Hunyuan3D (1–4 вида, 7–10 минут).
-3. **Материалы**: карты металла, дерева, камня для готовой модели.
-4. **Пакетная обработка**: целая папка картинок за один запуск, например на ночь.
-
-**Персонаж**
-1. **Скелет**: автоматически (UniRig) или вручную по ориентирам с редактором.
-2. **Анимации**: 12 процедурных клипов или перенос клипов Mixamo.
-3. **Экипировка**: броня с одетой модели целиком или одна вещь.
-4. Реже нужны: **Исправление весов**, **Детали лица** (глаза, зубы, язык), **Липсинк**.
-
-**Окружение**: поверхности (земля, пол, стены), эффекты, модульные наборы подземелья, разрушаемые объекты.
-
-**Видеокарта.** Полоска справа вверху показывает занятую видеопамять и то, какие задачи сейчас поместятся
-(SF3D, Hunyuan3D, риггинг). Две тяжёлые задачи одновременно не запускайте. Меню *Опции → Видеопамять* покажет, кто занимает
-память, и закроет лишнюю программу.
-
-**Клавиши.** `Esc` закрывает открытое окно меню. В 3D-просмотре: мышь крутит, колесо приближает.
-"""
+HELP_TEXT = _t("ui.the_window_has_three_sections_inside")
 
 
 def status_html():
@@ -2023,551 +1965,543 @@ def status_html():
                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         used, total = (int(x) for x in r.stdout.strip().splitlines()[0].split(","))
     except Exception:  # noqa: BLE001
-        return '<span class="gpu-in"><span class="gpu-sf">Видеокарта: нет данных (nvidia-smi)</span></span>'
+        return _t("ui.gpu_no_data_nvidia_smi")
     free = total - used
     frac = used / total
     level = "ok" if frac < 0.6 else "warn" if frac < 0.85 else "bad"
     chips = []
     for (short, (_, need)) in zip(GPU_SHORT, GPU_NEEDS):
         if short == "SF3D" and _state["model"] is not None and _state["on_gpu"]:
-            cls, mark, tip = "ok", "✓", "модель уже в видеопамяти"
+            cls, mark, tip = "ok", "✓", _t("ui.the_model_is_already_in_video_memory")
         elif free >= need + 500:
-            cls, mark, tip = "ok", "✓", f"нужно около {need / 1024:.1f} ГБ: хватит"
+            cls, mark, tip = "ok", "✓", _t("ui.needs_about_gb_fits", need / 1024)
         elif free >= need:
-            cls, mark, tip = "warn", "≈", f"нужно около {need / 1024:.1f} ГБ: впритык"
+            cls, mark, tip = "warn", "≈", _t("ui.needs_about_gb_tight", need / 1024)
         else:
-            cls, mark, tip = "bad", "✗", f"нужно около {need / 1024:.1f} ГБ: не хватает"
+            cls, mark, tip = "bad", "✗", _t("ui.needs_about_gb_not_enough", need / 1024)
         chips.append(f'<span class="gpu-chip {cls}" title="{tip}">{short} {mark}</span>')
     sf = ""
     if _state["model"] is not None:
         sf = f'<span class="gpu-sf">SF3D: {"в видеопамяти" if _state["on_gpu"] else "в оперативной памяти"}</span>'
-    return (f'<span class="gpu-in"><span class="gpu-bar" title="занято {used / 1024:.1f} из {total / 1024:.1f} ГБ">'
-            f'<i class="{level}" style="width:{frac * 100:.0f}%"></i></span>'
-            f'<span>Видеопамять {used / 1024:.1f} / {total / 1024:.1f} ГБ, свободно {free / 1024:.1f}</span>'
-            f'{"".join(chips)}{sf}</span>')
+    return (_t("ui.video_memory_gb_free", used / 1024, total / 1024, level, frac * 100, used / 1024, total / 1024, free / 1024, "".join(chips), sf))
+
+def _restart():
+    """A new copy of this server (it waits for the port), then this one ends: the interface is built once, in one
+    language, so a new language needs a new process. The copy shares the console (or the launcher's hidden one)."""
+    import threading
+    subprocess.Popen([sys.executable, *sys.argv], cwd=os.getcwd(), env={**os.environ, "SF3D_WAIT_PORT": "1"})
+    threading.Timer(1.0, lambda: os._exit(0)).start()
+
+
+def switch_language(code):
+    i18n.set_lang(code)
+    _restart()
+
+
+# the page waits for the new server and reloads (both languages: the old one is still on the screen)
+RESTART_JS = """() => {
+  document.body.insertAdjacentHTML('beforeend', '<div style="position:fixed;inset:0;z-index:9999;display:flex;align-items:center;'
+    + 'justify-content:center;background:rgba(0,0,0,.55);color:#fff;font:20px sans-serif">Перезапуск… / Restarting…</div>');
+  const go = () => fetch(location.href, { cache: 'no-store' }).then((r) => r.ok ? location.reload() : setTimeout(go, 1000))
+    .catch(() => setTimeout(go, 1000));
+  setTimeout(go, 4000);
+}"""
+
+
+def _wait_port(port, seconds=40):
+    """After a restart the old server may still hold the port for a moment."""
+    import socket
+    for _ in range(seconds * 2):
+        with socket.socket() as sk:
+            try:
+                sk.bind(("127.0.0.1", port))
+                return
+            except OSError:
+                time.sleep(0.5)
+
 
 def build():
     cfg = T.load_config()
     labels = [CATEGORY_LABELS[k] for k in cfg["categories"]]
     default_cat = CATEGORY_LABELS["prop"]
     import outfit as OF
-    with gr.Blocks(title="SF3D — игровые ассеты", theme=gr.themes.Soft(), css=UI_CSS, head=UI_HEAD) as ui:
+    with gr.Blocks(title=_t("ui.sf3d_game_assets"), theme=gr.themes.Soft(), css=UI_CSS, head=UI_HEAD) as ui:
         with gr.Row(elem_id="topbar"):
             gr.HTML('<span class="brand">SF3D</span>', elem_classes="brand-box")
             with gr.Column(elem_classes="menu", min_width=0, scale=0):
-                gr.Button("Файл", elem_classes="menu-title", size="sm")
+                gr.Button(_t("fbx.file"), elem_classes="menu-title", size="sm")
                 with gr.Column(elem_classes="menu-drop", min_width=0):
-                    mi_open_export = gr.Button("Открыть папку экспорта", size="sm")
-                    mi_open_input = gr.Button("Открыть папку входных картинок", size="sm")
-                    mi_batch = gr.Button("Пакетная обработка…", size="sm")
+                    mi_open_export = gr.Button(_t("ui.open_the_export_folder"), size="sm")
+                    mi_open_input = gr.Button(_t("ui.open_the_input_pictures_folder"), size="sm")
+                    mi_batch = gr.Button(_t("ui.batch_processing"), size="sm")
             with gr.Column(elem_classes="menu", min_width=0, scale=0):
-                gr.Button("Опции", elem_classes="menu-title", size="sm")
+                gr.Button(_t("ui.options"), elem_classes="menu-title", size="sm")
                 with gr.Column(elem_classes="menu-drop", min_width=0):
-                    mi_vram = gr.Button("Видеопамять…", size="sm")
-                    mi_settings = gr.Button("Настройки…", size="sm")
-                    mi_unload = gr.Button("Выгрузить SF3D из видеопамяти", size="sm")
+                    mi_vram = gr.Button(_t("ui.video_memory_2"), size="sm")
+                    mi_settings = gr.Button(_t("ui.settings_2"), size="sm")
+                    mi_unload = gr.Button(_t("ui.unload_sf3d_from_video_memory"), size="sm")
             with gr.Column(elem_classes="menu", min_width=0, scale=0):
-                gr.Button("Справка", elem_classes="menu-title", size="sm")
+                gr.Button(_t("ui.help"), elem_classes="menu-title", size="sm")
                 with gr.Column(elem_classes="menu-drop", min_width=0):
-                    mi_help = gr.Button("Порядок работы", size="sm")
+                    mi_help = gr.Button(_t("ui.order_of_work_2"), size="sm")
+            with gr.Column(elem_classes="menu", min_width=0, scale=0):
+                gr.Button("🌐 " + i18n.LANGS[i18n.LANG], elem_classes="menu-title", size="sm")
+                with gr.Column(elem_classes="menu-drop", min_width=0):
+                    mi_langs = [(code, gr.Button(name, size="sm")) for code, name in i18n.LANGS.items()]
             gpu_stat = gr.HTML("", elem_id="gpustat")
             gpu_timer = gr.Timer(5)
 
         with gr.Tabs(elem_id="maintabs") as main_tabs:
-            with gr.Tab("Создание", id="g_create"):
+            with gr.Tab(_t("ui.create"), id="g_create"):
                 with gr.Tabs() as tabs_create:
                     # ---------------------------------------------------------------- 0. reference pictures
-                    with gr.Tab("Референс", id="ref"):
+                    with gr.Tab(_t("ui.reference"), id="ref"):
                         with gr.Row():
                             with gr.Column(scale=1):
-                                gr.Markdown("**1. Что нужно.** Опишите объект своими словами. Стиль, ракурс, фон и требования "
-                                            "для 3D программа добавит сама.")
-                                ref_obj = gr.Textbox(label="Объект", lines=2,
-                                                     placeholder="например: покосившийся деревянный забор с коваными накладками")
+                                gr.Markdown(_t("ui.1_what_is_needed_describe_the_object"))
+                                ref_obj = gr.Textbox(label=_t("ui.object"), lines=2,
+                                                     placeholder=_t("ui.for_example_a_crooked_wooden_fence"))
                                 with gr.Row():
-                                    ref_cat = gr.Dropdown(list(REF_CATEGORIES), value="Объект окружения", label="Тип", scale=2)
-                                    ref_n = gr.Slider(1, 4, value=1, step=1, label="Вариантов", scale=1)
+                                    ref_cat = gr.Dropdown(list(REF_CATEGORIES), value=_t("ui.environment_object"), label=_t("ui.type"), scale=2)
+                                    ref_n = gr.Slider(1, 4, value=1, step=1, label=_t("ui.variants"), scale=1)
                                 ref_provider = gr.Radio(list(REF_PROVIDERS), value=list(REF_PROVIDERS)[0],
-                                                        label="Чем генерировать")
-                                ref_go = gr.Button("Сгенерировать", variant="primary")
-                                with gr.Accordion("Стиль проекта (общий для всех референсов)", open=False):
-                                    gr.Markdown("Эталонные картинки (3–5 удачных ассетов) прикладываются к каждому запросу, "
-                                                "описание стиля добавляется в текст. «Описать по картинкам» составит описание "
-                                                "само.")
-                                    ref_style_text = gr.Textbox(label="Описание стиля (по-английски точнее)", lines=4)
-                                    ref_style_files = gr.File(label="Эталонные картинки стиля", file_count="multiple",
+                                                        label=_t("ui.generate_with"))
+                                ref_go = gr.Button(_t("ui.generate"), variant="primary")
+                                with gr.Accordion(_t("ui.project_style_shared_by_all"), open=False):
+                                    gr.Markdown(_t("ui.reference_pictures_3_5_good_assets"))
+                                    ref_style_text = gr.Textbox(label=_t("ui.style_description_more_precise_in"), lines=4)
+                                    ref_style_files = gr.File(label=_t("ui.style_reference_pictures"), file_count="multiple",
                                                               file_types=["image"], type="filepath")
                                     with gr.Row():
-                                        ref_describe_btn = gr.Button("Описать по картинкам")
-                                        ref_style_save_btn = gr.Button("Сохранить стиль")
+                                        ref_describe_btn = gr.Button(_t("ui.describe_from_the_pictures"))
+                                        ref_style_save_btn = gr.Button(_t("ui.save_the_style"))
                                     ref_style_note = gr.Markdown("")
-                                ref_log = gr.Textbox(label="Ход работы", lines=5, interactive=False)
+                                ref_log = gr.Textbox(label=_t("face.progress"), lines=5, interactive=False)
                             with gr.Column(scale=1):
-                                ref_gallery = gr.Gallery(label="Варианты (щёлкните лучший)", columns=2, height=420,
+                                ref_gallery = gr.Gallery(label=_t("ui.variants_click_the_best"), columns=2, height=420,
                                                          allow_preview=True)
                                 ref_choice_note = gr.Markdown("")
-                                ref_want = gr.CheckboxGroup(["сзади", "слева", "справа"], value=["сзади", "слева", "справа"],
-                                                            label="Дополнительные виды (для Hunyuan3D, лучшая форма)")
+                                ref_want = gr.CheckboxGroup([_t("ui.back"), _t("ui.left"), _t("ui.right")], value=[_t("ui.back"), _t("ui.left"), _t("ui.right")],
+                                                            label=_t("ui.extra_views_for_hunyuan3d_the_best"))
                                 with gr.Row():
-                                    ref_views_btn = gr.Button("Сделать виды по выбранному варианту")
-                                    ref_send_btn = gr.Button("Отправить в 3D", variant="primary")
-                                ref_views_gallery = gr.Gallery(label="Виды", columns=4, height=200)
+                                    ref_views_btn = gr.Button(_t("ui.make_views_of_the_chosen_variant"))
+                                    ref_send_btn = gr.Button(_t("ui.send_to_3d"), variant="primary")
+                                ref_views_gallery = gr.Gallery(label=_t("ui.views"), columns=4, height=200)
                         ref_paths = gr.State([])
                         ref_front = gr.State(None)
                         ref_views_state = gr.State({})
 
                     # ---------------------------------------------------------------- 1. generation
-                    with gr.Tab("Создать модель", id="gen"):
+                    with gr.Tab(_t("ui.make_a_model"), id="gen"):
                         with gr.Row():
                             with gr.Column(scale=1):
-                                engine = gr.Radio([ENGINE_SF3D, ENGINE_HY], value=ENGINE_SF3D, label="Движок")
-                                files = gr.File(label="Картинки (одна или несколько)", file_count="multiple",
+                                engine = gr.Radio([ENGINE_SF3D, ENGINE_HY], value=ENGINE_SF3D, label=_t("ui.engine_2"))
+                                files = gr.File(label=_t("ui.pictures_one_or_several"), file_count="multiple",
                                                 file_types=["image"], type="filepath")
                                 with gr.Group(visible=False) as hy_views:
-                                    gr.Markdown("**Виды объекта** (одна и та же модель с разных сторон; обязателен «Спереди»). "
-                                                "«Слева» и «справа» — со стороны левой и правой руки объекта.")
+                                    gr.Markdown(_t("ui.object_views_the_same_model_from"))
                                     with gr.Row():
-                                        v_front = gr.Image(label="Спереди *", type="filepath", sources=["upload"], height=150)
-                                        v_back = gr.Image(label="Сзади", type="filepath", sources=["upload"], height=150)
+                                        v_front = gr.Image(label=_t("ui.front_2"), type="filepath", sources=["upload"], height=150)
+                                        v_back = gr.Image(label=_t("ui.back_2"), type="filepath", sources=["upload"], height=150)
                                     with gr.Row():
-                                        v_left = gr.Image(label="Слева", type="filepath", sources=["upload"], height=150)
-                                        v_right = gr.Image(label="Справа", type="filepath", sources=["upload"], height=150)
+                                        v_left = gr.Image(label=_t("ui.left_2"), type="filepath", sources=["upload"], height=150)
+                                        v_right = gr.Image(label=_t("ui.right_2"), type="filepath", sources=["upload"], height=150)
                                 with gr.Row():
-                                    category = gr.Dropdown(labels, value=default_cat, label="Категория", scale=1)
-                                    name = gr.Textbox(label="Имя (если картинка одна; иначе — имя файла)", scale=1)
+                                    category = gr.Dropdown(labels, value=default_cat, label=_t("ui.category_2"), scale=1)
+                                    name = gr.Textbox(label=_t("ui.name_if_there_is_one_picture"), scale=1)
                                 preset_note = gr.Markdown(on_category(default_cat))
-                                veg_kind = gr.Radio(list(VEG_KINDS), value="Дерево", visible=False,
-                                                    label="Что за растение (для ветра в Godot: как гнётся и где листва)")
-                                with gr.Accordion("Размер и pivot", open=False):
-                                    height = gr.Number(label="Высота модели в метрах (0 — по умолчанию для категории)",
+                                veg_kind = gr.Radio(list(VEG_KINDS), value=_t("mat.wood"), visible=False,
+                                                    label=_t("ui.what_plant_it_is_for_the_wind_in"))
+                                with gr.Accordion(_t("ui.size_and_pivot"), open=False):
+                                    height = gr.Number(label=_t("ui.model_height_in_metres_0_the"),
                                                        value=0)
                                     with gr.Row():
-                                        width = gr.Number(label="Ширина (по X), м; 0 — не менять", value=0)
-                                        depth = gr.Number(label="Глубина (по Z), м; 0 — не менять", value=0)
-                                    pivot = gr.Radio(list(PIVOT_LABELS), value="авто (по категории)",
-                                                     label="Точка привязки (pivot)")
-                                    collision = gr.Dropdown(list(COLLISION_LABELS), value="по категории",
-                                                            label="Коллизия для Godot (создаётся при импорте автоматически)")
-                                with gr.Accordion("Материал и цвет", open=False):
-                                    override = gr.Checkbox(label="Задать металличность и шероховатость вручную", value=False)
-                                    metallic = gr.Slider(0, 1, value=0.0, step=0.05, label="Металличность")
-                                    roughness = gr.Slider(0, 1, value=0.8, step=0.05, label="Шероховатость")
+                                        width = gr.Number(label=_t("ui.width_along_x_m_0_unchanged"), value=0)
+                                        depth = gr.Number(label=_t("ui.depth_along_z_m_0_unchanged"), value=0)
+                                    pivot = gr.Radio(list(PIVOT_LABELS), value=_t("ui.auto_by_category"),
+                                                     label=_t("ui.pivot_point"))
+                                    collision = gr.Dropdown(list(COLLISION_LABELS), value=_t("ui.by_category"),
+                                                            label=_t("ui.collision_for_godot_made"))
+                                with gr.Accordion(_t("ui.material_and_colour"), open=False):
+                                    override = gr.Checkbox(label=_t("ui.set_metallic_and_roughness_by_hand"), value=False)
+                                    metallic = gr.Slider(0, 1, value=0.0, step=0.05, label=_t("ui.metallic"))
+                                    roughness = gr.Slider(0, 1, value=0.8, step=0.05, label=_t("ui.roughness_2"))
                                     color_match = gr.Slider(0, 1, value=0.0, step=0.05,
-                                                            label="Подгонка палитры под ваши картинки (0 — выкл.)")
+                                                            label=_t("ui.match_the_palette_to_your_pictures_0"))
                                     saturation = gr.Slider(0.3, 1.5, value=1.0, step=0.05,
-                                                           label="Насыщенность (1 — без изменений)")
-                                    brightness = gr.Slider(0.5, 1.5, value=1.0, step=0.05, label="Яркость (1 — без изменений)")
-                                    auto_materials = gr.Checkbox(label="Распознать материалы (дерево, металл, камень…) и "
-                                                                       "построить карты шероховатости и металличности",
+                                                           label=_t("ui.saturation_1_unchanged"))
+                                    brightness = gr.Slider(0.5, 1.5, value=1.0, step=0.05, label=_t("ui.brightness_1_unchanged"))
+                                    auto_materials = gr.Checkbox(label=_t("ui.recognise_materials_wood_metal_stone"),
                                                                  value=False)
-                                with gr.Accordion("Параметры Hunyuan3D", open=False, visible=False) as hy_params:
-                                    paint = gr.Checkbox(label="Красить текстурой (без неё — серая форма, быстрее)", value=True)
-                                    hy_tex = gr.Dropdown([1024, 2048], value=2048, label="Размер текстуры")
+                                with gr.Accordion(_t("ui.hunyuan3d_options"), open=False, visible=False) as hy_params:
+                                    paint = gr.Checkbox(label=_t("ui.paint_a_texture_without_it_a_grey"), value=True)
+                                    hy_tex = gr.Dropdown([1024, 2048], value=2048, label=_t("ui.texture_size"))
                                     hy_faces = gr.Slider(10000, 100000, value=50000, step=5000,
-                                                         label="Целевое число граней после упрощения")
-                                    hy_steps = gr.Slider(20, 50, value=50, step=5, label="Шагов диффузии (меньше — быстрее)")
-                                with gr.Accordion("Параметры генерации SF3D", open=False) as sf_params:
+                                                         label=_t("ui.target_face_count_after_simplifying"))
+                                    hy_steps = gr.Slider(20, 50, value=50, step=5, label=_t("ui.diffusion_steps_fewer_faster"))
+                                with gr.Accordion(_t("ui.sf3d_generation_options"), open=False) as sf_params:
                                     tex_res = gr.Dropdown([512, 1024, 2048], value=1024,
-                                                          label="Размер текстуры (2048 может не поместиться в 8 ГБ)")
+                                                          label=_t("ui.texture_size_2048_may_not_fit_into_8"))
                                     fg_ratio = gr.Slider(0.5, 1.0, value=cfg["foreground_ratio"], step=0.01,
-                                                         label="Доля предмета в кадре")
-                                    remove_bg = gr.Checkbox(label="Удалять фон (выключите, если фон уже прозрачный)",
+                                                         label=_t("ui.object_s_share_of_the_frame"))
+                                    remove_bg = gr.Checkbox(label=_t("ui.remove_the_background_turn_off_if"),
                                                             value=True)
                                     remesh = gr.Dropdown(["none", "triangle", "quad"], value="none",
-                                                         label="Ремеш (none — без изменений)")
+                                                         label=_t("ui.remesh_none_unchanged"))
                                 with gr.Row():
-                                    make_preview = gr.Checkbox(label="Превью и иконка (Blender, ~10 с)", value=True)
-                                    overwrite = gr.Checkbox(label="Перезаписать уже готовое", value=False)
-                                auto_rig = gr.Checkbox(label="Сразу создать скелет человекоподобному персонажу "
-                                                             "(категория «Персонаж», ещё 3–5 минут)", value=False)
-                                go = gr.Button("Создать модель", variant="primary", size="lg")
+                                    make_preview = gr.Checkbox(label=_t("ui.preview_and_icon_blender_10_s"), value=True)
+                                    overwrite = gr.Checkbox(label=_t("ui.overwrite_finished_ones_2"), value=False)
+                                auto_rig = gr.Checkbox(label=_t("ui.make_a_skeleton_for_a_humanoid"), value=False)
+                                go = gr.Button(_t("ui.make_a_model"), variant="primary", size="lg")
                             with gr.Column(scale=1):
-                                viewer = gr.Model3D(label="Результат", height=460, clear_color=(0.9, 0.9, 0.9, 1))
-                                inputs_gallery = gr.Gallery(label="Подготовленные картинки, превью и иконка",
+                                viewer = gr.Model3D(label=_t("lm.result"), height=460, clear_color=(0.9, 0.9, 0.9, 1))
+                                inputs_gallery = gr.Gallery(label=_t("ui.prepared_pictures_preview_and_icon"),
                                                             columns=4, height=150)
-                                logbox = gr.Textbox(label="Журнал", lines=6, interactive=False)
-                        table = gr.Dataframe(headers=["имя", "категория", "граней", "размер (м)", "секунд", "файл"],
-                                             label="Создано за эту сессию", interactive=False, wrap=True)
+                                logbox = gr.Textbox(label=_t("ui.log"), lines=6, interactive=False)
+                        table = gr.Dataframe(headers=[_t("ui.name"), _t("ui.category"), _t("ui.faces_2"), _t("ui.size_m"), _t("ui.seconds"), _t("ui.file_2")],
+                                             label=_t("ui.made_in_this_session"), interactive=False, wrap=True)
 
                     # ---------------------------------------------------------------- 4. materials
-                    with gr.Tab("Материалы", id="mat"):
+                    with gr.Tab(_t("ui.materials"), id="mat"):
                         with gr.Row():
                             with gr.Column(scale=1):
-                                gr.Markdown("**1.** Выберите модель. **2.** «Проанализировать»: текстура делится на цветовые "
-                                            "группы с предложенным материалом. **3.** Поправьте, если ошиблась. "
-                                            "**4.** «Применить».")
+                                gr.Markdown(_t("ui.1_choose_a_model_2_analyse_the"))
                                 with gr.Row():
-                                    mat_asset = gr.Dropdown(_mat_assets(), label="Модель (категория/имя)", scale=4)
-                                    mat_refresh_btn = gr.Button("Обновить", scale=1)
-                                mat_analyze_btn = gr.Button("Проанализировать")
+                                    mat_asset = gr.Dropdown(_mat_assets(), label=_t("ui.model_category_name"), scale=4)
+                                    mat_refresh_btn = gr.Button(_t("ui.refresh"), scale=1)
+                                mat_analyze_btn = gr.Button(_t("ui.analyse"))
                                 mat_note = gr.Markdown("")
-                                mat_dd = [gr.Dropdown(MAT_CHOICES, value=None, visible=False, label=f"Группа {j + 1}")
+                                mat_dd = [gr.Dropdown(MAT_CHOICES, value=None, visible=False, label=_t("ui.group", j + 1))
                                           for j in range(MAX_GROUPS)]
-                                mat_apply_btn = gr.Button("Применить материалы", variant="primary")
-                                mat_status = gr.Textbox(label="Результат", interactive=False)
+                                mat_apply_btn = gr.Button(_t("ui.apply_the_materials"), variant="primary")
+                                mat_status = gr.Textbox(label=_t("lm.result"), interactive=False)
                             with gr.Column(scale=1):
-                                mat_m3d = gr.Model3D(label="Модель", height=380, clear_color=(0.9, 0.9, 0.9, 1))
-                                mat_overlay = gr.Image(label="Группы на текстуре", height=260, interactive=False)
-                                mat_gallery = gr.Gallery(label="Превью", columns=4, height=150)
+                                mat_m3d = gr.Model3D(label=_t("ui.model"), height=380, clear_color=(0.9, 0.9, 0.9, 1))
+                                mat_overlay = gr.Image(label=_t("ui.groups_on_the_texture"), height=260, interactive=False)
+                                mat_gallery = gr.Gallery(label=_t("ui.preview"), columns=4, height=150)
 
                     # ---------------------------------------------------------------- 5. batch
-                    with gr.Tab("Пакетная обработка", id="batch"):
-                        gr.Markdown("Схема папок: `<корень>\\<категория>\\картинка.png` — SF3D; "
-                                    "`<корень>\\<категория>\\<объект>\\front.png` (+ `back`, `left`, `right`) — Hunyuan3D. "
-                                    "Готовое пропускается, ошибка в одной задаче не останавливает очередь.")
+                    with gr.Tab(_t("ui.batch_processing_2"), id="batch"):
+                        gr.Markdown(_t("ui.folder_scheme_picture_png_sf3d_front"))
                         with gr.Row():
-                            batch_dir = gr.Textbox(label="Корневая папка",
+                            batch_dir = gr.Textbox(label=_t("ui.root_folder"),
                                                    value=cfg.get("input_dir", r"D:\My projects\SF3D\input"), scale=3)
-                            batch_cat = gr.Dropdown(labels, value=default_cat, label="Категория по умолчанию", scale=2)
+                            batch_cat = gr.Dropdown(labels, value=default_cat, label=_t("ui.default_category"), scale=2)
                         with gr.Row():
-                            batch_over = gr.Checkbox(label="Перезаписать готовое", value=False)
-                            batch_prev = gr.Checkbox(label="Превью и иконки", value=True)
-                            batch_mat = gr.Checkbox(label="Распознавать материалы", value=False)
-                            batch_rig = gr.Checkbox(label="Скелеты для персонажей (в конце)", value=False)
+                            batch_over = gr.Checkbox(label=_t("ui.overwrite_finished_ones"), value=False)
+                            batch_prev = gr.Checkbox(label=_t("ui.previews_and_icons"), value=True)
+                            batch_mat = gr.Checkbox(label=_t("ui.recognise_materials"), value=False)
+                            batch_rig = gr.Checkbox(label=_t("ui.skeletons_for_characters_at_the_end"), value=False)
                         with gr.Row():
-                            scan_btn = gr.Button("Сканировать папку")
-                            batch_btn = gr.Button("Запустить пакет", variant="primary")
-                        batch_info = gr.Textbox(label="Найдено", interactive=False)
-                        batch_jobs = gr.Dataframe(headers=["имя", "категория", "движок", "источник", "статус"],
-                                                  label="Очередь", interactive=False, wrap=True)
+                            scan_btn = gr.Button(_t("ui.scan_the_folder"))
+                            batch_btn = gr.Button(_t("ui.run_the_batch"), variant="primary")
+                        batch_info = gr.Textbox(label=_t("ui.found"), interactive=False)
+                        batch_jobs = gr.Dataframe(headers=[_t("ui.name"), _t("ui.category"), _t("ui.engine"), _t("ui.source"), _t("ui.status_2")],
+                                                  label=_t("ui.queue"), interactive=False, wrap=True)
                         with gr.Row():
-                            batch_log = gr.Textbox(label="Журнал", lines=8, interactive=False, scale=1)
-                            batch_view = gr.Model3D(label="Последняя модель", height=320, clear_color=(0.9, 0.9, 0.9, 1),
+                            batch_log = gr.Textbox(label=_t("ui.log"), lines=8, interactive=False, scale=1)
+                            batch_view = gr.Model3D(label=_t("ui.last_model"), height=320, clear_color=(0.9, 0.9, 0.9, 1),
                                                     scale=1)
-                        batch_table = gr.Dataframe(headers=["имя", "категория", "граней", "размер (м)", "секунд", "файл"],
-                                                   label="Готово", interactive=False, wrap=True)
-                        batch_gallery = gr.Gallery(label="Превью", columns=6, height=150)
+                        batch_table = gr.Dataframe(headers=[_t("ui.name"), _t("ui.category"), _t("ui.faces_2"), _t("ui.size_m"), _t("ui.seconds"), _t("ui.file_2")],
+                                                   label=_t("ui.done_4"), interactive=False, wrap=True)
+                        batch_gallery = gr.Gallery(label=_t("ui.preview"), columns=6, height=150)
 
-            with gr.Tab("Персонаж", id="g_char"):
+            with gr.Tab(_t("ui.character"), id="g_char"):
                 with gr.Tabs() as tabs_char:
-                    with gr.Tab("Скелет", id="rig"):
+                    with gr.Tab(_t("ui.skeleton"), id="rig"):
                         with gr.Row():
                             with gr.Column(scale=1):
-                                gr.Markdown("**1. Модель.** Выберите созданную или загрузите свою (например, из Tripo). "
-                                            "Она сразу появится справа. Если в файле уже есть скелет, он будет заменён.")
+                                gr.Markdown(_t("ui.1_model_choose_one_you_made_or_load"))
                                 with gr.Row():
-                                    rig_asset = gr.Dropdown(_export_assets(), label="Готовая модель (категория/имя)",
+                                    rig_asset = gr.Dropdown(_export_assets(), label=_t("ui.finished_model_category_name"),
                                                             scale=4)
-                                    rig_refresh_btn = gr.Button("Обновить", scale=1)
-                                rig_upload = gr.File(label="…или загрузите GLB", file_types=[".glb"], type="filepath")
-                                rig_mode = gr.Radio(list(RIG_MODES), value=list(RIG_MODES)[0], label="2. Как строить скелет")
+                                    rig_refresh_btn = gr.Button(_t("ui.refresh"), scale=1)
+                                rig_upload = gr.File(label=_t("ui.or_load_a_glb"), file_types=[".glb"], type="filepath")
+                                rig_mode = gr.Radio(list(RIG_MODES), value=list(RIG_MODES)[0], label=_t("ui.2_how_to_build_the_skeleton"))
                                 with gr.Column() as rig_auto_box:
-                                    rig_kind = gr.Radio(list(RIG_KINDS), value=list(RIG_KINDS)[0], label="Какой скелет нужен")
+                                    rig_kind = gr.Radio(list(RIG_KINDS), value=list(RIG_KINDS)[0], label=_t("ui.which_skeleton_is_needed"))
                                     with gr.Group() as rig_human:
                                         rig_naming = gr.Radio(list(RIG_NAMINGS), value=list(RIG_NAMINGS)[0],
-                                                              label="Имена костей")
+                                                              label=_t("lm.bone_names"))
                                         rig_tries = gr.Slider(1, 6, value=3, step=1,
-                                                              label="Попыток подобрать скелет с пальцами (каждая около минуты)")
+                                                              label=_t("ui.attempts_to_get_a_skeleton_with"))
                                     with gr.Group(visible=False) as rig_creature:
-                                        gr.Markdown("Кости получат понятные имена (`hips`, `spine`, `head`, `leg_FL…`, `tail…`), "
-                                                    "модель развернётся мордой вперёд, а по линии рта появится кость `jaw`. "
-                                                    "Лучше всего, если пасть на модели приоткрыта.")
+                                        gr.Markdown(_t("ui.the_bones_get_clear_names_hips_spine"))
                                         with gr.Row():
                                             jaw_line = gr.Slider(-40, 40, value=0, step=1,
-                                                                 label="Линия рта: выше (+) / ниже (−), мм")
+                                                                 label=_t("ui.mouth_line_higher_lower_mm"))
                                             jaw_hinge = gr.Slider(-40, 40, value=0, step=1,
-                                                                  label="Шарнир челюсти: дальше (+) / ближе к носу (−), мм")
-                                    rig_btn = gr.Button("Создать скелет (3–6 минут, ~3,5 ГБ видеопамяти)", variant="primary")
+                                                                  label=_t("ui.jaw_hinge_further_nearer_to_the_nose"))
+                                    rig_btn = gr.Button(_t("ui.make_the_skeleton_3_6_minutes_3_5_gb"), variant="primary")
                                     with gr.Group(visible=False) as rig_creature_after:
-                                        rejaw_btn = gr.Button("Пересобрать челюсть с новыми ползунками (около 30 секунд)")
-                                    with gr.Accordion("Для человекоподобных: стыки и части тела под броню", open=False) as rig_extra:
-                                        seam_btn = gr.Button("Починить стыки между частями (модель уже со скелетом)")
-                                        split_btn = gr.Button("Разбить тело на части для брони (голова, торс, таз, руки, ноги…)")
-                                    rig_log = gr.Textbox(label="Ход работы", lines=8, interactive=False)
+                                        rejaw_btn = gr.Button(_t("ui.rebuild_the_jaw_with_the_new_sliders"))
+                                    with gr.Accordion(_t("ui.for_humanoids_seams_and_body_parts"), open=False) as rig_extra:
+                                        seam_btn = gr.Button(_t("ui.fix_the_seams_between_parts_the"))
+                                        split_btn = gr.Button(_t("ui.split_the_body_into_parts_for_armour"))
+                                    rig_log = gr.Textbox(label=_t("face.progress"), lines=8, interactive=False)
                             with gr.Column(scale=1):
-                                rig_view = gr.Model3D(label="Модель", height=460, clear_color=(0.9, 0.9, 0.9, 1))
-                                jaw_gallery = gr.Gallery(label="Челюсть: закрыта и открыта", columns=4, height=220)
+                                rig_view = gr.Model3D(label=_t("ui.model"), height=460, clear_color=(0.9, 0.9, 0.9, 1))
+                                jaw_gallery = gr.Gallery(label=_t("ui.jaw_closed_and_open"), columns=4, height=220)
                         creature_state = gr.State(None)
                         with gr.Column(visible=False) as rig_manual_box:
                             lm_data, lm_editor = landmarks_ui.mount(T.load_config, rig_asset, rig_upload, accordion=False)
 
                     # ---------------------------------------------------------------- humanoid animation library
-                    with gr.Tab("Анимации: процедурные", id="hanim"):
+                    with gr.Tab(_t("ui.animations_procedural"), id="hanim"):
                         with gr.Row():
                             with gr.Column(scale=1):
-                                gr.Markdown("Набор готовых клипов для человекоподобного персонажа **со скелетом** (вкладка "
-                                            "«Скелет», тип «Человекоподобный»): покой, ходьба, бег, прыжок, "
-                                            "падение, приземление, два удара, заклинание, блок, получение удара, смерть. "
-                                            "Клипы считаются по костям модели, поэтому подходят и гоблину, и фее. Результат — "
-                                            "один GLB с моделью и всеми анимациями. Анимации «на месте»: двигает персонажа "
-                                            "ваш код.")
+                                gr.Markdown(_t("ui.a_set_of_ready_clips_for_a_humanoid"))
                                 with gr.Row():
-                                    ha_asset = gr.Dropdown(_rigged_assets(), label="Модель со скелетом", scale=4)
-                                    ha_refresh_btn = gr.Button("Обновить", scale=1)
-                                ha_upload = gr.File(label="…или загрузите GLB со скелетом", file_types=[".glb"],
+                                    ha_asset = gr.Dropdown(_rigged_assets(), label=_t("lm.model_with_a_skeleton"), scale=4)
+                                    ha_refresh_btn = gr.Button(_t("ui.refresh"), scale=1)
+                                ha_upload = gr.File(label=_t("ui.or_load_a_glb_with_a_skeleton"), file_types=[".glb"],
                                                     type="filepath")
                                 ha_clips = gr.CheckboxGroup(list(HA.CLIPS.values()), value=list(HA.CLIPS.values()),
-                                                            label="Какие клипы добавить")
-                                ha_btn = gr.Button("Добавить анимации", variant="primary")
-                                ha_log = gr.Textbox(label="Ход работы", lines=8, interactive=False)
+                                                            label=_t("ui.which_clips_to_add"))
+                                ha_btn = gr.Button(_t("ui.add_the_animations"), variant="primary")
+                                ha_log = gr.Textbox(label=_t("face.progress"), lines=8, interactive=False)
                             with gr.Column(scale=1):
-                                ha_view = gr.Model3D(label="Результат (поза покоя)", height=320,
+                                ha_view = gr.Model3D(label=_t("ui.result_rest_pose"), height=320,
                                                      clear_color=(0.9, 0.9, 0.9, 1))
-                                ha_gallery = gr.Gallery(label="Кадры клипов (вид сбоку, 6 кадров на клип)", columns=1,
+                                ha_gallery = gr.Gallery(label=_t("ui.clip_frames_side_view_6_frames_per"), columns=1,
                                                         height=420)
 
                     # ---------------------------------------------------------------- Mixamo FBX animations
-                    with gr.Tab("Анимации: Mixamo (FBX)", id="fbxanim"):
+                    with gr.Tab(_t("ui.animations_mixamo_fbx"), id="fbxanim"):
                         with gr.Row():
                             with gr.Column(scale=4):
-                                gr.Markdown("Анимации из Mixamo (**FBX, Without Skin**, по возможности «In Place») переносятся на "
-                                            "скелет вашей модели. Кости должны называться как в Mixamo (`mixamorig:...`): так "
-                                            "называет их вкладка «Скелет». Результат — один GLB с именованными клипами, он "
-                                            "открывается справа, и там же его можно проиграть.")
+                                gr.Markdown(_t("ui.animations_from_mixamo_fbx_without"))
                                 with gr.Row():
-                                    fx_asset = gr.Dropdown(_rigged_assets(), label="Модель со скелетом", scale=4)
-                                    fx_refresh = gr.Button("Обновить", scale=1)
-                                fx_upload = gr.File(label="…или свой GLB со скелетом", file_types=[".glb"], type="filepath")
-                                fx_folder = gr.Textbox(value=_fbx_dir(), label="Папка с FBX")
+                                    fx_asset = gr.Dropdown(_rigged_assets(), label=_t("lm.model_with_a_skeleton"), scale=4)
+                                    fx_refresh = gr.Button(_t("ui.refresh"), scale=1)
+                                fx_upload = gr.File(label=_t("ui.or_your_own_glb_with_a_skeleton"), file_types=[".glb"], type="filepath")
+                                fx_folder = gr.Textbox(value=_fbx_dir(), label=_t("ui.folder_with_fbx"))
                                 with gr.Row():
-                                    fx_scan_btn = gr.Button("Прочитать папку")
-                                    fx_save_btn = gr.Button("Сохранить настройки")
-                                fx_table = gr.Dataframe(headers=["Файл", "Имя клипа", "Цикл", "Скорость", "На месте", "Группа"],
+                                    fx_scan_btn = gr.Button(_t("ui.read_the_folder"))
+                                    fx_save_btn = gr.Button(_t("ui.save_the_settings"))
+                                fx_table = gr.Dataframe(headers=[_t("fbx.file"), _t("fbx.clip_name"), _t("fbx.loop"), _t("fbx.speed"), _t("fbx.in_place"), _t("fbx.group")],
                                                         datatype=["str", "str", "bool", "number", "bool", "str"],
                                                         col_count=(6, "fixed"), interactive=True, type="array", wrap=True)
-                                fx_weapon = gr.Dropdown(list(__import__("fbxanim").WEAPON_SETS), value="Нет",
-                                                        label="Оружие в руках (только для просмотра)")
-                                fx_go = gr.Button("Перенести на модель", variant="primary")
-                                fx_log = gr.Textbox(label="Ход работы", lines=7, interactive=False)
-                                fx_file = gr.File(label="Готовый GLB", interactive=False)
+                                fx_weapon = gr.Dropdown(list(__import__("fbxanim").WEAPON_SETS), value=_t("fbx.none"),
+                                                        label=_t("ui.weapons_in_hand_only_for_viewing"))
+                                fx_go = gr.Button(_t("ui.retarget_onto_the_model"), variant="primary")
+                                fx_log = gr.Textbox(label=_t("face.progress"), lines=7, interactive=False)
+                                fx_file = gr.File(label=_t("ui.ready_glb"), interactive=False)
                             with gr.Column(scale=6):
-                                fx_view = gr.HTML(value='<div style="padding:24px;color:#888">Здесь появится окно просмотра: '
-                                                        'выберите модель и нажмите «Перенести на модель».</div>')
+                                fx_view = gr.HTML(value=_t("ui.the_viewer_appears_here_choose_a"))
 
                     # ---------------------------------------------------------------- 3. equipment
-                    with gr.Tab("Экипировка: сет целиком"):
+                    with gr.Tab(_t("ui.equipment_whole_set")):
                         with gr.Row():
                             with gr.Column(scale=1):
                                 gr.Markdown(
-                                    "Сгенерируйте **того же персонажа в сете** (A-поза), в Tripo разбейте на сегменты "
-                                    "так, чтобы каждая вещь была своим сегментом, и экспортируйте GLB. **1.** Загрузите "
-                                    "его и нажмите «Разобрать». **2.** Проверьте слоты под картинками. "
-                                    "**3.** «Перенести сет».")
-                                out_model = gr.File(label="GLB одетой модели с сегментами", file_types=[".glb"],
+                                    _t("ui.generate_the_same_character_in_the"))
+                                out_model = gr.File(label=_t("ui.glb_of_the_dressed_model_with"), file_types=[".glb"],
                                                     type="filepath")
                                 with gr.Row():
-                                    out_body = gr.Dropdown(_parts_bodies(), label="На какое тело (*_parts.glb)",
+                                    out_body = gr.Dropdown(_parts_bodies(), label=_t("ui.onto_which_body_parts_glb"),
                                                            scale=3)
-                                    out_refresh = gr.Button("Обновить", scale=1)
-                                out_name = gr.Textbox(label="Название сета (папка в equipment/<тело>/)")
-                                out_scan_btn = gr.Button("Разобрать на сегменты")
+                                    out_refresh = gr.Button(_t("ui.refresh"), scale=1)
+                                out_name = gr.Textbox(label=_t("ui.set_name_folder_in_equipment"))
+                                out_scan_btn = gr.Button(_t("ui.split_into_segments"))
                             with gr.Column(scale=1):
-                                out_m3d = gr.Model3D(label="Модель", height=420, clear_color=(0.9, 0.9, 0.9, 1))
+                                out_m3d = gr.Model3D(label=_t("ui.model"), height=420, clear_color=(0.9, 0.9, 0.9, 1))
                         out_note = gr.Markdown("")
-                        out_thumbs = gr.Gallery(label="Сегменты", columns=8, height=260)
+                        out_thumbs = gr.Gallery(label=_t("ui.segments"), columns=8, height=260)
                         out_names = gr.State([])
                         out_dd = []
                         for _row in range(MAX_SEGS // 4):
                             with gr.Row():
                                 for _ in range(4):
                                     out_dd.append(gr.Dropdown(list(OF.SLOTS), visible=False, label=""))
-                        out_btn = gr.Button("Перенести сет", variant="primary")
-                        out_log = gr.Textbox(label="Ход работы", lines=8, interactive=False)
-                        out_view = gr.Gallery(label="Результат на базовом теле", columns=4, height=420)
-                    with gr.Tab("Экипировка: одна вещь"):
+                        out_btn = gr.Button(_t("ui.transfer_the_set"), variant="primary")
+                        out_log = gr.Textbox(label=_t("face.progress"), lines=8, interactive=False)
+                        out_view = gr.Gallery(label=_t("ui.result_on_the_base_body"), columns=4, height=420)
+                    with gr.Tab(_t("ui.equipment_one_piece")):
                         with gr.Row():
                             with gr.Column(scale=1):
-                                gr.Markdown("Сажает отдельно сгенерированную вещь на тело и привязывает к его скелету. "
-                                            "Для вещей, сделанных под другую фигуру, лучше «Перенести сет».")
+                                gr.Markdown(_t("ui.puts_a_separately_generated_piece_on"))
                                 with gr.Row():
-                                    fit_body = gr.Dropdown(_parts_bodies(), label="Тело (*_parts.glb)", scale=4)
-                                    fit_refresh = gr.Button("Обновить", scale=1)
+                                    fit_body = gr.Dropdown(_parts_bodies(), label=_t("ui.body_parts_glb"), scale=4)
+                                    fit_refresh = gr.Button(_t("ui.refresh"), scale=1)
                                 with gr.Row():
-                                    fit_asset = gr.Dropdown(_export_assets(), label="Вещь из готовых моделей", scale=3)
-                                    fit_slot = gr.Dropdown(list(SLOT_LABELS), value="Нагрудник", label="Слот",
+                                    fit_asset = gr.Dropdown(_export_assets(), label=_t("ui.piece_from_finished_models"), scale=3)
+                                    fit_slot = gr.Dropdown(list(SLOT_LABELS), value=_t("ui.breastplate"), label=_t("ui.slot"),
                                                            scale=2)
-                                fit_upload = gr.File(label="…или загрузите GLB вещи", file_types=[".glb"],
+                                fit_upload = gr.File(label=_t("ui.or_load_the_piece_s_glb"), file_types=[".glb"],
                                                      type="filepath")
-                                fit_mode = gr.Radio(list(FIT_MODES), value=list(FIT_MODES)[0], label="Посадка")
-                                with gr.Accordion("Тонкая настройка", open=False):
-                                    fit_scale = gr.Slider(50, 150, value=100, step=1, label="Масштаб, %")
-                                    fit_hide = gr.Checkbox(label="Прятать часть тела под вещью целиком "
-                                                                 "(только для закрытой брони)", value=False)
-                                    fit_length = gr.Dropdown(list(LENGTH_LABELS), value="по умолчанию для слота",
-                                                             label="Длина (нагрудник: от воротника до…)")
-                                    fit_gap = gr.Slider(0, 20, value=6, step=1, label="Зазор до тела, мм")
+                                fit_mode = gr.Radio(list(FIT_MODES), value=list(FIT_MODES)[0], label=_t("ui.fit_2"))
+                                with gr.Accordion(_t("ui.fine_tuning"), open=False):
+                                    fit_scale = gr.Slider(50, 150, value=100, step=1, label=_t("ui.scale"))
+                                    fit_hide = gr.Checkbox(label=_t("ui.hide_the_body_part_under_the_piece"), value=False)
+                                    fit_length = gr.Dropdown(list(LENGTH_LABELS), value=_t("ui.slot_default"),
+                                                             label=_t("ui.length_breastplate_from_the_collar"))
+                                    fit_gap = gr.Slider(0, 20, value=6, step=1, label=_t("ui.gap_to_the_body_mm"))
                                     fit_shrink = gr.Slider(0, 100, value=0, step=5,
-                                                           label="Усадка к телу, % (подтягивает повисшие участки, форма деталей сохраняется)")
+                                                           label=_t("ui.shrink_to_the_body_pulls_in_hanging"))
                                     with gr.Row():
-                                        fit_w = gr.Slider(70, 140, value=100, step=1, label="Ширина, %")
-                                        fit_h = gr.Slider(60, 160, value=100, step=1, label="Длина, %")
+                                        fit_w = gr.Slider(70, 140, value=100, step=1, label=_t("ui.width"))
+                                        fit_h = gr.Slider(60, 160, value=100, step=1, label=_t("ui.length"))
                                     with gr.Row():
-                                        fit_d = gr.Slider(70, 150, value=100, step=1, label="Глубина, %")
-                                        fit_up = gr.Slider(-10, 10, value=0, step=0.5, label="Вверх/вниз, см")
-                                fit_btn = gr.Button("Подогнать", variant="primary")
-                                fit_log = gr.Textbox(label="Ход работы", lines=4, interactive=False)
+                                        fit_d = gr.Slider(70, 150, value=100, step=1, label=_t("ui.depth"))
+                                        fit_up = gr.Slider(-10, 10, value=0, step=0.5, label=_t("ui.up_down_cm"))
+                                fit_btn = gr.Button(_t("ui.fit"), variant="primary")
+                                fit_log = gr.Textbox(label=_t("face.progress"), lines=4, interactive=False)
                             with gr.Column(scale=1):
-                                fit_m3d = gr.Model3D(label="Модель", height=420, clear_color=(0.9, 0.9, 0.9, 1))
-                                fit_view = gr.Gallery(label="Как сидит (спереди и сбоку)", columns=2, height=300)
+                                fit_m3d = gr.Model3D(label=_t("ui.model"), height=420, clear_color=(0.9, 0.9, 0.9, 1))
+                                fit_view = gr.Gallery(label=_t("ui.how_it_sits_front_and_side"), columns=2, height=300)
 
-                    with gr.Tab("Исправление весов", id="rwt"):
+                    with gr.Tab(_t("ui.weight_fixing"), id="rwt"):
                         rwt_ui.mount(T.load_config, accordion=False)  # GPT: Optional repair retains the skeleton.
-                    with gr.Tab("Детали лица", id="face"):
+                    with gr.Tab(_t("ui.face_parts"), id="face"):
                         face_parts_ui.mount(T.load_config, accordion=False)
-                    with gr.Tab("Липсинк", id="lipsync"):
+                    with gr.Tab(_t("ui.lipsync"), id="lipsync"):
                         landmarks_ui.mount_lipsync(T.load_config, rig_asset, rig_upload, lm_data, lm_editor, accordion=False)
 
-            with gr.Tab("Окружение", id="g_env"):
+            with gr.Tab(_t("ui.environment"), id="g_env"):
                 with gr.Tabs():
                     # ---------------------------------------------------------------- surfaces
-                    with gr.Tab("Поверхности (земля, пол, стены)", id="surf"):
+                    with gr.Tab(_t("ui.surfaces_ground_floor_walls"), id="surf"):
                         with gr.Row():
                             with gr.Column(scale=1):
-                                gr.Markdown("Бесшовный материал для ландшафта, полов, дорог и стен: текстура вида сверху, "
-                                            "карты рельефа и готовый материал Godot (`.tres`). Стиль берётся из карточки "
-                                            "стиля во вкладке «Референс».")
-                                surf_desc = gr.Textbox(label="Поверхность", lines=2,
-                                                       placeholder="например: старая булыжная дорога, мох и грязь между камнями")
-                                surf_own = gr.File(label="…или своя картинка (вид сверху)", file_types=["image"],
+                                gr.Markdown(_t("ui.a_seamless_material_for_terrain"))
+                                surf_desc = gr.Textbox(label=_t("ui.surface"), lines=2,
+                                                       placeholder=_t("ui.for_example_an_old_cobbled_road_moss"))
+                                surf_own = gr.File(label=_t("ui.or_your_own_picture_top_view"), file_types=["image"],
                                                    type="filepath")
                                 surf_provider = gr.Radio(list(REF_PROVIDERS), value=list(REF_PROVIDERS)[0],
-                                                         label="Чем генерировать")
+                                                         label=_t("ui.generate_with"))
                                 with gr.Row():
-                                    surf_tile = gr.Slider(0.5, 10, value=4, step=0.5, label="Плитка повторяется каждые, м")
-                                    surf_strength = gr.Slider(0.2, 3, value=1.0, step=0.1, label="Сила рельефа")
+                                    surf_tile = gr.Slider(0.5, 10, value=4, step=0.5, label=_t("ui.the_tile_repeats_every_m"))
+                                    surf_strength = gr.Slider(0.2, 3, value=1.0, step=0.1, label=_t("ui.relief_strength"))
                                 with gr.Row():
-                                    surf_size = gr.Dropdown([512, 1024, 2048], value=1024, label="Размер текстур")
-                                    surf_name = gr.Textbox(label="Имя (папка в materials/)")
-                                surf_btn = gr.Button("Сделать материал", variant="primary")
-                                surf_log = gr.Textbox(label="Ход работы", lines=6, interactive=False)
+                                    surf_size = gr.Dropdown([512, 1024, 2048], value=1024, label=_t("ui.texture_size_2"))
+                                    surf_name = gr.Textbox(label=_t("ui.name_folder_in_materials"))
+                                surf_btn = gr.Button(_t("ui.make_the_material"), variant="primary")
+                                surf_log = gr.Textbox(label=_t("face.progress"), lines=6, interactive=False)
                             with gr.Column(scale=1):
-                                surf_gallery = gr.Gallery(label="Результат", columns=1, height=520)
+                                surf_gallery = gr.Gallery(label=_t("lm.result"), columns=1, height=520)
 
                     # ---------------------------------------------------------------- effects
-                    with gr.Tab("Эффекты (частицы)", id="fx"):
+                    with gr.Tab(_t("ui.effects_particles"), id="fx"):
                         with gr.Row():
                             with gr.Column(scale=1):
-                                gr.Markdown("**1. Анимированный лист** для частиц Godot: взрыв, дым, огонь (зациклен), "
-                                            "магическая вспышка, искра. Рисуется программно, за секунды.")
-                                fx_kind = gr.Dropdown(list(FX_KINDS), value=list(FX_KINDS)[0], label="Что нарисовать")
+                                gr.Markdown(_t("ui.1_an_animated_sheet_for_godot"))
+                                fx_kind = gr.Dropdown(list(FX_KINDS), value=list(FX_KINDS)[0], label=_t("ui.what_to_draw"))
                                 with gr.Row():
-                                    fx_color = gr.ColorPicker(value="#ffffff", label="Оттенок")
-                                    fx_grid = gr.Dropdown([4, 8], value=8, label="Сетка кадров")
-                                    fx_size = gr.Dropdown([64, 128, 256], value=128, label="Размер кадра, px")
+                                    fx_color = gr.ColorPicker(value="#ffffff", label=_t("ui.hue"))
+                                    fx_grid = gr.Dropdown([4, 8], value=8, label=_t("ui.frame_grid"))
+                                    fx_size = gr.Dropdown([64, 128, 256], value=128, label=_t("ui.frame_size_px"))
                                 with gr.Row():
-                                    fx_seed = gr.Number(value=1, precision=0, label="Вариант (seed)")
-                                    fx_speed = gr.Slider(0.5, 2.0, value=1.0, step=0.1, label="Скорость")
-                                    fx_name = gr.Textbox(label="Имя файла (пусто — по виду)")
-                                fx_flip_btn = gr.Button("Сделать лист", variant="primary")
-                                gr.Markdown("**2. Светящийся спрайт по описанию** (руны, символы, круг призыва). Чёрный фон "
-                                            "становится прозрачностью.")
+                                    fx_seed = gr.Number(value=1, precision=0, label=_t("ui.variant_seed"))
+                                    fx_speed = gr.Slider(0.5, 2.0, value=1.0, step=0.1, label=_t("fbx.speed"))
+                                    fx_name = gr.Textbox(label=_t("ui.file_name_empty_by_the_kind"))
+                                fx_flip_btn = gr.Button(_t("ui.make_the_sheet"), variant="primary")
+                                gr.Markdown(_t("ui.2_a_glowing_sprite_from_a"))
                                 fx_provider = gr.Radio(list(REF_PROVIDERS), value=list(REF_PROVIDERS)[0],
-                                                       label="Чем генерировать")
-                                fx_desc = gr.Textbox(label="Описание", lines=2, placeholder="круг призыва с рунами, голубое свечение")
-                                fx_sname = gr.Textbox(label="Имя файла (magic_circle — для стандартной сцены)")
-                                fx_sprite_btn = gr.Button("Сгенерировать спрайт")
-                                gr.Markdown("**3. Сцены Godot** из листов: explosion, fire, smoke, magic_circle, hit_sparks "
-                                            "(папка `sf3d_fx`, копируется в `res://sf3d_fx/`).")
-                                fx_scene_btn = gr.Button("Собрать сцены Godot")
-                                fx_log = gr.Textbox(label="Результат", lines=5, interactive=False)
+                                                       label=_t("ui.generate_with"))
+                                fx_desc = gr.Textbox(label=_t("ui.description"), lines=2, placeholder=_t("ui.a_summoning_circle_with_runes_blue"))
+                                fx_sname = gr.Textbox(label=_t("ui.file_name_magic_circle_for_the"))
+                                fx_sprite_btn = gr.Button(_t("ui.generate_the_sprite"))
+                                gr.Markdown(_t("ui.3_godot_scenes_from_the_sheets"))
+                                fx_scene_btn = gr.Button(_t("ui.build_the_godot_scenes"))
+                                fx_log = gr.Textbox(label=_t("lm.result"), lines=5, interactive=False)
                             with gr.Column(scale=1):
-                                fx_gallery = gr.Gallery(label="Предпросмотр", columns=1, height=560)
+                                fx_gallery = gr.Gallery(label=_t("face.preview"), columns=1, height=560)
 
                     # ---------------------------------------------------------------- modular kits
-                    with gr.Tab("Модульные наборы (подземелье)", id="kit"):
+                    with gr.Tab(_t("ui.modular_kits_dungeon"), id="kit"):
                         with gr.Row():
                             with gr.Column(scale=1):
-                                gr.Markdown("Набор деталей, которые стыкуются по сетке: пол, потолок, стены (глухая, с дверью, "
-                                            "с аркой, с окном), углы, колонна, лестница и дверь. Блоки, арка и ступени "
-                                            "строятся процедурно, поэтому стыки сходятся точно. Материалы берутся из "
-                                            "вкладки «Поверхности».")
-                                gr.Markdown("**1. Детали набора**")
+                                gr.Markdown(_t("ui.a_set_of_pieces_that_join_on_a_grid"))
+                                gr.Markdown(_t("ui.1_kit_pieces"))
                                 with gr.Row():
-                                    kit_cell = gr.Number(value=4, label="Ячейка, м")
-                                    kit_height = gr.Number(value=3, label="Высота этажа, м")
-                                    kit_seed = gr.Number(value=1, precision=0, label="Вариант кладки")
+                                    kit_cell = gr.Number(value=4, label=_t("ui.cell_m"))
+                                    kit_height = gr.Number(value=3, label=_t("ui.storey_height_m"))
+                                    kit_seed = gr.Number(value=1, precision=0, label=_t("ui.masonry_variant"))
                                 _mats = _mat_folders()
                                 with gr.Row():
-                                    kit_wall = gr.Dropdown([KIT_PROC] + _mats, value=KIT_PROC, label="Камень стен")
+                                    kit_wall = gr.Dropdown([KIT_PROC] + _mats, value=KIT_PROC, label=_t("ui.wall_stone"))
                                     kit_floor = gr.Dropdown(_mats, value="dungeon_floor" if "dungeon_floor" in _mats
-                                                            else (_mats[0] if _mats else None), label="Пол и лестница")
+                                                            else (_mats[0] if _mats else None), label=_t("ui.floor_and_stairs"))
                                     kit_wood = gr.Dropdown(_mats, value="dungeon_wood" if "dungeon_wood" in _mats
-                                                           else (_mats[0] if _mats else None), label="Дерево (дверь, балки)")
-                                    kit_mats_btn = gr.Button("Обновить список", scale=0)
-                                kit_build_btn = gr.Button("Собрать детали", variant="primary")
-                                gr.Markdown("**2. План этажа → сцена Godot.** Строки — вид сверху, север вверху. "
-                                            "`.` пол · `P` колонна · `D` проём с дверью · `A` арка · `W` пол с окнами в "
-                                            "наружных стенах · `^ > v <` лестница (вверх в эту сторону; дальше начинается "
-                                            "следующий этаж) · `#` или пробел — ничего. Этажи разделяет строка `---`. "
-                                            "Дверь и арка ставятся в клетку, где проход идёт между двумя открытыми соседями.")
-                                kit_plan = gr.Textbox(value=_kit_sample(), lines=16, label="План", max_lines=40,
+                                                           else (_mats[0] if _mats else None), label=_t("ui.wood_door_beams"))
+                                    kit_mats_btn = gr.Button(_t("ui.refresh_the_list"), scale=0)
+                                kit_build_btn = gr.Button(_t("ui.build_the_pieces"), variant="primary")
+                                gr.Markdown(_t("ui.2_floor_plan_godot_scene_rows_are"))
+                                kit_plan = gr.Textbox(value=_kit_sample(), lines=16, label=_t("ui.plan"), max_lines=40,
                                                       elem_classes=["mono"])
-                                kit_ceil = gr.Checkbox(value=True, label="Потолки")
-                                kit_scene_btn = gr.Button("Построить сцену")
-                                kit_log = gr.Textbox(label="Ход работы", lines=6, interactive=False)
+                                kit_ceil = gr.Checkbox(value=True, label=_t("ui.ceilings"))
+                                kit_scene_btn = gr.Button(_t("ui.build_the_scene"))
+                                kit_log = gr.Textbox(label=_t("face.progress"), lines=6, interactive=False)
                             with gr.Column(scale=1):
-                                kit_gallery = gr.Gallery(label="Результат", columns=1, height=620)
+                                kit_gallery = gr.Gallery(label=_t("lm.result"), columns=1, height=620)
 
                     # ---------------------------------------------------------------- destructibles
-                    with gr.Tab("Разрушаемые объекты", id="destr"):
+                    with gr.Tab(_t("ui.destructible_objects"), id="destr"):
                         with gr.Row():
                             with gr.Column(scale=1):
-                                gr.Markdown("Модель (бочка, ящик, ваза, столб) режется на осколки с гранями «изнутри». "
-                                            "В Godot получается сцена: цельный объект, который по команде рассыпается "
-                                            "на твёрдые тела, с пылью, исчезновением осколков и сигналом `destroyed` "
-                                            "для выпадения добычи.")
+                                gr.Markdown(_t("ui.the_model_a_barrel_a_crate_a_vase_a"))
                                 with gr.Row():
-                                    dst_asset = gr.Dropdown(_export_assets(), label="Готовая модель (категория/имя)", scale=4)
-                                    dst_refresh_btn = gr.Button("Обновить", scale=1)
-                                dst_upload = gr.File(label="…или загрузите GLB", file_types=[".glb"], type="filepath")
+                                    dst_asset = gr.Dropdown(_export_assets(), label=_t("ui.finished_model_category_name"), scale=4)
+                                    dst_refresh_btn = gr.Button(_t("ui.refresh"), scale=1)
+                                dst_upload = gr.File(label=_t("ui.or_load_a_glb"), file_types=[".glb"], type="filepath")
                                 with gr.Row():
-                                    dst_chunks = gr.Slider(4, 40, value=14, step=1, label="Осколков")
-                                    dst_seed = gr.Number(value=1, precision=0, label="Вариант разлома")
+                                    dst_chunks = gr.Slider(4, 40, value=14, step=1, label=_t("ui.chunks"))
+                                    dst_seed = gr.Number(value=1, precision=0, label=_t("ui.fracture_variant"))
                                 with gr.Row():
-                                    dst_auto = gr.Checkbox(value=True, label="Цвет излома по текстуре")
-                                    dst_color = gr.ColorPicker(value="#6b4a2e", label="…или свой цвет излома")
+                                    dst_auto = gr.Checkbox(value=True, label=_t("ui.fracture_colour_from_the_texture"))
+                                    dst_color = gr.ColorPicker(value="#6b4a2e", label=_t("ui.or_your_own_fracture_colour"))
                                 with gr.Row():
-                                    dst_mass = gr.Number(value=20, label="Масса, кг")
-                                    dst_health = gr.Number(value=20, label="Прочность")
-                                    dst_burst = gr.Number(value=3.5, label="Скорость разлёта, м/с")
-                                dst_name = gr.Textbox(label="Имя (пусто — как у модели)")
-                                dst_btn = gr.Button("Сделать разрушаемым", variant="primary")
-                                dst_log = gr.Textbox(label="Ход работы", lines=6, interactive=False)
+                                    dst_mass = gr.Number(value=20, label=_t("ui.mass_kg"))
+                                    dst_health = gr.Number(value=20, label=_t("ui.toughness"))
+                                    dst_burst = gr.Number(value=3.5, label=_t("ui.fly_apart_speed_m_s"))
+                                dst_name = gr.Textbox(label=_t("ui.name_empty_as_the_model_s"))
+                                dst_btn = gr.Button(_t("ui.make_destructible"), variant="primary")
+                                dst_log = gr.Textbox(label=_t("face.progress"), lines=6, interactive=False)
                             with gr.Column(scale=1):
-                                dst_view = gr.Model3D(label="Модель", height=300, clear_color=(0.9, 0.9, 0.9, 1))
-                                dst_gallery = gr.Gallery(label="Проверка в Godot: цел → разрушение", columns=2, height=380)
+                                dst_view = gr.Model3D(label=_t("ui.model"), height=300, clear_color=(0.9, 0.9, 0.9, 1))
+                                dst_gallery = gr.Gallery(label=_t("ui.check_in_godot_intact_destruction"), columns=2, height=380)
 
 
         # ---------------------------------------------------------------- dialogs opened from the menu bar
         with gr.Column(visible=False, elem_classes="dlg") as dlg_vram:
             with gr.Row():
-                gr.Markdown("### Видеопамять")
-                dlg_vram_x = gr.Button("✕ Закрыть", scale=0, min_width=110, elem_classes="dlg-close")
-            gr.Markdown("Перед генерацией закройте программы, нагружающие видеокарту: SF3D нужно около 6,2 ГБ, "
-                        "Hunyuan3D при покраске до 7,5 ГБ, риггинг около 3,5 ГБ.")
-            gpu_btn = gr.Button("Обновить: показать занятость видеопамяти")
+                gr.Markdown(_t("ui.video_memory"))
+                dlg_vram_x = gr.Button(_t("ui.close"), scale=0, min_width=110, elem_classes="dlg-close")
+            gr.Markdown(_t("ui.before_generating_close_programs"))
+            gpu_btn = gr.Button(_t("ui.refresh_show_the_video_memory_use"))
             gpu_md = gr.Markdown("")
             with gr.Row():
-                gpu_proc = gr.Dropdown([], label="Программа, которую можно закрыть", scale=3)
-                gpu_force = gr.Checkbox(label="Принудительно (несохранённое пропадёт)", scale=2)
-            gpu_close = gr.Button("Закрыть выбранную программу")
-            unload_btn = gr.Button("Выгрузить SF3D из видеопамяти")
+                gpu_proc = gr.Dropdown([], label=_t("ui.a_program_that_can_be_closed"), scale=3)
+                gpu_force = gr.Checkbox(label=_t("ui.force_unsaved_work_is_lost"), scale=2)
+            gpu_close = gr.Button(_t("ui.close_the_chosen_program"))
+            unload_btn = gr.Button(_t("ui.unload_sf3d_from_video_memory"))
             gpu_msg = gr.Markdown("")
         with gr.Column(visible=False, elem_classes="dlg") as dlg_settings:
             with gr.Row():
-                gr.Markdown("### Настройки")
-                dlg_settings_x = gr.Button("✕ Закрыть", scale=0, min_width=110, elem_classes="dlg-close")
-            export_dir = gr.Textbox(label="Папка экспорта (потом укажите папку assets проекта Godot)",
+                gr.Markdown(_t("ui.settings"))
+                dlg_settings_x = gr.Button(_t("ui.close"), scale=0, min_width=110, elem_classes="dlg-close")
+            export_dir = gr.Textbox(label=_t("ui.export_folder_later_point_it_to_the"),
                                     value=cfg["export_dir"])
             with gr.Row():
-                save_btn = gr.Button("Сохранить папку")
-                open_btn = gr.Button("Открыть папку")
-            info = gr.Textbox(label="Статус", interactive=False)
-            gr.Markdown("**OpenRouter** (для референсов по ключу). Ключ хранится только в "
-                        "`tool/config.json` на этом компьютере.")
-            or_key = gr.Textbox(label="Ключ OpenRouter", type="password",
+                save_btn = gr.Button(_t("ui.save_the_folder"))
+                open_btn = gr.Button(_t("ui.open_the_folder"))
+            info = gr.Textbox(label=_t("ui.status"), interactive=False)
+            gr.Markdown(_t("ui.openrouter_for_references_with_a_key"))
+            or_key = gr.Textbox(label=_t("ui.openrouter_key"), type="password",
                                 value=("•" * 12) if cfg.get("openrouter_key") else "")
             with gr.Row():
-                or_img = gr.Textbox(label="Модель для картинок",
+                or_img = gr.Textbox(label=_t("ui.model_for_pictures"),
                                     value=cfg.get("openrouter_image_model", "google/gemini-2.5-flash-image"))
-                or_txt = gr.Textbox(label="Модель для описания стиля",
+                or_txt = gr.Textbox(label=_t("ui.model_for_the_style_description"),
                                     value=cfg.get("openrouter_text_model", "google/gemini-2.5-flash"))
-            or_save = gr.Button("Сохранить настройки OpenRouter")
+            or_save = gr.Button(_t("ui.save_the_openrouter_settings"))
             or_note = gr.Markdown("")
         with gr.Column(visible=False, elem_classes="dlg") as dlg_help:
             with gr.Row():
-                gr.Markdown("### Порядок работы")
-                dlg_help_x = gr.Button("✕ Закрыть", scale=0, min_width=110, elem_classes="dlg-close")
+                gr.Markdown(_t("ui.order_of_work"))
+                dlg_help_x = gr.Button(_t("ui.close"), scale=0, min_width=110, elem_classes="dlg-close")
             gr.Markdown(HELP_TEXT)
 
         # ---------------------------------------------------------------- events
@@ -2690,7 +2624,7 @@ def build():
             p = Path(T.load_config().get(key) or fallback)
             p.mkdir(parents=True, exist_ok=True)
             os.startfile(str(p))
-            gr.Info(f"Открыта папка {p}")
+            gr.Info(_t("ui.opened_folder", p))
 
         def unload_toast():
             gr.Info(unload_model())
@@ -2709,6 +2643,9 @@ def build():
         mi_settings.click(lambda: show_dialog(1), None, dialogs, show_progress="hidden")
         mi_help.click(lambda: show_dialog(2), None, dialogs, show_progress="hidden")
         mi_unload.click(unload_toast, None, gpu_stat, show_progress="hidden")
+        for code, btn in mi_langs:
+            if code != i18n.LANG:
+                btn.click(lambda c=code: switch_language(c), None, None, show_progress="hidden").then(None, None, None, js=RESTART_JS)
         for close_btn in (dlg_vram_x, dlg_settings_x, dlg_help_x):
             close_btn.click(lambda: show_dialog(None), None, dialogs, show_progress="hidden")
         ui.load(status_html, None, gpu_stat, show_progress="hidden")
@@ -2718,6 +2655,8 @@ def build():
 
 
 if __name__ == "__main__":
+    if os.environ.pop("SF3D_WAIT_PORT", None):
+        _wait_port(PORT)
     ui = build()
     ui.queue(default_concurrency_limit=1).launch(
         server_name="127.0.0.1", server_port=PORT, inbrowser=False, show_api=False,

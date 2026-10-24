@@ -50,7 +50,12 @@ if ($browser) {
     # Edge may hand over to a child process; wait until no window of our profile is left.
     while (Get-CimInstance Win32_Process -Filter "Name='$(Split-Path $browser -Leaf)'" |
            Where-Object { $_.CommandLine -like '*app-profile*' }) { Start-Sleep 2 }
-    if ($server -and -not $server.HasExited) { Stop-Process -Id $server.Id -Force }
+    # by its command line, not by $server: switching the language restarts the server as a new process
+    if ($server) {   # only a server this launcher started
+        Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
+            Where-Object { $_.CommandLine -like '*sf3d_ui.py*' } |
+            ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    }
 } else {
     Start-Process $url   # default browser: keep the server alive, close it manually
 }

@@ -13,6 +13,7 @@ import json
 import shutil
 import subprocess
 from pathlib import Path
+from i18n import t as _t
 
 ROOT = Path(__file__).resolve().parent
 NOFLAGS = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -56,7 +57,7 @@ def build_kit(blender, out_dir, mat_dir, cell=4.0, height=3.0, seed=1, preview=N
     r = subprocess.run([blender, "-b", "-P", str(ROOT / "blender_modkit.py"), "--", *args], capture_output=True,
                        text=True, encoding="utf-8", errors="replace", timeout=1200, creationflags=NOFLAGS)
     if not (out_dir / "kit.glb").exists():
-        raise RuntimeError("Blender не собрал набор: " + (r.stdout + r.stderr)[-600:])
+        raise RuntimeError(_t("kit.blender_did_not_build_the_kit") + (r.stdout + r.stderr)[-600:])
     return [x for x in r.stdout.splitlines() if x.startswith("KIT_")]
 
 
@@ -69,7 +70,7 @@ def parse_plan(text):
             levels[-1].append(line)
     levels = [[r for r in lv] for lv in levels if any(r.strip() for r in lv)]
     if not levels:
-        raise ValueError("План пустой.")
+        raise ValueError(_t("kit.the_plan_is_empty"))
 
     def cell(lv, x, z):
         if lv < 0 or lv >= len(levels) or z < 0 or z >= len(levels[lv]) or x < 0 or x >= len(levels[lv][z]):
@@ -176,7 +177,7 @@ def build_godot(godot, kit_dir, work_dir, plan=None):
         (dst / f).unlink(missing_ok=True)
     ok = [x for x in r.stdout.splitlines() if x.startswith("KIT_") and x.strip().endswith(" 0")]
     if not (dst / "dungeon_kit.meshlib").exists():
-        raise RuntimeError("Godot не собрал набор: " + (r.stdout + r.stderr)[-600:])
+        raise RuntimeError(_t("kit.godot_did_not_build_the_kit") + (r.stdout + r.stderr)[-600:])
     # publish: everything except the import cache
     if kit_dir.exists():
         for p in dst.rglob("*"):
@@ -191,21 +192,7 @@ def build_godot(godot, kit_dir, work_dir, plan=None):
     return ok, r.stdout + r.stderr
 
 
-README = """# Модульный набор подземелья SF3D
-
-Скопируйте папку `dungeon_kit` в корень проекта Godot (путь должен быть `res://dungeon_kit/`).
-
-- `dungeon_demo.tscn` — готовая сцена по вашему плану (детали, факелы, тёмный фон). Откройте и запустите.
-- `pieces/*.tscn` — каждая деталь отдельно: меш + StaticBody3D с простой коллизией (коробки, у лестницы — наклонная
-  выпуклая форма). Ставьте вручную с привязкой к сетке {cell:g} м.
-- `dungeon_kit.meshlib` — библиотека для GridMap (одна деталь на клетку: удобно для пола и потолка отдельными слоями).
-- `dungeon_door.gd` — скрипт двери: начало координат в петле, `toggle()` / `set_open(true)` открывает и закрывает.
-- `kit.json` — размеры и коробки коллизий, `kit.glb` — все детали одной моделью.
-
-Правила: центр детали в центре ячейки, у пола верх на высоте 0, высота этажа {height:g} м. Стены стоят у северного
-края ячейки (в Godot это −Z); для других сторон поворачивайте деталь на 90° вокруг Y. `corner` — стены на севере и
-востоке, `corner_inner` — столб в северо-восточном углу ячейки для внутренних углов. Лестница поднимается к северу.
-"""
+README = _t("kit.sf3d_modular_dungeon_kit_copy_the")
 
 
 def write_readme(kit_dir):

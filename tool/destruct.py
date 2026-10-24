@@ -10,30 +10,12 @@ import json
 import shutil
 import subprocess
 from pathlib import Path
+from i18n import t as _t
 
 ROOT = Path(__file__).resolve().parent
 NOFLAGS = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
-README = """# Разрушаемые объекты SF3D
-
-Скопируйте папку `sf3d_destructibles` в корень проекта Godot (путь `res://sf3d_destructibles/`).
-
-В каждой подпапке — сцена `<имя>.tscn`: целая модель (узел Whole с коллизией) и осколки (узел Chunks, твёрдые тела
-с выпуклой коллизией). Осколки не в дереве, пока объект цел, поэтому он ничего не стоит по физике.
-
-```gdscript
-var barrel = preload("res://sf3d_destructibles/barrel/barrel.tscn").instantiate()
-add_child(barrel)
-barrel.destroyed.connect(func(pos): spawn_loot(pos))
-barrel.take_damage(10.0, hit_point)   # или сразу barrel.destroy(hit_point)
-```
-
-Свойства в инспекторе (скрипт `destructible.gd`): max_health, mass_total, burst_impulse (скорость разлёта), spin,
-debris_time и fade_time (сколько лежат и как исчезают), debris_layer / debris_mask (осколки на слое 3, чтобы не
-толкать игрока), dust_scene (облако пыли; по умолчанию `res://sf3d_fx/smoke.tscn`, если папка эффектов есть).
-Удар и урон вызывает ваш код боя: у объекта нет собственного хитбокса, цельная часть Whole/Body — обычный StaticBody3D
-на слое 1, в неё попадают ваши лучи и зоны атаки.
-"""
+README = _t("destr.sf3d_destructible_objects_copy_the")
 
 
 def _run(cmd, timeout):
@@ -47,18 +29,18 @@ def make_destructible(blender, godot, src_glb, name, export_dir, work_dir, chunk
     base = Path(export_dir) / "destructible" / "sf3d_destructibles"
     out = base / name
     out.mkdir(parents=True, exist_ok=True)
-    log("Blender режет модель на осколки...")
+    log(_t("destr.blender_is_cutting_the_model_into"))
     r = _run([blender, "-b", "-P", str(ROOT / "blender_fracture.py"), "--", str(src_glb), str(out),
               f"chunks={int(chunks)}", f"seed={int(seed)}", f"interior={interior}", f"name={name}"], 1200)
     glb = out / f"{name}_destructible.glb"
     if not glb.exists():
-        raise RuntimeError("Blender не разрезал модель: " + (r.stdout + r.stderr)[-500:])
+        raise RuntimeError(_t("destr.blender_did_not_cut_the_model") + (r.stdout + r.stderr)[-500:])
     fj = out / "fracture.json"
     info = json.loads(fj.read_text(encoding="utf-8"))
     info["props"] = dict(mass_total=float(mass), max_health=float(health), burst_impulse=float(burst))
     fj.write_text(json.dumps(info, indent=1), encoding="utf-8")
     n = len(info["chunks"])
-    log(f"Осколков: {n}. Godot собирает сцену...")
+    log(_t("destr.chunks_godot_is_building_the_scene", n))
     proj = Path(work_dir) / "destr_build"
     pdst = proj / "sf3d_destructibles"
     if (pdst / name).exists():
@@ -83,11 +65,11 @@ def make_destructible(blender, godot, src_glb, name, export_dir, work_dir, chunk
     r = _run([godot, "--headless", "--path", str(proj), "--script", "res://build_destructible.gd", "--", name], 900)
     scene = pdst / name / f"{name}.tscn"
     if not scene.exists():
-        raise RuntimeError("Godot не собрал сцену: " + (r.stdout + r.stderr)[-500:])
+        raise RuntimeError(_t("destr.godot_did_not_build_the_scene") + (r.stdout + r.stderr)[-500:])
     shutil.copy2(scene, out / scene.name)
     shutil.copy2(ROOT / "godot" / "destructible.gd", base / "destructible.gd")
     (base / "README.md").write_text(README, encoding="utf-8")
-    log("Снимаю разрушение для проверки...")
+    log(_t("destr.recording_the_destruction_for_a"))
     shots = out / "shots"
     shots.mkdir(exist_ok=True)
     _run([godot, "--rendering-driver", "opengl3", "--path", str(proj), "--script", "res://destr_shots.gd", "--",

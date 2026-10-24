@@ -7,23 +7,24 @@ preview sheets (6 side-view frames per clip) are stitched here.
 import json
 import subprocess
 from pathlib import Path
+from i18n import t as _t
 
 ROOT = Path(__file__).resolve().parent
 NOFLAGS = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 CLIPS = {
-    "idle_loop": "Покой (idle): дыхание, лёгкие покачивания",
-    "walk_loop": "Ходьба (цикл)",
-    "run_loop": "Бег (цикл)",
-    "jump": "Прыжок: присед, толчок, воздух, приземление (с подъёмом корпуса)",
-    "fall_loop": "Падение (цикл, поза в воздухе)",
-    "land": "Приземление",
-    "attack_slash": "Удар по диагонали (правая рука)",
-    "attack_overhead": "Удар сверху двумя руками",
-    "cast": "Заклинание (руки вперёд, свечение руками)",
-    "block_loop": "Блок (цикл)",
-    "hit": "Получение удара",
-    "death": "Смерть (падает на спину и остаётся лежать)",
+    "idle_loop": _t("hanim.idle_breathing_light_swaying"),
+    "walk_loop": _t("hanim.walk_loop"),
+    "run_loop": _t("hanim.run_loop"),
+    "jump": _t("hanim.jump_crouch_push_off_air_landing"),
+    "fall_loop": _t("hanim.fall_loop_pose_in_the_air"),
+    "land": _t("hanim.landing"),
+    "attack_slash": _t("hanim.diagonal_strike_right_hand"),
+    "attack_overhead": _t("hanim.two_handed_overhead_strike"),
+    "cast": _t("hanim.spell_hands_forward_hands_glowing"),
+    "block_loop": _t("hanim.block_loop"),
+    "hit": _t("hanim.taking_a_hit"),
+    "death": _t("hanim.death_falls_on_the_back_and_stays"),
 }
 
 
@@ -53,7 +54,7 @@ def animate(blender, src, dst, clips=None, preview_dir=None, fps=30, shield=Fals
     out = r.stdout + r.stderr
     if not dst.exists():
         err = [x for x in out.splitlines() if "ANIM_ERROR" in x or "Error" in x]
-        raise RuntimeError("не удалось добавить анимации: " + (err[-1] if err else out[-400:]))
+        raise RuntimeError(_t("hanim.could_not_add_the_animations") + (err[-1] if err else out[-400:]))
     return json.loads(Path(str(dst) + ".json").read_text(encoding="utf-8"))
 
 
@@ -78,5 +79,5 @@ def sheets(preview_dir, clips, out_dir, per_sheet=4):
             sheet.paste(r, (0, i * r.height))
         p = out_dir / f"sheet_{s // per_sheet + 1}.png"
         sheet.save(p)
-        res.append((str(p), ", ".join(c.replace("_loop", "") for c in group) + " (сверху вниз)"))
+        res.append((str(p), ", ".join(c.replace("_loop", "") for c in group) + _t("hanim.top_down")))
     return res

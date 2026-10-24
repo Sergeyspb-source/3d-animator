@@ -12,6 +12,8 @@ import re
 import subprocess
 from datetime import datetime
 from pathlib import Path
+import i18n
+from i18n import t as _t
 
 ROOT = Path(__file__).resolve().parent
 EDITOR = ROOT / "landmark_editor.html"
@@ -124,7 +126,7 @@ def wear(cfg, text):
         res = (wardrobe(cfg, rigged) if action == "wardrobe" else _repaint(cfg, req, rigged, item) if action == "repaint"
                else _hollow(cfg, req, rigged, item) if action == "hollow" else _wear(cfg, req, rigged, item, action == "wear"))
     except Exception as e:  # noqa: BLE001  (the editor must hear back, or it waits for minutes)
-        res = {"ok": False, "log": f"Ошибка: {e}"}
+        res = {"ok": False, "log": _t("lm.error", e)}
     status.write_text(json.dumps({"id": req.get("id"), **res}, ensure_ascii=False), encoding="utf-8")
     return res["log"]
 
@@ -163,7 +165,7 @@ def _wear(cfg, req, rigged: Path, item: str, put_on: bool) -> dict:
     piece_bytes = base64.b64decode(req["glb"])   # by the skeleton: the copies as the editor placed them
     entry = _save_fit(rigged, item, base64.b64decode(req["src_glb"]) if req.get("src_glb") else piece_bytes, req.get("state"))
     if not put_on:
-        return {"ok": True, "log": f"Сохранено: {stem}_wear_{item}.fit.json", "fit": entry}
+        return {"ok": True, "log": _t("lm.saved_wear_fit_json", stem, item), "fit": entry}
     work = Path(cfg["work_dir"]) / "wear" / f"{stem}_{item}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     work.mkdir(parents=True, exist_ok=True)
     piece = work / "piece.glb"
@@ -182,7 +184,7 @@ def _wear(cfg, req, rigged: Path, item: str, put_on: bool) -> dict:
     line = next((x for x in r.stdout.splitlines() if x.startswith("WEAR_OK")), None)
     if not line:
         return {"ok": False, "fit": entry,
-                "log": "Не получилось: " + next((x for x in r.stdout.splitlines() if x.startswith("WEAR_FAIL")), (r.stdout + r.stderr)[-600:])}
+                "log": _t("lm.failed") + next((x for x in r.stdout.splitlines() if x.startswith("WEAR_FAIL")), (r.stdout + r.stderr)[-600:])}
     rep = json.loads(line.split(" ", 1)[1])
     equip = ROOT / "godot" / "sf3d_equip.gd"   # the folder goes into a Godot project as is: SF3DEquip.wear() puts it on
     if equip.exists():
@@ -191,10 +193,10 @@ def _wear(cfg, req, rigged: Path, item: str, put_on: bool) -> dict:
     for k, v in rep.items():
         if not isinstance(v, dict):
             continue
-        near = f", у кожи осталось {v['close_to_skin']} вершин" if v.get("close_to_skin") else ""
-        parts.append(f"{k}: {v['vertices']} вершин{near}, кости {', '.join(b.split(':')[-1] for b in v['bones'][:4])}")
+        near = _t("lm.vertices_left_at_the_skin", v['close_to_skin']) if v.get("close_to_skin") else ""
+        parts.append(_t("lm.vertices_bones", k, v['vertices'], near, ', '.join(b.split(':')[-1] for b in v['bones'][:4])))
     return {"ok": True, "glb": out.resolve().as_posix(), "fit": _fit_entry(rigged.parent / f"{stem}_wear_{item}.fit.json"),
-            "log": f"Надето и сохранено: {out.name} — " + "; ".join(parts)}
+            "log": _t("lm.put_on_and_saved", out.name) + "; ".join(parts)}
 
 
 HY_PY = r"D:\conda\envs\hunyuan\python.exe"     # the same as sf3d_ui.HY_PY / HY_SRC
@@ -226,7 +228,7 @@ def _repaint(cfg, req, rigged: Path, item: str) -> dict:
     else:
         ref = _reference(cfg, item)
     if ref is None:
-        return {"ok": False, "log": "Нет картинки вещи: выберите её в поле «Картинка вещи» (вид спереди, по которому вещь делалась)."}
+        return {"ok": False, "log": _t("lm.no_picture_of_the_piece_choose_it_in")}
     env = dict(__import__("os").environ, HF_HOME=cfg.get("hf_home") or r"D:\conda\hf", HF_HUB_OFFLINE="1",
                HY3DGEN_MODELS=r"D:\conda\hy3dgen", TMP=r"D:\conda\tmp", TEMP=r"D:\conda\tmp", PYTHONIOENCODING="utf-8")
     out = work / "textured.glb"
@@ -238,13 +240,13 @@ def _repaint(cfg, req, rigged: Path, item: str) -> dict:
         if out.exists():
             break
     if not out.exists():
-        return {"ok": False, "log": "Hunyuan3D-Paint не перекрасил вещь: " + (r.stdout + r.stderr)[-400:]}
+        return {"ok": False, "log": _t("lm.hunyuan3d_paint_did_not_repaint_the") + (r.stdout + r.stderr)[-400:]}
     from glbfix import set_metallic
     set_metallic(out, 0.3, 0.8)   # the painter leaves no metallic factor: a viewer would show the piece as a dark mirror
     src = rigged.parent / f"{stem}_wear_{item}.src.glb"
     src.write_bytes(out.read_bytes())
     return {"ok": True, "src": src.resolve().as_posix(),
-            "log": f"Перекрашено по новой форме ({ref.name}): форма вещи теперь своя, текстура по ней. Нажмите «Надеть»."}
+            "log": _t("lm.repainted_for_the_new_shape_the", ref.name)}
 
 
 def _hollow(cfg, req, rigged: Path, item: str) -> dict:
@@ -269,13 +271,13 @@ def _hollow(cfg, req, rigged: Path, item: str) -> dict:
     (work / "blender.log").write_text(r.stdout + r.stderr, encoding="utf-8")
     line = next((x for x in r.stdout.splitlines() if x.startswith("HOLLOW_OK")), None)
     if not line or not out.exists():
-        return {"ok": False, "log": "Не получилось вскрыть: " + (r.stdout + r.stderr)[-400:]}
+        return {"ok": False, "log": _t("lm.could_not_open_it") + (r.stdout + r.stderr)[-400:]}
     rep = json.loads(line.split(" ", 1)[1])
     src = rigged.parent / f"{stem}_wear_{item}.src.glb"
     src.write_bytes(out.read_bytes())
-    wall = "стенка своя" if not rep["wall"] else "добавлена стенка внутрь"
+    wall = _t("lm.its_own_wall_kept") if not rep["wall"] else _t("lm.a_wall_added_inwards")
     return {"ok": True, "src": src.resolve().as_posix(),
-            "log": f"Вскрыто: убрано {rep['caps_removed']} граней, {wall}. Вещь поставлена заново: проверьте и нажмите «Надеть»."}
+            "log": _t("lm.opened_faces_removed_the_piece_is", rep['caps_removed'], wall)}
 
 
 def _slug(text: str) -> str:   # the same as sf3d_tool.slug: how the animation tabs name their outputs
@@ -305,11 +307,11 @@ def wardrobe(cfg, rigged: Path) -> dict:
     import shutil
     godot = cfg.get("godot_exe")
     if not godot or not Path(godot).exists():
-        raise RuntimeError("не найден Godot: укажите godot_exe в настройках")
+        raise RuntimeError(_t("lm.godot_not_found_set_godot_exe_in_the"))
     stem = _stem(rigged)
     pieces = [p for p in sorted(rigged.parent.glob(glob.escape(stem) + "_wear_*.glb")) if re.fullmatch(re.escape(stem) + r"_wear_[\w-]+\.glb", p.name)]
     if not pieces:
-        raise RuntimeError("ещё ни одна вещь не надета: подгоните вещь и нажмите «Надеть»")
+        raise RuntimeError(_t("lm.no_piece_is_put_on_yet_fit_a_piece"))
     proj = Path(cfg["work_dir"]) / "wardrobe" / _slug(stem)
     proj.mkdir(parents=True, exist_ok=True)
     model = _animated_model(cfg, rigged, proj)
@@ -322,13 +324,13 @@ def wardrobe(cfg, rigged: Path) -> dict:
         dst = proj / name
         if srcp.resolve() != dst.resolve() and (not dst.exists() or dst.stat().st_mtime < srcp.stat().st_mtime or dst.stat().st_size != srcp.stat().st_size):
             shutil.copy2(srcp, dst)
-    for gd in ("sf3d_equip.gd", "sf3d_wardrobe.gd"):
-        (proj / gd).write_bytes((ROOT / "godot" / gd).read_bytes())
+    for gd in ("sf3d_equip.gd", "sf3d_wardrobe.gd"):   # the texts in the interface language
+        (proj / gd).write_text(i18n.fill((ROOT / "godot" / gd).read_text(encoding="utf-8")), encoding="utf-8")
     (proj / "project.godot").write_text(f"""config_version=5
 
 [application]
 
-config/name="Примерочная: {stem}"
+config/name="{_t('lm.fitting_room_name', stem)}"
 run/main_scene="res://wardrobe.tscn"
 
 [display]
@@ -353,10 +355,10 @@ pieces = Array[PackedScene]([{", ".join(f'ExtResource("{i + 3}")' for i in range
     r = subprocess.run([godot, "--headless", "--path", str(proj), "--import"], capture_output=True, text=True,
                        encoding="utf-8", errors="replace", timeout=600, creationflags=flags)
     if not (proj / ".godot" / "imported").exists():
-        raise RuntimeError("Godot не импортировал модели: " + (r.stdout + r.stderr)[-600:])
+        raise RuntimeError(_t("lm.godot_did_not_import_the_models") + (r.stdout + r.stderr)[-600:])
     gui = Path(godot).with_name(Path(godot).name.replace("_console", ""))   # the window build, without a console
     subprocess.Popen([str(gui if gui.exists() else godot), "--path", str(proj)], cwd=str(proj))
-    return {"ok": True, "log": f"Примерочная открыта в Godot: {len(names)} вещ., анимации из {model.name}. Проект: {proj}"}
+    return {"ok": True, "log": _t("lm.the_fitting_room_is_open_in_godot", len(names), model.name, proj)}
 
 
 def godot_scene(glb: Path) -> Path | None:
@@ -396,22 +398,22 @@ def parse(text):
     try:
         data = json.loads(text or "")
     except json.JSONDecodeError:
-        raise ValueError("Разметка пуста или повреждена: откройте редактор и расставьте ориентиры.")
+        raise ValueError(_t("lm.the_markup_is_empty_or_damaged_open"))
     joints = data.get("joints") or {}
     missing = [j for j in REQUIRED if j not in joints]
     if missing:
-        raise ValueError("В разметке нет узлов: " + ", ".join(missing))
+        raise ValueError(_t("lm.the_markup_has_no_joints") + ", ".join(missing))
     for j in REQUIRED:
         v = joints[j]
         if not (isinstance(v, list) and len(v) == 3 and all(isinstance(x, (int, float)) for x in v)):
-            raise ValueError(f"Неверные координаты узла {j}")
+            raise ValueError(_t("lm.bad_coordinates_of_joint", j))
     return data
 
 
 def editor_page(src: Path, state: dict | None, rigged: Path | None = None, mode: str | None = None):
     """rigged: built GLB for the pose mode (fetched by the page through Gradio's /file= route, so it must lie in
     an allowed path such as export_dir); mode='pose' opens the page straight in the pose mode."""
-    page = EDITOR.read_text(encoding="utf-8")
+    page = i18n.fill(EDITOR.read_text(encoding="utf-8"))
     data = {"state": state, "target": TARGET_ID, "wear_target": WEAR_ID, "wear_go": WEAR_GO, "source": str(src), "mode": mode,
             "rigged": Path(rigged).resolve().as_posix() if rigged and Path(rigged).exists() else None,
             "rigged_v": int(Path(rigged).stat().st_mtime) if rigged and Path(rigged).exists() else 0,
@@ -439,19 +441,19 @@ def viewable(src: Path, cfg) -> tuple[Path, dict]:
                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     line = next((x for x in r.stdout.splitlines() if x.startswith("FBX2GLB_OK")), None)
     if line is None:
-        raise RuntimeError("Blender не прочитал FBX:\n" + (r.stdout + r.stderr)[-1500:])
+        raise RuntimeError(_t("lm.blender_could_not_read_the_fbx") + (r.stdout + r.stderr)[-1500:])
     info = json.loads(line.split(" ", 1)[1])
     if not info["meshes"]:
-        raise RuntimeError("В FBX только скелет и анимация, модели нет. В Mixamo скачайте с параметром With Skin.")
+        raise RuntimeError(_t("lm.the_fbx_holds_only_a_skeleton_and"))
     return dst, info
 
 
-EMOTION_RU = {"calm": "спокойствие", "dry": "сухо", "smirk": "ухмылка", "firm": "твёрдо", "excited": "воодушевление",
-              "awe": "восхищение", "mesmerized": "заворожён", "nervous": "нервозность", "nervous_laugh": "нервный смех",
-              "puzzled": "недоумение", "hushed": "шёпотом", "fear": "страх", "fear_freeze": "оцепенение",
-              "terror": "ужас", "shout": "крик", "alarm": "тревога", "pain": "боль", "sobbing": "рыдание",
-              "hysterical": "истерика", "breathless": "запыхался", "strain": "напряжение", "weak": "слабость",
-              "stunned": "ошеломлён"}
+EMOTION_RU = {"calm": _t("lm.calm"), "dry": _t("lm.dry"), "smirk": _t("lm.smirk"), "firm": _t("lm.firm"), "excited": _t("lm.excited"),
+              "awe": _t("lm.awe"), "mesmerized": _t("lm.mesmerized"), "nervous": _t("lm.nervous"), "nervous_laugh": _t("lm.nervous_laugh"),
+              "puzzled": _t("lm.puzzled"), "hushed": _t("lm.whispering"), "fear": _t("lm.fear"), "fear_freeze": _t("lm.frozen_with_fear"),
+              "terror": _t("lm.terror"), "shout": _t("lm.shout"), "alarm": _t("lm.alarm"), "pain": _t("lm.pain"), "sobbing": _t("lm.sobbing"),
+              "hysterical": _t("lm.hysterics"), "breathless": _t("lm.out_of_breath"), "strain": _t("lm.strain"), "weak": _t("lm.weakness"),
+              "stunned": _t("lm.stunned")}
 
 
 def emotion_presets():
@@ -536,7 +538,7 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=T
     work.mkdir(parents=True, exist_ok=True)
     job = {"source": str(clean_glb(src)), "out_dir": str(work), "landmarks": landmarks, "names": bone_names(naming)}
     (work / "job.json").write_text(json.dumps(job, ensure_ascii=False, indent=1), encoding="utf-8")
-    yield "Blender: строю скелет и считаю веса (около минуты)…"
+    yield _t("lm.blender_building_the_skeleton_and")
     with (work / "blender.log").open("w", encoding="utf-8") as log:
         r = subprocess.run([blender, "-b", "--factory-startup", "-P", str(ROOT / "blender_landmark_rig.py"), "--",
                             str(work / "job.json")], stdout=log, stderr=subprocess.STDOUT, timeout=1200,
@@ -544,39 +546,39 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=T
     text = (work / "blender.log").read_text(encoding="utf-8", errors="replace")
     line = next((x for x in text.splitlines() if x.startswith("LANDMARK_RIG_OK")), None)
     if r.returncode != 0 or line is None or not (work / "model.glb").exists():
-        raise RuntimeError("Blender не построил скелет:\n" + text[-2500:])
+        raise RuntimeError(_t("lm.blender_did_not_build_the_skeleton") + text[-2500:])
     report = json.loads(line.split(" ", 1)[1])
     fb = report["fallback_vertices"]
     extra = []
     if report.get("heel_bones"):
-        extra.append(f"+{report['heel_bones']} кости пяток без весов (для IK стопы)")
+        extra.append(_t("lm.heel_bones_without_weights_for_foot", report['heel_bones']))
     if report.get("prebend"):
-        extra.append("почти прямые локти/колени чуть согнуты для IK: " + ", ".join(report["prebend"]))
-    yield (f"Скелет: {report['bones'] + report.get('heel_bones', 0)} костей, вершин {report['vertices']}. "
+        extra.append(_t("lm.nearly_straight_elbows_knees_are") + ", ".join(report["prebend"]))
+    yield (_t("lm.skeleton_bones_vertices", report['bones'] + report.get('heel_bones', 0), report['vertices'])
            + ("; ".join(extra) + ". " if extra else "")
-           + (f"Автовеса Blender не справились с {fb} вершинами — им веса даны по ближайшим костям."
-              if fb else "Автовеса Blender сработали на всех частях."))
+           + (_t("lm.blender_s_automatic_weights_failed", fb)
+              if fb else _t("lm.blender_s_automatic_weights_worked")))
     model = work / "model.glb"
     if weld:
         from rigging import weld_seams
-        yield "Сшиваю стыки между частями модели…"
+        yield _t("lm.stitching_the_seams_between_the")
         st = weld_seams(model, work / "model_seams.glb", blender, eps=0.0005 * max(report.get("height", 1.0), 1e-6))
         if st:
             model = work / "model_seams.glb"
-            yield f"Стыков найдено: {st['clusters']}, веса на них выровнены."
+            yield _t("lm.seams_found_their_weights_evened_out", st['clusters'])
         else:
-            yield "Стыков между частями нет."
+            yield _t("lm.no_seams_between_parts")
     face = landmarks.get("face") or {}
     images_extra = []
     mouth = "plate" if mouth is True else (mouth or "none")
     topo_done = False
     has_mouth = all(face.get(k) for k in ("mouth_c", "mouth_corner_L", "mouth_corner_R"))
     if face_topo and mouth == "cut" and has_mouth and not (face.get("eye_L") and face.get("eye_R")):
-        yield "Ретопология лица пропущена: в разметке нет глаз. Нажмите «Разметить лицо» (с контуром глаз)."
+        yield _t("lm.face_retopology_skipped_the_markup")
     if face_topo and mouth != "cut":
-        yield "Ретопология лица работает только с режимом рта «Разрез» — пропущена."
+        yield _t("lm.face_retopology_works_only_with_the")
     if mouth == "cut" and has_mouth:
-        yield "Режу рот по линии губ, ставлю полость, зубы и язык из набора деталей лица…"
+        yield _t("lm.cutting_the_mouth_along_the_lip_line")
         names = bone_names(naming)
         kd, kinfo = face_kit(cfg, kit, work)
         cj = {"source": str(model), "out": str(work / "model_cut.glb"), "mouth_c": face["mouth_c"],
@@ -605,13 +607,12 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=T
             topo_done = bool(cj["face_topo"])
             cr = json.loads(line.split(" ", 1)[1])
             images_extra += cr.get("previews", [])
-            yield (f"Рот разрезан: губы подвёрнуты, полость, {', '.join(cr.get('inserted', []))}; ключи jawOpen, "
-                   "mouthSmile, mouthFunnel и др. (липсинк работает так же).")
+            yield (_t("lm.mouth_cut_lips_turned_in_a_cavity", ', '.join(cr.get('inserted', []))))
         else:
             fail = next((x for x in r.stdout.splitlines() if x.startswith("CUT_FAIL")), (r.stdout + r.stderr)[-600:])
-            yield "⚠ Разрез рта не получился, модель без него (глаза вырежутся сами): " + fail
+            yield _t("lm.the_mouth_cut_failed_the_model_is") + fail
     if mouth == "plate" and has_mouth:
-        yield "Кладу рот для речи: пластина с ключами jawOpen, mouthSmile, mouthFunnel и др. (для липсинка)…"
+        yield _t("lm.adding_the_speech_mouth_a_plate_with")
         names = bone_names(naming)
         mj = {"source": str(model), "out": str(work / "model_mouth.glb"), "mouth_c": face["mouth_c"],
               "corner_L": face["mouth_corner_L"], "corner_R": face["mouth_corner_R"], "head_bone": names["head"],
@@ -627,17 +628,16 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=T
             model = work / "model_mouth.glb"
             mr = json.loads(line.split(" ", 1)[1])
             images_extra = mr.get("previews", [])
-            yield f"Рот для речи готов: {len(mr['keys'])} ключей формы ({', '.join(mr['keys'])})."
+            yield _t("lm.speech_mouth_ready_shape_keys", len(mr['keys']), ', '.join(mr['keys']))
         else:
             fail = next((x for x in r.stdout.splitlines() if x.startswith("MOUTH_FAIL")), (r.stdout + r.stderr)[-600:])
-            yield "Рот для речи не получился, модель сохранена без него: " + fail
+            yield _t("lm.the_speech_mouth_failed_the_model_is") + fail
     rim = {s: [face.get(f"{k}_{s}") for k in ("eye_in", "eye_top", "eye_out", "eye_bot")] for s in "LR"}
     rim = {s: pts for s, pts in rim.items() if all(pts)}
     if eyes and not rim and face:
-        yield ("Глаза-шары не вставлены: в разметке лица нет контура глаз. Нажмите «Разметить лицо» с галочкой "
-               "«и контур глаз» и кликните 4 точки по краю век.")
+        yield (_t("lm.eyeballs_not_inserted_the_face"))
     if eyes and rim:
-        yield "Вырезаю нарисованные глаза и ставлю глаза-шары…"
+        yield _t("lm.cutting_out_the_painted_eyes_and")
         names = bone_names(naming)
         eyes_glb, kit_r = face_kit_eyes(cfg, kit, work)
         ej = {"source": str(model), "out": str(work / "model_eyes.glb"), "eyes_glb": str(eyes_glb), "kit_r": kit_r,
@@ -660,17 +660,17 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=T
             model = work / "model_eyes.glb"
             er = json.loads(line.split(" ", 1)[1])
             images_extra += er.get("previews", [])
-            yield "Глаза-шары: " + ", ".join(f"{s} радиус {v['radius']:.3g}" for s, v in er["eyes"].items()) + "."
+            yield _t("lm.eyeballs") + ", ".join(_t("lm.radius", s, v['radius']) for s, v in er["eyes"].items()) + "."
         else:
             fail = next((x for x in r.stdout.splitlines() if x.startswith("EYES_FAIL")), (r.stdout + r.stderr)[-600:])
-            yield "Глаза-шары не получились, модель без них: " + fail
+            yield _t("lm.eyeballs_failed_the_model_is_without") + fail
     final.parent.mkdir(parents=True, exist_ok=True)
     final.write_bytes(model.read_bytes())
     scene = godot_scene(final)
     saved.write_text(json.dumps({**landmarks, "source": str(src), "naming": naming}, ensure_ascii=False, indent=1),
                      encoding="utf-8")
-    yield (f"Готово: {final}\nРазметка сохранена: {saved.name} (откроется в редакторе в следующий раз)."
-           + (f"\nСцена для Godot: {scene.name} — модель, моргание и реплики липсинка из этой папки (say(\"имя\"))."
+    yield (_t("lm.done_markup_saved_it_opens_in_the", final, saved.name)
+           + (_t("lm.scene_for_godot_the_model_blinking", scene.name)
               if scene else ""))
     yield {"glb": str(final), "landmarks": str(saved), "work": str(work),
            "images": [str(work / n) for n in ("rest.png", "pose_front.png", "pose_side.png", "hand_fist.png", "face_jaw.png")

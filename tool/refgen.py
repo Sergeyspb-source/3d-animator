@@ -15,6 +15,7 @@ import subprocess
 import time
 import urllib.request
 from pathlib import Path
+from i18n import t as _t
 
 CATEGORY_RULES = {
     "item": "a single game item or weapon, fully visible, centred, seen from the front, slightly from above",
@@ -108,7 +109,7 @@ def build_prompt(obj, category, style_text, view="front", has_style_refs=False, 
 def _codex_run(prompt, images, out_dir, timeout=900):
     exe = codex_exe()
     if not exe:
-        raise RuntimeError("Codex CLI не найден. Установите его и войдите командой codex login.")
+        raise RuntimeError(_t("ref.codex_cli_not_found_install_it_and"))
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     last = out_dir / f"_codex_{int(time.time() * 1000)}.txt"
@@ -124,8 +125,8 @@ def _codex_run(prompt, images, out_dir, timeout=900):
     if r.returncode != 0 and not text:
         tail = (r.stderr or r.stdout)[-400:]
         if "login" in tail.lower() or "auth" in tail.lower():
-            raise RuntimeError("Codex не авторизован: выполните codex login в терминале. " + tail)
-        raise RuntimeError("Codex завершился с ошибкой: " + tail)
+            raise RuntimeError(_t("ref.codex_is_not_signed_in_run_codex") + tail)
+        raise RuntimeError(_t("ref.codex_ended_with_an_error") + tail)
     return text
 
 
@@ -136,7 +137,7 @@ def codex_image(prompt, images, out_png, timeout=900):
             "When done, reply with the full path of the saved file only.\n\n" + prompt)
     _codex_run(full, images, out_png.parent, timeout)
     if not out_png.exists() or out_png.stat().st_size < 1000:
-        raise RuntimeError("Codex не сохранил картинку (возможно, исчерпан лимит подписки на картинки).")
+        raise RuntimeError(_t("ref.codex_did_not_save_a_picture_the"))
     return out_png
 
 
@@ -169,7 +170,7 @@ def _or_call(key, model, prompt, images, want_image, timeout=300):
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             data = json.loads(resp.read().decode())
     except urllib.error.HTTPError as e:
-        raise RuntimeError(f"OpenRouter ответил {e.code}: {e.read().decode(errors='replace')[:300]}") from e
+        raise RuntimeError(_t("ref.openrouter_answered", e.code, e.read().decode(errors='replace')[:300])) from e
     if "error" in data:
         raise RuntimeError(f"OpenRouter: {data['error']}")
     return data["choices"][0]["message"]
@@ -177,14 +178,14 @@ def _or_call(key, model, prompt, images, want_image, timeout=300):
 
 def openrouter_image(key, model, prompt, images, out_png):
     if not key:
-        raise RuntimeError("Не задан ключ OpenRouter (меню «Опции» → «Настройки»).")
+        raise RuntimeError(_t("ref.no_openrouter_key_set_menu_options"))
     msg = _or_call(key, model, prompt, images, True)
     for im in msg.get("images") or []:
         url = (im.get("image_url") or {}).get("url", "")
         if url.startswith("data:"):
             Path(out_png).write_bytes(base64.b64decode(url.split(",", 1)[1]))
             return Path(out_png)
-    raise RuntimeError(f"Модель {model} не вернула картинку. Ответ: {str(msg.get('content'))[:200]}")
+    raise RuntimeError(_t("ref.model_returned_no_picture_answer", model, str(msg.get('content'))[:200]))
 
 
 def openrouter_describe(key, model, images):

@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ru">
+<html lang="{{raw:lang.code}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Просмотр анимаций</title>
+<title>{{va.animation_viewer}}</title>
 <style>
   /* Embedded in the SF3D app (iframe srcdoc). Layout: 3D stage left, clip list and controls right. */
   :root { --bg:#ece8e1; --panel:#f6f3ee; --stage:#cfc8bc; --fg:#231d17; --muted:#6b6258; --line:#d0c9bd; --accent:#a8451d;
@@ -45,17 +45,17 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="stage"><canvas id="view" aria-label="3D-просмотр"></canvas><div class="badge" id="badge">загрузка…</div><div class="msg" id="msg">Загружаю модель…</div></div>
+  <div class="stage"><canvas id="view" aria-label="{{va.3d_view}}"></canvas><div class="badge" id="badge">{{va.loading}}</div><div class="msg" id="msg">{{va.loading_the_model}}</div></div>
   <div class="rail">
     <div class="box list" id="list"></div>
     <div class="box ctl">
-      <div class="top"><button type="button" id="play">Пауза</button>
-        <div class="row"><span><b>Время</b><em id="tval">0,00 с</em></span><input type="range" id="scrub" min="0" max="1000" value="0" aria-label="Время клипа"></div></div>
-      <div class="row"><span><b>Скорость</b><em id="sval">1,0×</em></span><input type="range" id="speed" min="10" max="200" value="100" aria-label="Скорость"></div>
-      <label><input type="checkbox" id="inplace" checked> Убрать смещение корпуса по земле</label>
-      <label><input type="checkbox" id="back" checked> После действия вернуться в стойку</label>
-      <label><input type="checkbox" id="spin"> Крутить камеру</label>
-      <label id="weapRow" hidden><input type="checkbox" id="weap" checked> Оружие в руках</label>
+      <div class="top"><button type="button" id="play">{{va.pause}}</button>
+        <div class="row"><span><b>{{va.time}}</b><em id="tval">{{va.0_00_s}}</em></span><input type="range" id="scrub" min="0" max="1000" value="0" aria-label="{{va.clip_time}}"></div></div>
+      <div class="row"><span><b>{{va.speed}}</b><em id="sval">1,0×</em></span><input type="range" id="speed" min="10" max="200" value="100" aria-label="{{va.speed}}"></div>
+      <label><input type="checkbox" id="inplace" checked> {{va.remove_the_torso_s_travel_over_the}}</label>
+      <label><input type="checkbox" id="back" checked> {{va.return_to_the_stance_after_an_action}}</label>
+      <label><input type="checkbox" id="spin"> {{va.orbit_the_camera}}</label>
+      <label id="weapRow" hidden><input type="checkbox" id="weap" checked> {{va.weapons_in_hand}}</label>
     </div>
   </div>
 </div>
@@ -122,7 +122,7 @@ function play(id, instant) {
   next.reset(); next.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity); next.clampWhenFinished = true;
   next.setEffectiveTimeScale(1); next.setEffectiveWeight(1); next.play();
   if (prev && !instant) next.crossFadeFrom(prev, 0.2, false); else if (prev) prev.stop();
-  current = id; playing = true; $('play').textContent = 'Пауза'; $('badge').textContent = info[id].label || id;
+  current = id; playing = true; $('play').textContent = '{{js:va.pause}}'; $('badge').textContent = info[id].label || id;
   showWeapons();
   document.querySelectorAll('#list button').forEach((b) => b.classList.toggle('on', b.dataset.clip === id));
 }
@@ -218,7 +218,7 @@ async function load() {
   DATA.clips.filter((c) => actions[c.id]).forEach((c) => {
     if (c.group !== last) { const g = document.createElement('div'); g.className = 'grp'; g.textContent = c.group; $('list').appendChild(g); last = c.group; }
     const b = document.createElement('button'); b.type = 'button'; b.dataset.clip = c.id; b.className = 'clip';
-    b.innerHTML = `<span>${c.label || c.id}</span><small>${fmt(plain[c.id].duration)} с</small>`;
+    b.innerHTML = `{{raw:va.s}}`;
     b.addEventListener('click', () => play(c.id)); $('list').appendChild(b);
   });
   mixer.addEventListener('finished', () => { if ($('back').checked && current && !info[current].loop) play(restId(current)); });
@@ -228,7 +228,7 @@ async function load() {
 }
 
 $('inplace').addEventListener('change', () => { const k = current; current = null; mixer.stopAllAction(); if (k) play(k, true); });
-$('play').addEventListener('click', () => { playing = !playing; $('play').textContent = playing ? 'Пауза' : 'Играть'; });
+$('play').addEventListener('click', () => { playing = !playing; $('play').textContent = playing ? '{{js:va.pause}}' : '{{js:va.play}}'; });
 $('speed').addEventListener('input', (e) => { speed = e.target.value / 100; $('sval').textContent = fmt(speed, 1) + '×'; });
 $('spin').addEventListener('change', (e) => { controls.autoRotate = e.target.checked; });
 $('weap').addEventListener('change', showWeapons);
@@ -236,7 +236,7 @@ $('scrub').addEventListener('input', (e) => { const a = current && act(current);
   // a paused cross-fade would show a blend of the last clip and this one: scrubbing finishes it at once
   Object.values(actions).forEach((p) => [p.raw, p.flat].forEach((x) => { if (x !== a) x.stop(); }));
   a.stopFading(); a.setEffectiveWeight(1);
-  playing = false; $('play').textContent = 'Играть'; a.paused = false; a.time = (e.target.value / 1000) * a.getClip().duration; mixer.update(0); });
+  playing = false; $('play').textContent = '{{js:va.play}}'; a.paused = false; a.time = (e.target.value / 1000) * a.getClip().duration; mixer.update(0); });
 addEventListener('keydown', (e) => { if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
   const ids = DATA.clips.filter((c) => actions[c.id]).map((c) => c.id); const i = ids.indexOf(current); const n = ids.length;
   play(ids[(i + (e.key === 'ArrowDown' ? 1 : n - 1)) % n]); e.preventDefault(); });
@@ -246,10 +246,10 @@ renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.1);
   if (mixer && playing) mixer.update(dt * speed);
   const a = current && actions[current] && act(current);
-  if (a) { const d = a.getClip().duration; $('scrub').value = Math.round(((a.time % d) / d) * 1000); $('tval').textContent = fmt(a.time % d) + ' с'; }
+  if (a) { const d = a.getClip().duration; $('scrub').value = Math.round(((a.time % d) / d) * 1000); $('tval').textContent = fmt(a.time % d) + '{{js:va.s_2}}'; }
   controls.update(); renderer.render(scene, camera);
 });
-load().catch((e) => { $('msg').hidden = false; $('msg').textContent = 'Не удалось загрузить модель: ' + e.message; });
+load().catch((e) => { $('msg').hidden = false; $('msg').textContent = '{{js:va.could_not_load_the_model}}' + e.message; });
 </script>
 </body>
 </html>

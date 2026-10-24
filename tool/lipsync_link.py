@@ -17,6 +17,7 @@ import subprocess
 from pathlib import Path
 
 import sys
+from i18n import t as _t
 
 PY = sys.executable if sys.executable.lower().endswith("python.exe") else r"D:\conda\envs\sf3d\python.exe"
 VENDOR = Path(__file__).resolve().parent / "vendor" / "lipsync"
@@ -85,11 +86,11 @@ def make_clip(audio: Path, text: str, lang: str, model_glb: Path, cfg: dict):
     tr, ls = tools(cfg)
     for f in (tr, ls):
         if not f.exists():
-            raise RuntimeError(f"Не найден скрипт липсинка: {f}. Проверьте tool/vendor/lipsync или lipsync_skills_dir в config.json.")
+            raise RuntimeError(_t("lip.the_lipsync_script_was_not_found", f))
     env, online = whisper_env(cfg)
     keys = shape_keys(model_glb)
     if not keys:
-        raise RuntimeError("В модели нет ключей формы: соберите скелет с размеченным лицом и галочкой «Рот для речи».")
+        raise RuntimeError(_t("lip.the_model_has_no_shape_keys_build"))
     out_dir = Path(model_glb).parent
     stem = Path(audio).stem
     work = Path(cfg["work_dir"]) / "lipsync" / stem
@@ -97,28 +98,26 @@ def make_clip(audio: Path, text: str, lang: str, model_glb: Path, cfg: dict):
     audio_copy = out_dir / Path(audio).name
     if Path(audio).resolve() != audio_copy.resolve():
         shutil.copyfile(audio, audio_copy)
-    yield ("Whisper: первый запуск — скачиваю модель whisper-small (~1 ГБ) в " + env["HF_HOME"] + "…" if online
-           else "Whisper: тайминги слов (видеокарта, около 1 ГБ)…")
+    yield (_t("lip.whisper_first_run_downloading_the") + env["HF_HOME"] + "…" if online
+           else _t("lip.whisper_word_timings_gpu_about_1_gb"))
     code, log = _run([PY, "-I", "-X", "utf8", str(tr), str(audio_copy), "--lang", lang, "--out-dir", str(work)]
                      + (["--online"] if online else []), 1800, env)
     words = work / f"{stem}.words.json"
     if code != 0 or not words.exists():
-        raise RuntimeError("Whisper не распознал запись:\n" + log[-1500:])
+        raise RuntimeError(_t("lip.whisper_could_not_recognise_the") + log[-1500:])
     heard = (work / f"{stem}.txt").read_text(encoding="utf-8").strip() if (work / f"{stem}.txt").exists() else ""
-    yield f"Whisper услышал: «{heard}»"
-    yield "Строю кривые лица (фонемы, визем, моргания)…"
+    yield _t("lip.whisper_heard", heard)
+    yield _t("lip.building_the_face_curves_phonemes")
     raw = work / f"{stem}.lipsync.json"
     code, log = _run([PY, "-I", "-X", "utf8", str(ls), "--audio", str(audio_copy), "--text", text or heard,
                       "--lang", lang, "--words", str(words), "--out", str(raw)], 900)
     if not raw.exists():
-        raise RuntimeError("lipsync.py не построил кривые:\n" + log[-1500:])
+        raise RuntimeError(_t("lip.lipsync_py_did_not_build_the_curves") + log[-1500:])
     d = json.loads(raw.read_text(encoding="utf-8"))
     clip = reduce_curves(d, keys)
     dst = out_dir / f"{stem}.face.json"
     dst.write_text(json.dumps(clip, ensure_ascii=False, separators=(",", ":")), encoding="utf-8", newline="\n")
     qa = clip["qa"]
     used = list(clip["curves"])
-    yield (f"Клип: {clip['frames']} кадров @ {clip['fps']} fps, ключи: {', '.join(used)}. "
-           f"QA: {'ok' if qa.get('ok') else 'есть замечания'}, смыкания п/б/м {qa.get('pp_closures', '?')}, "
-           f"макс. открытие {qa.get('max_jaw', '?')}" + ("" if code == 0 else " (lipsync.py вернул код 1 — см. QA)"))
+    yield (_t("lip.clip_frames_fps_keys_qa_p_b_m", clip['frames'], clip['fps'], ', '.join(used), 'ok' if qa.get('ok') else 'есть замечания', qa.get('pp_closures', '?'), qa.get('max_jaw', '?')) + ("" if code == 0 else _t("lip.lipsync_py_returned_code_1_see_qa")))
     yield {"clip": str(dst), "audio": str(audio_copy), "keys": used, "qa": qa}

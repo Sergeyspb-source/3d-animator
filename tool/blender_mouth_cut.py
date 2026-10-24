@@ -26,6 +26,8 @@ from pathlib import Path
 import bmesh
 import bpy
 from mathutils import Matrix, Vector
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # Blender does not put the script's folder on the path
+from i18n import t as _t
 
 job = json.loads(Path(sys.argv[sys.argv.index("--") + 1]).read_text(encoding="utf-8"))
 
@@ -54,10 +56,10 @@ HEAD, JAW = job["head_bone"], job.get("jaw_bone") or job["head_bone"]
 M, CL, CR = bl(job["mouth_c"]), bl(job["corner_L"]), bl(job["corner_R"])
 W = (CL - CR).length
 if W <= 0:
-    fail("нулевая ширина рта")
+    fail(_t("blender.the_mouth_has_zero_width"))
 for c in (CL, CR):
     if abs(c.z - M.z) > 0.6 * W:
-        fail("уголки рта не на линии губ: переразметьте лицо")
+        fail(_t("blender.the_mouth_corners_are_not_on_the_lip"))
 hinge = bl(job["hinge"]) if job.get("hinge") else Vector((M.x, M.y + 1.2 * W, M.z + 0.5 * W))
 import numpy as np
 def lip_curve(pts):
@@ -119,7 +121,7 @@ dl = bm.verts.layers.deform.verify()
 P = lambda v: fw @ v.co
 gi = {g.name: g.index for g in face.vertex_groups}
 if HEAD not in gi:
-    fail("у лица нет веса головы " + HEAD)
+    fail(_t("blender.the_face_has_no_head_weight") + HEAD)
 if JAW not in gi:
     face.vertex_groups.new(name=JAW); gi[JAW] = face.vertex_groups[JAW].index
 
@@ -180,7 +182,7 @@ def oval_remesh():
     def project(x, z):
         h = skin_bvh.ray_cast(Vector((x, _ymin - W * 20, z)), Vector((0, 1, 0)), W * 80)
         if h[0] is None:
-            fail(f"нет кожи под овалом рта в точке ({x:.3g}, {z:.3g}): уменьшите внешние кольца или поправьте овал")
+            fail(_t("blender.no_skin_under_the_mouth_oval_at", x, z))
         return h[0], h[2]
 
     def weights_at(p, ti):
@@ -311,7 +313,7 @@ def oval_remesh():
         verts_of.setdefault(ka, set()).add(va); verts_of.setdefault(kb, set()).add(vb)
         adj.setdefault(ka, set()).add(kb); adj.setdefault(kb, set()).add(ka)
     if len(adj) < 8:
-        fail("не нашёл край вырезанной области вокруг рта")
+        fail(_t("blender.could_not_find_the_edge_of_the_cut"))
     comps, seen_c = [], set()
     for k0 in adj:
         if k0 in seen_c:
@@ -407,7 +409,7 @@ if not OVAL:
             new_verts.add(v)
     report["crossed_edges"] = len(cross)
     if len(new_verts) < 6:
-        fail(f"линия рта пересекла только {len(new_verts)} рёбер: точки рта не на губах?")
+        fail(_t("blender.the_mouth_line_crossed_only_edges", len(new_verts)))
     bm.faces.ensure_lookup_table()
     line_edges = set()
     for f in list(bm.faces):

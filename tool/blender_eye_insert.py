@@ -21,6 +21,8 @@ import bmesh
 import bpy
 from mathutils import Matrix, Vector
 from mathutils.bvhtree import BVHTree
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # Blender does not put the script's folder on the path
+from i18n import t as _t
 
 job = json.loads(Path(sys.argv[sys.argv.index("--") + 1]).read_text(encoding="utf-8"))
 
@@ -209,7 +211,7 @@ for side, spec in job["sides"].items():
     ymin = min(v.y for v in wv)
     hit = bvh.ray_cast(Vector((cx, ymin - width * 20, cz)), Vector((0, 1, 0)), width * 80)
     if hit[0] is None and not job.get("open_rim"):
-        fail(f"нет поверхности перед глазом {side}: проверьте контур глаза")
+        fail(_t("blender.no_surface_in_front_of_eye_check_the", side))
     front_y = hit[0].y if hit[0] is not None else 0.0
     rim_surf = []
     for p in curve:
@@ -219,7 +221,7 @@ for side, spec in job["sides"].items():
         if h[0] is not None:
             rim_surf.append(h[0])
     if len(rim_surf) < len(curve) * 0.7:
-        fail(f"контур глаза {side} выходит за модель ({len(rim_surf)} из {len(curve)} точек на поверхности)")
+        fail(_t("blender.eye_outline_goes_outside_the_model", side, len(rim_surf), len(curve)))
     if job.get("open_rim"):   # face retopology left a clean hole: the eyelid edge sets the depth, nothing is cut
         front_y = sum(p.y for p in rim_surf) / len(rim_surf) - width * 0.06
     # cut: delete faces in front of the eye whose centre is inside the outline

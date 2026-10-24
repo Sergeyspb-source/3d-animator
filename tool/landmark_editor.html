@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ru">
+<html lang="{{raw:lang.code}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Разметка скелета</title>
+<title>{{ed.skeleton_markup}}</title>
 <style>
   /* Embedded in the SF3D app (iframe srcdoc). Stage left, landmark list and transform fields right. */
   :root { --bg:#ece8e1; --panel:#f6f3ee; --stage:#cfc8bc; --fg:#231d17; --muted:#6b6258; --line:#d0c9bd; --accent:#a8451d;
@@ -123,66 +123,66 @@
   <div class="main">
     <div class="toolbar" id="toolbar">
       <div class="seg">
-        <button id="vFront" title="Клавиша 1">Спереди</button>
-        <button id="vSide" title="Клавиша 3">Сбоку</button>
-        <button id="vFree" title="Вращение правой кнопкой мыши">Свободно</button>
+        <button id="vFront" title="{{ed.key_1}}">{{ed.front}}</button>
+        <button id="vSide" title="{{ed.key_3}}">{{ed.side}}</button>
+        <button id="vFree" title="{{ed.rotate_with_the_right_mouse_button}}">{{ed.free}}</button>
       </div>
-      <button id="vFit" title="Вернуть модель в кадр (F)">Вписать</button>
-      <button id="vHand" title="Крупно левая кисть (H)">Кисть</button>
-      <button id="xray" title="Alt+Z">Рентген</button>
+      <button id="vFit" title="{{ed.bring_the_model_back_into_the_frame}}">{{ed.fit}}</button>
+      <button id="vHand" title="{{ed.close_up_of_the_left_hand_h}}">{{ed.hand}}</button>
+      <button id="xray" title="Alt+Z">{{ed.x_ray}}</button>
       <span class="sep edit-only"></span>
-      <button id="yawL" class="edit-only" title="Если модель стоит боком или спиной">↺ 90°</button>
-      <button id="yawR" class="edit-only" title="Повернуть модель; разметка сбросится">↻ 90°</button>
+      <button id="yawL" class="edit-only" title="{{ed.if_the_model_stands_sideways_or_with}}">↺ 90°</button>
+      <button id="yawR" class="edit-only" title="{{ed.turn_the_model_the_markup_is_reset}}">↻ 90°</button>
       <span class="small edit-only" id="yawTxt"></span>
-      <label class="chk edit-only" title="Зелёный сектор — куда сустав гнётся, красный — куда нет"><input type="checkbox" id="showBends" checked> Сектора сгиба</label>
+      <label class="chk edit-only" title="{{ed.green_sector_where_the_joint_bends}}"><input type="checkbox" id="showBends" checked> {{ed.bend_sectors}}</label>
       <span class="grow"></span>
-      <button id="mPose" class="primary" title="Проверить сгибы на собранной модели">Поза</button>
-      <button id="mWear" title="Надеть броню на собранного персонажа">Броня</button>
-      <button id="helpBtn" title="Мышь и клавиши">?</button>
+      <button id="mPose" class="primary" title="{{ed.check_the_bends_on_the_built_model}}">{{ed.pose}}</button>
+      <button id="mWear" title="{{ed.put_armour_on_the_built_character}}">{{ed.armour}}</button>
+      <button id="helpBtn" title="{{ed.mouse_and_keys}}">?</button>
     </div>
     <div class="stage">
     <canvas id="cv"></canvas>
-    <div class="badge" id="badge">вид спереди</div>
+    <div class="badge" id="badge">{{ed.front_view}}</div>
     <div class="wearpanel" id="wearPanel" hidden>
-      <b>Броня: подгонка вещи</b>
-      <label>Вещь (GLB) <input type="file" id="wFile" accept=".glb"></label>
-      <div class="row" id="wSavedRow" hidden><select id="wSaved" title="Вещи, сохранённые для этого персонажа"></select><button id="wOpen" title="Открыть сохранённую подгонку: положение, ползунки и точки">Открыть</button></div>
-      <label>Часть тела <select id="wPart">
-        <option value="forearm">Предплечье (наручи)</option><option value="arm">Плечо</option><option value="hand">Кисть (перчатка)</option>
-        <option value="upleg">Бедро</option><option value="leg">Голень (поножи)</option><option value="foot">Стопа (сапог)</option>
-        <option value="boot">Сапог (стоит прямо: голенище на голень, носок по стопе)</option>
-        <option value="torso">Торс (нагрудник)</option><option value="head">Голова (шлем)</option>
-        <option value="skeleton">Вся вещь по её скелету (сапог, рука целиком)</option></select></label>
-      <label>Сторона <select id="wSide"><option value="L">левая (справа на экране)</option><option value="R">правая (слева на экране)</option></select></label>
-      <label class="chk"><input type="checkbox" id="wMirror" checked> Зеркально на вторую сторону</label>
-      <label class="limbonly">Положение вдоль <input type="range" id="wPos" min="-0.3" max="1.2" step="0.01"></label>
-      <label class="limbonly">Длина <input type="range" id="wLen" min="0.5" max="2" step="0.01" value="1"></label>
-      <label class="limbonly" title="Масштаб поперёк руки: вся вещь шире или уже, вместе со стенкой">Обхват <input type="range" id="wThick" min="0.6" max="1.6" step="0.01" value="1"></label>
-      <label class="limbonly" title="Толщина самой брони (подложки): внутренняя стенка остаётся на месте, двигается только внешняя поверхность">Толщина стенки <input type="range" id="wWall" min="0.3" max="1.6" step="0.01" value="1"></label>
-      <label class="limbonly">Поворот вокруг оси <input type="range" id="wTwist" min="-180" max="180" step="1" value="0"></label>
-      <label>Зазор до кожи <input type="range" id="wGap" min="0" max="0.3" step="0.01" value="0.04"></label>
-      <label class="limbonly" title="0 — форма вещи как есть, раздвигается только там, где ушла под кожу; 1 — облегает руку по всей длине">Прилегание к телу <input type="range" id="wConform" min="0" max="1" step="0.05" value="0.5"></label>
-      <label class="limbonly" title="1 — вещь движется вместе с костью и не гнётся (наручи, поножи); 0 — гнётся как кожа (перчатки)">Жёсткость <input type="range" id="wRigid" min="0" max="1" step="0.05" value="0.8"></label>
-      <label class="chk limbonly" title="Узлы внутренней стенки: красные — под кожей (при «Надеть» там раздвинется), зелёные — на коже, синие — с воздухом"><input type="checkbox" id="wInside" checked> Узлы прилегания</label>
+      <b>{{ed.armour_fitting_a_piece}}</b>
+      <label>{{ed.piece_glb}} <input type="file" id="wFile" accept=".glb"></label>
+      <div class="row" id="wSavedRow" hidden><select id="wSaved" title="{{ed.pieces_saved_for_this_character}}"></select><button id="wOpen" title="{{ed.open_a_saved_fitting_placement}}">{{ed.open}}</button></div>
+      <label>{{ed.body_part}} <select id="wPart">
+        <option value="forearm">{{ed.forearm_bracers}}</option><option value="arm">{{ed.upper_arm}}</option><option value="hand">{{ed.hand_glove}}</option>
+        <option value="upleg">{{ed.thigh}}</option><option value="leg">{{ed.shin_greaves}}</option><option value="foot">{{ed.foot_shoe}}</option>
+        <option value="boot">{{ed.boot_stands_upright_the_shaft_on_the}}</option>
+        <option value="torso">{{ed.torso_breastplate}}</option><option value="head">{{ed.head_helmet}}</option>
+        <option value="skeleton">{{ed.the_whole_piece_by_its_own_skeleton}}</option></select></label>
+      <label>{{ed.side_2}} <select id="wSide"><option value="L">{{ed.left_on_the_right_of_the_screen}}</option><option value="R">{{ed.right_on_the_left_of_the_screen}}</option></select></label>
+      <label class="chk"><input type="checkbox" id="wMirror" checked> {{ed.mirror_onto_the_other_side}}</label>
+      <label class="limbonly">{{ed.position_along}} <input type="range" id="wPos" min="-0.3" max="1.2" step="0.01"></label>
+      <label class="limbonly">{{ed.length}} <input type="range" id="wLen" min="0.5" max="2" step="0.01" value="1"></label>
+      <label class="limbonly" title="{{ed.scale_across_the_arm_the_whole_piece}}">{{ed.girth}} <input type="range" id="wThick" min="0.6" max="1.6" step="0.01" value="1"></label>
+      <label class="limbonly" title="{{ed.the_thickness_of_the_armour_itself}}">{{ed.wall_thickness}} <input type="range" id="wWall" min="0.3" max="1.6" step="0.01" value="1"></label>
+      <label class="limbonly">{{ed.twist_about_the_axis}} <input type="range" id="wTwist" min="-180" max="180" step="1" value="0"></label>
+      <label>{{ed.gap_to_the_skin}} <input type="range" id="wGap" min="0" max="0.3" step="0.01" value="0.04"></label>
+      <label class="limbonly" title="{{ed.0_the_piece_s_shape_as_it_is_pushed}}">{{ed.fit_to_the_body}} <input type="range" id="wConform" min="0" max="1" step="0.05" value="0.5"></label>
+      <label class="limbonly" title="{{ed.1_the_piece_moves_with_the_bone_and}}">{{ed.rigidity}} <input type="range" id="wRigid" min="0" max="1" step="0.05" value="0.8"></label>
+      <label class="chk limbonly" title="{{ed.nodes_of_the_inner_wall_red_under}}"><input type="checkbox" id="wInside" checked> {{ed.fit_nodes}}</label>
       <div class="small limbonly" id="wInfo"></div>
-      <div class="row limbonly"><button id="wMove" title="Стрелки на вещи: сдвиг (G)">Сдвиг</button><button id="wRot" title="Поворот вокруг середины кости; зелёное кольцо — вокруг своей оси (R)">Поворот</button><button id="wScale" title="Размер: зелёная ось — длина, красная и синяя — толщина (S)">Размер</button></div>
-      <div class="row limbonly"><button id="wPoints" title="Клик по вещи ставит точку; тяните её — поверхность вокруг потянется">Точки</button><button id="wDel" title="Убрать выбранную точку (Delete)">Убрать</button><button id="wDelAll" title="Убрать все точки: вещь вернётся к исходной форме">Убрать все</button></div>
-      <div class="row limbonly"><button id="wRing" title="Кликайте по краю отверстия (пройма, горловина): по 3 и больше точкам строится окружность">Отверстие</button><button id="wRingDel" title="Убрать выбранное отверстие">Убрать отверстие</button></div>
-      <label class="limbonly" title="Стягивает край выбранного отверстия к его центру: пройма ближе к плечу, горловина к шее">Сузить отверстие <input type="range" id="wRingS" min="0" max="0.6" step="0.01" value="0"></label>
-      <label class="limbonly" title="Насколько широко вокруг края броня тянется за ним (больше — плавнее)">Ширина края <input type="range" id="wRingB" min="0.2" max="1.5" step="0.05" value="0.6"></label>
-      <label class="chk limbonly"><input type="checkbox" id="wRingSym" checked> И симметричное отверстие</label>
-      <div class="row limbonly"><select id="wOpenEnd" title="Какой конец вещи закрыт. У вещи на руке или ноге нижний конец — дальний от тела (у кисти, у колена); у сапога, нагрудника и шлема — как вещь стоит">
-        <option value="bottom">нижний конец</option><option value="top">верхний конец</option><option value="both">оба конца</option></select>
-        <button id="wHollow" title="Сгенерированная вещь бывает закрыта с конца, как горшок: срезать этот конец, чтобы рука или нога прошла. Своя стенка вещи остаётся; у сплошной болванки делается стенка внутрь. Текстура сохраняется">Вскрыть</button></div>
-      <div class="row limbonly"><button id="wRepaint" title="Hunyuan3D-Paint заново рисует текстуру на изменённой форме (отверстия, точки, стенка): без растяжения, невидимые на картинке стороны дорисовываются. 3–6 минут">Перекрасить по форме</button></div>
-      <label class="limbonly" title="Вид спереди, по которому вещь делалась. Для брони из generated_armour находится сама">Картинка вещи <input type="file" id="wRef" accept="image/*"></label>
-      <label class="limbonly">Радиус точки <input type="range" id="wRad" min="0.05" max="1" step="0.01" value="0.25"></label>
-      <div class="row limbonly"><button id="wFit" title="Подобрать положение, наклон, толщину и овал по всей внутренней стенке вещи, не меняя её формы">Подогнать по коже</button></div>
-      <div class="row"><button id="wReset">Сбросить</button><button id="wSave" title="Сохранить подгонку рядом с персонажем, не надевая">Сохранить</button><button id="wApply" class="primary" title="Подогнать в Blender и сохранить">Надеть</button></div>
-      <label class="chk" title="Вещи, надетые раньше (например, перчатка вместе с наручами). Без галочки видна только текущая"><input type="checkbox" id="wOthers"> Показывать другие надетые вещи</label>
-      <div class="row"><button id="wCheck" title="Согнуть руки и ноги: надетая вещь должна идти за телом">Поза проверки</button><button id="wRest" title="Вернуть позу покоя">Сбросить позу</button></div>
-      <div class="row"><button id="wGodot" title="Персонаж со всеми надетыми вещами в Godot: анимации, вращение камеры, вещи вкл/выкл">Примерочная в Godot</button></div>
-      <div class="small" id="wStatus">Выберите файл вещи.</div>
+      <div class="row limbonly"><button id="wMove" title="{{ed.arrows_on_the_piece_move_g}}">{{ed.move}}</button><button id="wRot" title="{{ed.rotate_about_the_middle_of_the_bone}}">{{ed.rotate}}</button><button id="wScale" title="{{ed.size_the_green_axis_is_the_length}}">{{ed.size}}</button></div>
+      <div class="row limbonly"><button id="wPoints" title="{{ed.a_click_on_the_piece_places_a_point}}">{{ed.points}}</button><button id="wDel" title="{{ed.remove_the_selected_point_delete}}">{{ed.remove}}</button><button id="wDelAll" title="{{ed.remove_all_points_the_piece_returns}}">{{ed.remove_all}}</button></div>
+      <div class="row limbonly"><button id="wRing" title="{{ed.click_on_the_edge_of_an_opening_arm}}">{{ed.opening}}</button><button id="wRingDel" title="{{ed.remove_the_selected_opening}}">{{ed.remove_the_opening}}</button></div>
+      <label class="limbonly" title="{{ed.draws_the_edge_of_the_selected}}">{{ed.narrow_the_opening}} <input type="range" id="wRingS" min="0" max="0.6" step="0.01" value="0"></label>
+      <label class="limbonly" title="{{ed.how_far_around_the_edge_the_armour}}">{{ed.edge_width}} <input type="range" id="wRingB" min="0.2" max="1.5" step="0.05" value="0.6"></label>
+      <label class="chk limbonly"><input type="checkbox" id="wRingSym" checked> {{ed.and_the_symmetric_opening}}</label>
+      <div class="row limbonly"><select id="wOpenEnd" title="{{ed.which_end_of_the_piece_is_closed_on}}">
+        <option value="bottom">{{ed.lower_end}}</option><option value="top">{{ed.upper_end}}</option><option value="both">{{ed.both_ends}}</option></select>
+        <button id="wHollow" title="{{ed.a_generated_piece_is_sometimes}}">{{ed.open_up}}</button></div>
+      <div class="row limbonly"><button id="wRepaint" title="{{ed.hunyuan3d_paint_paints_the_texture}}">{{ed.repaint_for_the_shape}}</button></div>
+      <label class="limbonly" title="{{ed.the_front_view_the_piece_was_made}}">{{ed.piece_picture}} <input type="file" id="wRef" accept="image/*"></label>
+      <label class="limbonly">{{ed.point_radius}} <input type="range" id="wRad" min="0.05" max="1" step="0.01" value="0.25"></label>
+      <div class="row limbonly"><button id="wFit" title="{{ed.find_the_position_tilt_thickness_and}}">{{ed.fit_to_the_skin}}</button></div>
+      <div class="row"><button id="wReset">{{ed.reset}}</button><button id="wSave" title="{{ed.save_the_fitting_next_to_the}}">{{ed.save}}</button><button id="wApply" class="primary" title="{{ed.fit_in_blender_and_save}}">{{ed.put_on}}</button></div>
+      <label class="chk" title="{{ed.pieces_put_on_before_for_example_a}}"><input type="checkbox" id="wOthers"> {{ed.show_the_other_pieces_put_on}}</label>
+      <div class="row"><button id="wCheck" title="{{ed.bend_the_arms_and_legs_a_piece_put}}">{{ed.check_pose}}</button><button id="wRest" title="{{ed.back_to_the_rest_pose}}">{{ed.reset_the_pose}}</button></div>
+      <div class="row"><button id="wGodot" title="{{ed.the_character_with_every_piece_put}}">{{ed.fitting_room_in_godot}}</button></div>
+      <div class="small" id="wStatus">{{ed.choose_the_piece_s_file}}</div>
     </div>
     <div class="mouse" id="mouseHelp" hidden>
       <svg viewBox="0 0 24 36" aria-hidden="true">
@@ -191,95 +191,95 @@
         <path d="M12 1 C19 1 22 5 22 11 V14 H12 Z" fill="#3f8fe6"/>
         <rect x="10.5" y="5" width="3" height="7" rx="1.5" fill="#8a8f98"/>
       </svg>
-      <div><span class="l">ЛКМ</span> — <span id="mLeft">поставить точку</span><br>
-        <span class="r">ПКМ</span> — вращать вид<br>
-        <span class="w">Колесо</span> — масштаб, зажать — сдвиг<br>
-        <kbd>1</kbd> спереди · <kbd>3</kbd> сбоку · <kbd>F</kbd> вписать · <kbd>H</kbd> кисть · <kbd>Alt+Z</kbd> рентген<br>
-        <kbd>G</kbd> перемещение · <kbd>R</kbd> поворот · <kbd>Ctrl+Z</kbd> отменить · <kbd>Esc</kbd> снять выбор</div>
+      <div><span class="l">{{ed.lmb}}</span> — <span id="mLeft">{{ed.place_a_point}}</span><br>
+        <span class="r">{{ed.rmb}}</span> {{ed.rotate_the_view}}<br>
+        <span class="w">{{ed.wheel}}</span> {{ed.zoom_hold_pan}}<br>
+        <kbd>1</kbd> {{ed.front_2}} <kbd>3</kbd> {{ed.side_3}} <kbd>F</kbd> {{ed.fit_2}} <kbd>H</kbd> {{ed.hand_2}} <kbd>Alt+Z</kbd> {{ed.x_ray_2}}<br>
+        <kbd>G</kbd> {{ed.move_2}} <kbd>R</kbd> {{ed.rotate_2}} <kbd>Ctrl+Z</kbd> {{ed.undo}} <kbd>Esc</kbd> {{ed.deselect}}</div>
     </div>
     <div class="hint" id="hint" hidden></div>
-    <div class="msg" id="msg">Загрузка модели…</div>
+    <div class="msg" id="msg">{{ed.loading_the_model}}</div>
     <div class="posebar" id="poseBar" hidden>
-      <button id="pReset">Сбросить позу</button><button id="pCheck">Поза проверки</button><button id="pSquat">Присед</button><button id="pFist">Кулак</button><button id="pJaw">Открыть рот</button>
-      <select id="pClipFace" hidden title="Реплики липсинка рядом с моделью"></select><button id="pSay" hidden>▶ Реплика</button>
-      <select id="pEmo" hidden title="Эмоция: те же смещения бровей, век и рта, что добавляет игровой липсинк"></select><input type="range" id="pEmoV" min="0" max="2" step="0.05" value="1" hidden style="width:80px" title="Сила эмоции (1 — как в игре)">
-      <select id="pMorph" hidden title="Ключи формы модели (рот для речи)"></select><input type="range" id="pMorphV" min="0" max="1" step="0.01" value="0" hidden style="width:110px">
-      <button id="pWeights" title="Раскрасить модель по весам кости под курсором (как Weight Paint в Blender)">Веса</button>
+      <button id="pReset">{{ed.reset_the_pose}}</button><button id="pCheck">{{ed.check_pose}}</button><button id="pSquat">{{ed.crouch}}</button><button id="pFist">{{ed.fist}}</button><button id="pJaw">{{ed.open_the_mouth}}</button>
+      <select id="pClipFace" hidden title="{{ed.lipsync_lines_next_to_the_model}}"></select><button id="pSay" hidden>{{ed.line}}</button>
+      <select id="pEmo" hidden title="{{ed.emotion_the_same_brow_eyelid_and}}"></select><input type="range" id="pEmoV" min="0" max="2" step="0.05" value="1" hidden style="width:80px" title="{{ed.emotion_strength_1_as_in_the_game}}">
+      <select id="pMorph" hidden title="{{ed.the_model_s_shape_keys_speech_mouth}}"></select><input type="range" id="pMorphV" min="0" max="1" step="0.01" value="0" hidden style="width:110px">
+      <button id="pWeights" title="{{ed.colour_the_model_by_the_weights_of}}">{{ed.weights}}</button>
       <span class="legend" id="pLegend" hidden>0 <i></i> 1</span>
-      <select id="pClip" hidden></select><button id="pPlay" hidden>▶ Анимация</button>
-      <span class="pinfo" id="pInfo">Наведите на руку, ногу, голову или корпус и тяните левой кнопкой.</span>
+      <select id="pClip" hidden></select><button id="pPlay" hidden>{{ed.animation}}</button>
+      <span class="pinfo" id="pInfo">{{ed.hover_over_an_arm_a_leg_the_head_or}}</span>
     </div>
     <div class="guide" id="guide">
-      <div class="ghead"><span>Подсказка</span><button id="gHide" title="Свернуть">−</button></div>
+      <div class="ghead"><span>{{ed.hint}}</span><button id="gHide" title="{{ed.collapse}}">−</button></div>
       <div id="gBody">
         <div class="gfig" id="gFig"><svg id="gFront" viewBox="0 0 100 200"></svg><svg id="gSide" viewBox="0 0 60 200"></svg></div>
-        <img id="gImg" hidden alt="Своя картинка-референс">
+        <img id="gImg" hidden alt="{{ed.your_own_reference_picture}}">
         <div class="gtext" id="gText"></div>
-        <div class="row"><button id="gScheme">Схема</button><label class="filebtn">Своя картинка<input type="file" id="gFile" accept="image/*" hidden></label></div>
+        <div class="row"><button id="gScheme">{{ed.diagram}}</button><label class="filebtn">{{ed.own_picture}}<input type="file" id="gFile" accept="image/*" hidden></label></div>
       </div>
     </div>
     </div>
   </div>
   <div class="rail">
     <div class="seg tabs" id="railTabs" hidden>
-      <button id="tabNodes" class="on">Узлы скелета</button><button id="tabExtra">Пальцы и лицо</button>
+      <button id="tabNodes" class="on">{{ed.skeleton_joints}}</button><button id="tabExtra">{{ed.fingers_and_face}}</button>
     </div>
     <div class="box" id="listBox">
-      <div class="grp" id="listTitle">Ориентиры</div>
-      <label class="chk" style="margin-bottom:6px"><input type="checkbox" id="sym" checked> Симметрия (правая сторона повторяет левую)</label>
+      <div class="grp" id="listTitle">{{ed.landmarks}}</div>
+      <label class="chk" style="margin-bottom:6px"><input type="checkbox" id="sym" checked> {{ed.symmetry_the_right_side_repeats_the}}</label>
       <div class="list" id="list"></div>
     </div>
     <div class="box" id="fRow" hidden>
-      <div class="grp">Не обязательно: можно пропустить</div>
-      <div class="sub">Пальцы</div>
+      <div class="grp">{{ed.optional_can_be_skipped}}</div>
+      <div class="sub">{{ed.fingers}}</div>
       <div class="row">
-        <button id="fStart" title="Камера подъедет к кисти; кликайте кончики пальцев">Разметить пальцы</button>
-        <button id="fClear">Убрать</button>
-        <label class="chk" title="Два клика на палец: кончик и костяшка; точнее на необычных кистях"><input type="checkbox" id="fBase"> и основания</label>
+        <button id="fStart" title="{{ed.the_camera_moves_to_the_hand_click}}">{{ed.mark_the_fingers}}</button>
+        <button id="fClear">{{ed.remove}}</button>
+        <label class="chk" title="{{ed.two_clicks_per_finger_the_tip_and}}"><input type="checkbox" id="fBase"> {{ed.and_the_bases}}</label>
       </div>
-      <div class="sub">Лицо</div>
+      <div class="sub">{{ed.face}}</div>
       <div class="row">
-        <button id="faceStart" title="Глаза и челюсть: три клика по лицу">Разметить лицо</button>
-        <button id="faceAuto" title="Найти глаза, края век и рот по текстуре; потом поправьте точки мышью">Найти автоматически</button>
-        <button id="faceClear">Убрать</button>
-        <label class="chk" title="Ещё 4 клика по краю век: глаза вырежутся и заменятся шарами"><input type="checkbox" id="faceEyes" checked> и контур глаз</label>
+        <button id="faceStart" title="{{ed.eyes_and_jaw_three_clicks_on_the}}">{{ed.mark_the_face}}</button>
+        <button id="faceAuto" title="{{ed.find_the_eyes_the_eyelid_edges_and}}">{{ed.find_automatically}}</button>
+        <button id="faceClear">{{ed.remove}}</button>
+        <label class="chk" title="{{ed.4_more_clicks_on_the_edge_of_the}}"><input type="checkbox" id="faceEyes" checked> {{ed.and_the_eye_outline}}</label>
       </div>
-      <div class="sub">Рот и веки</div>
+      <div class="sub">{{ed.mouth_and_eyelids}}</div>
       <div class="row">
-        <button id="ovalBtn" title="Шаблон рта из колец: тяните ручки мышью, чтобы совпал с губами">Овал рта</button>
-        <button id="eyeSmall" title="Глазной шар меньше" hidden>Глаз −</button><button id="eyeBig" title="Глазной шар больше" hidden>Глаз +</button>
-        <button id="mouthOpenBtn" title="Рот на модели приоткрыт (видны зубы): вместо щели вырезать отверстие между внутренними краями губ" hidden>Рот приоткрыт</button>
+        <button id="ovalBtn" title="{{ed.a_mouth_template_of_rings_drag_the}}">{{ed.mouth_oval}}</button>
+        <button id="eyeSmall" title="{{ed.smaller_eyeball}}" hidden>{{ed.eye}}</button><button id="eyeBig" title="{{ed.bigger_eyeball}}" hidden>{{ed.eye_2}}</button>
+        <button id="mouthOpenBtn" title="{{ed.the_mouth_on_the_model_is_slightly}}" hidden>{{ed.mouth_slightly_open}}</button>
       </div>
     </div>
     <div class="box" id="selBox">
-      <div class="grp">Выбранный узел</div>
-      <div id="selName" class="small">Ничего не выбрано. Кликните по узлу.</div>
+      <div class="grp">{{ed.selected_joint}}</div>
+      <div id="selName" class="small">{{ed.nothing_selected_click_a_joint}}</div>
       <div class="row" style="margin:6px 0">
-        <button id="mMove" title="G">Перемещение <kbd>G</kbd></button>
-        <button id="mRot" title="R">Поворот <kbd>R</kbd></button>
+        <button id="mMove" title="G">{{ed.move_3}} <kbd>G</kbd></button>
+        <button id="mRot" title="R">{{ed.rotate}} <kbd>R</kbd></button>
       </div>
       <div class="fields" id="fields">
         <span></span><div class="ax x">X</div><div class="ax y">Y</div><div class="ax z">Z</div>
-        <span id="punit">Позиция, м</span><input type="number" step="0.005" id="px"><input type="number" step="0.005" id="py"><input type="number" step="0.005" id="pz">
-        <span>Поворот, °</span><input type="number" step="1" id="rx"><input type="number" step="1" id="ry"><input type="number" step="1" id="rz">
+        <span id="punit">{{ed.position_m}}</span><input type="number" step="0.005" id="px"><input type="number" step="0.005" id="py"><input type="number" step="0.005" id="pz">
+        <span>{{ed.rotation}}</span><input type="number" step="1" id="rx"><input type="number" step="1" id="ry"><input type="number" step="1" id="rz">
       </div>
       <div class="row" id="bendRow" style="margin-top:6px" hidden>
-        <span class="small">Сгиб, °</span><input type="number" step="1" id="bendVal" style="width:72px">
-        <button id="flip" title="Для обратных коленей (гарпии, оборотни на цифровой стопе)">Развернуть сгиб</button>
+        <span class="small">{{ed.bend}}</span><input type="number" step="1" id="bendVal" style="width:72px">
+        <button id="flip" title="{{ed.for_reversed_knees_harpies}}">{{ed.reverse_the_bend}}</button>
       </div>
       <div class="small" id="bendInfo"></div>
-      <details class="note"><summary>Про оси</summary>
-        <div class="small">Оси как в Blender (Z вверх, −Y вперёд). Перемещение двигает только узел; поворот вращает узел вместе со всеми дочерними.</div>
+      <details class="note"><summary>{{ed.about_the_axes}}</summary>
+        <div class="small">{{ed.axes_as_in_blender_z_up_y_forward}}</div>
       </details>
     </div>
     <div class="box foot">
       <div class="small warn" id="warn"></div>
       <div class="sync" id="sync" style="margin-top:6px"></div>
       <div class="row">
-        <button id="undo" title="Ctrl+Z">Отменить</button>
-        <button id="rebuild" title="Пересчитать таз, позвоночник, шею, ключицы, бёдра и стопы по ориентирам">Пересчитать производные</button>
+        <button id="undo" title="Ctrl+Z">{{ed.undo_2}}</button>
+        <button id="rebuild" title="{{ed.recompute_the_pelvis_spine_neck}}">{{ed.recompute_derived_joints}}</button>
         <span class="grow"></span>
-        <button id="reset" class="danger" title="Удалить всю разметку">Начать заново</button>
+        <button id="reset" class="danger" title="{{ed.delete_the_whole_markup}}">{{ed.start_over}}</button>
       </div>
     </div>
   </div>
@@ -313,30 +313,30 @@ const arr = (v) => [+v.x.toFixed(5), +v.y.toFixed(5), +v.z.toFixed(5)];
 const SIDES = ['L', 'R'];
 const JOINTS = [];   // {id, parent, label, end}
 const add = (id, parent, label, end = false) => JOINTS.push({ id, parent, label, end });
-add('hips', null, 'Таз'); add('spine', 'hips', 'Позвоночник 1'); add('spine1', 'spine', 'Позвоночник 2');
-add('spine2', 'spine1', 'Грудь'); add('neck', 'spine2', 'Шея'); add('head', 'neck', 'Голова'); add('head_top', 'head', 'Макушка', true);
+add('hips', null, '{{js:ed.pelvis}}'); add('spine', 'hips', '{{js:ed.spine_1}}'); add('spine1', 'spine', '{{js:ed.spine_2}}');
+add('spine2', 'spine1', '{{js:ed.chest}}'); add('neck', 'spine2', '{{js:ed.neck}}'); add('head', 'neck', '{{js:ed.head}}'); add('head_top', 'head', '{{js:ed.head_top}}', true);
 for (const s of SIDES) {
-  const w = s === 'L' ? 'левая' : 'правая', m = s === 'L' ? 'левое' : 'правое', k = s === 'L' ? 'левый' : 'правый';
-  add('shoulder_' + s, 'spine2', 'Ключица ' + w); add('arm_' + s, 'shoulder_' + s, 'Плечо ' + m);
-  add('forearm_' + s, 'arm_' + s, 'Локоть ' + k); add('hand_' + s, 'forearm_' + s, 'Запястье ' + m);
-  add('hand_end_' + s, 'hand_' + s, 'Конец кисти ' + w, true);
-  add('upleg_' + s, 'hips', 'Бедро ' + m); add('leg_' + s, 'upleg_' + s, 'Колено ' + m);
-  add('foot_' + s, 'leg_' + s, 'Щиколотка ' + w); add('toe_' + s, 'foot_' + s, 'Носок ' + k);
-  add('toe_end_' + s, 'toe_' + s, 'Кончик стопы ' + w, true);
-  add('heel_' + s, 'foot_' + s, 'Пятка ' + w, true);
+  const w = s === 'L' ? '{{js:ed.left}}' : '{{js:ed.right}}', m = s === 'L' ? '{{js:ed.left_2}}' : '{{js:ed.right_2}}', k = s === 'L' ? '{{js:ed.left_3}}' : '{{js:ed.right_3}}';
+  add('shoulder_' + s, 'spine2', '{{js:ed.clavicle}}' + w); add('arm_' + s, 'shoulder_' + s, '{{js:ed.shoulder}}' + m);
+  add('forearm_' + s, 'arm_' + s, '{{js:ed.elbow}}' + k); add('hand_' + s, 'forearm_' + s, '{{js:ed.wrist}}' + m);
+  add('hand_end_' + s, 'hand_' + s, '{{js:ed.hand_end}}' + w, true);
+  add('upleg_' + s, 'hips', '{{js:ed.hip}}' + m); add('leg_' + s, 'upleg_' + s, '{{js:ed.knee}}' + m);
+  add('foot_' + s, 'leg_' + s, '{{js:ed.ankle}}' + w); add('toe_' + s, 'foot_' + s, '{{js:ed.toe}}' + k);
+  add('toe_end_' + s, 'toe_' + s, '{{js:ed.foot_tip}}' + w, true);
+  add('heel_' + s, 'foot_' + s, '{{js:ed.heel}}' + w, true);
 }
 // face (optional): jaw hinge -> chin, eye centres -> front of the eye
-add('jaw', 'head', 'Челюсть (шарнир)'); add('jaw_end', 'jaw', 'Кончик челюсти', true);
-for (const s of SIDES) { add('eye_' + s, 'head', `Глаз ${s === 'L' ? 'левый' : 'правый'}`); add('eye_end_' + s, 'eye_' + s, `Взгляд ${s === 'L' ? 'левого' : 'правого'} глаза`, true); }
+add('jaw', 'head', '{{js:ed.jaw_hinge}}'); add('jaw_end', 'jaw', '{{js:ed.jaw_tip}}', true);
+for (const s of SIDES) { add('eye_' + s, 'head', `{{raw:ed.eye_3}}`); add('eye_end_' + s, 'eye_' + s, `{{raw:ed.eye_s_gaze}}`, true); }
 const FACE_RE = /^(jaw|jaw_end|eye_[LR]|eye_end_[LR])$/;
 const FINGERS = ['thumb', 'index', 'middle', 'ring', 'pinky'];
-const FN = { thumb: 'Большой', index: 'Указательный', middle: 'Средний', ring: 'Безымянный', pinky: 'Мизинец' };
-const FN_GEN = { thumb: 'большого', index: 'указательного', middle: 'среднего', ring: 'безымянного', pinky: 'мизинца' };
+const FN = { thumb: '{{js:ed.thumb}}', index: '{{js:ed.index}}', middle: '{{js:ed.middle}}', ring: '{{js:ed.ring}}', pinky: '{{js:ed.little_finger}}' };
+const FN_GEN = { thumb: '{{js:ed.thumb_2}}', index: '{{js:ed.index_2}}', middle: '{{js:ed.middle_2}}', ring: '{{js:ed.ring_2}}', pinky: '{{js:ed.little_finger_2}}' };
 const FINGER_RE = /^(thumb|index|middle|ring|pinky)([1-4])_([LR])$/;
 const OPTIONAL = (k) => FINGER_RE.test(k) || /^(jaw|jaw_end|eye_[LR]|eye_end_[LR])$/.test(k);
 for (const s of SIDES) for (const f of FINGERS) for (let k = 1; k <= 4; k++)
   add(`${f}${k}_${s}`, k === 1 ? 'hand_' + s : `${f}${k - 1}_${s}`,
-      `${FN[f]}${f === 'pinky' ? '' : ' палец'} ${k === 4 ? 'кончик' : k} ${s === 'L' ? 'лев.' : 'прав.'}`, k === 4);
+      `${FN[f]}${f === 'pinky' ? '' : '{{js:ed.finger}}'} ${k === 4 ? '{{js:ed.the_tip}}' : k} ${s === 'L' ? '{{js:ed.l}}' : '{{js:ed.r}}'}`, k === 4);
 const JMAP = Object.fromEntries(JOINTS.map((j) => [j.id, j]));
 const live = () => JOINTS.filter((j) => S.pos[j.id]);   // joints present in the markup (fingers are optional)
 const CHILDREN = {}; for (const j of JOINTS) if (j.parent) (CHILDREN[j.parent] ||= []).push(j.id);
@@ -347,10 +347,10 @@ const partner = (id) => id.endsWith('_L') ? id.slice(0, -1) + 'R' : id.endsWith(
 // Landmarks placed by clicks in the front view (like Mixamo). Depth comes from a ray through the mesh:
 // t = 0 front surface, 1 back surface of the first body part hit.
 const MARKS = [
-  { id: 'chin', label: 'Подбородок', t: .5, full: true },
-  { id: 'groin', label: 'Пах', t: .5, full: true },
+  { id: 'chin', label: '{{js:ed.chin}}', t: .5, full: true },
+  { id: 'groin', label: '{{js:ed.groin}}', t: .5, full: true },
   ...SIDES.flatMap((s) => {
-    const scr = s === 'L' ? ' (справа на экране)' : ' (слева на экране)';
+    const scr = s === 'L' ? '{{js:ed.on_the_right_of_the_screen}}' : '{{js:ed.on_the_left_of_the_screen}}';
     return [{ id: 'arm_' + s, label: JMAP['arm_' + s].label + scr, t: .5 },
             { id: 'forearm_' + s, label: JMAP['forearm_' + s].label + scr, t: .55 },
             { id: 'hand_' + s, label: JMAP['hand_' + s].label + scr, t: .5 },
@@ -523,21 +523,21 @@ function derive() {
 // zero: 'parent' = straight continuation of the parent bone, 'foot' = neutral foot line (down-forward 40°).
 // flex: where the joint bends to; S.bend[id] = -1 flips it (reverse knees of creatures).
 const LIMITS = {
-  forearm: { child: 'hand', zero: 'parent', flex: 'fwd', min: -5, max: 150, what: 'Локоть сгибается вперёд' },
-  leg: { child: 'foot', zero: 'parent', flex: 'back', min: -5, max: 150, what: 'Колено сгибается назад' },
-  hand: { child: 'hand_end', zero: 'parent', flex: 'palm', min: -60, max: 75, what: 'Кисть сгибается к ладони' },
-  foot: { child: 'toe', zero: 'foot', flex: 'up', min: -45, max: 25, what: 'Стопа: носок вверх до 25°, вниз до 45°' },
-  toe: { child: 'toe_end', zero: 'parent', flex: 'up', min: -30, max: 80, what: 'Пальцы стопы сгибаются вверх' },
+  forearm: { child: 'hand', zero: 'parent', flex: 'fwd', min: -5, max: 150, what: '{{js:ed.the_elbow_bends_forward}}' },
+  leg: { child: 'foot', zero: 'parent', flex: 'back', min: -5, max: 150, what: '{{js:ed.the_knee_bends_backward}}' },
+  hand: { child: 'hand_end', zero: 'parent', flex: 'palm', min: -60, max: 75, what: '{{js:ed.the_hand_bends_toward_the_palm}}' },
+  foot: { child: 'toe', zero: 'foot', flex: 'up', min: -45, max: 25, what: '{{js:ed.foot_toe_up_to_25_down_to_45}}' },
+  toe: { child: 'toe_end', zero: 'parent', flex: 'up', min: -30, max: 80, what: '{{js:ed.the_toes_bend_up}}' },
 };
 const FLIM = { thumb: [[-45, 60], [-10, 60], [-10, 80]], other: [[-25, 90], [-5, 110], [-5, 80]] };
 function limitOf(id) {
-  if (id === 'jaw') return { child: 'jaw_end', zero: 'self', flex: 'down', min: -3, max: 35, s: '', what: 'Челюсть открывается вниз' };
+  if (id === 'jaw') return { child: 'jaw_end', zero: 'self', flex: 'down', min: -3, max: 35, s: '', what: '{{js:ed.the_jaw_opens_downward}}' };
   let m = /^(forearm|leg|hand|foot|toe)_([LR])$/.exec(id || '');
   if (m) return { ...LIMITS[m[1]], s: m[2] };
   m = FINGER_RE.exec(id || ''); if (!m || m[2] === '4') return null;
   const k = +m[2], r = FLIM[m[1] === 'thumb' ? 'thumb' : 'other'][k - 1];
   return { child: `${m[1]}${k + 1}`, zero: 'parent', flex: 'palm', min: r[0], max: r[1], s: m[3],
-           what: `${FN[m[1]]}${m[1] === 'pinky' ? '' : ' палец'} сгибается к ладони` };
+           what: `{{raw:ed.bends_toward_the_palm}}` };
 }
 // where the palm faces: from wrist, middle knuckle and the index-pinky spread; without fingers: toward the body
 let posGetter = (id) => (S.pos[id] ? V(S.pos[id]) : null);
@@ -572,7 +572,7 @@ function bendWarnings() {
     if (S.sym && jt.id.endsWith('_R')) continue;
     const h = hingeFrame(jt.id); if (!h) continue;
     if (h.angle < h.L.min - .5 || h.angle > h.L.max + .5)
-      out.push({ id: jt.id, text: `${jt.label}: ${h.angle.toFixed(0)}° — ${h.angle < h.L.min ? 'выгнут против сгиба' : 'согнут сильнее нормы'} (норма ${h.L.min}…${h.L.max}°)` });
+      out.push({ id: jt.id, text: `{{raw:ed.normal}}` });
   }
   return out;
 }
@@ -586,16 +586,16 @@ const GS = { head_top: [27, 6], head: [30, 32], chin: [21, 30], neck: [32, 40], 
   upleg_L: [31, 101], leg_L: [27, 140], foot_L: [32, 178], toe_L: [22, 190], toe_end_L: [16, 193], heel_L: [36, 195] };
 for (const k of Object.keys(GF)) if (k.endsWith('_L')) GF[partner(k)] = [100 - GF[k][0], GF[k][1]];
 const DESC = {
-  chin: 'нижняя точка подбородка (под бородой, если она есть), по центру лица',
-  groin: 'пах — точка между ног, где сходятся бёдра',
-  arm: 'центр плечевого сустава: под округлостью плеча, не на краю',
-  forearm: 'центр локтя, на сгибе руки', hand: 'центр запястья, где кисть переходит в предплечье',
-  leg: 'центр колена, по середине коленной чашечки', foot: 'центр щиколотки, на уровне косточек',
-  hips: 'чуть выше паха, в центре корпуса', spine: 'поясница', spine1: 'середина живота', spine2: 'грудь, под ключицами',
-  neck: 'основание шеи', head: 'основание черепа, на уровне подбородка', head_top: 'макушка',
-  shoulder: 'ключица: начинается у основания шеи', upleg: 'тазобедренный сустав, над серединой бедра',
-  toe: 'подушечка стопы, у основания пальцев', hand_end: 'конец кисти (пальцы — следующим этапом)', toe_end: 'кончик стопы', jaw: 'шарнир челюсти: перед ухом, между высотой рта и глаза', jaw_end: 'кончик нижней челюсти, у подбородка',
-  eye: 'центр глазного яблока', eye_end: 'передняя точка глаза (направление взгляда)', heel: 'пятка: задняя точка стопы у пола (кость без весов, для IK)',
+  chin: '{{js:ed.the_lowest_point_of_the_chin_under}}',
+  groin: '{{js:ed.groin_the_point_between_the_legs}}',
+  arm: '{{js:ed.the_centre_of_the_shoulder_joint}}',
+  forearm: '{{js:ed.the_centre_of_the_elbow_at_the_bend}}', hand: '{{js:ed.the_centre_of_the_wrist_where_the}}',
+  leg: '{{js:ed.the_centre_of_the_knee_at_the_middle}}', foot: '{{js:ed.the_centre_of_the_ankle_at_the_level}}',
+  hips: '{{js:ed.a_little_above_the_groin_at_the}}', spine: '{{js:ed.lower_back}}', spine1: '{{js:ed.middle_of_the_belly}}', spine2: '{{js:ed.chest_under_the_clavicles}}',
+  neck: '{{js:ed.base_of_the_neck}}', head: '{{js:ed.base_of_the_skull_at_chin_level}}', head_top: '{{js:ed.top_of_the_head}}',
+  shoulder: '{{js:ed.clavicle_starts_at_the_base_of_the}}', upleg: '{{js:ed.hip_joint_above_the_middle_of_the}}',
+  toe: '{{js:ed.ball_of_the_foot_at_the_base_of_the}}', hand_end: '{{js:ed.end_of_the_hand_fingers_come_next}}', toe_end: '{{js:ed.tip_of_the_foot}}', jaw: '{{js:ed.jaw_hinge_in_front_of_the_ear}}', jaw_end: '{{js:ed.tip_of_the_lower_jaw_at_the_chin}}',
+  eye: '{{js:ed.centre_of_the_eyeball}}', eye_end: '{{js:ed.front_point_of_the_eye_the_gaze}}', heel: '{{js:ed.heel_the_back_point_of_the_foot_at}}',
 };
 function guideSVG(map, sideOnly, hl) {
   const use = (id) => map[id] && !(sideOnly && id.endsWith('_R'));
@@ -625,7 +625,7 @@ function refreshGuide() {
   const key = hl ? hl.replace(/_[LR]$/, '') : null;
   const name = hl ? (MMAP[hl] ? MMAP[hl].label : JMAP[hl].label) : '';
   $('gText').innerHTML = hl ? `<b>${name}</b>: ${DESC[key] || ''}.` :
-    (S.phase === 'place' ? 'Все ориентиры расставлены.' : 'Выберите узел — он подсветится на схеме. Оранжевые — ориентиры, синие — рассчитанные.');
+    (S.phase === 'place' ? '{{js:ed.all_landmarks_are_placed}}' : '{{js:ed.choose_a_joint_it_lights_up_on_the}}');
 }
 
 // ---------------------------------------------------------------- drawing
@@ -699,50 +699,50 @@ function refreshList() {
   const list = $('list'); list.innerHTML = '';
   if (S.phase === 'place') {
     const marks = activeMarks();
-    $('listTitle').textContent = `Ориентиры: кликните по модели (${marks.filter((m) => S.marks[m.id]).length}/${marks.length})`;
+    $('listTitle').textContent = `{{raw:ed.landmarks_click_on_the_model}}`;
     for (const m of activeMarks()) {
       const b = document.createElement('button'); b.className = 'item' + (S.marks[m.id] ? ' done' : '') + (m.id === current ? ' cur' : '');
-      b.innerHTML = `<span>${m.label}</span><span class="st">${S.marks[m.id] ? 'готово' : '—'}</span>`;
+      b.innerHTML = `<span>${m.label}</span><span class="st">${S.marks[m.id] ? '{{js:ed.done}}' : '—'}</span>`;
       b.onclick = () => { current = m.id; refreshAll(); };
       list.appendChild(b);
     }
   } else {
-    $('listTitle').textContent = 'Узлы скелета';
+    $('listTitle').textContent = '{{js:ed.skeleton_joints}}';
     if (faceMode) {
-      $('listTitle').textContent = 'Лицо: кликните по модели';
+      $('listTitle').textContent = '{{js:ed.face_click_on_the_model}}';
       for (const k of faceKeys()) {
         const b = document.createElement('button'); b.className = 'item' + (S.face[k] ? ' done' : '') + (k === faceMode.cur ? ' cur' : '');
-        b.innerHTML = `<span>${FACE_MARKS[k]}</span><span class="st">${S.face[k] ? 'готово' : '—'}</span>`;
+        b.innerHTML = `<span>${FACE_MARKS[k]}</span><span class="st">${S.face[k] ? '{{js:ed.done}}' : '—'}</span>`;
         b.onclick = () => { faceMode.cur = k; refreshAll(); };
         list.appendChild(b);
       }
-      const no = document.createElement('button'); no.textContent = 'Отмена'; no.onclick = () => { faceMode = null; refreshAll(); };
+      const no = document.createElement('button'); no.textContent = '{{js:ed.cancel}}'; no.onclick = () => { faceMode = null; refreshAll(); };
       list.appendChild(no);
       return;
     }
     if (fingerMode) {
-      $('listTitle').textContent = `Пальцы: кликните кончики (${fingerMode.side === 'L' ? 'левая' : 'правая'} кисть)`;
+      $('listTitle').textContent = `{{raw:ed.fingers_click_the_tips_hand}}`;
       for (const f of FINGERS) {
         const id = `${f}_${fingerMode.side}`, v = S.fmarks[id];
         const row = document.createElement('div'); row.className = 'row';
         const b = document.createElement('button'); b.className = 'item' + (v ? ' done' : '') + (id === fingerMode.cur ? ' cur' : '');
         b.style.flex = '1';
         const bv = S.fmarks[id + '_base'];
-        const st = v === null ? 'нет' : (v ? 'кончик ✓' : '—') + (fingerMode.base ? (bv ? ' · осн. ✓' : ' · осн. —') : '');
-        b.innerHTML = `<span>${FN[f]}${f === 'pinky' ? '' : ' палец'}</span><span class="st">${st}</span>`;
+        const st = v === null ? '{{js:ed.none}}' : (v ? '{{js:ed.tip}}' : '—') + (fingerMode.base ? (bv ? '{{js:ed.base}}' : '{{js:ed.base_2}}') : '');
+        b.innerHTML = `<span>${FN[f]}${f === 'pinky' ? '' : '{{js:ed.finger}}'}</span><span class="st">${st}</span>`;
         b.onclick = () => { fingerMode.cur = id; refreshAll(); };
-        const no = document.createElement('button'); no.textContent = 'нет'; no.title = 'У персонажа нет этого пальца';
+        const no = document.createElement('button'); no.textContent = '{{js:ed.none}}'; no.title = '{{js:ed.the_character_has_no_such_finger}}';
         no.onclick = () => { S.fmarks[id] = null; if (fingerMode.base) S.fmarks[id + '_base'] = null; nextFinger(); };
         row.append(b, no); list.appendChild(row);
       }
-      const done = document.createElement('button'); done.textContent = 'Отмена'; done.onclick = () => { fingerMode = null; refreshAll(); };
+      const done = document.createElement('button'); done.textContent = '{{js:ed.cancel}}'; done.onclick = () => { fingerMode = null; refreshAll(); };
       list.appendChild(done);
       return;
     }
     for (const j of live()) {
       if (S.sym && j.id.endsWith('_R')) continue;
       const b = document.createElement('button'); b.className = 'item' + (j.id === selected ? ' sel' : '');
-      const kind = j.end ? 'конец' : MMAP[j.id] ? 'ориентир' : 'расчёт';
+      const kind = j.end ? '{{js:ed.end}}' : MMAP[j.id] ? '{{js:ed.landmark}}' : '{{js:ed.computed}}';
       b.innerHTML = `<span>${j.label}</span><span class="st">${kind}</span>`;
       b.onclick = () => select(j.id);
       list.appendChild(b);
@@ -752,15 +752,15 @@ function refreshList() {
 function refreshHint() {
   const h = $('hint');
   if (ovalMode) {
-    h.hidden = false; h.textContent = 'Кликните точку и тяните её стрелки: рот (уголки, щель, края губ; центр — весь овал; красная — граница под носом; «Рот приоткрыт» — две точки на внутренних краях губ), края век и верх маски лица у линии волос (оранжевая линия)';
+    h.hidden = false; h.textContent = '{{js:ed.click_a_point_and_drag_its_arrows}}';
   } else if (faceMode && faceMode.cur) {
-    h.hidden = false; h.textContent = 'Кликните: ' + FACE_MARKS[faceMode.cur];
+    h.hidden = false; h.textContent = '{{js:ed.click}}' + FACE_MARKS[faceMode.cur];
   } else if (fingerMode && fingerMode.cur) {
-    const f = fingerMode.cur.split('_')[0], what = fingerMode.cur.endsWith('_base') ? 'основание (костяшку)' : 'кончик';
-    h.hidden = false; h.textContent = `Кликните ${what} ${FN_GEN[f]}${f === 'pinky' ? '' : ' пальца'} (${fingerMode.side === 'L' ? 'левая' : 'правая'} кисть)`;
+    const f = fingerMode.cur.split('_')[0], what = fingerMode.cur.endsWith('_base') ? '{{js:ed.the_base_knuckle}}' : '{{js:ed.the_tip}}';
+    h.hidden = false; h.textContent = `{{raw:ed.click_of_the_hand}}`;
   } else if (S.phase === 'place' && !poseOn) {
     const m = current ? MMAP[current] : null;
-    h.hidden = !m; if (m) h.textContent = (S.marks[m.id] ? 'Переставить: ' : 'Кликните: ') + m.label;
+    h.hidden = !m; if (m) h.textContent = (S.marks[m.id] ? '{{js:ed.move_4}}' : '{{js:ed.click}}') + m.label;
   } else h.hidden = true;
 }
 function refreshFields() {
@@ -768,12 +768,12 @@ function refreshFields() {
   const on = S.phase === 'edit' && selected;
   for (const k of ids) $(k).disabled = !on;
   $('mMove').disabled = $('mRot').disabled = !on;
-  $('selName').textContent = on ? JMAP[selected].label + (S.sym && partner(selected) ? ' (симметрично)' : '') :
-    (S.phase === 'place' ? 'Сначала расставьте ориентиры.' : 'Ничего не выбрано. Кликните по узлу.');
+  $('selName').textContent = on ? JMAP[selected].label + (S.sym && partner(selected) ? '{{js:ed.symmetric}}' : '') :
+    (S.phase === 'place' ? '{{js:ed.place_the_landmarks_first}}' : '{{js:ed.nothing_selected_click_a_joint}}');
   $('mMove').classList.toggle('on', tc.getMode() === 'translate'); $('mRot').classList.toggle('on', tc.getMode() === 'rotate');
   const hf = on ? hingeFrame(selected) : null;
   $('bendRow').hidden = !hf;
-  $('bendInfo').textContent = hf ? `${hf.L.what}: норма ${hf.L.min}…${hf.L.max}°. Зелёный сектор — куда сустав гнётся, красный — куда нет.` : '';
+  $('bendInfo').textContent = hf ? `{{raw:ed.normal_green_sector_where_the_joint}}` : '';
   if (hf) $('bendVal').value = hf.angle.toFixed(0);
   if (!on) { for (const k of ids) $(k).value = ''; return; }
   const b = toB(V(S.pos[selected]));
@@ -784,25 +784,25 @@ function refreshFields() {
 }
 function refreshAll() {
   refreshList(); refreshHint(); refreshFields(); draw(); refreshGuide();
-  $('mLeft').textContent = poseOn ? 'навести и тянуть: согнуть сустав' : S.phase === 'place' ? 'поставить точку (вид спереди)' : 'выбрать узел, тянуть стрелки';
+  $('mLeft').textContent = poseOn ? '{{js:ed.hover_and_drag_bend_a_joint}}' : S.phase === 'place' ? '{{js:ed.place_a_point_front_view}}' : '{{js:ed.select_a_joint_drag_the_arrows}}';
   const marking = !!fingerMode || !!faceMode, extra = S.phase === 'edit' && !marking && railTab === 'extra';
   $('railTabs').hidden = S.phase !== 'edit' || marking;   // while clicking fingertips or face points the list is the work area
   $('listBox').hidden = extra; $('fRow').hidden = !extra;
   $('selBox').hidden = S.phase !== 'edit';   // nothing to inspect while the landmarks are still being placed
   $('tabNodes').classList.toggle('on', !extra); $('tabExtra').classList.toggle('on', extra);
-  $('ovalBtn').textContent = ovalMode ? 'Готово: рот и веки' : 'Овал рта и веки';
+  $('ovalBtn').textContent = ovalMode ? '{{js:ed.done_mouth_and_eyelids}}' : '{{js:ed.mouth_oval_and_eyelids}}';
   $('ovalBtn').classList.toggle('on', !!ovalMode);
   $('eyeSmall').hidden = $('eyeBig').hidden = !ovalMode || !S.pos.eye_L;
   $('mouthOpenBtn').hidden = !ovalMode; $('mouthOpenBtn').classList.toggle('on', !!S.face.mouth_open_top);
   $('faceClear').hidden = !S.pos.jaw;
   $('fClear').hidden = !Object.keys(S.pos).some((k) => FINGER_RE.test(k));
   const w = S.phase === 'edit' ? bendWarnings() : [];
-  $('warn').innerHTML = w.length ? w.map((x) => '⚠ ' + x.text).join('<br>') : (S.phase === 'edit' ? 'Сгибы суставов в норме.' : '');
+  $('warn').innerHTML = w.length ? w.map((x) => '⚠ ' + x.text).join('<br>') : (S.phase === 'edit' ? '{{js:ed.joint_bends_are_normal}}' : '');
   $('sym').checked = S.sym; $('xray').classList.toggle('on', xray);
-  $('yawTxt').textContent = S.yaw ? `модель повёрнута на ${S.yaw}°` : '';
+  $('yawTxt').textContent = S.yaw ? `{{raw:ed.model_turned_by}}` : '';
   $('rebuild').disabled = S.phase !== 'edit'; $('undo').disabled = !undoStack.length;
   for (const [id, v] of [['vFront', 'front'], ['vSide', 'side'], ['vFree', 'free']]) $(id).classList.toggle('on', view === v);
-  $('badge').textContent = { front: 'вид спереди', side: 'вид сбоку (слева от персонажа)', free: 'свободный вид' }[view];
+  $('badge').textContent = { front: '{{js:ed.front_view}}', side: '{{js:ed.side_view_from_the_character_s_left}}', free: '{{js:ed.free_view}}' }[view];
 }
 
 // ---------------------------------------------------------------- state changes
@@ -885,7 +885,7 @@ function sync() {
   clearTimeout(syncTimer);
   syncTimer = setTimeout(() => {
     const el = $('sync');
-    if (S.phase !== 'edit') { el.textContent = 'Разметка ещё не закончена.'; el.className = 'sync'; return; }
+    if (S.phase !== 'edit') { el.textContent = '{{js:ed.the_markup_is_not_finished_yet}}'; el.className = 'sync'; return; }
     const out = { version: 1, source: DATA.source, yaw: S.yaw, sym: S.sym, height: +H.toFixed(4), center_x: +cx.toFixed(5),
                   marks: S.marks, joints: S.pos, rot: S.rot, bend: S.bend, parents: Object.fromEntries(live().map((j) => [j.id, j.parent])),
                   ends: live().filter((j) => j.end).map((j) => j.id), fmarks: S.fmarks, face: S.face };
@@ -894,22 +894,22 @@ function sync() {
       const ta = window.parent.document.querySelector('#' + DATA.target + ' textarea');
       if (!ta) throw new Error('no textbox');
       ta.value = text; ta.dispatchEvent(new Event('input', { bubbles: true }));
-      el.textContent = 'Разметка передана в SF3D ✓'; el.className = 'sync ok';
+      el.textContent = '{{js:ed.markup_sent_to_sf3d}}'; el.className = 'sync ok';
     } catch (e) {
-      el.textContent = 'Не удалось передать в SF3D: скопируйте JSON из консоли.'; el.className = 'sync'; console.log(text);
+      el.textContent = '{{js:ed.could_not_send_to_sf3d_copy_the_json}}'; el.className = 'sync'; console.log(text);
     }
   }, 150);
 }
 
 // ---------------------------------------------------------------- fingers: click the tips in a close hand view
 let faceMode = null;     // { cur }
-const FACE_MARKS = { eye_L: 'центр левого глаза (зрачок; справа на экране)', eye_R: 'центр правого глаза (зрачок)',
-  mouth_corner_L: 'левый уголок рта (справа на экране)', mouth_corner_R: 'правый уголок рта',
-  mouth_mid_L: 'левая половина губ: щель посередине между уголком и центром', mouth_mid_R: 'правая половина губ: середина щели', mouth_c: 'середина рта — щель между губами (не верхняя губа)',
-  eye_in_L: 'левый глаз: внутренний уголок (у носа)', eye_top_L: 'левый глаз: край верхнего века, середина',
-  eye_out_L: 'левый глаз: внешний уголок', eye_bot_L: 'левый глаз: край нижнего века, середина',
-  eye_in_R: 'правый глаз: внутренний уголок', eye_top_R: 'правый глаз: верхнее веко', eye_out_R: 'правый глаз: внешний уголок',
-  eye_bot_R: 'правый глаз: нижнее веко' };
+const FACE_MARKS = { eye_L: '{{js:ed.centre_of_the_left_eye_pupil_on_the}}', eye_R: '{{js:ed.centre_of_the_right_eye_pupil}}',
+  mouth_corner_L: '{{js:ed.left_mouth_corner_on_the_right_of}}', mouth_corner_R: '{{js:ed.right_mouth_corner}}',
+  mouth_mid_L: '{{js:ed.left_half_of_the_lips_the_slit}}', mouth_mid_R: '{{js:ed.right_half_of_the_lips_middle_of_the}}', mouth_c: '{{js:ed.middle_of_the_mouth_the_slit_between}}',
+  eye_in_L: '{{js:ed.left_eye_inner_corner_by_the_nose}}', eye_top_L: '{{js:ed.left_eye_edge_of_the_upper_eyelid}}',
+  eye_out_L: '{{js:ed.left_eye_outer_corner}}', eye_bot_L: '{{js:ed.left_eye_edge_of_the_lower_eyelid}}',
+  eye_in_R: '{{js:ed.right_eye_inner_corner}}', eye_top_R: '{{js:ed.right_eye_upper_eyelid}}', eye_out_R: '{{js:ed.right_eye_outer_corner}}',
+  eye_bot_R: '{{js:ed.right_eye_lower_eyelid}}' };
 const EYE_RIM = ['eye_in', 'eye_top', 'eye_out', 'eye_bot'];
 const faceKeys = () => (S.sym ? ['eye_L', 'mouth_corner_L', 'mouth_mid_L', 'mouth_c'] : ['eye_L', 'eye_R', 'mouth_corner_L', 'mouth_mid_L', 'mouth_c', 'mouth_mid_R', 'mouth_corner_R'])
   .concat(faceMode && faceMode.eyes ? EYE_RIM.map((k) => k + '_L').concat(S.sym ? [] : EYE_RIM.map((k) => k + '_R')) : []);
@@ -1211,12 +1211,12 @@ $('ovalBtn').onclick = () => {
   if (S.phase !== 'edit') return;
   if (ovalMode) { tcO.detach(); ovalMode = null; drawOval(); refreshAll(); sync(); return; }
   pushUndo(); ovalAutoOpen = false; ovalInit(); ovalMode = { drag: null, sel: null }; select(null); faceView(); drawOval(); refreshAll();
-  if (ovalAutoOpen) $('hint').textContent = 'Рот на модели приоткрыт (видны зубы): поставил точки внутренних краёв губ — проверьте их. Убрать — кнопка «Рот приоткрыт».';
+  if (ovalAutoOpen) $('hint').textContent = '{{js:ed.the_mouth_on_the_model_is_slightly_2}}';
 };
 function placeFace(n) {
   ray.setFromCamera(n, camera);
   const hit = ray.intersectObjects(meshes, false)[0];   // the surface point: eyes and lips are on the surface
-  if (!hit) { $('hint').textContent = 'Мимо модели: кликните по лицу'; return; }
+  if (!hit) { $('hint').textContent = '{{js:ed.missed_the_model_click_on_the_face}}'; return; }
   pushUndo(); S.face[faceMode.cur] = arr(hit.point);
   const left = faceKeys().find((k) => !S.face[k]);
   if (left) { faceMode.cur = left; refreshAll(); return; }
@@ -1231,17 +1231,17 @@ function faceProblem() {
     if (!F[k]) continue;
     const c = V(F[k]), w = Math.abs(c.x - M.x) * 2;
     if (c.y > M.y + (e.y - M.y) * .4)
-      return { key: k, text: 'Уголок рта слишком высоко (почти у глаза). Кликните край губ, на высоте рта.' };
+      return { key: k, text: '{{js:ed.the_mouth_corner_is_too_high_almost}}' };
     if (Math.abs(c.y - M.y) > Math.max(w * .6, 1e-6))
-      return { key: k, text: 'Уголок рта далеко от линии губ. Кликните край губ рядом со щелью рта.' };
+      return { key: k, text: '{{js:ed.the_mouth_corner_is_far_from_the_lip}}' };
     if (w < Math.abs(e.x - M.x) * .3)
-      return { key: k, text: 'Уголок рта почти в середине рта. Кликните край губ сбоку.' };
+      return { key: k, text: '{{js:ed.the_mouth_corner_is_almost_in_the}}' };
   }
-  if (M.y > e.y) return { key: 'mouth_c', text: 'Середина рта выше глаз. Кликните щель между губами.' };
+  if (M.y > e.y) return { key: 'mouth_c', text: '{{js:ed.the_middle_of_the_mouth_is_above_the}}' };
   for (const sd of ['L', 'R']) for (const k of EYE_RIM) {   // eyelid points belong to that eye
     const p = F[k + '_' + sd], c = sd === 'L' ? F.eye_L : (F.eye_R || (F.eye_L ? arr(mirror(V(F.eye_L))) : null));
     if (!p || !c) continue;
-    if (V(p).distanceTo(V(c)) > Math.abs(e.x - M.x) * 1.6 + 1e-6) return { key: k + '_' + sd, text: 'Точка века далеко от глаза. Кликните по краю века этого глаза.' };
+    if (V(p).distanceTo(V(c)) > Math.abs(e.x - M.x) * 1.6 + 1e-6) return { key: k + '_' + sd, text: '{{js:ed.the_eyelid_point_is_far_from_the_eye}}' };
   }
   return null;
 }
@@ -1367,7 +1367,7 @@ function faceAutoFind() {
 $('faceAuto').onclick = () => {
   if (S.phase !== 'edit') return;
   const f = faceAutoFind();
-  if (!f || !f.mouth) { $('hint').hidden = false; $('hint').textContent = 'Не удалось найти ' + (f ? 'рот' : 'глаза') + ' по текстуре — разметьте лицо кликами.'; return; }
+  if (!f || !f.mouth) { $('hint').hidden = false; $('hint').textContent = '{{js:ed.could_not_find}}' + (f ? '{{js:ed.the_mouth}}' : '{{js:ed.the_eyes}}') + '{{js:ed.from_the_texture_mark_the_face_with}}'; return; }
   pushUndo();
   const F = {}, put = (k, p) => { F[k] = [p[0], p[1], skinZ(p[0], p[1], 0)]; };
   put('eye_L', f.eye.c); put('mouth_c', f.mouth.c); put('mouth_corner_L', f.mouth.corner); put('mouth_mid_L', f.mouth.mid);
@@ -1377,7 +1377,7 @@ $('faceAuto').onclick = () => {
   }
   S.face = F; deriveFace(); faceMode = null; refreshAll(); sync();
   if (!ovalMode) $('ovalBtn').click();
-  $('hint').hidden = false; $('hint').textContent = 'Точки лица найдены автоматически — проверьте глаза, края век и уголки рта и поправьте стрелками.';
+  $('hint').hidden = false; $('hint').textContent = '{{js:ed.face_points_found_automatically}}';
 };
 $('faceStart').onclick = () => {
   if (S.phase !== 'edit') return;
@@ -1417,7 +1417,7 @@ function hitAlongView(n) {
 }
 function placeFinger(n) {
   const p = hitAlongView(n);
-  if (!p) { $('hint').textContent = 'Мимо модели: кликните точно по кончику пальца'; return; }
+  if (!p) { $('hint').textContent = '{{js:ed.missed_the_model_click_exactly_on}}'; return; }
   pushUndo(); S.fmarks[fingerMode.cur] = arr(p);
   nextFinger();
 }
@@ -1546,7 +1546,7 @@ function applyYaw() {
   model.rotation.y = THREE.MathUtils.degToRad(S.yaw); measure();
   // GLBs come in metres or centimetres: label and step follow the model height
   const metres = H > .3 && H < 3, step = +(H * .005).toPrecision(2);
-  $('punit').textContent = metres ? 'Позиция, м' : 'Позиция, ед.';
+  $('punit').textContent = metres ? '{{js:ed.position_m}}' : '{{js:ed.position_units}}';
   for (const k of ['px', 'py', 'pz']) $(k).step = step;
 }
 function setXray(on) {
@@ -1602,17 +1602,17 @@ $('sym').onchange = () => {
   refreshAll(); sync();
 };
 $('rebuild').onclick = () => {
-  if (!confirm('Пересчитать таз, позвоночник, шею, ключицы, бёдра, стопы и пятки? Ручные правки этих узлов пропадут, ориентиры останутся.')) return;
+  if (!confirm('{{js:ed.recompute_the_pelvis_spine_neck_2}}')) return;
   pushUndo();
   for (const m of MARKS) if (m.id !== 'chin' && m.id !== 'groin' && S.pos[m.id]) S.marks[m.id] = S.pos[m.id];
   derive(); select(null); sync();
 };
 $('reset').onclick = () => {
-  if (!confirm('Удалить всю разметку и начать заново?')) return;
+  if (!confirm('{{js:ed.delete_the_whole_markup_and_start}}')) return;
   pushUndo(); S.phase = 'place'; S.marks = {}; S.pos = {}; S.rot = {}; S.fmarks = {}; S.face = {}; fingerMode = null; faceMode = null; select(null); current = nextMark().id; showGuide(true); setView('front'); sync();
 };
 const turn = (d) => {
-  if (S.phase === 'edit' && !confirm('Поворот модели сбросит разметку. Продолжить?')) return;
+  if (S.phase === 'edit' && !confirm('{{js:ed.turning_the_model_resets_the_markup}}')) return;
   pushUndo(); S.yaw = ((S.yaw + d) % 360 + 360) % 360; S.phase = 'place'; S.marks = {}; S.pos = {}; S.rot = {};
   select(null); applyYaw(); current = nextMark().id; showGuide(true); resize(); setView('front'); sync();
 };
@@ -1663,7 +1663,7 @@ async function loadRigged() {
   clips = gltf.animations || [];
   if (clips.length) {
     mixer = new THREE.AnimationMixer(poseRoot);
-    $('pClip').innerHTML = clips.map((c, i) => `<option value="${i}">${c.name.replace(/^.*\|/, '') || 'клип ' + (i + 1)}</option>`).join('');
+    $('pClip').innerHTML = clips.map((c, i) => `<option value="${i}">${c.name.replace(/^.*\|/, '') || '{{js:ed.clip}}' + (i + 1)}</option>`).join('');
     $('pClip').hidden = clips.length < 2; $('pPlay').hidden = false;
   }
   const byName = {};
@@ -1704,7 +1704,7 @@ async function loadRigged() {
   }
   const emos = (DATA.emotions || []).filter((e) => [...morphs].some((k) => emoValue(e.keys, k) > 0));
   if (emos.length) {
-    $('pEmo').innerHTML = '<option value="">эмоция…</option>' + emos.map((e) => `<option value="${e.name}">${e.label}</option>`).join('');
+    $('pEmo').innerHTML = '{{js:ed.emotion}}' + emos.map((e) => `<option value="${e.name}">${e.label}</option>`).join('');
     $('pEmo').hidden = $('pEmoV').hidden = false;
   }
   skelHelp = new THREE.SkeletonHelper(poseRoot); skelHelp.material.depthTest = false; skelHelp.material.transparent = true;
@@ -1749,7 +1749,7 @@ function poseReset() {
 }
 function poseHighlight(info) {
   for (const c of [...poseHelp.children]) { poseHelp.remove(c); if (c.geometry) c.geometry.dispose(); }
-  const id = dragId || hoverId; if (!id || !PINFO[id]) { if (!dragId) $('pInfo').textContent = 'Наведите на руку, ногу, голову или корпус и тяните левой кнопкой.'; $('pInfo').className = 'pinfo'; return; }
+  const id = dragId || hoverId; if (!id || !PINFO[id]) { if (!dragId) $('pInfo').textContent = '{{js:ed.hover_over_an_arm_a_leg_the_head_or}}'; $('pInfo').className = 'pinfo'; return; }
   const F = frameNow(id), T = tailWorld(id), len = T.distanceTo(F.j);
   const cyl = new THREE.Mesh(new THREE.CylinderGeometry(.012 * H, .006 * H, len, 10), hlMat);
   cyl.position.copy(F.j).lerp(T, .5); cyl.quaternion.setFromUnitVectors(new V3(0, 1, 0), T.clone().sub(F.j).normalize());
@@ -1761,8 +1761,8 @@ function poseHighlight(info) {
     fan(h, L.max, Math.min(L.max + 50, 180), r, FAN.badSel, poseHelp); fan(h, Math.max(L.min - 50, -180), L.min, r, FAN.badSel, poseHelp);
   }
   const name = JMAP[id].label, cur = i.hinge ? deg(Math.atan2(T.clone().sub(F.j).normalize().dot(F.p), T.clone().sub(F.j).normalize().dot(F.z))) : i.ball ? deg(T.clone().sub(F.j).normalize().angleTo(F.d)) : 0;
-  const lim = i.hinge ? `норма ${i.hinge.L.min}…${i.hinge.L.max}°` : i.ball ? `до ${i.ball.max}° от покоя` : '';
-  $('pInfo').textContent = (weightsOn ? `Веса: ${boneLabel(weightBone)} · ` : '') + `${name}: ${cur.toFixed(0)}° (${lim})` + (info && info.stop ? ' — упор' : '') + (dragId ? '' : ' — тяните мышью');
+  const lim = i.hinge ? `{{raw:ed.normal_2}}` : i.ball ? `{{raw:ed.up_to_from_rest}}` : '';
+  $('pInfo').textContent = (weightsOn ? `{{raw:ed.weights_2}}` : '') + `${name}: ${cur.toFixed(0)}° (${lim})` + (info && info.stop ? '{{js:ed.limit}}' : '') + (dragId ? '' : '{{js:ed.drag_with_the_mouse}}');
   $('pInfo').className = 'pinfo' + (info && info.stop ? ' stop' : '');
 }
 function pickBone(e) {
@@ -1815,7 +1815,7 @@ function setWeights(on) {
 const boneLabel = (b) => b ? (BONE2ID.has(b) ? JMAP[BONE2ID.get(b)].label : b.name.replace(/^mixamorig/, '')) : '';
 // ---- animations stored in the file
 let mixer = null, clips = [], action = null, playing = false; const clock = new THREE.Clock();
-function stopClip() { if (action) action.stop(); action = null; playing = false; $('pPlay').textContent = '▶ Анимация'; }
+function stopClip() { if (action) action.stop(); action = null; playing = false; $('pPlay').textContent = '{{js:ed.animation}}'; }
 let pendingMove = null;
 canvas.addEventListener('pointermove', (e) => {
   if (!poseOn || wearOn) return;   // the armour mode picks the armour, not the bones
@@ -1839,7 +1839,7 @@ canvas.addEventListener('pointermove', (e) => {
       const id = pickBone(ev);
       if (weightsOn && lastBone && lastBone !== weightBone) {
         weightBone = lastBone; paintWeights(weightBone);
-        if (!id) { $('pInfo').textContent = `Веса кости: ${boneLabel(weightBone)}`; $('pInfo').className = 'pinfo'; }
+        if (!id) { $('pInfo').textContent = `{{raw:ed.bone_weights}}`; $('pInfo').className = 'pinfo'; }
       }
       if (id !== hoverId) { hoverId = id; poseHighlight(); }
     }
@@ -1852,10 +1852,10 @@ canvas.addEventListener('pointerdown', (e) => {
 addEventListener('pointerup', () => { if (dragId) { dragId = null; orbit.enabled = true; poseHighlight(); } });
 
 async function setPose(on) {
-  if (on && !DATA.rigged) { alert('Сначала нажмите «Построить скелет и веса по разметке»: режим позы показывает собранную модель.'); return; }
+  if (on && !DATA.rigged) { alert('{{js:ed.first_press_build_the_skeleton_and}}'); return; }
   if (on && !poseRoot) {
-    $('msg').hidden = false; $('msg').textContent = 'Загружаю собранную модель…';
-    try { await loadRigged(); } catch (err) { $('msg').textContent = 'Не удалось открыть собранную модель: ' + err.message; return; }
+    $('msg').hidden = false; $('msg').textContent = '{{js:ed.loading_the_built_model}}';
+    try { await loadRigged(); } catch (err) { $('msg').textContent = '{{js:ed.could_not_open_the_built_model}}' + err.message; return; }
     $('msg').hidden = true;
   }
   poseOn = on; hoverId = dragId = null;
@@ -1864,7 +1864,7 @@ async function setPose(on) {
   if (on) tc.detach(); else if (selected) attach();
   $('guide').hidden = on || document.body.classList.contains('viewonly'); $('poseBar').hidden = !on; $('mPose').classList.toggle('on', on);
   document.body.classList.toggle('pose', on);   // the rail makes way: the pose check wants the whole width
-  $('mPose').textContent = on ? 'К разметке' : 'Поза';
+  $('mPose').textContent = on ? '{{js:ed.to_the_markup}}' : '{{js:ed.pose}}';
   refreshAll();
   poseHighlight();
 }
@@ -1872,9 +1872,9 @@ $('mPose').onclick = () => { if (wearOn) wearMode(false); setPose(!poseOn); };
 $('pWeights').onclick = () => setWeights(!weightsOn);
 $('pPlay').onclick = () => {
   if (!mixer) return;
-  if (playing) { action.paused = !action.paused; $('pPlay').textContent = action.paused ? '▶ Анимация' : '❚❚ Пауза'; return; }
+  if (playing) { action.paused = !action.paused; $('pPlay').textContent = action.paused ? '{{js:ed.animation}}' : '{{js:ed.pause}}'; return; }
   poseReset(); action = mixer.clipAction(clips[+$('pClip').value || 0]); action.reset().play(); playing = true;
-  $('pPlay').textContent = '❚❚ Пауза';
+  $('pPlay').textContent = '{{js:ed.pause}}';
 };
 $('pClip').onchange = () => { if (playing) { stopClip(); $('pPlay').onclick(); } };
 window.sf3dPose = { PB, PINFO, REST, poseMeshes, pickBone, camera, ray, tcO, ovalHelper, S };   // for debugging from the browser console
@@ -1895,11 +1895,11 @@ function setHinge(id, a) {
 let say = null;   // { audio, clip }
 const fileUrl = (p) => new URL('/file=' + p, window.parent.location.href).href;
 async function playLine() {
-  if (say) { say.audio.pause(); say = null; $('pSay').textContent = '▶ Реплика'; for (const m of poseMeshes) if (m.morphTargetInfluences) m.morphTargetInfluences.fill(0); return; }
+  if (say) { say.audio.pause(); say = null; $('pSay').textContent = '{{js:ed.line}}'; for (const m of poseMeshes) if (m.morphTargetInfluences) m.morphTargetInfluences.fill(0); return; }
   const c = DATA.clips[+$('pClipFace').value || 0];
   const clip = await (await fetch(fileUrl(c.clip))).json();
   const audio = new Audio(fileUrl(c.audio));
-  say = { audio, clip }; $('pSay').textContent = '■ Стоп';
+  say = { audio, clip }; $('pSay').textContent = '{{js:ed.stop}}';
   audio.onended = () => { if (say && say.audio === audio) playLine(); };
   await audio.play();
 }
@@ -2427,7 +2427,7 @@ const wv = (id) => +$(id).value;
 function wearAuto() {
   $('wearPanel').classList.toggle('skel', isSkelMode());
   if (isSkelMode()) {
-    if (!wear.skel) { $('wStatus').textContent = 'У вещи нет своего скелета с костями персонажа: выберите часть тела.'; return false; }
+    if (!wear.skel) { $('wStatus').textContent = '{{js:ed.the_piece_has_no_skeleton_of_its_own}}'; return false; }
     wear.fit = {}; wear.off = new V3(); tcW.detach(); wearRetargetAll(); return true;
   }
   const part = $('wPart').value, L = limbOf(part, $('wSide').value);
@@ -2436,7 +2436,7 @@ function wearAuto() {
     wear.pca = up ? wearShapeUpright(wear.parts, part === 'boot') : wearShape(wear.parts, wear.openAxis); wear.wall = wallGrid(wear.parts, wear.pca); wearDeform();
   }
   const P = wear.pca;
-  if (!L) { $('wStatus').textContent = 'У персонажа нет суставов этой части тела.'; return false; }
+  if (!L) { $('wStatus').textContent = '{{js:ed.the_character_has_no_joints_for_this}}'; return false; }
   $('wLen').value = 1; $('wThick').value = 1; $('wWall').value = 1; $('wTwist').value = 0; $('wRigid').value = WEAR_RIGID[part];
   wearDeform();
   wear.off = new V3(); wear.fit = {}; wearHelper.scale.set(1, 1, 1);
@@ -2579,7 +2579,7 @@ function wearDraw() {
     const dots = new THREE.Points(g, NODE_MAT); dots.renderOrder = 998; wearGroup.add(dots);
   }
   const k = st[0];
-  $('wInfo').textContent = !k || !k.n ? '' : `Внутренняя стенка: под кожей ${Math.round(100 * k.under / k.n)}% узлов (красные), с воздухом ${Math.round(100 * k.air / k.n)}% (синие); воздух в среднем ${Math.round(100 * k.meanAir)}%, стенка ${Math.round(100 * k.wall)}% радиуса руки.`;
+  $('wInfo').textContent = !k || !k.n ? '' : `{{raw:ed.inner_wall_of_nodes_under_the_skin}}`;
 }
 // surface points: each pulls the piece around it (smooth falloff over its radius), all in the piece's own space,
 // so the mirrored copy and blender_wear_fit.py get the same shape
@@ -2654,12 +2654,12 @@ function ringPick(e) {   // a click on either copy adds a rim point to the openi
   const n = new THREE.Vector2(((e.clientX - rc.left) / rc.width) * 2 - 1, -((e.clientY - rc.top) / rc.height) * 2 + 1);
   const r = new THREE.Raycaster(); r.setFromCamera(n, camera);
   const copies = wearGroup.children.filter((g) => g.isGroup);
-  const hit = r.intersectObjects(copies, true)[0]; if (!hit) { $('wStatus').textContent = 'Мимо вещи: кликайте по краю отверстия на самой броне.'; return; }
+  const hit = r.intersectObjects(copies, true)[0]; if (!hit) { $('wStatus').textContent = '{{js:ed.missed_the_piece_click_on_the_edge}}'; return; }
   let g = hit.object; while (g.parent && g.parent !== wearGroup) g = g.parent;
   const ring = wear.rings[wear.ringSel];
   ring.pts.push(hit.point.clone().applyMatrix4(g.matrix.clone().invert()));
-  $('wStatus').textContent = ring.pts.length < 3 ? `Точка края ${ring.pts.length}: нужно хотя бы 3 по окружности отверстия.`
-    : `Отверстие размечено (${ring.pts.length} точек). Ползунок «Сузить отверстие» стягивает его край; можно добавить ещё точек.`;
+  $('wStatus').textContent = ring.pts.length < 3 ? `{{raw:ed.edge_point_at_least_3_around_the}}`
+    : `{{raw:ed.opening_marked_points_the_narrow_the}}`;
   wearDeform(); wearDraw();
 }
 function ringDraw(mats) {   // the rim points and the fitted circles, on every copy
@@ -2687,7 +2687,7 @@ function ringUi() {   // the sliders show the selected opening
   $('wRing').classList.toggle('on', !!(wear && wear.ringMode));
 }
 function wearPick(e) {   // a click on the first copy: an existing point (by screen distance) or a new one on the surface
-  if (isSkelMode()) { $('wStatus').textContent = 'Точки — для вещи на одной части тела.'; return; }
+  if (isSkelMode()) { $('wStatus').textContent = '{{js:ed.points_are_for_a_piece_on_one_body}}'; return; }
   const rc = canvas.getBoundingClientRect();
   const mats = wearMatrices();
   for (let c = 0; c < mats.length; c++) for (let i = 0; i < wear.handles.length; i++) {
@@ -2698,12 +2698,12 @@ function wearPick(e) {   // a click on the first copy: an existing point (by scr
   const r = new THREE.Raycaster(); r.setFromCamera(n, camera);
   // either copy: the point goes into the piece's own space through the matrix of the copy that was hit
   const copies = wearGroup.children.filter((g) => g.isGroup);
-  const hit = r.intersectObjects(copies, true)[0]; if (!hit) { $('wStatus').textContent = 'Мимо вещи: кликните по самой броне.'; return; }
+  const hit = r.intersectObjects(copies, true)[0]; if (!hit) { $('wStatus').textContent = '{{js:ed.missed_the_piece_click_on_the_armour}}'; return; }
   let g = hit.object; while (g.parent && g.parent !== wearGroup) g = g.parent;
   const loc = hit.point.clone().applyMatrix4(g.matrix.clone().invert()), copy = copies.indexOf(g);
   wear.handles.push({ p: loc, d: new V3(), r: +$('wRad').value * wear.pca.L });
   wearSelect(wear.handles.length - 1, copy);
-  $('wStatus').textContent = `Точка ${wear.handles.length} поставлена (жёлтая). Тяните её стрелками — поверхность вокруг потянется; радиус — ползунком.`;
+  $('wStatus').textContent = `{{raw:ed.point_placed_yellow_drag_its_arrows}}`;
 }
 function wearSelect(i, copy = wear.selCopy || 0) {
   wear.sel = i; wear.selCopy = copy; for (const id of ['wMove', 'wRot', 'wScale']) $(id).classList.remove('on');
@@ -2762,7 +2762,7 @@ async function wearLoad(buf, name, state, keepPart = false) {
       ? { index: o.geometry.attributes.skinIndex.clone(), weight: o.geometry.attributes.skinWeight.clone(), bones: o.skeleton.bones.map((b) => b.name) } : null;
     parts.push({ geo: g, mat: mat.length === 1 ? mat[0] : mat, skin });
   });
-  if (!parts.length) throw new Error('в файле нет сетки');
+  if (!parts.length) throw new Error('{{js:ed.the_file_has_no_mesh}}');
   let bin = ''; const u8 = new Uint8Array(buf);
   for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
   if (wear && wear.fitted) scene.remove(wear.fitted);
@@ -2781,15 +2781,15 @@ async function wearLoad(buf, name, state, keepPart = false) {
   $('wearPanel').classList.toggle('skel', isSkelMode());
   if (state ? wearRestore(state) : wearAuto()) {
     wearDraw();
-    $('wStatus').textContent = state ? 'Сохранённая подгонка открыта.' : 'Вещь на месте. Поправьте ползунками или стрелками и нажмите «Надеть».';
-    if (wear.tooLong && !isSkelMode()) $('wStatus').textContent = 'Вещь намного длиннее этой части тела (сапог, рука целиком?): на одну кость она не сядет.' + (wear.skel ? ' Выберите «Вся вещь по её скелету».' : '');
+    $('wStatus').textContent = state ? '{{js:ed.saved_fitting_opened}}' : '{{js:ed.the_piece_is_in_place_adjust_it_with}}';
+    if (wear.tooLong && !isSkelMode()) $('wStatus').textContent = '{{js:ed.the_piece_is_much_longer_than_this}}' + (wear.skel ? '{{js:ed.choose_the_whole_piece_by_its_own}}' : '');
   }
   wearGroup.visible = true;
   wearShowOthers();
 }
 function wearListFits() {
   $('wSavedRow').hidden = !wearFits.length;
-  $('wSaved').innerHTML = wearFits.map((f, i) => `<option value="${i}">${f.item}${f.glb ? '' : ' (не надета)'}</option>`).join('');
+  $('wSaved').innerHTML = wearFits.map((f, i) => `<option value="${i}">${f.item}${f.glb ? '' : '{{js:ed.not_put_on}}'}</option>`).join('');
 }
 async function wearSkinned(path) {   // a fitted piece (skeleton + skinned meshes) driven by the pose mode's skeleton
   const g = await new GLTFLoader().loadAsync(fileUrl(path) + '?t=' + Date.now());
@@ -2840,7 +2840,7 @@ async function wearSend(action, extra, wait) {
     ta.value = JSON.stringify(req); ta.dispatchEvent(new Event('input', { bubbles: true }));
     await new Promise((r) => setTimeout(r, 400));
     window.parent.document.querySelector('#' + DATA.wear_go).click();
-  } catch (e) { $('wStatus').textContent = 'Не удалось передать в SF3D: ' + e.message; return null; }
+  } catch (e) { $('wStatus').textContent = '{{js:ed.could_not_send_to_sf3d}}' + e.message; return null; }
   $('wStatus').textContent = wait;
   const stem = DATA.rigged.split('/').pop().replace(/_landmarks_rigged\.glb$/i, '').replace(/\.glb$/i, '');
   const status = DATA.rigged.replace(/[^/]*$/, '') + stem + (action === 'wardrobe' ? '_wardrobe' : '_wear_' + req.item) + '.wear.json';
@@ -2857,7 +2857,7 @@ async function wearSend(action, extra, wait) {
     }
     return js;
   }
-  $('wStatus').textContent = 'SF3D не ответил: смотрите поле «Броня» под редактором.';
+  $('wStatus').textContent = '{{js:ed.sf3d_did_not_answer_see_the_armour}}';
   return null;
 }
 async function wearRequest() {   // the piece, where it sits and how to fit it: for «Надеть» and «Сохранить»
@@ -2879,8 +2879,8 @@ async function wearRequest() {   // the piece, where it sits and how to fit it: 
            state: wearState() };
 }
 async function wearApply() {
-  if (!wear) { $('wStatus').textContent = 'Сначала выберите файл вещи.'; return; }
-  const js = await wearSend('wear', await wearRequest(), 'Blender надевает вещь: подгоняет по телу и переносит веса…');
+  if (!wear) { $('wStatus').textContent = '{{js:ed.choose_the_piece_s_file_first}}'; return; }
+  const js = await wearSend('wear', await wearRequest(), '{{js:ed.blender_is_putting_the_piece_on}}');
   if (js && js.ok) await wearShowFitted(js.glb);
 }
 async function wearShowFitted(path) {
@@ -2888,23 +2888,23 @@ async function wearShowFitted(path) {
   if (wear.fitted) scene.remove(wear.fitted);
   wear.fitted = g; wear.fittedShown = true; scene.add(g);
   wearGroup.visible = false; tcW.detach(); $('wInfo').textContent = '';
-  $('wStatus').textContent += ' Проверьте в позе: «Поза проверки» или тяните руку мышью.';
+  $('wStatus').textContent += '{{js:ed.check_it_in_a_pose_check_pose_or}}';
 }
 const wearEdited = () => { if (wear) { wear.fittedShown = false; wearGroup.visible = true; if (wear.fitted) wear.fitted.visible = false; wearDraw(); } };
 $('mWear').onclick = () => wearMode(!wearOn);
 $('wFile').onchange = async () => {
   const f = $('wFile').files[0]; if (!f) return;
-  $('wStatus').textContent = 'Загружаю…';
-  try { await wearLoad(await f.arrayBuffer(), f.name.replace(/\.glb$/i, '')); } catch (e) { $('wStatus').textContent = 'Не удалось открыть: ' + e.message; }
+  $('wStatus').textContent = '{{js:ed.loading}}';
+  try { await wearLoad(await f.arrayBuffer(), f.name.replace(/\.glb$/i, '')); } catch (e) { $('wStatus').textContent = '{{js:ed.could_not_open}}' + e.message; }
 };
 $('wOpen').onclick = async () => {
   const f = wearFits[+$('wSaved').value]; if (!f) return;
-  $('wStatus').textContent = 'Открываю…';
+  $('wStatus').textContent = '{{js:ed.opening_2}}';
   try {
     const st = await (await fetch(fileUrl(f.fit) + '?t=' + Date.now())).json();
     await wearLoad(await (await fetch(fileUrl(f.src) + '?t=' + Date.now())).arrayBuffer(), f.item, st.state);
     if (f.glb) await wearShowFitted(f.glb);
-  } catch (e) { $('wStatus').textContent = 'Не удалось открыть сохранённую: ' + e.message; }
+  } catch (e) { $('wStatus').textContent = '{{js:ed.could_not_open_the_saved_fitting}}' + e.message; }
 };
 for (const id of ['wPos', 'wLen', 'wThick', 'wTwist', 'wGap']) $(id).addEventListener('input', wearEdited);
 $('wMirror').addEventListener('input', () => { if (wear && isSkelMode()) wearRetargetAll(); wearEdited(); });
@@ -2914,19 +2914,19 @@ $('wOthers').addEventListener('change', () => { wearOthers.visible = wearOn && $
 for (const id of ['wPart', 'wSide']) $(id).addEventListener('change', () => {
   if (!wear || !wearAuto()) return;
   wearEdited();
-  if (wear.tooLong && !isSkelMode()) $('wStatus').textContent = 'Вещь намного длиннее этой части тела: на одну кость она не сядет.' + (wear.skel ? ' Выберите «Вся вещь по её скелету».' : '');
+  if (wear.tooLong && !isSkelMode()) $('wStatus').textContent = '{{js:ed.the_piece_is_much_longer_than_this_2}}' + (wear.skel ? '{{js:ed.choose_the_whole_piece_by_its_own}}' : '');
 });
 $('wMove').onclick = () => wearGizmo('translate'); $('wRot').onclick = () => wearGizmo('rotate'); $('wScale').onclick = () => wearGizmo('scale');
 $('wReset').onclick = () => { if (wear && wearAuto()) wearEdited(); };
-$('wFit').onclick = () => { if (!wear) return; wearFitAll(); wearEdited(); $('wStatus').textContent = 'Подогнано по коже по всей внутренней стенке; форма вещи та же.'; };
+$('wFit').onclick = () => { if (!wear) return; wearFitAll(); wearEdited(); $('wStatus').textContent = '{{js:ed.fitted_to_the_skin_over_the_whole}}'; };
 $('wApply').onclick = wearApply;
-$('wSave').onclick = async () => { if (wear) wearSend('save', await wearRequest(), 'Сохраняю…'); else $('wStatus').textContent = 'Сначала выберите файл вещи.'; };
-$('wGodot').onclick = () => wearSend('wardrobe', {}, 'Собираю примерочную в Godot (первый раз Godot импортирует модели, около минуты)…');
+$('wSave').onclick = async () => { if (wear) wearSend('save', await wearRequest(), '{{js:ed.saving}}'); else $('wStatus').textContent = '{{js:ed.choose_the_piece_s_file_first}}'; };
+$('wGodot').onclick = () => wearSend('wardrobe', {}, '{{js:ed.building_the_fitting_room_in_godot}}');
 $('wCheck').onclick = () => { tcW.detach(); $('pCheck').onclick(); };
 $('wRest').onclick = () => { poseReset(); poseHighlight(); };
 $('wPoints').onclick = () => { if (!wear) return; wear.points = !wear.points; $('wPoints').classList.toggle('on', wear.points);
   if (!wear.points) wearSelect(-1); else { tcW.detach(); for (const id of ['wMove', 'wRot', 'wScale']) $(id).classList.remove('on'); }
-  $('wStatus').textContent = wear.points ? 'Кликните по вещи — появится точка; тяните её стрелками, вокруг потянется поверхность.' : ''; };
+  $('wStatus').textContent = wear.points ? '{{js:ed.click_on_the_piece_a_point_appears}}' : ''; };
 $('wDel').onclick = () => { if (wear && wear.sel >= 0) { wear.handles.splice(wear.sel, 1); wearDeform(); wearSelect(-1); } };
 $('wDelAll').onclick = () => { if (wear) { wear.handles = []; wearDeform(); wearSelect(-1); } };
 $('wRing').onclick = () => {
@@ -2936,10 +2936,10 @@ $('wRing').onclick = () => {
     const cur = wear.rings[wear.ringSel];
     if (!cur || cur.pts.length >= 3) { wear.rings.push({ pts: [], s: 0, b: +$('wRingB').value, sym: !!WEAR_MID[$('wPart').value] || $('wRingSym').checked }); wear.ringSel = wear.rings.length - 1; }
     wear.points = false; $('wPoints').classList.remove('on'); tcW.detach();
-    $('wStatus').textContent = 'Кликайте по краю отверстия на броне: 3 и больше точек по окружности. Ещё раз «Отверстие» — закончить.';
+    $('wStatus').textContent = '{{js:ed.click_on_the_edge_of_the_opening_on}}';
   } else {
     wear.rings = wear.rings.filter((g) => g.pts.length >= 3); wear.ringSel = wear.rings.length - 1;
-    $('wStatus').textContent = wear.rings.length ? 'Двигайте «Сузить отверстие». Для другого отверстия снова нажмите «Отверстие».' : '';
+    $('wStatus').textContent = wear.rings.length ? '{{js:ed.move_narrow_the_opening_for_another}}' : '';
   }
   ringUi(); wearDraw();
 };
@@ -2952,15 +2952,15 @@ async function wearShapeGlb() {   // the piece as reshaped now, in its own space
   return btoa(bin);
 }
 $('wRepaint').onclick = async () => {
-  if (!wear) { $('wStatus').textContent = 'Сначала выберите файл вещи.'; return; }
+  if (!wear) { $('wStatus').textContent = '{{js:ed.choose_the_piece_s_file_first}}'; return; }
   const f = $('wRef').files[0];
   let image = null, glb = null;
   try {
     image = f ? await new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(f); }) : null;
     glb = await wearShapeGlb();
-  } catch (e) { $('wStatus').textContent = 'Не удалось подготовить форму: ' + e.message; return; }
+  } catch (e) { $('wStatus').textContent = '{{js:ed.could_not_prepare_the_shape}}' + e.message; return; }
   const js = await wearSend('repaint', { item: wear.item, glb, image },
-                            'Hunyuan3D-Paint перекрашивает вещь по новой форме (3–6 минут, видеокарта занята)…');
+                            '{{js:ed.hunyuan3d_paint_is_repainting_the}}');
   if (!js || !js.ok) return;
   // the new piece carries its shape: the openings, the points and the wall are in it now, the placement stays
   const st = wearState(); st.rings = []; st.handles = []; st.wWall = 1;
@@ -2969,14 +2969,14 @@ $('wRepaint').onclick = async () => {
   $('wStatus').textContent = js.log;
 };
 $('wHollow').onclick = async () => {
-  if (!wear) { $('wStatus').textContent = 'Сначала выберите файл вещи.'; return; }
+  if (!wear) { $('wStatus').textContent = '{{js:ed.choose_the_piece_s_file_first}}'; return; }
   // the end to cut, in the piece's own space: an upright piece by its own vertical; a piece on a limb by its tube
   // axis, which points from the end at the body to the far one (the wrist, the knee)
   const end = $('wOpenEnd').value, P = wear.pca;
   const down = P.upright ? new V3(0, -1, 0) : P.axis.clone().normalize();
   const axis = end === 'top' ? down.clone().negate() : down;
   const js = await wearSend('hollow', { item: wear.item, glb: wear.b64, open: end === 'both' ? 'both' : 'top', axis: axis.toArray() },
-                            'Blender вскрывает вещь (около минуты)…');
+                            '{{js:ed.blender_is_opening_up_the_piece}}');
   if (!js || !js.ok) return;
   // the shape changed (a tube can be found now where a pot was): placed anew, on the same part and side
   const part = $('wPart').value, side = $('wSide').value;
@@ -3023,7 +3023,7 @@ addEventListener('keydown', (e) => {   // G / R / S like the joints
     resize(); setView('front'); sync();
     if (DATA.mode === 'view' && DATA.rigged) { document.body.classList.add('viewonly'); $('guide').hidden = true; await setPose(true); $('guide').hidden = true; }
     else if (DATA.mode === 'pose' && DATA.rigged) await setPose(true);
-  } catch (e) { $('msg').textContent = 'Не удалось открыть модель: ' + e.message; }
+  } catch (e) { $('msg').textContent = '{{js:ed.could_not_open_the_model}}' + e.message; }
 })();
 new ResizeObserver(resize).observe(canvas);
 renderer.setAnimationLoop(() => {

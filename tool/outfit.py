@@ -16,39 +16,40 @@ import time
 from pathlib import Path
 
 import rigging as RG
+from i18n import t as _t
 
 ROOT = Path(__file__).resolve().parent
 
 # GUI label -> (item stem, fit slot, triangle budget, rigid)
 SLOTS = {
-    "— не брать (кожа, тело)": None,
-    "голова целиком (лицо + шлем / волосы)": ("head", "head", 3500, True),
-    "шлем": ("helmet", "helmet", 2500, True),
-    "нагрудник / туника / куртка": ("chest", "chest", 6000, False),
-    "пояс / юбка": ("belt", "belt", 3000, False),
-    "штаны": ("pants", "pants", 4000, False),
-    "наплечник левый": ("pauldron_L", "pauldrons", 1500, False),
-    "наплечник правый": ("pauldron_R", "pauldrons", 1500, False),
-    "наруч левый": ("bracer_L", "bracers", 1200, False),
-    "наруч правый": ("bracer_R", "bracers", 1200, False),
-    "перчатка левая": ("glove_L", "gloves", 1200, False),
-    "перчатка правая": ("glove_R", "gloves", 1200, False),
-    "рука целиком левая (наплечник + наруч + перчатка)": ("arm_L", "arms", 6000, False),
-    "рука целиком правая (наплечник + наруч + перчатка)": ("arm_R", "arms", 6000, False),
-    "бедро левое (набедренник)": ("thigh_L", "pants", 2500, False),
-    "бедро правое (набедренник)": ("thigh_R", "pants", 2500, False),
-    "сапог левый (обмотка, ботинок)": ("boot_L", "boots", 2500, False),
-    "сапог правый (обмотка, ботинок)": ("boot_R", "boots", 2500, False),
+    _t("outfit.skip_skin_body"): None,
+    _t("outfit.whole_head_face_helmet_hair"): ("head", "head", 3500, True),
+    _t("outfit.helmet"): ("helmet", "helmet", 2500, True),
+    _t("outfit.breastplate_tunic_jacket"): ("chest", "chest", 6000, False),
+    _t("outfit.belt_skirt"): ("belt", "belt", 3000, False),
+    _t("outfit.trousers"): ("pants", "pants", 4000, False),
+    _t("outfit.left_pauldron"): ("pauldron_L", "pauldrons", 1500, False),
+    _t("outfit.right_pauldron"): ("pauldron_R", "pauldrons", 1500, False),
+    _t("outfit.left_bracer"): ("bracer_L", "bracers", 1200, False),
+    _t("outfit.right_bracer"): ("bracer_R", "bracers", 1200, False),
+    _t("outfit.left_glove"): ("glove_L", "gloves", 1200, False),
+    _t("outfit.right_glove"): ("glove_R", "gloves", 1200, False),
+    _t("outfit.whole_left_arm_pauldron_bracer_glove"): ("arm_L", "arms", 6000, False),
+    _t("outfit.whole_right_arm_pauldron_bracer"): ("arm_R", "arms", 6000, False),
+    _t("outfit.left_thigh_cuisse"): ("thigh_L", "pants", 2500, False),
+    _t("outfit.right_thigh_cuisse"): ("thigh_R", "pants", 2500, False),
+    _t("outfit.left_boot_wrap_shoe"): ("boot_L", "boots", 2500, False),
+    _t("outfit.right_boot_wrap_shoe"): ("boot_R", "boots", 2500, False),
 }
 GUESS_TO_LABEL = {
-    "skip": "— не брать (кожа, тело)", "head": "голова целиком (лицо + шлем / волосы)", "helmet": "шлем",
-    "chest": "нагрудник / туника / куртка", "belt": "пояс / юбка",
-    "pauldron левый": "наплечник левый", "pauldron правый": "наплечник правый",
-    "bracer левый": "наруч левый", "bracer правый": "наруч правый",
-    "boot левый": "сапог левый (обмотка, ботинок)", "boot правый": "сапог правый (обмотка, ботинок)",
-    "arm левый": "рука целиком левая (наплечник + наруч + перчатка)",
-    "arm правый": "рука целиком правая (наплечник + наруч + перчатка)",
-    "thigh левый": "бедро левое (набедренник)", "thigh правый": "бедро правое (набедренник)",
+    "skip": _t("outfit.skip_skin_body"), "head": _t("outfit.whole_head_face_helmet_hair"), "helmet": _t("outfit.helmet"),
+    "chest": _t("outfit.breastplate_tunic_jacket"), "belt": _t("outfit.belt_skirt"),
+    "pauldron левый": _t("outfit.left_pauldron"), "pauldron правый": _t("outfit.right_pauldron"),
+    "bracer левый": _t("outfit.left_bracer"), "bracer правый": _t("outfit.right_bracer"),
+    "boot левый": _t("outfit.left_boot_wrap_shoe"), "boot правый": _t("outfit.right_boot_wrap_shoe"),
+    "arm левый": _t("outfit.whole_left_arm_pauldron_bracer_glove"),
+    "arm правый": _t("outfit.whole_right_arm_pauldron_bracer"),
+    "thigh левый": _t("outfit.left_thigh_cuisse"), "thigh правый": _t("outfit.right_thigh_cuisse"),
 }
 
 
@@ -64,9 +65,9 @@ def scan(model, work, blender):
     lines, raw = _blender(blender, "blender_outfit_scan.py", model, Path(work) / "scan", timeout=600)
     segs = [json.loads(x.split(" ", 1)[1]) for x in lines if x.startswith("SCAN_SEG ")]
     if not segs:
-        raise RuntimeError("не удалось прочитать сегменты: " + raw[-300:])
+        raise RuntimeError(_t("outfit.could_not_read_the_segments") + raw[-300:])
     for s in segs:
-        s["label"] = GUESS_TO_LABEL.get(s["guess"], "— не брать (кожа, тело)")
+        s["label"] = GUESS_TO_LABEL.get(s["guess"], _t("outfit.skip_skin_body"))
     return segs
 
 
@@ -90,7 +91,7 @@ def transfer(model, assign, base_parts, out_dir, work, blender, rig_dressed):
     work.mkdir(parents=True, exist_ok=True)
     items = items_from(assign)
     if not items:
-        yield "Ни одному сегменту не назначен слот: нечего переносить."
+        yield _t("outfit.no_segment_has_a_slot_nothing_to")
         return False
     t0 = time.time()
 
@@ -100,64 +101,64 @@ def transfer(model, assign, base_parts, out_dir, work, blender, rig_dressed):
     parts = work / "dressed_parts.glb"
     cached = parts.exists() and meta.exists() and json.loads(meta.read_text(encoding="utf-8")).get("stamp") == stamp
     if cached:
-        yield "Одетая модель уже заригана раньше, беру готовый скелет."
+        yield _t("outfit.the_dressed_model_was_rigged_before")
     else:
-        yield "Склеиваю сегменты в одну модель..."
+        yield _t("outfit.joining_the_segments_into_one_model")
         full = work / "dressed_full.glb"
         lines, raw = _blender(blender, "blender_join.py", model, full)
         if not any(x.startswith("JOIN_OK") for x in lines):
-            yield "ОШИБКА склейки: " + raw[-300:]
+            yield _t("outfit.error_joining") + raw[-300:]
             return False
         rigged = work / "dressed_rigged.glb"
         ok = yield from rig_dressed(full, rigged)
         if not ok:
-            yield "ОШИБКА: одетую модель не удалось заригать."
+            yield _t("outfit.error_the_dressed_model_could_not_be")
             return False
-        yield "Разбиваю одетую модель на области тела..."
+        yield _t("outfit.splitting_the_dressed_model_into")
         RG.split_parts(rigged, parts, blender)
         meta.write_text(json.dumps(dict(stamp=stamp, source=str(model))), encoding="utf-8")
 
     # ---- 2. items, decimated to their budgets
     pieces = work / "pieces"
     args = [f"{seg}={stem}:{budget}" for stem, (slot, budget, rigid, segs) in items.items() for seg in segs]
-    yield f"Выгружаю предметы ({len(items)}): " + ", ".join(items) + "..."
+    yield _t("outfit.exporting_the_items", len(items)) + ", ".join(items) + "..."
     lines, raw = _blender(blender, "blender_export_segments.py", model, pieces, *args)
     for x in lines:
         if x.startswith(("SEG_DECIMATE", "SEG_MISSING")):
-            yield "  " + x.replace("SEG_DECIMATE", "упрощено:").replace("SEG_MISSING", "нет сегмента:")
+            yield "  " + x.replace("SEG_DECIMATE", _t("outfit.simplified")).replace("SEG_MISSING", _t("outfit.no_segment"))
     if not any(x.startswith("SEG_OK") for x in lines):
-        yield "ОШИБКА выгрузки сегментов: " + raw[-300:]
+        yield _t("outfit.error_exporting_the_segments") + raw[-300:]
         return False
 
     # ---- 3. per item: dressed skeleton -> transfer -> fit on the base body
     done = []
     for stem, (slot, budget, rigid, segs) in items.items():
-        yield f"[{stem}] перенос ({slot})..."
+        yield _t("outfit.transfer", stem, slot)
         on_src, xfer, dst = work / f"{stem}_on_src.glb", work / f"{stem}_xfer.glb", out_dir / f"{stem}.glb"
         lines, raw = _blender(blender, "blender_fit_armor.py", parts, pieces / f"{stem}.glb", slot, on_src,
                               "mode=keep", "offset=0", "neck_plug=0", "fill=0", "mask=0")
         if not any(x.startswith("FIT_OK") for x in lines):
-            yield f"[{stem}] ОШИБКА привязки к одетой модели: " + raw[-300:]
+            yield _t("outfit.error_binding_to_the_dressed_model", stem) + raw[-300:]
             continue
         lines, raw = _blender(blender, "blender_transfer_armor.py", parts, on_src, base_parts, xfer,
                               f"armour_all={pieces / '_all_armour.glb'}", f"rigid={1 if rigid else 0}")
         rep = next((x for x in lines if x.startswith("XFER_REPORT")), None)
         if not any(x.startswith("XFER_OK") for x in lines):
-            yield f"[{stem}] ОШИБКА переноса: " + raw[-300:]
+            yield _t("outfit.transfer_error", stem) + raw[-300:]
             continue
         if rep and slot != "head":  # the base head is hidden whole under a replacement head
-            yield f"[{stem}] " + rep.replace("XFER_REPORT armour off the body:", "зазор до тела:").replace(
-                "body vertices under the armour", "вершин тела под бронёй").replace("poking out", "вылезает")
+            yield f"[{stem}] " + rep.replace("XFER_REPORT armour off the body:", _t("outfit.gap_to_the_body")).replace(
+                "body vertices under the armour", _t("outfit.body_vertices_under_the_armour")).replace("poking out", _t("outfit.poking_out"))
         try:
             man = RG.fit_armour(base_parts, xfer, slot, dst, blender, {"mode": "keep", "offset": 0.004},
                                 hide_body=(slot == "head"))
         except Exception as e:  # noqa: BLE001
-            yield f"[{stem}] ОШИБКА подгонки: {e}"
+            yield _t("outfit.fitting_error", stem, e)
             continue
         man.update(set=out_dir.name, segments=segs, source=model.name)
         dst.with_suffix(".item.json").write_text(json.dumps(man, indent=2, ensure_ascii=False), encoding="utf-8")
         done.append((stem, slot, man))
-        yield f"[{stem}] готово: {dst.name}" + (" (+ маска тела)" if man.get("mask") else "")
+        yield _t("outfit.done", stem, dst.name) + (_t("outfit.body_mask") if man.get("mask") else "")
 
     # ---- 4. the whole set
     if not done:
@@ -170,5 +171,5 @@ def transfer(model, assign, base_parts, out_dir, work, blender, rig_dressed):
     lines, _ = _blender(blender, "blender_fit_preview.py", base_parts,
                         ";".join(str(out_dir / f"{s}.glb") for s, _, _ in done), out_dir / "set_preview.png",
                         ",".join(hides), timeout=600)
-    yield f"Сет готов за {time.time() - t0:.0f} с: {len(done)} предметов в {out_dir}"
+    yield _t("outfit.the_set_is_ready_in_s_items_in", time.time() - t0, len(done), out_dir)
     return True

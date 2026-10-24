@@ -7,8 +7,9 @@ from pathlib import Path
 import gradio as gr
 
 import landmarks as LM
+from i18n import t as _t
 
-NAMINGS = {"Mixamo (под анимации из Mixamo)": "mixamo", "Godot (профиль Humanoid)": "godot"}
+NAMINGS = {_t("lm.mixamo_for_mixamo_animations"): "mixamo", _t("lm.godot_humanoid_profile"): "godot"}
 
 
 def _frame(page):
@@ -18,66 +19,53 @@ def _frame(page):
 
 def mount(config_loader, asset, upload, accordion=True):
     """asset / upload: the model pickers of the rigging tab, reused here. Returns (data, editor) for mount_lipsync."""
-    with (gr.Accordion("Скелет по ориентирам (вручную, как в Mixamo)", open=False) if accordion
+    with (gr.Accordion(_t("lm.skeleton_by_landmarks_by_hand_like"), open=False) if accordion
           else contextlib.nullcontext()):
-        gr.Markdown("Выберите модель на этой вкладке выше и откройте разметку: кликайте по модели, потом «Построить».")
-        open_btn = gr.Button("Открыть разметку", variant="secondary")
+        gr.Markdown(_t("lm.choose_a_model_above_on_this_tab_and"))
+        open_btn = gr.Button(_t("lm.open_the_markup"), variant="secondary")
         editor = gr.HTML()
-        data = gr.Textbox(label="Разметка (заполняется редактором автоматически; можно вставить сохранённую)",
+        data = gr.Textbox(label=_t("lm.markup_the_editor_fills_it_in_a"),
                           lines=2, max_lines=4, elem_id=LM.TARGET_ID)
         # the editor's armour mode: it writes the request here and clicks the button (both kept out of sight)
         gr.HTML("<style>.sf3d-hidden{display:none!important}</style>")
         wear_req = gr.Textbox(elem_id=LM.WEAR_ID, elem_classes=["sf3d-hidden"], show_label=False)
         wear_btn = gr.Button("wear", elem_id=LM.WEAR_GO, elem_classes=["sf3d-hidden"])
-        wear_log = gr.Textbox(label="Броня", lines=2, interactive=False)
-        with gr.Accordion("Параметры сборки", open=False):
+        wear_log = gr.Textbox(label=_t("lm.armour"), lines=2, interactive=False)
+        with gr.Accordion(_t("lm.build_options"), open=False):
             with gr.Row():
-                naming = gr.Radio(list(NAMINGS), value=list(NAMINGS)[0], label="Имена костей")
-                weld = gr.Checkbox(value=True, label="Сшить стыки между частями")
-                mouth = gr.Radio([("Пластина (быстро, для дальних планов)", "plate"), ("Разрез: губы, полость, зубы, язык", "cut"),
-                                  ("Нет", "none")], value="cut", label="Рот для речи (если размечено лицо)")
-                eyes = gr.Checkbox(value=True, label="Вставить глаза-шары (если обведены глаза)")
-                eyecol = gr.Checkbox(value=True, label="Цвет радужки — с нарисованных глаз модели",
-                                     info="Выкл. — цвет из набора деталей лица")
+                naming = gr.Radio(list(NAMINGS), value=list(NAMINGS)[0], label=_t("lm.bone_names"))
+                weld = gr.Checkbox(value=True, label=_t("lm.stitch_the_seams_between_parts"))
+                mouth = gr.Radio([(_t("lm.plate_fast_for_distant_shots"), "plate"), (_t("lm.cut_lips_cavity_teeth_tongue"), "cut"),
+                                  (_t("fbx.none"), "none")], value="cut", label=_t("lm.speech_mouth_if_the_face_is_marked"))
+                eyes = gr.Checkbox(value=True, label=_t("lm.insert_eyeballs_if_the_eyes_are"))
+                eyecol = gr.Checkbox(value=True, label=_t("lm.iris_colour_from_the_model_s_painted"),
+                                     info=_t("lm.off_the_colour_from_the_face_parts"))
             with gr.Row():
-                ftopo = gr.Checkbox(value=True, label="Ретопология лица: ровная сетка вокруг рта и глаз (рекомендуется)",
-                                    info="Перестраивает сетку лица кольцами: гладкие края век и губ, без заломов при открытии рта, "
-                                         "подвижные брови (ключи browInnerUp, browDown, browOuterUp). Верх маски — у линии волос, "
-                                         "двигается в «Овал рта и веки». Работает с режимом рта «Разрез» и размеченными глазами.")
-                fsmooth = gr.Slider(0, 3, value=2, step=1, label="Сглаживание сетки лица (0 — выкл.)")
-                kit = gr.Dropdown(choices=[""], value="", label="Набор деталей лица (пусто — стандартный)", allow_custom_value=True)
-        go = gr.Button("Построить скелет и веса по разметке (около минуты, без видеокарты)", variant="primary")
+                ftopo = gr.Checkbox(value=True, label=_t("lm.face_retopology_an_even_mesh_around"),
+                                    info=_t("lm.rebuilds_the_face_mesh_in_rings"))
+                fsmooth = gr.Slider(0, 3, value=2, step=1, label=_t("lm.face_mesh_smoothing_0_off"))
+                kit = gr.Dropdown(choices=[""], value="", label=_t("lm.face_parts_set_empty_the_standard"), allow_custom_value=True)
+        go = gr.Button(_t("lm.build_the_skeleton_and_weights_from"), variant="primary")
         with gr.Row():
             with gr.Column():
-                log = gr.Textbox(label="Ход работы", lines=7, interactive=False)
-                files = gr.File(label="Результат", file_count="multiple", interactive=False)
+                log = gr.Textbox(label=_t("face.progress"), lines=7, interactive=False)
+                files = gr.File(label=_t("lm.result"), file_count="multiple", interactive=False)
             with gr.Column():
-                view = gr.Model3D(label="Модель со скелетом", height=380, clear_color=(0.9, 0.9, 0.9, 1))
-        shots = gr.Gallery(label="Проверка: покой, поза спереди, поза сбоку", columns=3, height=300)
-        with gr.Accordion("Как работает разметка", open=False):
+                view = gr.Model3D(label=_t("lm.model_with_a_skeleton"), height=380, clear_color=(0.9, 0.9, 0.9, 1))
+        shots = gr.Gallery(label=_t("lm.check_rest_front_pose_side_pose"), columns=3, height=300)
+        with gr.Accordion(_t("lm.how_the_markup_works"), open=False):
             gr.Markdown(
-                "Модель выбирается выше, в блоке **1. Модель** (вкладка «Скелет»). Нажмите «Открыть разметку» и кликайте по модели на виде "
-                "спереди: подбородок, пах, плечо, локоть, запястье, колено, щиколотка (при симметрии — только левая "
-                "сторона персонажа, она справа на экране). Глубину узла программа находит сама, по толщине модели. "
-                "Затем таз, позвоночник, шея, ключицы, бёдра и стопы рассчитываются автоматически, и любой узел можно "
-                "выделить мышкой и сдвинуть или повернуть: стрелками в окне (G — перемещение, R — поворот) или "
-                "числами, как в Blender. У локтей, коленей, запястий и щиколоток зелёный сектор показывает, куда сустав "
-                "сгибается, красный — куда нет; поле «Сгиб» гнёт сустав точно по его оси. Справа вверху окна — схема-подсказка, "
-                "где должен стоять выбранный узел (можно подложить свою картинку). Пальцы: кнопка «Разметить пальцы» — "
-                "камера подъедет к кисти, кликните кончики пальцев (лишние отметьте «нет»), суставы рассчитаются сами. "
-                "Лицо: «Разметить лицо» — центр глаза, уголок рта, середина рта; появятся челюсть и глаза. "
-                "Рот для речи: пластина с ключами ARKit поверх губ или настоящий разрез с полостью, зубами и языком из "
-                "набора «Детали лица» — ключи одинаковые, липсинк игры работает с обоими.")
-        with gr.Accordion("Посмотреть готовую модель со скелетом (FBX из Mixamo или GLB)", open=False):
+                _t("lm.the_model_is_chosen_above_in_block_1"))
+        with gr.Accordion(_t("lm.view_a_finished_model_with_a"), open=False):
             with gr.Row():
-                ref_file = gr.File(label="FBX (Mixamo, With Skin) или GLB", file_types=[".fbx", ".glb"], type="filepath", scale=3)
-                ref_btn = gr.Button("Открыть в просмотре: кости, веса, анимация", scale=1)
+                ref_file = gr.File(label=_t("lm.fbx_mixamo_with_skin_or_glb"), file_types=[".fbx", ".glb"], type="filepath", scale=3)
+                ref_btn = gr.Button(_t("lm.open_in_the_viewer_bones_weights"), scale=1)
 
         def open_editor(up, name, text):
             cfg = config_loader()
             src = LM.source_path(up, name, cfg["export_dir"])
             if not src or not src.exists():
-                return '<div style="padding:16px">Сначала выберите модель в блоке «1. Модель» или загрузите GLB.</div>'
+                return _t("lm.first_choose_a_model_in_block_1")
             return _frame(LM.editor_page(src, LM.initial_state(src, cfg["export_dir"], text),
                                          LM.output_paths(src, cfg["export_dir"])[0]))
 
@@ -86,14 +74,14 @@ def mount(config_loader, asset, upload, accordion=True):
             src = LM.source_path(up, name, cfg["export_dir"])
             lines = []
             if not src or not src.exists():
-                yield "Сначала выберите модель.", None, None, None, gr.update()
+                yield _t("lm.choose_a_model_first"), None, None, None, gr.update()
                 return
             try:
                 marks = LM.parse(text)
                 for step in LM.build(src, marks, NAMINGS[nm], cfg, do_weld, do_mouth, do_eyes, (kit_name or "").strip(), do_topo, smooth_lvl,
                                      eye_col):
                     if isinstance(step, dict):  # reopen the editor in the pose mode on the fresh build
-                        lines.append("Редактор открыт в режиме «Поза»: тяните мышью руки и ноги, чтобы проверить сгибы.")
+                        lines.append(_t("lm.the_editor_is_open_in_pose_mode_drag"))
                         state = json.loads(Path(step["landmarks"]).read_text(encoding="utf-8"))
                         yield ("\n".join(lines), step["glb"], [step["glb"], step["landmarks"]], step["images"],
                                _frame(LM.editor_page(src, state, Path(step["glb"]), mode="pose")))
@@ -101,16 +89,16 @@ def mount(config_loader, asset, upload, accordion=True):
                         lines.append(step)
                         yield "\n".join(lines), None, None, None, gr.update()
             except Exception as e:  # shown to the user; details are in work/landmark_rig/*/blender.log
-                lines.append("Ошибка: " + str(e))
+                lines.append(_t("lm.error_2") + str(e))
                 yield "\n".join(lines), None, None, None, gr.update()
 
         def open_view(path):
             if not path:
-                return '<div style="padding:16px">Загрузите FBX или GLB со скелетом.</div>'
+                return _t("lm.load_an_fbx_or_glb_with_a_skeleton")
             try:
                 glb, info = LM.viewable(Path(path), config_loader())
             except Exception as e:
-                return f'<div style="padding:16px">Не удалось открыть: {_html.escape(str(e))}</div>'
+                return _t("lm.could_not_open", _html.escape(str(e)))
             return _frame(LM.editor_page(glb, None, glb, mode="view"))
 
         def kits():
@@ -122,7 +110,7 @@ def mount(config_loader, asset, upload, accordion=True):
             try:
                 return LM.wear(config_loader(), text)
             except Exception as e:
-                return "Ошибка: " + str(e)
+                return _t("lm.error_2") + str(e)
 
         wear_btn.click(do_wear, wear_req, wear_log, concurrency_id="landmark_rig", concurrency_limit=1, show_progress="minimal")
         open_btn.click(open_editor, [upload, asset, data], editor)
@@ -139,44 +127,40 @@ def mount(config_loader, asset, upload, accordion=True):
 
 def mount_lipsync(config_loader, asset, upload, data, editor, accordion=True):
     """Lip-sync clip for the mouth plate. asset / upload: the pickers of the rigging tab; data / editor: from mount()."""
-    with (gr.Accordion("Липсинк реплики (для модели с ртом для речи)", open=False) if accordion
+    with (gr.Accordion(_t("lm.line_lipsync_for_a_model_with_a"), open=False) if accordion
           else contextlib.nullcontext()):
-        gr.Markdown("Модель берётся из вкладки «Скелет» и должна быть собрана по ориентирам с лицом и режимом «Рот для "
-                    "речи». Аудио реплики + её точный текст (из субтитров: Whisper путает имена) → клип "
-                    "`<имя>.face.json` рядом с моделью. В игре его проигрывает `FaceCurvesPlayer`; здесь — кнопка "
-                    "«▶ Реплика» в режиме «Поза» редактора разметки. Инструменты берутся из игрового проекта "
-                    "(`lipsync_skills_dir` в config.json).")
+        gr.Markdown(_t("lm.the_model_is_taken_from_the_skeleton"))
         with gr.Row():
-            ls_audio = gr.File(label="Голос (mp3, wav, ogg)", file_types=[".mp3", ".wav", ".ogg"], type="filepath")
+            ls_audio = gr.File(label=_t("lm.voice_mp3_wav_ogg"), file_types=[".mp3", ".wav", ".ogg"], type="filepath")
             with gr.Column():
-                ls_text = gr.Textbox(label="Точный текст реплики (пусто — как услышит Whisper)", lines=2)
-                ls_lang = gr.Radio(["ru", "en"], value="ru", label="Язык")
-                ls_btn = gr.Button("Сделать клип липсинка", variant="primary")
-        ls_log = gr.Textbox(label="Ход работы", lines=5, interactive=False)
+                ls_text = gr.Textbox(label=_t("lm.the_exact_text_of_the_line_empty_as"), lines=2)
+                ls_lang = gr.Radio(["ru", "en"], value="ru", label=_t("face.tongue"))
+                ls_btn = gr.Button(_t("lm.make_the_lipsync_clip"), variant="primary")
+        ls_log = gr.Textbox(label=_t("face.progress"), lines=5, interactive=False)
 
         def lipsync(up, name, audio, text, lang, state_text):
             import lipsync_link as LL
             cfg = config_loader()
             src = LM.source_path(up, name, cfg["export_dir"])
             if not src or not src.exists() or not audio:
-                yield "Нужны модель (вкладка «Скелет») и аудио.", gr.update()
+                yield _t("lm.a_model_tab_skeleton_and_audio_are"), gr.update()
                 return
             rigged = LM.output_paths(src, cfg["export_dir"])[0]
             if not rigged.exists():
-                yield "Сначала соберите скелет по разметке (с лицом и «Рот для речи»).", gr.update()
+                yield _t("lm.build_the_skeleton_from_the_markup"), gr.update()
                 return
             lines = []
             try:
                 for step in LL.make_clip(Path(audio), text.strip(), lang, rigged, cfg):
                     if isinstance(step, dict):
-                        lines.append(f"Готово: {step['clip']}. Откройте «Поза» → «▶ Реплика».")
+                        lines.append(_t("lm.done_open_pose_line", step['clip']))
                         yield "\n".join(lines), _frame(LM.editor_page(
                             src, LM.initial_state(src, cfg["export_dir"], state_text), rigged, mode="pose"))
                     else:
                         lines.append(step)
                         yield "\n".join(lines), gr.update()
             except Exception as e:
-                lines.append("Ошибка: " + str(e))
+                lines.append(_t("lm.error_2") + str(e))
                 yield "\n".join(lines), gr.update()
 
         ls_btn.click(lipsync, [upload, asset, ls_audio, ls_text, ls_lang, data], [ls_log, editor], concurrency_id="lipsync",

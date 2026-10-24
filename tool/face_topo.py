@@ -15,6 +15,7 @@ import bpy
 import mathutils.geometry as G
 from mathutils import Vector
 from mathutils.bvhtree import BVHTree
+from i18n import t as _t
 
 
 def catmull_closed(pts, n_per):
@@ -94,7 +95,7 @@ def build(C):
     def new_vert(x, z, ref_y=None):
         h = ray(x, z) if ref_y is None else ray_near(x, z, ref_y)
         if h[0] is None:
-            fail(f"нет кожи под маской лица в точке ({x:.3g}, {z:.3g}): уменьшите маску")
+            fail(_t("face.no_skin_under_the_face_mask_at", x, z))
         v = bm.verts.new(finv @ h[0])
         for k, w in weights_at(h[0], h[2]).items():
             v[dl][k] = w
@@ -152,7 +153,7 @@ def build(C):
         if h[0] is None:   # the ray slipped past the surface (a gap under the chin, a collar): the nearest skin
             h = skin_bvh.find_nearest(C + dir_of(u, v) * last_r[0])
             if h[0] is None:
-                fail(f"нет кожи под маской лица в направлении ({u:.3g}, {v:.3g}): уменьшите маску")
+                fail(_t("face.no_skin_under_the_face_mask_in_the", u, v))
             report["mask_ray_misses"] = report.get("mask_ray_misses", 0) + 1
         else:
             last_r[0] = (h[0] - C).length
@@ -484,7 +485,7 @@ def build(C):
     report["mask_rim"] = len(rim)
     report["mask_deleted_faces"] = len(kill)
     if len(rim) < 12:
-        fail("контур маски лица почти не пересёк сетку: проверьте маску")
+        fail(_t("face.the_face_mask_outline_barely_crossed"))
 
     # depth chained ring by ring along each direction (slit outward), as the editor draws it: no jump onto the nose
     U = [new_vert(*mpt(0, i), ref_y=M.y) for i in range(NM // 2 + 1)]

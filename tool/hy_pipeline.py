@@ -53,8 +53,9 @@ T0 = time.time()
 
 # ---------------------------------------------------------------- views
 from hy3dgen.rembg import BackgroundRemover  # noqa: E402
+from i18n import t as _t
 
-say("подготовка картинок (удаление фона)")
+say(_t("hy.preparing_the_pictures_removing_the"))
 remover = None
 
 
@@ -98,7 +99,7 @@ for name in ("front", "back", "left", "right"):
         cut = flat_background_cut(im)
         if cut is not None:
             im = cut
-            say(f"{name}: фон однотонный, вырезан по цвету")
+            say(_t("hy.plain_background_cut_out_by_colour", name))
         else:
             remover = remover or BackgroundRemover()
             im = remover(im.convert("RGB"))
@@ -107,7 +108,7 @@ for name in ("front", "back", "left", "right"):
     stats["views"].append(name)
 if "front" not in images:
     sys.exit("front view is required")
-say(f"виды: {', '.join(images)}")
+say(_t("hy.views", ', '.join(images)))
 
 # ---------------------------------------------------------------- shape
 from hy3dgen.shapegen import (  # noqa: E402
@@ -117,11 +118,11 @@ from hy3dgen.shapegen import (  # noqa: E402
     Hunyuan3DDiTFlowMatchingPipeline,
 )
 
-say("загрузка модели формы")
+say(_t("hy.loading_the_shape_model"))
 shape_pipe = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
     "tencent/Hunyuan3D-2mv", subfolder="hunyuan3d-dit-v2-mv", variant="fp16"
 )
-say(f"генерация формы ({a.steps} шагов)")
+say(_t("hy.generating_the_shape_steps", a.steps))
 torch.cuda.reset_peak_memory_stats()
 t = time.time()
 mesh = shape_pipe(
@@ -137,9 +138,9 @@ stats["shape_peak_vram_mb"] = round(torch.cuda.max_memory_allocated() / 1024**2)
 stats["shape_faces_raw"] = int(len(mesh.faces))
 del shape_pipe
 free_gpu()
-say(f"форма готова за {stats['shape_seconds']} с, {stats['shape_faces_raw']} граней")
+say(_t("hy.shape_ready_in_s_faces", stats['shape_seconds'], stats['shape_faces_raw']))
 
-say("очистка и упрощение меша")
+say(_t("hy.cleaning_and_simplifying_the_mesh"))
 try:
     mesh = FloaterRemover()(mesh)
     mesh = DegenerateFaceRemover()(mesh)
@@ -155,16 +156,16 @@ except Exception:  # fall back to plain quadric decimation
     mesh = trimesh.Trimesh(m.vertex_matrix(), m.face_matrix(), process=False)
 stats["faces"] = int(len(mesh.faces))
 mesh.export(str(out / "shape.glb"))
-say(f"меш: {stats['faces']} граней")
+say(_t("hy.mesh_faces", stats['faces']))
 
 if a.no_texture:
     stats["total_seconds"] = round(time.time() - T0, 1)
     (out / "hy_stats.json").write_text(json.dumps(stats, indent=2), encoding="utf-8")
-    say("ГОТОВО (только форма)")
+    say(_t("hy.done_shape_only"))
     sys.exit(0)
 
 # ---------------------------------------------------------------- texture
-say("загрузка моделей покраски")
+say(_t("hy.loading_the_paint_models"))
 from hy3dgen.texgen import Hunyuan3DPaintPipeline  # noqa: E402
 
 try:
@@ -174,22 +175,21 @@ try:
     paint.render.set_default_texture_resolution(a.tex)
     # The multiview pipeline hard-codes 'cuda', so only the delight model can be offloaded to RAM.
     paint.models["delight_model"].pipeline.enable_model_cpu_offload()
-    say("покраска (несколько минут)")
+    say(_t("hy.painting_a_few_minutes"))
     torch.cuda.reset_peak_memory_stats()
     textured = paint(mesh, image=images["front"])
     stats["texture_seconds"] = round(time.time() - t, 1)
     stats["texture_peak_vram_mb"] = round(torch.cuda.max_memory_allocated() / 1024**2)
     textured.export(str(out / "textured.glb"))
-    say(f"текстура готова за {stats['texture_seconds']} с")
+    say(_t("hy.texture_ready_in_s", stats['texture_seconds']))
 except torch.cuda.OutOfMemoryError:
     stats["texture_error"] = "out of GPU memory"
-    say("НЕ ХВАТИЛО ВИДЕОПАМЯТИ при покраске: сохранена форма без текстуры. Закройте другие программы "
-        "(Blender, браузер) и повторите, либо уменьшите размер текстуры.")
+    say(_t("hy.out_of_video_memory_while_painting"))
 except Exception as e:  # noqa: BLE001
     traceback.print_exc()
     stats["texture_error"] = f"{type(e).__name__}: {e}"
-    say(f"ОШИБКА покраски: {type(e).__name__}: {e}")
+    say(_t("hy.paint_error", type(e).__name__, e))
 
 stats["total_seconds"] = round(time.time() - T0, 1)
 (out / "hy_stats.json").write_text(json.dumps(stats, indent=2), encoding="utf-8")
-say("ГОТОВО")
+say(_t("hy.done"))

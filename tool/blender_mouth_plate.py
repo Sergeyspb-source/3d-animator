@@ -23,6 +23,9 @@ import mathutils
 import numpy as np
 from mathutils import Vector
 from mathutils.bvhtree import BVHTree
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # Blender does not put the script's folder on the path
+from i18n import t as _t
 
 job = json.loads(open(sys.argv[sys.argv.index("--") + 1], encoding="utf-8").read())
 
@@ -55,8 +58,7 @@ M, CL, CR = bl(job["mouth_c"]), bl(job["corner_L"]), bl(job["corner_R"])
 W = (CL - CR).length                       # mouth width
 for c in (CL, CR):   # corners must sit on the lip line (a stray click near the eye folds the plate into a spike)
     if abs(c.z - M.z) > 0.6 * W:
-        fail(f"уголок рта на {abs(c.z - M.z):.2f} выше/ниже середины рта при ширине рта {W:.2f}: "
-                         "переразметьте лицо («Разметить лицо»), уголки — на краях губ")
+        fail(_t("blender.a_mouth_corner_is_above_below_the", abs(c.z - M.z), W))
 k = W / 0.033                              # the beggar's sizes were tuned on a 3.3 cm mouth
 SURFACE_OFFSET = 0.0012 * k
 OPEN_HEIGHT = 0.017 * k

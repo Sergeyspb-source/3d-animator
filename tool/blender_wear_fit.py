@@ -34,6 +34,8 @@ import bpy
 from mathutils import Matrix, Vector, kdtree
 from mathutils.bvhtree import BVHTree
 from mathutils.geometry import barycentric_transform
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # Blender does not put the script's folder on the path
+from i18n import t as _t
 
 job = json.loads(Path(sys.argv[sys.argv.index("--") + 1]).read_text(encoding="utf-8"))
 report = {}
@@ -50,12 +52,12 @@ bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.gltf(filepath=job["character"])
 arm = next((o for o in bpy.data.objects if o.type == "ARMATURE"), None)
 if arm is None:
-    fail("у персонажа нет скелета: сначала постройте скелет по разметке")
+    fail(_t("blender.the_character_has_no_skeleton_build"))
 arm.data.pose_position = "REST"
 bpy.context.view_layer.update()
 body = [o for o in bpy.data.objects if o.type == "MESH" and o.vertex_groups and not o.name.startswith(PARTS)]
 if not body:
-    fail("у персонажа нет кожи с весами")
+    fail(_t("blender.the_character_has_no_skin_with"))
 character_objs = set(bpy.data.objects)
 
 # the armour as one plain mesh in world space (a skinned source loses its old skin: the vertices are its rest pose)
@@ -64,7 +66,7 @@ new = [o for o in bpy.data.objects if o not in character_objs]
 src_meshes = [o for o in new if o.type == "MESH" and not o.name.startswith("Icosphere")
               and not re.search(r"-(conv)?colonly$|-col$", o.name)]   # a collision hull of the export is no armour
 if not src_meshes:
-    fail("в файле вещи нет сетки")
+    fail(_t("blender.the_piece_s_file_has_no_mesh"))
 for o in src_meshes:
     for m in list(o.modifiers):
         o.modifiers.remove(m)

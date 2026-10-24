@@ -1,4 +1,5 @@
-## The fitting room (built by landmarks.wardrobe() from the armour mode «Броня»): the character with every fitted
+## The fitting room (built by landmarks.wardrobe() from the armour mode «Броня», which also puts in the texts of the
+## interface language for the markers in the strings): the character with every fitted
 ## piece put on through SF3DEquip, its clips to play, the pieces on and off, and a camera that orbits the character
 ## (left drag), pans (right drag) and zooms (wheel).
 ##
@@ -114,18 +115,18 @@ func _ui() -> void:
 	layer.add_child(panel)
 	var box := VBoxContainer.new()
 	panel.add_child(box)
-	box.add_child(_label("Анимации"))
+	box.add_child(_label("{{js:gd.animations}}"))
 	_list.custom_minimum_size = Vector2(230, 240)
 	for c in _clips():
 		_list.add_item(c)
 	_list.item_selected.connect(func(i): _play(_list.get_item_text(i)))
 	box.add_child(_list)
 	var rep := CheckBox.new()
-	rep.text = "Повторять"
+	rep.text = "{{js:gd.loop}}"
 	rep.button_pressed = true
 	rep.toggled.connect(func(on): _repeat = on)
 	box.add_child(rep)
-	box.add_child(_label("Скорость"))
+	box.add_child(_label("{{js:gd.speed}}"))
 	var speed := HSlider.new()
 	speed.min_value = 0.1
 	speed.max_value = 2.0
@@ -133,14 +134,14 @@ func _ui() -> void:
 	speed.value = 1.0
 	speed.value_changed.connect(func(v): if _player: _player.speed_scale = v)
 	box.add_child(speed)
-	box.add_child(_label("Вещи"))
+	box.add_child(_label("{{js:gd.pieces}}"))
 	for name in _worn:
 		var cb := CheckBox.new()
 		cb.text = name
 		cb.button_pressed = true
 		cb.toggled.connect(func(on): for mi in _worn[name]: mi.visible = on)
 		box.add_child(cb)
-	box.add_child(_label("ЛКМ — вращать, ПКМ — сдвиг, колесо — ближе"))
+	box.add_child(_label("{{js:gd.mouse_hint}}"))
 
 
 func _label(text: String) -> Label:
