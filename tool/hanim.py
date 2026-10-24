@@ -27,7 +27,8 @@ CLIPS = {
 }
 
 
-def animate(blender, src, dst, clips=None, preview_dir=None, fps=30, shield=False, twohand=False, aim=False, tilt=None):
+def animate(blender, src, dst, clips=None, preview_dir=None, fps=30, shield=False, twohand=False, aim=False, tilt=None,
+            blade=None):
     src, dst = Path(src), Path(dst)
     dst.unlink(missing_ok=True)       # a failed run must not leave an old result looking like a new one
     args = [str(src), str(dst), f"fps={fps}"]
@@ -39,6 +40,8 @@ def animate(blender, src, dst, clips=None, preview_dir=None, fps=30, shield=Fals
         args.append("aim=1")
     if tilt is not None:
         args.append(f"sword_tilt={tilt}")
+    if blade:   # "fingers": the sword across the palm by the finger bones (see blender_humanoid_anim.py)
+        args.append(f"blade={blade}")
     if clips:
         args.append("clips=" + ",".join(clips))
     if preview_dir:

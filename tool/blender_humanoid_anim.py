@@ -29,6 +29,10 @@ TILT = float(opt.get("sword_tilt", "-55"))  # degrees, blade tilt in the right h
 HAND_GAP = float(opt.get("hand_gap", "0.22"))   # metres between the two hands along the handle
 AIM = opt.get("aim", "0") == "1" or TWOHAND   # the right hand turns so the sword points where the pose says (blade key)
 SHIELD = opt.get("shield", "0") == "1"      # the left arm carries a shield: held in front in every clip but death
+# blade=fingers: the sword lies across the palm, from the little finger's knuckle to the index finger's, whatever the
+# hand bone's roll (TILT is set for one rig's roll and twists the wrist of another); the palm and the gap between the
+# hands then scale with the character's height instead of being metres (the animation gallery)
+FINGER_BLADE = opt.get("blade") == "fingers"
 print("ANIM_OPT twohand", TWOHAND, "shield", SHIELD, flush=True)
 WANT = [c.strip() for c in opt.get("clips", ",".join(ALL)).split(",") if c.strip()]
 
@@ -398,6 +402,9 @@ def reset_pose():
 TWO_READY = {"arm_R": (46, 14, 0), "forearm_R": (82, 0, 0), "hand_R": (0, 0, 0)}
 ONE_READY = {"arm_R": (40, 12, 0), "forearm_R": (80, 0, 0)}
 PALM = 0.075
+if FINGER_BLADE:   # the presets are for a 1 m goblin: a character in other units scales them by its height
+    PALM *= HEIGHT
+    HAND_GAP *= HEIGHT
 
 if TWOHAND:
     _L1 = (B("forearm_L").head_local - B("arm_L").head_local).length
@@ -412,6 +419,31 @@ if TWOHAND:
 
 if AIM:
     _blade_local = Vector((0, math.cos(D(TILT)), math.sin(D(TILT))))
+if AIM and FINGER_BLADE:
+    _ix = next((b for b in bones if b.name.endswith("RightHandIndex1")), None)
+    _pk = next((b for b in bones if b.name.endswith("RightHandPinky1")), None)
+    if _ix and _pk:
+        _blade_local = (REST[NAME["hand_R"]].inverted() @ (_ix.head_local - _pk.head_local)).normalized()
+        HAND_GAP = 1.3 * (_ix.head_local - _pk.head_local).length   # the left hand right under the right one
+        if TWOHAND:
+            _left_palm_local = _palm_local - _blade_local * HAND_GAP
+    _lix = next((b for b in bones if b.name.endswith("LeftHandIndex1")), None)
+    _lpk = next((b for b in bones if b.name.endswith("LeftHandPinky1")), None)
+    _left_across_local = (REST[NAME["hand_L"]].inverted() @ (_lix.head_local - _lpk.head_local)).normalized() \
+        if TWOHAND and _lix and _lpk and "hand_L" in NAME else None
+    def _palm_normal_local(side):   # the palm's outward normal (on the thumb's side), in the hand bone's rest frame
+        S_ = "Left" if side == "L" else "Right"
+        g_ = lambda suf: next((b for b in bones if b.name.endswith(S_ + "Hand" + suf)), None)
+        h_, i_, p_, m_, t_ = g_(""), g_("Index1"), g_("Pinky1"), g_("Middle1"), g_("Thumb1") or g_("Thumb2")
+        n_ = (m_.head_local - h_.head_local).cross(i_.head_local - p_.head_local).normalized()
+        if t_ is not None and n_.dot(t_.head_local - h_.head_local) < 0:
+            n_ = -n_
+        return REST[NAME["hand_" + side]].inverted() @ n_
+    if _left_across_local is not None:
+        _right_palm_n_local = _palm_normal_local("R")
+        _left_palm_n_local = _palm_normal_local("L")
+    if _left_across_local is not None:   # wrist -> the middle of the left palm (its knuckles), in the hand's rest frame
+        _left_palm_off_local = REST[NAME["hand_L"]].inverted() @ ((_lix.head_local + _lpk.head_local) * .5 - B("hand_L").head_local)
 
 
 def aim_blade(vec):
@@ -428,14 +460,15 @@ def aim_blade(vec):
     pb[hn].rotation_quaternion = (m.inverted() @ (rp.inverted() @ tot_new) @ m).to_quaternion()
 
 
-def solve_left_arm():
-    """two-bone IK in code: put the left palm on the handle, below the right hand (both hands on the sword)"""
+def solve_left_arm(palm_off=None):
+    """two-bone IK in code: put the left palm on the handle, below the right hand (both hands on the sword).
+    palm_off: the wrist-to-palm vector of the left hand as it will be turned (else the palm is taken along the reach)"""
     bpy.context.view_layer.update()
     pb = arm.pose.bones
     palm = pb[NAME["hand_R"]].matrix @ _left_palm_local
     shoulder = pb[NAME["arm_L"]].head.copy()
     reach = (palm - shoulder).normalized()
-    target = palm - reach * PALM                       # the wrist
+    target = palm - (palm_off if palm_off is not None else reach * PALM)   # the wrist
     d = target - shoulder
     dist = min(max(d.length, abs(_L1 - _L2) + 1e-4), _L1 + _L2 - 1e-4)
     dirv = d.normalized()
@@ -452,6 +485,113 @@ def solve_left_arm():
     m_up, m_fa = REST[NAME["arm_L"]], REST[NAME["forearm_L"]]
     pb[NAME["arm_L"]].rotation_quaternion = (m_up.inverted() @ (rp.inverted() @ tot_up) @ m_up).to_quaternion()
     pb[NAME["forearm_L"]].rotation_quaternion = (m_fa.inverted() @ (tot_up.inverted() @ tot_fa) @ m_fa).to_quaternion()
+
+
+def centre_right_hand(share=.75, pull=0.0, push=0.0):
+    """both hands on one handle: the right wrist pulled towards the body's middle (the clip keeps its height and its
+    forward reach), so the left arm can reach the handle; a two-bone solve of the right arm, its hand turned as before"""
+    bpy.context.view_layer.update()
+    pb = arm.pose.bones
+    hand_m = pb[NAME["hand_R"]].matrix.to_3x3() @ REST[NAME["hand_R"]].inverted()   # the hand's world turn, kept
+    sh = pb[NAME["arm_R"]].head.copy()
+    w = pb[NAME["hand_R"]].head.copy()
+    mid = (pb[NAME["arm_L"]].head + sh) * .5
+    side_off = (w - mid).dot(right)
+    target = w - right * (side_off * share)
+    # and never farther from the left shoulder than the left arm reaches (a swing's follow-through would leave the
+    # left hand behind, the arm stretched straight through the body)
+    shl = pb[NAME["arm_L"]].head
+    reach_l = .9 * ((B("forearm_L").head_local - B("arm_L").head_local).length
+                    + (B("hand_L").head_local - B("forearm_L").head_local).length) - 1.3 * PALM
+    reach_l -= pull   # pull: how much more the left palm's place on the handle was out of reach last time
+    if (target - shl).length > reach_l:
+        target = shl + (target - shl).normalized() * reach_l
+    if (target - shl).length < .5 * reach_l:   # nor so close that the left elbow folds shut (hands over the shoulder)
+        dv = (target - shl).normalized() + fwd * .8
+        target = shl + dv.normalized() * (.5 * reach_l)
+    target = target + fwd * push   # push: the left palm's place came too close to the left shoulder last time
+    L1 = (B("forearm_R").head_local - B("arm_R").head_local).length
+    L2 = (B("hand_R").head_local - B("forearm_R").head_local).length
+    d = target - sh
+    dist = min(max(d.length, abs(L1 - L2) + 1e-4), L1 + L2 - 1e-4)
+    dirv = d.normalized()
+    a_ = (L1 * L1 - L2 * L2 + dist * dist) / (2 * dist)
+    h_ = math.sqrt(max(L1 * L1 - a_ * a_, 0.0))
+    pole = -up * .7 + right * .5 - fwd * .2          # the right elbow down, out and back
+    perp = pole - dirv * pole.dot(dirv)
+    perp = perp.normalized() if perp.length > 1e-6 else Vector((0, 0, -1))
+    elbow = sh + dirv * a_ + perp * h_
+    wrist = elbow + (sh + dirv * dist - elbow).normalized() * L2
+    du = (B("forearm_R").head_local - B("arm_R").head_local).normalized()
+    df = (B("hand_R").head_local - B("forearm_R").head_local).normalized()
+    tot_up = du.rotation_difference((elbow - sh).normalized()).to_matrix()
+    tot_fa = df.rotation_difference((wrist - elbow).normalized()).to_matrix()
+    par = pb[NAME["arm_R"]].parent
+    rp = (par.matrix.to_3x3() @ par.bone.matrix_local.to_3x3().inverted()) if par else Matrix.Identity(3)
+    m_up, m_fa, m_h = REST[NAME["arm_R"]], REST[NAME["forearm_R"]], REST[NAME["hand_R"]]
+    pb[NAME["arm_R"]].rotation_quaternion = (m_up.inverted() @ (rp.inverted() @ tot_up) @ m_up).to_quaternion()
+    pb[NAME["forearm_R"]].rotation_quaternion = (m_fa.inverted() @ (tot_up.inverted() @ tot_fa) @ m_fa).to_quaternion()
+    pb[NAME["hand_R"]].rotation_quaternion = (m_h.inverted() @ (tot_fa.inverted() @ hand_m) @ m_h).to_quaternion()
+
+
+def set_hand_world(hn, m_des):
+    """give the hand bone hn this world (armature) 3x3 orientation, whatever its forearm does"""
+    bpy.context.view_layer.update()
+    pb = arm.pose.bones
+    par = pb[hn].parent
+    rp = par.matrix.to_3x3() @ par.bone.matrix_local.to_3x3().inverted()
+    m = REST[hn]
+    pb[hn].rotation_quaternion = (m.inverted() @ (rp.inverted() @ (m_des @ m.inverted())) @ m).to_quaternion()
+
+
+def grip_left_hand():
+    """the left hand closes on the handle like the right one: its knuckle line (little finger to index) along the
+    blade, turned by a swing (blade=fingers only; otherwise the left hand keeps its pose and looks twisted)"""
+    bpy.context.view_layer.update()
+    pb = arm.pose.bones
+    hn = NAME["hand_L"]
+    cur = (pb[hn].matrix.to_3x3() @ _left_across_local).normalized()
+    want = (pb[NAME["hand_R"]].matrix.to_3x3() @ _blade_local).normalized()
+    tot_new = cur.rotation_difference(want).to_matrix() @ (pb[hn].matrix.to_3x3() @ REST[hn].inverted())
+    par = pb[hn].parent
+    rp = par.matrix.to_3x3() @ par.bone.matrix_local.to_3x3().inverted()
+    m = REST[hn]
+    pb[hn].rotation_quaternion = (m.inverted() @ (rp.inverted() @ tot_new) @ m).to_quaternion()
+
+
+def _fist_rot(side, deg=30):
+    """rest-space local rotations that close the four fingers of one hand around a handle (deg per joint, three joints
+    make a fist): every joint turns about
+    the knuckle line towards the palm (the palm is on the thumb's side), whatever the bones' rolls"""
+    S = "Left" if side == "L" else "Right"
+    get = lambda suf: next((b for b in bones if b.name.endswith(S + "Hand" + suf)), None)
+    hand, ix, pk, md, th = get(""), get("Index1"), get("Pinky1"), get("Middle1"), get("Thumb1") or get("Thumb2")
+    if not (hand and ix and pk and md):
+        return {}
+    across = (ix.head_local - pk.head_local).normalized()
+    along = (md.head_local - hand.head_local).normalized()
+    palm = along.cross(across).normalized()
+    if th is not None and palm.dot(th.head_local - hand.head_local) < 0:
+        palm = -palm
+    tip = md.tail_local - md.head_local
+    R = Matrix.Rotation(D(deg), 3, across)
+    if (R @ tip - tip).dot(palm) < 0:   # the way that moves the fingertip towards the palm
+        R = Matrix.Rotation(D(-deg), 3, across)
+    out = {}
+    for f in ("Index", "Middle", "Ring", "Pinky"):
+        for k in (1, 2, 3):
+            b = get(f + str(k))
+            if b is not None:
+                M = b.matrix_local.to_3x3()
+                out[b.name] = (M.inverted() @ R @ M).to_quaternion()
+    return out
+
+
+FIST = {}
+if FINGER_BLADE and AIM:
+    FIST.update(_fist_rot("R"))
+    if TWOHAND:
+        FIST.update(_fist_rot("L"))
 
 
 GUARD = {"arm_L": (34, 24, 0), "forearm_L": (86, 0, 0), "hand_L": (0, 0, 0)}
@@ -480,12 +620,53 @@ def key_clip(name, seconds, fn, loop):
             for k_, v_ in ONE_READY.items():
                 pose_i[k_] = v_
         set_pose(pose_i)
+        if TWOHAND and FINGER_BLADE and name != "death":
+            # the left palm's place on the handle (below the right hand, along the turned blade) must be in the left
+            # arm's reach: the right hand comes in closer until it is
+            pull = push = 0.0
+            for _ in range(5):
+                set_pose(pose_i)
+                centre_right_hand(pull=pull, push=push)
+                aim_blade(pose_i["blade"])
+                bpy.context.view_layer.update()
+                pb_ = arm.pose.bones
+                lp = pb_[NAME["hand_R"]].matrix @ _left_palm_local
+                dl = (lp - pb_[NAME["arm_L"]].head).length
+                over, under = dl - .92 * (_L1 + _L2 + PALM), .55 * (_L1 + _L2) - dl
+                if over <= 0 and under <= 0:
+                    break
+                if over > 0:
+                    pull += over * 1.1
+                else:
+                    push += under * 1.1
         if AIM and name != "death":
             aim_blade(pose_i["blade"])
         if TWOHAND and name != "death":
             solve_left_arm()
+            if FINGER_BLADE and _left_across_local is not None:
+                # the hand's turn along the handle, in the world, is fixed first; the arm is then solved for the palm of
+                # the hand so turned, and the hand finally given that world turn (a turn set before the arm moves would
+                # move with the forearm, and the palm would slide off the handle)
+                bpy.context.view_layer.update()
+                # the left hand's turn follows the right hand's: its knuckles along the blade too, its palm the other
+                # way round (as the two hands close on one handle), so it never flips about the handle between frames
+                mr = arm.pose.bones[NAME["hand_R"]].matrix.to_3x3()
+                bw = (mr @ _blade_local).normalized()
+                pw = -(mr @ _right_palm_n_local)
+                pw = (pw - bw * pw.dot(bw)).normalized()
+                al = _left_across_local.normalized()
+                pl = _left_palm_n_local - al * _left_palm_n_local.dot(al)
+                pl.normalize()
+                Wd = Matrix((bw, pw, bw.cross(pw))).transposed()
+                Lc = Matrix((al, pl, al.cross(pl))).transposed()
+                m_des = Wd @ Lc.inverted()
+                solve_left_arm(m_des @ _left_palm_off_local)
+                set_hand_world(NAME["hand_L"], m_des)
+        if name != "death":   # the hands holding the sword close on its handle (blade=fingers only)
+            for bn_, q_ in FIST.items():
+                arm.pose.bones[bn_].rotation_quaternion = q_
         f = 1 + i
-        for bn in {NAME[k] for k in NAME}:
+        for bn in {NAME[k] for k in NAME} | set(FIST):
             pb = arm.pose.bones[bn]
             pb.keyframe_insert("rotation_quaternion", frame=f)
             if bn == NAME["hips"]:

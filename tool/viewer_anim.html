@@ -55,6 +55,7 @@
       <label><input type="checkbox" id="inplace" checked> Убрать смещение корпуса по земле</label>
       <label><input type="checkbox" id="back" checked> После действия вернуться в стойку</label>
       <label><input type="checkbox" id="spin"> Крутить камеру</label>
+      <label id="weapRow" hidden><input type="checkbox" id="weap" checked> Оружие в руках</label>
     </div>
   </div>
 </div>
@@ -72,7 +73,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 const $ = (id) => document.getElementById(id);
 const fmt = (x, d = 2) => x.toFixed(d).replace('.', ',');
-const DATA = JSON.parse($('d-data').textContent);          // { clips: [{id, label, group, loop}] }
+const DATA = JSON.parse($('d-data').textContent);          // { clips: [{id, label, group, loop, weapons?: [weapon ids]}], ref_height? }
 const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const bytes = (id) => { const s = atob($(id).textContent.trim()); const u = new Uint8Array(s.length);
   for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u.buffer; };
@@ -98,6 +99,8 @@ function resize() { const r = canvas.getBoundingClientRect(); renderer.setSize(r
 new ResizeObserver(resize).observe(canvas.parentElement); resize();
 
 let mixer, root, current = null, playing = true, speed = 1;
+const held = [];   // [{id, item}]: the weapons in the hands; a clip with a `weapons` list shows only those
+const showWeapons = () => { for (const h of held) h.item.visible = $('weap').checked && (!current || !info[current].weapons || info[current].weapons.includes(h.id)); };
 const actions = {}, plain = {};
 const info = Object.fromEntries(DATA.clips.map((c) => [c.id, c]));
 
@@ -120,6 +123,7 @@ function play(id, instant) {
   next.setEffectiveTimeScale(1); next.setEffectiveWeight(1); next.play();
   if (prev && !instant) next.crossFadeFrom(prev, 0.2, false); else if (prev) prev.stop();
   current = id; playing = true; $('play').textContent = 'Пауза'; $('badge').textContent = info[id].label || id;
+  showWeapons();
   document.querySelectorAll('#list button').forEach((b) => b.classList.toggle('on', b.dataset.clip === id));
 }
 function restId(id) {
@@ -127,8 +131,39 @@ function restId(id) {
   const same = DATA.clips.filter((c) => c.group === g && c.loop); return (same[0] || DATA.clips.find((c) => c.loop) || DATA.clips[0]).id;
 }
 
-// held weapon parts: {bone, glb (base64), scale, rot [x,y,z] Godot Euler YXZ degrees, grip, offset, palm}
-async function addWeapons(root) {
+// held weapon parts: {id?, bone, glb (base64), scale, rot [x,y,z] Godot Euler YXZ degrees, grip, offset, palm, fit?}
+// fit: 'grip' / 'forearm' places the weapon by this character's own hand instead of the preset angles (they belong to
+// the rig they were set on): a handle lies across the palm, from the little finger's knuckle to the index finger's,
+// the blade out on the thumb side; a shield sits on the back of the forearm, its face outwards, upright along it.
+// The model's own axes: blade / shield height along +Y, shield face +Z; grip = the model's point held in the hand.
+function fitPlace(item, bone, w, k, root) {
+  const side = /^Left/.test(w.bone) ? 'Left' : 'Right';
+  const find = (suf) => { let r = null; root.traverse((o) => { if (o.isBone && o.name.endsWith(side + suf)) r = o; }); return r; };
+  const at = (b) => b.getWorldPosition(new THREE.Vector3());
+  const hand = find('Hand'), ix = find('HandIndex1'), pk = find('HandPinky1'), md = find('HandMiddle1'), fa = find('ForeArm');
+  const th = find('HandThumb2') || find('HandThumb1');
+  if (!hand || !ix || !pk || !md || !fa) return false;
+  const H = at(hand), I = at(ix), P = at(pk), M = at(md), E = at(fa), span = I.distanceTo(P);
+  const across = I.clone().sub(P).normalize(), along = M.clone().sub(H).normalize();
+  const palm = along.clone().cross(across).normalize();
+  if (th && palm.dot(at(th).sub(H)) < 0) palm.negate();   // the palm is on the thumb's side
+  let X, Y, Z, O;
+  if (w.fit === 'grip') {
+    Y = across; X = along.clone().addScaledVector(Y, -along.dot(Y)).normalize(); Z = X.clone().cross(Y);
+    O = I.clone().add(P).multiplyScalar(.5).addScaledVector(palm, .45 * span);
+  } else {
+    Y = H.clone().sub(E).normalize(); Z = palm.clone().negate().addScaledVector(Y, palm.dot(Y)).normalize(); X = Y.clone().cross(Z);
+    O = E.clone().lerp(H, .55).addScaledVector(Z, .9 * span);
+  }
+  const s = w.scale * k, R = new THREE.Matrix4().makeBasis(X, Y, Z);
+  const g = new THREE.Vector3(...w.grip).multiplyScalar(s).applyMatrix4(R);
+  const W = new THREE.Matrix4().compose(O.sub(g), new THREE.Quaternion().setFromRotationMatrix(R), new THREE.Vector3(s, s, s));
+  bone.updateMatrixWorld(true);
+  new THREE.Matrix4().copy(bone.matrixWorld).invert().multiply(W).decompose(item.position, item.quaternion, item.scale);
+  return true;
+}
+// k: the presets were set on a character DATA.ref_height tall; another size scales them by its own height
+async function addWeapons(root, k = 1) {
   const list = JSON.parse($('d-weapons').textContent || '[]');
   for (const w of list) {
     let bone = null;
@@ -139,11 +174,12 @@ async function addWeapons(root) {
     const drop = []; g.scene.traverse((o) => { if (o.isMesh && /col/i.test(o.name)) drop.push(o); });
     drop.forEach((o) => o.parent.remove(o));
     const item = g.scene;
-    item.scale.setScalar(w.scale);
+    if (w.fit && fitPlace(item, bone, w, k, root)) { bone.add(item); held.push({ id: w.id, item }); continue; }
+    item.scale.setScalar(w.scale * k);
     item.rotation.set(...w.rot.map((d) => d * Math.PI / 180), 'YXZ');
     item.updateMatrix();
-    const pos = new THREE.Vector3(...w.grip).applyQuaternion(item.quaternion).multiplyScalar(-w.scale);
-    pos.add(new THREE.Vector3(...(w.offset || [0, 0, 0])));
+    const pos = new THREE.Vector3(...w.grip).applyQuaternion(item.quaternion).multiplyScalar(-w.scale * k);
+    pos.add(new THREE.Vector3(...(w.offset || [0, 0, 0])).multiplyScalar(k));
     if (w.palm) {
       const fing = bone.children.find((c) => c.isBone && c.name.endsWith('Middle1'));
       let dir, len = 0.075;
@@ -152,14 +188,17 @@ async function addWeapons(root) {
       pos.add(dir.normalize().multiplyScalar(len));
     }
     item.position.copy(pos);
-    bone.add(item);
+    bone.add(item); held.push({ id: w.id, item });
   }
 }
 
 async function load() {
   const gltf = await new Promise((res, rej) => new GLTFLoader().parse(bytes('d-glb'), '', res, rej));
   root = gltf.scene; scene.add(root);
-  await addWeapons(root);
+  root.updateMatrixWorld(true);
+  const tall = new THREE.Box3().setFromObject(root).getSize(new THREE.Vector3()).y;
+  await addWeapons(root, DATA.ref_height ? tall / DATA.ref_height : 1);
+  $('weapRow').hidden = !held.length;
   root.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
   mixer = new THREE.AnimationMixer(root);
   gltf.animations.forEach((a) => { plain[a.name] = a; actions[a.name] = { raw: mixer.clipAction(a), flat: mixer.clipAction(inPlace(a)) }; });
@@ -171,6 +210,10 @@ async function load() {
   const h = Math.max(0.3, size.y * 1.1);
   controls.target.set(0, box.min.y + size.y * 0.5, 0);
   camera.position.set(h * 1.2, h * 0.9, h * 1.9); controls.minDistance = h * 0.6; controls.maxDistance = h * 8;
+  // the stage in the character's own units (a model in centimetres is a hundred times taller than one in metres)
+  camera.near = h * 0.01; camera.far = h * 60; camera.updateProjectionMatrix();
+  const u = Math.max(h, 1e-6) / 1.8; ground.scale.setScalar(u); grid.scale.setScalar(u); ground.position.y = grid.position.y = box.min.y - size.y * 0.02;
+  scene.fog = new THREE.Fog(scene.fog.color, 8 * u, 20 * u);
   let last = '';
   DATA.clips.filter((c) => actions[c.id]).forEach((c) => {
     if (c.group !== last) { const g = document.createElement('div'); g.className = 'grp'; g.textContent = c.group; $('list').appendChild(g); last = c.group; }
@@ -188,7 +231,11 @@ $('inplace').addEventListener('change', () => { const k = current; current = nul
 $('play').addEventListener('click', () => { playing = !playing; $('play').textContent = playing ? 'Пауза' : 'Играть'; });
 $('speed').addEventListener('input', (e) => { speed = e.target.value / 100; $('sval').textContent = fmt(speed, 1) + '×'; });
 $('spin').addEventListener('change', (e) => { controls.autoRotate = e.target.checked; });
+$('weap').addEventListener('change', showWeapons);
 $('scrub').addEventListener('input', (e) => { const a = current && act(current); if (!a) return;
+  // a paused cross-fade would show a blend of the last clip and this one: scrubbing finishes it at once
+  Object.values(actions).forEach((p) => [p.raw, p.flat].forEach((x) => { if (x !== a) x.stop(); }));
+  a.stopFading(); a.setEffectiveWeight(1);
   playing = false; $('play').textContent = 'Играть'; a.paused = false; a.time = (e.target.value / 1000) * a.getClip().duration; mixer.update(0); });
 addEventListener('keydown', (e) => { if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
   const ids = DATA.clips.filter((c) => actions[c.id]).map((c) => c.id); const i = ids.indexOf(current); const n = ids.length;

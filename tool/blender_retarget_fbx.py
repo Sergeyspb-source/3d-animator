@@ -3,6 +3,9 @@
     blender -b -P blender_retarget_fbx.py -- character.glb out.glb map.json [mesh=0|1]
 
 map.json: {"<fbx file name without .fbx>": {"name": "Slash", "loop": false}, ...}
+A clip may also come from a GLB with many clips: {"<any key>": {"name": ..., "glb": path, "action": clip name in the GLB,
+"bones": "ue"}}; "bones": "ue" reads an Unreal-style skeleton (pelvis, spine_01, upperarm_l, thigh_l ... as in
+Mesh2Motion), without it the GLB uses the character's own names (another SF3D export of the same rig).
 Each bone of the target gets the same *world-space* rotation change from its rest pose that the FBX bone has, so the
 FBX file may use another bone orientation, scale or axis convention (Mixamo FBX is in centimetres, Y-up, rotated),
 as long as both skeletons share the rest pose. Hips translation is scaled by the ratio of the hips heights.
@@ -12,6 +15,7 @@ Exports a GLB with one NLA track per clip. Prints RETARGET_ lines.
 """
 import json
 import math
+import re
 import sys
 from pathlib import Path
 
@@ -88,6 +92,40 @@ def import_fbx(path):
     return arm
 
 
+# Mixamo bone (without its prefix) -> the same bone of an Unreal-style skeleton (Mesh2Motion, UE mannequin)
+UE = {"Hips": "pelvis", "Spine": "spine_01", "Spine1": "spine_02", "Spine2": "spine_03", "Neck": "neck_01", "Head": "head",
+      "HeadTop_End": "head_leaf"}
+for _s, _u in (("Left", "l"), ("Right", "r")):
+    UE.update({f"{_s}Shoulder": f"clavicle_{_u}", f"{_s}Arm": f"upperarm_{_u}", f"{_s}ForeArm": f"lowerarm_{_u}",
+               f"{_s}Hand": f"hand_{_u}", f"{_s}UpLeg": f"thigh_{_u}", f"{_s}Leg": f"calf_{_u}", f"{_s}Foot": f"foot_{_u}",
+               f"{_s}ToeBase": f"ball_{_u}", f"{_s}Toe_End": f"ball_leaf_{_u}"})
+    for _f, _g in (("Thumb", "thumb"), ("Index", "index"), ("Middle", "middle"), ("Ring", "ring"), ("Pinky", "pinky")):
+        for _k in range(1, 5):
+            UE[f"{_s}Hand{_f}{_k}"] = f"{_g}_0{_k}_{_u}" if _k < 4 else f"{_g}_04_leaf_{_u}"
+PREFIX = HIPS[:-len("Hips")]
+_glb_cache = {}
+
+
+def import_glb(path):
+    """a GLB with many clips, imported once: its armature (meshes dropped) and its actions by name"""
+    if path not in _glb_cache:
+        before = set(bpy.context.scene.objects)
+        acts_before = set(bpy.data.actions)
+        bpy.ops.import_scene.gltf(filepath=str(path))
+        new = [o for o in bpy.context.scene.objects if o not in before]
+        arm = next(o for o in new if o.type == "ARMATURE")
+        for o in new:
+            if o.type != "ARMATURE":
+                bpy.data.objects.remove(o)
+        if arm.animation_data is None:
+            arm.animation_data_create()
+        for t in list(arm.animation_data.nla_tracks):
+            arm.animation_data.nla_tracks.remove(t)
+        # a second GLB with the same clip names gets them as name.001 from Blender: look them up by the GLB's names
+        _glb_cache[path] = (arm, {re.sub(r"\.\d{3}$", "", a.name): a for a in bpy.data.actions if a not in acts_before})
+    return _glb_cache[path]
+
+
 def partner(name):
     """the same bone on the other side (Mixamo names: LeftArm <-> RightArm), itself for the middle ones"""
     if "Left" in name:
@@ -97,33 +135,48 @@ def partner(name):
 
 done = []
 for stem, spec in CLIPS.items():
-    fbx = FBX_DIR / f"{stem}.fbx"
-    if not fbx.exists():
-        print("RETARGET_MISSING", stem)
-        continue
-    af = import_fbx(fbx)
-    act_f = af.animation_data.action
+    if spec.get("glb"):   # one clip of a GLB library
+        af, acts = import_glb(spec["glb"])
+        act_f = acts.get(spec.get("action", stem))
+        if act_f is None:
+            print("RETARGET_MISSING", stem)
+            continue
+        af.animation_data.action = act_f
+        if hasattr(af.animation_data, "action_slot") and act_f.slots and af.animation_data.action_slot is None:
+            af.animation_data.action_slot = act_f.slots[0]
+        ue = spec.get("bones") == "ue"
+    else:
+        fbx = FBX_DIR / f"{stem}.fbx"
+        if not fbx.exists():
+            print("RETARGET_MISSING", stem)
+            continue
+        af = import_fbx(fbx)
+        act_f = af.animation_data.action
+        ue = False
+
+    def tr(name, ue=ue):   # the character's bone -> the same bone of the source skeleton
+        return UE.get(name[len(PREFIX):], "?" + name) if ue else name
     f0, f1 = int(act_f.frame_range[0]), int(act_f.frame_range[1])
     Wf = af.matrix_world.to_3x3().normalized()
     names_f = {b.name for b in af.data.bones}
-    common = [b for b in order if b.name in names_f]
-    missing = [b.name for b in order if b.name not in names_f]
+    common = [b for b in order if tr(b.name) in names_f]
+    missing = [b.name for b in order if tr(b.name) not in names_f]
     rest_f = {b.name: Wf @ b.matrix_local.to_3x3().normalized() for b in af.data.bones}
-    hips_f = (Wf @ af.data.bones[HIPS].head_local).z      # armature-local units: the importer also scales the object
+    hips_f = (Wf @ af.data.bones[tr(HIPS)].head_local).z      # armature-local units: the importer also scales the object
     k = hips_h / hips_f if abs(hips_f) > 1e-6 else 1.0
-    rest_head_f = Wf @ af.data.bones[HIPS].head_local
+    rest_head_f = Wf @ af.data.bones[tr(HIPS)].head_local
     if not done:             # how well do the two rest poses agree? (world positions of the bone heads, scaled)
         err = 0.0
         for b in common:
             pg = gob.matrix_world @ gob.data.bones[b.name].head_local
-            pf = (Wf @ af.data.bones[b.name].head_local) * k
+            pf = (Wf @ af.data.bones[tr(b.name)].head_local) * k
             err = max(err, (pg - pf).length)
         print("RETARGET_REST max head difference %.3f m (hips %.3f vs %.3f)" % (err, hips_h, hips_f))
     mirror = bool(spec.get("mirror"))
     lateral = Vector((1, 0, 0))
     if mirror:   # the sagittal plane: normal = from the left hip to the right hip of the FBX skeleton, horizontal
-        lateral = (Wf @ (af.data.bones[partner(next(n for n in names_f if n.endswith("LeftUpLeg")))].head_local
-                         - af.data.bones[next(n for n in names_f if n.endswith("LeftUpLeg"))].head_local))
+        lul = tr(PREFIX + "LeftUpLeg")
+        lateral = (Wf @ (af.data.bones[tr(partner(PREFIX + "LeftUpLeg"))].head_local - af.data.bones[lul].head_local))
         lateral.z = 0.0
         lateral.normalize()
     S = (Matrix.Identity(3) - 2.0 * Matrix(((lateral.x * lateral.x, lateral.x * lateral.y, lateral.x * lateral.z),
@@ -133,8 +186,8 @@ for stem, spec in CLIPS.items():
     def rv(v):
         return S @ v
 
-    def src_of(name):
-        return partner(name) if mirror else name
+    def src_of(name):   # the source bone that drives this one (its partner when mirrored), by the source's names
+        return tr(partner(name) if mirror else name)
     first_delta = None
     act = bpy.data.actions.new(spec["name"])
     ad = gob.animation_data_create()
@@ -152,7 +205,9 @@ for stem, spec in CLIPS.items():
         tot = {}
         for b in order:
             nm = b.name
-            tw = Matrix.Identity(3)
+            # a bone the source lacks (the jaw, the eyes, a helper) follows its parent as it is at rest: kept still in
+            # the world it would leave the teeth and the eyes behind when the head turns
+            tw = Wg @ tot[b.parent.name] @ Wg.inverted() if b.parent else Matrix.Identity(3)
             sn = src_of(nm)                                                    # the FBX bone that drives this one (its partner when mirrored)
             if sn in names_f:
                 pf = af.pose.bones[sn]
@@ -186,7 +241,7 @@ for stem, spec in CLIPS.items():
             pg = gob.pose.bones[nm]
             pg.rotation_quaternion = (m.inverted() @ rc @ m).to_quaternion()
             pg.keyframe_insert("rotation_quaternion", frame=f - f0 + 1)
-        pf_h = af.pose.bones[HIPS]
+        pf_h = af.pose.bones[tr(HIPS)]
         delta = rv((Wf @ pf_h.head) - rest_head_f) * k
         if spec.get("inplace", True):
             if first_delta is None:
@@ -202,7 +257,8 @@ for stem, spec in CLIPS.items():
     st = tr.strips.new(spec["name"], 1, act)
     st.frame_end = n
     ad.action = None
-    bpy.data.objects.remove(af)
+    if not spec.get("glb"):
+        bpy.data.objects.remove(af)
     done.append(dict(name=spec["name"], frames=n, seconds=round(n / FPS, 3), loop=bool(spec.get("loop")),
                      missing=missing))
     print("RETARGET_CLIP", spec["name"], n, "frames", "missing bones:" if missing else "", len(missing))

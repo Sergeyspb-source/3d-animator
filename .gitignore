@@ -3,6 +3,7 @@
 /work/
 /input/
 /output/
+/Animations/
 
 # ---- Third-party repositories (cloned separately, see README) ----
 /sf3d-src/
