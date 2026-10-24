@@ -102,7 +102,9 @@ A generated piece is sometimes closed at an end: SF3D caps a bracer at both ends
 
 ### Saving and the Godot fitting room
 
-Every «Put on» also saves the fitting (`<character>_wear_<item>.fit.json`); «Open» brings it back with all the sliders and points. «Fitting room in Godot» builds a small Godot project with the character, its clips and every piece put on, and opens it.
+Every «Put on» also saves the fitting (`<character>_wear_<item>.fit.json`); «Open» brings it back with all the sliders and points. «Fitting room in Godot» builds a small Godot project with the character, its clips and every piece put on, and opens it. Here is a whole set in Godot during the walk clip: breastplate, helmet and short cuisses from Hunyuan3D, boots, and bracers taken off a Tripo character.
+
+![The fitting room in Godot](docs/images/en/godot_walk.jpg)
 
 ### Animation gallery
 
