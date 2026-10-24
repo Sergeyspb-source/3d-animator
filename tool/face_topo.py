@@ -384,8 +384,9 @@ def build(C):
             return False
         if not zoned:
             # elsewhere (the nose over its nostrils, a heavy brow) hidden skin goes when it is skin-coloured; a thick
-            # lock of hair over the cheek is not
-            if skin_col is None:
+            # lock of hair over the cheek is not. Below the mouth the hidden skin is the throat under the chin: the mask
+            # does not cover it (it is built on the skin seen from the centre), so taking it away leaves a hole there
+            if skin_col is None or c.z < line_z(c.x):
                 return False
             hq = skin_bvh.find_nearest(c)
             cq = colour_at(hq[0], hq[2]) if hq[0] is not None else None
