@@ -42,6 +42,8 @@
 *.mp4
 *.zip
 *.7z
+# the README screenshots are the exception
+!docs/images/**
 
 # ---- Python / tools ----
 __pycache__/
