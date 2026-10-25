@@ -37,7 +37,9 @@ PIECES = {"bracer": ("forearm", "hand", "forearm", ("Spine", "Hips", "Chest", "U
           "cuisse": ("upleg", "leg", "upleg", ("Arm", "Hand"), "upleg", "limb", (0, 60, 40, 100),
                      dict(t0=25, t1=85, sector=220, plates=3, straps=2, rigidity=.8)),
           "cuirass": ("hips", "neck", "spine1", ("Arm", "Hand"), "torso", "torso", (-10, 60, 40, 100),
-                      dict(t0=6, t1=95, sector=360, plates=2, straps=1, rigidity=.5, anatomy=0, waist=.6)),
+                      dict(t0=6, t1=100, sector=360, plates=2, straps=1, rigidity=.5, anatomy=0, waist=.6)),
+          "pauldron": ("arm", "forearm", "shoulder", ("Head", "Hand"), "pauldron", "limb", (-60, 0, 10, 80),
+                       dict(t0=-30, t1=45, sector=200, plates=4, straps=0, rigidity=.4, cap=1.8)),
           "tassets": ("hips", "neck", "hips", ("Arm", "Hand"), "torso", "hips", (-80, 0, -10, 30),
                       dict(t0=-45, t1=10, sector=360, plates=4, straps=1, rigidity=.4, gap=16, splits=4, flare=.3)),
           "trousers": ("upleg", "foot", "upleg", ("Arm", "Hand"), "upleg", "legs", (-10, 30, 30, 100),
@@ -45,10 +47,12 @@ PIECES = {"bracer": ("forearm", "hand", "forearm", ("Spine", "Hips", "Chest", "U
                             loose=.3, folds=.3, cuffs=False, buckle=True))}
 # «from» / «to» labels: a limb's along it, a torso piece's bottom and top, trousers' waist and leg length
 T_LABELS = {"limb": ("ag.from", "ag.to", "ag.from_info"), "torso": ("ag.bottom", "ag.top", "ag.bottom_info"),
+            "cuirass": ("ag.bottom", "ag.neck_top", "ag.bottom_info"), "pauldron": ("ag.pauldron_from", "ag.sp_reach", "ag.pauldron_info"),
             "hips": ("ag.bottom", "ag.top", "ag.tassets_info"), "legs": ("ag.waist", "ag.leg_length", "ag.waist_info")}
 # (linear colour, roughness, metallic): metallic kept moderate, a game scene without reflections shows a full metal black
 PRESETS = {"iron": ((.34, .34, .35), .55, .55), "steel": ((.56, .58, .61), .35, .65),
-           "bronze": ((.55, .36, .17), .42, .6), "leather": ((.30, .17, .09), .72, 0.0), "cloth": ((.25, .27, .3), .9, 0.0)}
+           "bronze": ((.55, .36, .17), .42, .6), "leather": ((.30, .17, .09), .72, 0.0), "cloth": ((.25, .27, .3), .9, 0.0),
+           "brass": ((.62, .46, .2), .35, .65), "gold": ((.83, .6, .24), .3, .7)}
 SURFACES = ("plates", "scales", "lamellar", "mail", "quilt", "plain")
 
 
@@ -76,7 +80,7 @@ def editor_page(rigged: Path) -> str:
     data = {"rigged": rigged.resolve().as_posix(), "rigged_v": int(rigged.stat().st_mtime), "stem": LM._stem(rigged),
             "target": TARGET_ID, "go": GO_ID, "names": {n: LM.bone_names(n) for n in ("mixamo", "godot")},
             "pieces": {k: {"joints": v[:3], "foreign": v[3], "part": v[4], "family": v[5], "range": v[6], "defaults": v[7],
-                           "label": _t(f"ag.piece_{k}"), "tlabels": [_t(x) for x in T_LABELS[v[5]][:2]], "tinfo": _t(T_LABELS[v[5]][2])}
+                           "label": _t(f"ag.piece_{k}"), "tlabels": [_t(x) for x in T_LABELS.get(k, T_LABELS[v[5]])[:2]], "tinfo": _t(T_LABELS.get(k, T_LABELS[v[5]])[2])}
                        for k, v in PIECES.items()},
             "presets": PRESETS, "mat_labels": {k: _t(f"ag.mat_{k}") for k in PRESETS},
             "surface_labels": {k: _t(f"ag.surf_{k}") for k in SURFACES}, "saved": saved(rigged)}

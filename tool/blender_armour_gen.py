@@ -8,7 +8,7 @@ job.json: {"character": rigged.glb, "out": piece.glb, "preview": png prefix, "wo
            "mesh": mesh.json, "wear": 0..1, "tex": texture size, "seed"}
 mesh.json (the editor's, glTF axes, base64 little-endian arrays): {"v": float32 xyz, "uv": float32 the pattern's
            texture coordinates per vertex, "n": uint8 face sizes, "f": uint32 vertex indices, "m": uint8 material slots
-           (0 the surface, 1 leather: straps, backing, lacing, 2 rivets and buckles, 3 mail, 4 quilting), "bi": uint16
+           (0 the surface, 1 leather: straps, backing, lacing, 2 rivets and buckles, 3 mail, 4 quilting, 5 the rims' trim), "bi": uint16
            x4 bones per vertex (indices into "bones", three.js's names), "bw": float32 x4 their weights, "mats": the
            slots' specs (node_mat), "patterns": {"mail", "quilt": png} (red: height, green: light), "pattern_unit":
            a pattern tile's size, "radius": the limb radius the noise is scaled by}
@@ -124,7 +124,8 @@ def node_mat(name, spec, R, pattern=None, unit=1.0):
     L(ramp.outputs[0], rr.inputs[0])
     L(rr.outputs[0], bsdf.inputs["Roughness"])
     bsdf.inputs["Metallic"].default_value = metal
-    bump = N("ShaderNodeBump"); bump.inputs["Strength"].default_value = .6 if kind == "metal" else .55   # hammered / grain
+    bump = N("ShaderNodeBump")   # hammered (as much as «hammer» says; 0 polished) / grain
+    bump.inputs["Strength"].default_value = 1.2 * float(spec.get("bump", .5)) if kind == "metal" else .55
     bump.inputs["Distance"].default_value = .02 * R
     L(vor.outputs["Distance"], bump.inputs["Height"])
     normal = bump.outputs[0]
@@ -251,7 +252,7 @@ bm.to_mesh(mesh)
 bm.free()
 for p in mesh.polygons:
     p.use_smooth = True
-# the material slots the editor used (plates, leather, details, mail, quilting): only those get a material and textures
+# the material slots the editor used (plates, leather, details, mail, quilting, trim): only those get a material and textures
 used = sorted(set(M))
 for p in mesh.polygons:
     p.material_index = used.index(p.material_index)
@@ -262,7 +263,7 @@ for nm, png in (mj.get("patterns") or {}).items():
         pf.write_bytes(base64.b64decode(png))
         patterns[nm] = bpy.data.images.load(str(pf))
         patterns[nm].colorspace_settings.name = "Non-Color"
-SLOTS = ("plate", "strap", "detail", "mail", "quilt")
+SLOTS = ("plate", "strap", "detail", "mail", "quilt", "trim")
 mats = [node_mat(f"{item}_{SLOTS[u]}", mj["mats"][u], R, patterns.get(mj["mats"][u].get("pattern")), float(mj.get("pattern_unit") or R))
         for u in used]
 for m, _ in mats:
