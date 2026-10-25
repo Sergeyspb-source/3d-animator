@@ -1,0 +1,1285 @@
+<!doctype html>
+<html lang="{{raw:lang.code}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ag.editor_title}}</title>
+<style>
+  /* Embedded in the SF3D app (iframe srcdoc). The character with the piece left, the piece's parameters right. */
+  :root { --bg:#ece8e1; --panel:#f6f3ee; --stage:#cfc8bc; --fg:#231d17; --muted:#6b6258; --line:#d0c9bd; --accent:#a8451d;
+          --accent-fg:#fff6ec; --warn:#b5651d; --ui:"Segoe UI",system-ui,sans-serif; --mono:ui-monospace,Consolas,monospace; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#15110d; --panel:#1e1913; --stage:#0f0c09;
+    --fg:#eadfca; --muted:#a39580; --line:#352d23; --accent:#d9622f; --accent-fg:#1a0e06; --warn:#e0a050; color-scheme:dark; } }
+  :root[data-theme="dark"] { --bg:#15110d; --panel:#1e1913; --stage:#0f0c09; --fg:#eadfca; --muted:#a39580; --line:#352d23;
+    --accent:#d9622f; --accent-fg:#1a0e06; --warn:#e0a050; color-scheme:dark; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; }
+  body { background:var(--bg); color:var(--fg); font:13px/1.4 var(--ui); padding:10px; }
+  .wrap { display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:10px; height:100%; min-height:560px; }
+  @media (max-width: 760px) { .wrap { grid-template-columns:minmax(0,1fr); height:auto; } .stage { min-height:60vh; } }
+  .main { display:flex; flex-direction:column; gap:8px; min-height:0; min-width:0; }
+  .toolbar { display:flex; flex-wrap:wrap; gap:6px; align-items:center; background:var(--panel); border:1px solid var(--line);
+    border-radius:10px; padding:6px 8px; }
+  .stage { position:relative; flex:1; background:var(--stage); border:1px solid var(--line); border-radius:10px; overflow:hidden; min-height:320px; }
+  canvas { position:absolute; inset:0; width:100%; height:100%; display:block; touch-action:none; }
+  .badge { position:absolute; left:10px; top:8px; font:12px var(--mono); color:var(--muted); background:color-mix(in srgb,var(--panel) 85%,transparent);
+    padding:3px 8px; border-radius:6px; pointer-events:none; max-width:calc(100% - 20px); }
+  .warn { position:absolute; left:50%; bottom:10px; transform:translateX(-50%); max-width:92%; background:var(--warn); color:#fff;
+    padding:6px 12px; border-radius:8px; font-weight:600; pointer-events:none; text-align:center; }
+  .msg { position:absolute; inset:0; display:grid; place-items:center; color:var(--muted); padding:16px; text-align:center; }
+  [hidden] { display:none !important; }
+  .rail { display:flex; flex-direction:column; gap:8px; min-height:0; overflow:auto; }
+  .box { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:9px; min-width:0; transition:border-color .15s; }
+  .box.hot { border-color:var(--accent); }
+  .grp { font:11px var(--mono); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:2px 0 6px; }
+  .row { display:flex; flex-wrap:wrap; gap:5px; align-items:center; }
+  .seg { display:inline-flex; flex-wrap:wrap; }
+  .seg button { border-radius:0; margin-left:-1px; } .seg button:first-child { border-radius:7px 0 0 7px; margin-left:0; }
+  .seg button:last-child { border-radius:0 7px 7px 0; }
+  .pieces { display:grid; grid-template-columns:repeat(3,1fr); gap:4px; }
+  .pieces button { padding:6px 4px; }
+  .sep { width:1px; align-self:stretch; background:var(--line); margin:0 2px; }
+  .grow { flex:1; }
+  button { font:inherit; color:var(--fg); background:var(--bg); border:1px solid var(--line); border-radius:7px; padding:4px 9px; cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  button.on { background:var(--accent); color:var(--accent-fg); border-color:var(--accent); }
+  button.primary { border-color:var(--accent); background:var(--accent); color:var(--accent-fg); font-weight:600; padding:7px 12px; }
+  button:disabled { opacity:.5; cursor:default; }
+  input[type=text], input[type=number], select { font:inherit; color:var(--fg); background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:3px 6px; min-width:0; }
+  .sl { display:grid; grid-template-columns:1fr auto; gap:0 8px; margin:6px 0; }
+  .sl .lab { font-size:12.5px; }
+  .sl .val { font:12px var(--mono); color:var(--accent); text-align:right; white-space:nowrap; }
+  .sl input[type=range] { grid-column:1 / 3; width:100%; accent-color:var(--accent); margin:2px 0 0; }
+  .sl .inf { grid-column:1 / 3; font-size:11.5px; color:var(--muted); }
+  label.chk { display:flex; align-items:center; gap:6px; margin:6px 0; }
+  .foot { position:sticky; bottom:0; box-shadow:0 -6px 8px -6px rgba(0,0,0,.25); }
+  .status { font-size:12px; color:var(--muted); white-space:pre-wrap; margin-top:6px; max-height:9em; overflow:auto; }
+  .note { font-size:11.5px; color:var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="main">
+    <div class="toolbar">
+      <span class="seg" id="views">
+        <button data-v="front">{{ag.view_front}}</button><button data-v="side">{{ag.view_side}}</button><button data-v="close">{{ag.view_close}}</button>
+      </span>
+      <span class="sep"></span>
+      <span class="seg" id="skins" title="{{ag.skin_title}}">
+        <button data-s="own" class="on">{{ag.skin_own}}</button><button data-s="plain">{{ag.skin_plain}}</button><button data-s="xray">{{ag.skin_xray}}</button>
+      </span>
+      <span class="sep"></span>
+      <span class="seg" id="poses" title="{{ag.pose_title}}">
+        <button data-p="rest" class="on">{{ag.pose_rest}}</button><button data-p="side">{{ag.pose_side}}</button><button data-p="front">{{ag.pose_front}}</button><button data-p="elbows">{{ag.pose_elbows}}</button><button data-p="squat">{{ag.pose_squat}}</button>
+      </span>
+      <span class="grow"></span>
+      <span class="seg" id="shows" hidden>
+        <button data-r="0" class="on">{{ag.show_preview}}</button><button data-r="1">{{ag.show_result}}</button>
+      </span>
+    </div>
+    <div class="stage" id="stage">
+      <div class="badge" id="info"></div>
+      <div class="warn" id="warn" hidden></div>
+      <div class="msg" id="msg">{{ag.loading_character}}</div>
+    </div>
+  </div>
+  <div class="rail" id="rail">
+    <div class="box">
+      <div class="grp">{{ag.piece}}</div>
+      <div class="pieces" id="pieces"></div>
+      <div class="row" style="margin-top:8px" id="sidesRow">
+        <span class="note">{{ag.sides}}:</span>
+        <span class="seg"><button data-side="L" class="on">{{ag.left}}</button><button data-side="R" class="on">{{ag.right}}</button></span>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <span class="note">{{ag.name}}</span><input type="text" id="name" class="grow">
+      </div>
+      <div class="row" style="margin-top:6px" id="savedRow" hidden>
+        <span class="note">{{ag.saved}}</span><select id="saved" class="grow"></select>
+      </div>
+    </div>
+    <div id="groups"></div>
+    <div class="box foot">
+      <div class="row"><button class="primary grow" id="go">{{ag.generate}}</button><button id="room">{{ed.fitting_room_in_godot}}</button></div>
+      <div class="status" id="status">{{ag.preview_note}}</div>
+    </div>
+  </div>
+</div>
+<script id="d-data" type="application/json">@@DATA@@</script>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+               "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+               "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.7.6/build/index.module.js" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { computeBoundsTree } from 'three-mesh-bvh';
+THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
+
+// The piece is built here, from the character's own skin, on every change of a parameter, with its weights (the poses
+// show it moving as in the game); «Generate» sends this very geometry and these weights to Blender, which bakes the
+// textures and exports. The look of the material here is an approximation (the same colours, roughness and patterns;
+// the bake adds the worn edges).
+const $ = (id) => document.getElementById(id);
+const V3 = THREE.Vector3, Q = THREE.Quaternion;
+const DATA = JSON.parse($('d-data').textContent);
+const PIECES = DATA.pieces;     // piece -> {joints: [first, next, main], foreign: [bone name words], part, defaults}
+const PRESETS = DATA.presets;   // material -> [linear colour, roughness, metallic]
+const PARTS = ['Eye_', 'EyeSocket', 'Teeth_', 'Gum_', 'Tongue', 'MouthCavity', 'Icosphere'];
+const UP = new V3(0, 1, 0), FRONT = new V3(0, 0, 1);   // glTF: Y up, the character faces +Z
+const TAU = 2 * Math.PI;
+
+// ------------------------------------------------------------------ the scene
+const stage = $('stage');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+stage.prepend(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(getComputedStyle(document.documentElement).getPropertyValue('--stage').trim() || '#cfc8bc');
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), .04).texture;
+scene.add(new THREE.HemisphereLight(0xffffff, 0x554433, .6));
+const sun = new THREE.DirectionalLight(0xffffff, 1.6); sun.position.set(2, 4, 3); scene.add(sun);
+const camera = new THREE.PerspectiveCamera(30, 1, .01, 100);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+// the middle button pans the view, not the page (browser autoscroll); the wheel zooms, it does not scroll the app
+const cnv = renderer.domElement;
+cnv.addEventListener('mousedown', (e) => { if (e.button === 1) e.preventDefault(); });
+cnv.addEventListener('auxclick', (e) => { if (e.button === 1) e.preventDefault(); });
+cnv.addEventListener('wheel', (e) => e.preventDefault(), { passive: false });
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  renderer.setSize(w, h, false); camera.aspect = w / Math.max(h, 1); camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage); resize();
+renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+
+// ------------------------------------------------------------------ the character: skin for the rays, bones, poses
+let charRoot = null, bodyGeo = null, vBone = null, vW = null, boneNames = [];
+const PB = {}, REST = new Map(), byName = {}, ORIG = new Map();
+const wordCache = new Map();
+
+async function loadCharacter() {
+  const url = new URL('/file=' + DATA.rigged + '?v=' + (DATA.rigged_v || 0), window.parent.location.href).href;
+  const gltf = await new GLTFLoader().loadAsync(url);
+  charRoot = gltf.scene; scene.add(charRoot); charRoot.updateMatrixWorld(true);
+  const pos = [], idx = [], vb = [], vw = [], nameId = new Map();
+  const isPart = (o) => PARTS.some((p) => o.name.startsWith(p) || (o.parent && o.parent.name.startsWith(p)));
+  charRoot.traverse((o) => {
+    if (o.isBone) { byName[o.name] = o; REST.set(o, o.quaternion.clone()); }
+    if (o.isMesh) { ORIG.set(o, o.material); }
+    if (!o.isSkinnedMesh || isPart(o)) return;
+    const g = o.geometry, P = g.attributes.position, si = g.attributes.skinIndex, sw = g.attributes.skinWeight;
+    if (!si || !sw) return;
+    const bmap = o.skeleton.bones.map((b) => { if (!nameId.has(b.name)) { nameId.set(b.name, boneNames.length); boneNames.push(b.name); } return nameId.get(b.name); });
+    const base = pos.length / 3, v = new V3();
+    for (let i = 0; i < P.count; i++) {   // the rest pose: the raw positions in the world (as Blender's REST)
+      v.fromBufferAttribute(P, i).applyMatrix4(o.matrixWorld); pos.push(v.x, v.y, v.z);
+      for (let k = 0; k < 4; k++) { vb.push(bmap[si.getComponent(i, k)]); vw.push(sw.getComponent(i, k)); }
+    }
+    if (g.index) for (let i = 0; i < g.index.count; i++) idx.push(base + g.index.getX(i));
+    else for (let i = 0; i < P.count; i++) idx.push(base + i);
+  });
+  if (!pos.length) throw new Error('{{js:blender.the_character_has_no_skin_with}}');
+  bodyGeo = new THREE.BufferGeometry();
+  bodyGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); bodyGeo.setIndex(idx); bodyGeo.computeBoundsTree();
+  vBone = Int32Array.from(vb); vW = Float32Array.from(vw);
+  bodyGeo.computeBoundingBox(); HEIGHT = bodyGeo.boundingBox.max.y - bodyGeo.boundingBox.min.y;
+  for (const tbl of Object.values(DATA.names || {})) for (const [id, n] of Object.entries(tbl)) {
+    const b = byName[THREE.PropertyBinding.sanitizeNodeName(n)] || byName[n]; if (b && !PB[id]) PB[id] = b;
+  }
+  if (!PB.hips) throw new Error('{{js:ag.bones_not_recognised}}');
+  // the preview is skinned to the character's own bones, bound at rest
+  BONES = boneNames.map((n) => byName[n]);
+  SKEL = new THREE.Skeleton(BONES, BONES.map((b) => b.matrixWorld.clone().invert()));
+}
+const joint = (id) => (PB[id] ? PB[id].getWorldPosition(new V3()) : null);   // at rest: read before any pose
+
+const _ray = new THREE.Ray();
+function cast(o, d, far) {   // the skin's first hit from o along d (both sides of the faces, as Blender's ray_cast)
+  _ray.origin.copy(o); _ray.direction.copy(d);
+  const h = bodyGeo.boundsTree.raycastFirst(_ray, THREE.DoubleSide);
+  return h && h.distance <= far ? h : null;
+}
+function castAll(o, d, far) {   // every hit along the ray, nearest first
+  _ray.origin.copy(o); _ray.direction.copy(d);
+  return bodyGeo.boundsTree.raycast(_ray, THREE.DoubleSide).filter((h) => h.distance <= far).sort((a, b) => a.distance - b.distance);
+}
+function skinOf(h, words) {   // the share of a hit triangle's weight on the bones whose names have one of the words
+  const key = words.join('|');
+  let m = wordCache.get(key);
+  if (!m) { m = Uint8Array.from(boneNames, (n) => (words.some((w) => n.includes(w)) ? 1 : 0)); wordCache.set(key, m); }
+  let on = 0, tot = 0;
+  for (const vi of [h.face.a, h.face.b, h.face.c]) for (let k = 0; k < 4; k++) { const w = vW[4 * vi + k]; tot += w; if (m[vBone[4 * vi + k]]) on += w; }
+  return tot > 1e-9 ? on / tot : 0;
+}
+
+// ------------------------------------------------------------------ the limb, its skin profile, the shell
+class Limb {
+  constructor(a, b) {
+    this.a = a.clone(); const d = b.clone().sub(a); this.len = d.length(); this.u = d.divideScalar(this.len);
+    this.p1 = (Math.abs(this.u.x) < .9 ? new V3(1, 0, 0) : new V3(0, 1, 0)).cross(this.u).normalize();
+    this.p2 = this.u.clone().cross(this.p1);
+  }
+  axis(t) { return this.a.clone().addScaledVector(this.u, t * this.len); }
+  out(ang) { return this.p1.clone().multiplyScalar(Math.cos(ang)).addScaledVector(this.p2, Math.sin(ang)); }
+  angOf(d) { return Math.atan2(d.dot(this.p2), d.dot(this.p1)); }
+}
+function centred(limb) {   // the joints sit off the middle of the flesh: a line through the skin's centres
+  const centres = [];
+  for (let i = 0; i < 9; i++) {
+    const o = limb.axis(.1 + .8 * i / 8), hits = [];
+    for (let k = 0; k < 24; k++) { const h = cast(o, limb.out(k / 24 * TAU), limb.len); if (h) hits.push(h.point.clone()); }
+    if (hits.length >= 18) centres.push(hits.reduce((s, p) => s.add(p), new V3()).divideScalar(hits.length));
+  }
+  if (centres.length < 3) return limb;
+  const c = centres.reduce((s, p) => s.add(p.clone()), new V3()).divideScalar(centres.length);
+  let d = limb.u.clone();
+  for (let it = 0; it < 20; it++) {
+    const w = new V3(); for (const p of centres) { const q = p.clone().sub(c); w.addScaledVector(q, q.dot(d)); }
+    if (w.length() < 1e-12) break; d = w.normalize();
+  }
+  if (d.dot(limb.u) < 0) d.negate();
+  if (d.dot(limb.u) < .9) d = limb.u.clone();
+  const b = limb.axis(1);
+  return new Limb(c.clone().addScaledVector(d, limb.a.clone().sub(c).dot(d)), c.clone().addScaledVector(d, b.clone().sub(c).dot(d)));
+}
+function blur(g, n, wrap = true) {   // 1-2-1 passes over rows and columns (the angle wraps)
+  const R = g.length, C = g[0].length;
+  for (let p = 0; p < n; p++) {
+    g = g.map((_, i) => g[i].map((x, j) => (g[Math.max(0, i - 1)][j] + 2 * x + g[Math.min(R - 1, i + 1)][j]) / 4));
+    g = g.map((row) => row.map((x, j) => (row[wrap ? (j - 1 + C) % C : Math.max(0, j - 1)] + 2 * x + row[wrap ? (j + 1) % C : Math.min(C - 1, j + 1)]) / 4));
+  }
+  return g;
+}
+function fill(g) {   // holes (NaN) from their neighbours, the angle wrapping
+  const R = g.length, C = g[0].length;
+  for (let it = 0; it < R + C; it++) {
+    const upd = [];
+    for (let i = 0; i < R; i++) for (let j = 0; j < C; j++) {
+      if (!Number.isNaN(g[i][j])) continue;
+      const nb = [[i - 1, j], [i + 1, j], [i, (j - 1 + C) % C], [i, (j + 1) % C]].filter(([a]) => a >= 0 && a < R).map(([a, b]) => g[a][b]).filter((x) => !Number.isNaN(x));
+      if (nb.length) upd.push([i, j, nb.reduce((s, x) => s + x, 0) / nb.length]);
+    }
+    if (!upd.length) break;
+    for (const [i, j, x] of upd) g[i][j] = x;
+  }
+  return g.map((row) => row.map((x) => (Number.isNaN(x) ? 0 : x)));
+}
+const median = (a) => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };
+class Profile {   // the skin around an axis: distances from it, rows along, the full circle around, and the hit triangles
+  // o: {foreign: bone name words of skin that is not this part's, arms: [[direction, length]] (a torso's shoulder balls),
+  //     limbOnly: cloth hanging off the limb does not count, skirt: the radius never shrinks going down (from t1),
+  //     over: the outermost of this part's surfaces up to over x the skin's distance (clothes worn under the piece)}
+  constructor(limb, t0, t1, o) {
+    const NA = this.NA = 72;
+    this.limb = limb; this.t0 = t0; this.t1 = t1;
+    this.ts = Array.from({ length: 40 }, (_, i) => t0 + (t1 - t0) * i / 39);
+    const faces = this.ts.map(() => new Int32Array(NA).fill(-1));
+    let g = this.ts.map((t, i) => {
+      const org = limb.axis(t);
+      return Array.from({ length: NA }, (_, j) => {
+        const d = limb.out(j / NA * TAU);
+        let h = cast(org, d, 3 * limb.len);
+        if (h && o.over && skinOf(h, o.foreign) <= .5) {
+          const lim = o.over * h.distance;
+          for (const x of castAll(org, d, lim)) if (skinOf(x, o.foreign) <= .5) h = x; else break;
+        }
+        if (!h || skinOf(h, o.foreign) > .5) return NaN;
+        if ((o.arms || []).some(([ad, ar]) => d.dot(ad) > .8 && h.distance > .85 * ar)) return NaN;   // the shoulder's ball, past the joint
+        faces[i][j] = h.faceIndex;
+        return h.distance;
+      });
+    });
+    const near = g.flat().filter((x) => !Number.isNaN(x));
+    if (!near.length) throw new Error('{{js:ag.no_skin_around_the_limb}}');
+    this.R = median(near);
+    g = g.map((row) => row.map((x) => (x <= 2.2 * this.R ? x : NaN)));   // another limb
+    if (o.limbOnly) {   // cloth hanging off the limb (shorts, a skirt): much farther out than the limb along this side
+      const med = Array.from({ length: NA }, (_, j) => { const c = g.map((r) => r[j]).filter((x) => !Number.isNaN(x)); return c.length ? median(c) : NaN; });
+      g = g.map((row) => row.map((x, j) => (Number.isNaN(x) || Number.isNaN(med[j]) || x <= 1.4 * med[j] ? x : NaN)));
+    }
+    g.forEach((row, i) => row.forEach((x, j) => { if (Number.isNaN(x)) faces[i][j] = -1; }));
+    this.skin = fill(g);
+    if (o.skirt) for (let i = this.ts.length - 2; i >= 0; i--) for (let j = 0; j < NA; j++) this.skin[i][j] = Math.max(this.skin[i][j], this.skin[i + 1][j]);
+    // going down from the top row, the widest the skin has been so far (loose trousers hang from it)
+    this.cm = this.skin.map((r) => [...r]);
+    for (let i = 1; i < this.ts.length; i++) for (let j = 0; j < NA; j++) this.cm[i][j] = Math.max(this.cm[i][j], this.cm[i - 1][j]);
+    this.face = faces.map((row, i) => Array.from(row, (f, j) => {   // a ray that hit nothing: the nearest hit's triangle
+      if (f >= 0) return f;
+      for (let k = 1; k < NA / 2; k++) for (const [a, b] of [[i, j + k], [i, j - k], [i - k, j], [i + k, j]]) {
+        if (a >= 0 && a < faces.length) { const x = faces[a][((b % NA) + NA) % NA]; if (x >= 0) return x; }
+      }
+      return -1;
+    }));
+  }
+  shell(gap, relief) {   // smoothed by relief, never under the skin, the gap out
+    const R = this.R, smooth = blur(this.skin, Math.round(4 + 20 * (1 - relief)));
+    let inner = this.skin.map((rs, i) => rs.map((s, j) => Math.max(relief * s + (1 - relief) * smooth[i][j] + gap * R, s + .5 * gap * R)));
+    inner = blur(inner, 1);
+    this.inner = inner.map((rx, i) => rx.map((x, j) => Math.max(x, this.skin[i][j] + .5 * gap * R)));
+  }
+  cell(t, ang) {
+    const n = this.ts.length, x = Math.min(n - 1, Math.max(0, (t - this.t0) / (this.t1 - this.t0) * (n - 1)));
+    return [x, (((ang / TAU) % 1) + 1) % 1 * this.NA];
+  }
+  at(g, t, ang) {
+    const [x, y] = this.cell(t, ang), n = this.ts.length;
+    const i0 = Math.min(n - 2, Math.floor(x)), j0 = Math.floor(y) % this.NA, fx = x - i0, fy = y - Math.floor(y), j1 = (j0 + 1) % this.NA;
+    return (g[i0][j0] * (1 - fy) + g[i0][j1] * fy) * (1 - fx) + (g[i0 + 1][j0] * (1 - fy) + g[i0 + 1][j1] * fy) * fx;
+  }
+  rIn(t, ang) { return this.at(this.inner, t, ang); }
+  rSkin(t, ang) { return this.at(this.skin, t, ang); }
+  rWide(t, ang) { return this.at(this.cm, t, ang); }
+  faceAt(t, ang) { const [x, y] = this.cell(t, ang); return this.face[Math.round(x)][Math.round(y) % this.NA]; }
+}
+
+// ------------------------------------------------------------------ weights: from the skin under the piece, as the game will move it
+const LIMB_WORDS = ['Arm', 'Hand', 'Leg', 'Foot', 'Toe'];
+let BONES = [], SKEL = null, HEIGHT = 1;
+function famMask(fam, main) {   // the bones a piece may follow
+  if (fam === 'limb') {
+    const keep = new Set([main.name]); main.traverse((b) => { if (b.isBone) keep.add(b.name); });
+    if (main.parent && main.parent.isBone) keep.add(main.parent.name);
+    return Uint8Array.from(boneNames, (n) => (keep.has(n) ? 1 : 0));
+  }
+  const torso = (n) => !LIMB_WORDS.some((w) => n.includes(w));
+  const extra = { torso: () => false, hips: (n) => /UpLeg|UpperLeg/.test(n), legs: (n) => /Leg|Foot/.test(n) }[fam];
+  return Uint8Array.from(boneNames, (n) => (torso(n) || extra(n) ? 1 : 0));
+}
+function weigher(fam, main, rigidity) {   // body triangle -> the 4 strongest bones and weights, drawn to the main bone
+  const mask = famMask(fam, main), mi = boneNames.indexOf(main.name), cache = new Map();
+  return (face) => {
+    let r = cache.get(face);
+    if (r) return r;
+    const acc = new Map();
+    if (face >= 0) for (let c = 0; c < 3; c++) {
+      const vi = bodyGeo.index.getX(3 * face + c);
+      for (let k = 0; k < 4; k++) { const b = vBone[4 * vi + k], w = vW[4 * vi + k]; if (w > 0 && mask[b]) acc.set(b, (acc.get(b) || 0) + w); }
+    }
+    const tot = [...acc.values()].reduce((s, x) => s + x, 0);
+    const ws = new Map(); for (const [b, w] of acc) ws.set(b, tot > 1e-6 ? w / tot * (1 - rigidity) : 0);
+    ws.set(mi, (ws.get(mi) || 0) + (tot > 1e-6 ? rigidity : 1));
+    const top = [...ws.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4), s = top.reduce((q, x) => q + x[1], 0) || 1;
+    while (top.length < 4) top.push([mi, 0]);
+    r = [top.map((x) => x[0]), top.map((x) => x[1] / s)];
+    cache.set(face, r); return r;
+  };
+}
+
+// ------------------------------------------------------------------ the mesh: quads, a material, a role and weights per vertex
+// the material slots Blender bakes: the surface (the chosen material), leather (straps, backing, lacing), rivets and
+// buckles, mail (metal rings), quilting (cloth): mail and quilting may come with plates in one piece
+const PLATE = 0, LEATHER = 1, DETAIL = 2, MAIL = 3, CLOTH = 4;
+class Acc {
+  constructor() { this.v = []; this.uv = []; this.f = []; this.m = []; this.role = []; this.bi = []; this.bw = []; this.w = null; }
+  vert(p, u = 0, w = 0, face = -1) {
+    this.v.push(p.x, p.y, p.z); this.uv.push(u, w);
+    const [bi, bw] = this.w(face); this.bi.push(...bi); this.bw.push(...bw);
+    return this.v.length / 3 - 1;
+  }
+  face(ids, mat, role) { this.f.push(ids); this.m.push(mat); this.role.push(role); }
+}
+// a thick sheet: rows x angs, point(i, j, side) (side 0 inner, 1 outer), faces wound outwards. closed: a tube whose last
+// column repeats the first (the seam keeps its own texture coordinates; Blender welds it), else with side walls
+function solid(acc, rows, angs, closed, point, mat, role, uv, face) {
+  const R = rows.length, C = angs.length;
+  const V = [0, 1].map((s) => rows.map((_, i) => angs.map((_, j) => acc.vert(point(i, j, s), ...uv(i, j), face(i, j)))));
+  for (const s of [0, 1]) for (let i = 0; i < R - 1; i++) for (let j = 0; j < C - 1; j++) {
+    const q = [V[s][i][j], V[s][i][j + 1], V[s][i + 1][j + 1], V[s][i + 1][j]];
+    acc.face(s ? q : q.reverse(), mat, role);
+  }
+  for (const i of [0, R - 1]) for (let j = 0; j < C - 1; j++) {
+    const q = [V[0][i][j], V[0][i][j + 1], V[1][i][j + 1], V[1][i][j]];
+    acc.face(i === 0 ? q : q.reverse(), mat, role);
+  }
+  if (!closed) for (const j of [0, C - 1]) for (let i = 0; i < R - 1; i++) {
+    const q = [V[0][i][j], V[0][i + 1][j], V[1][i + 1][j], V[1][i][j]];
+    acc.face(j === 0 ? q.reverse() : q, mat, role);
+  }
+}
+function box(acc, c, [x, y, z], sx, sy, sz, mat, role, face) {   // axes right-handed, half sizes
+  const vs = [];
+  for (const a of [-1, 1]) for (const b of [-1, 1]) for (const d of [-1, 1])
+    vs.push(acc.vert(c.clone().addScaledVector(x, sx * a).addScaledVector(y, sy * b).addScaledVector(z, sz * d), .5, .5, face));
+  for (const q of [[0, 1, 3, 2], [4, 6, 7, 5], [0, 4, 5, 1], [2, 3, 7, 6], [0, 2, 6, 4], [1, 5, 7, 3]]) acc.face(q.map((k) => vs[k]), mat, role);
+}
+function rivet(acc, p, n, r, mat, role, face) {   // a flattened dome on the surface at p (normal n)
+  const t1 = new V3().crossVectors(Math.abs(n.y) < .9 ? UP : new V3(1, 0, 0), n).normalize(), t2 = new V3().crossVectors(n, t1);
+  const c = p.clone().addScaledVector(n, .15 * r), U = 8, RINGS = 4;
+  const at = (lat, lon) => c.clone().addScaledVector(n, .55 * r * Math.cos(lat)).addScaledVector(t1, r * Math.sin(lat) * Math.cos(lon)).addScaledVector(t2, r * Math.sin(lat) * Math.sin(lon));
+  const uu = Math.random(), vv = Math.random();
+  const top = acc.vert(at(0, 0), uu, vv, face), bot = acc.vert(at(Math.PI, 0), uu, vv, face);
+  const ring = Array.from({ length: RINGS }, (_, k) => Array.from({ length: U }, (_, j) => acc.vert(at(Math.PI * (k + 1) / (RINGS + 1), TAU * j / U), uu, vv, face)));
+  for (let j = 0; j < U; j++) {
+    const j1 = (j + 1) % U;
+    acc.face([top, ring[0][j], ring[0][j1]], mat, role);
+    for (let k = 0; k < RINGS - 1; k++) acc.face([ring[k][j], ring[k + 1][j], ring[k + 1][j1], ring[k][j1]], mat, role);
+    acc.face([ring[RINGS - 1][j], bot, ring[RINGS - 1][j1]], mat, role);
+  }
+}
+const lin = (a, b, n) => Array.from({ length: n }, (_, i) => a + (b - a) * i / (n - 1));
+
+// ------------------------------------------------------------------ the shell and what covers it
+const limbCache = new Map(), profCache = new Map();
+function limbOf(kind, side) {   // the part's axis: a limb's through the middle of its flesh, the torso's from the hips to the neck
+  const key = kind + side;
+  if (limbCache.has(key)) return limbCache.get(key);
+  const torso = side === 'C';
+  const [ja, jb] = torso ? ['hips', 'neck'] : PIECES[kind].joints, sfx = torso ? '' : '_' + side;
+  const a = joint(ja + sfx), b = joint(jb + sfx);
+  if (!a || !b) throw new Error('{{js:ag.the_character_has_no_joints_for}}'.replace('{0}', LABEL[kind]));
+  let limb = new Limb(a, b);
+  const arms = [];
+  if (torso) {   // the sides towards the arms end short of the shoulder joints
+    for (const s of 'LR') {
+      const J = joint('arm_' + s); if (!J) continue;
+      const d = J.clone().sub(limb.a); d.addScaledVector(limb.u, -d.dot(limb.u)); arms.push([d.clone().normalize(), d.length()]);
+    }
+  } else limb = centred(limb);
+  const res = { limb, arms };
+  limbCache.set(key, res); return res;
+}
+function profile(key, limb, t0, t1, o) {
+  const k = `${key}${t0.toFixed(3)}${t1.toFixed(3)}`;
+  let P = profCache.get(k);
+  if (!P) { P = new Profile(limb, t0, t1, o); profCache.set(k, P); if (profCache.size > 40) profCache.delete(profCache.keys().next().value); }
+  return P;
+}
+// the angle ranges a piece covers: closed round, or a plate of «sector» degrees around mid, cut into panels
+function arcsOf(mid, sector, splits) {
+  if (sector >= 359 && !splits) return [[mid, mid + TAU, true]];
+  const full = sector >= 359, total = THREE.MathUtils.degToRad(full ? 360 : sector), n = full ? Math.max(2, splits) : splits + 1;
+  const gap = splits ? THREE.MathUtils.degToRad(4) : 0, w = (total - (full ? n : n - 1) * gap) / n, a0 = mid - total / 2;
+  return Array.from({ length: n }, (_, k) => [a0 + k * (w + gap), a0 + k * (w + gap) + w, false]);
+}
+const inArcs = (arcs, ang) => arcs.some(([a, b]) => { const d = ((ang - a) % TAU + TAU) % TAU; return d <= b - a + 1e-9; });
+function colsOf([a0, a1, closed]) { return closed ? lin(a0, a0 + TAU, 73) : lin(a0, a1, Math.max(4, Math.round(72 * (a1 - a0) / TAU) + 1)); }
+// sh: {limb, P, ta, tb: the rows covered, top: 'a' | 'b' (the end plates and scales hang from), arcs, r(t, ang): the
+//      inner surface, R, thick}; adds sh.uv (texture coordinates in pattern tiles, a whole number of them round) and
+//      sh.outer(t, ang) (where straps lie)
+function shellUV(sh) {
+  const n = LOOK.n, K = n * Math.max(1, Math.round(TAU * sh.R / (n * LOOK.U)));
+  sh.uv = (t, ang) => [(ang - sh.arcs[0][0]) / TAU * K, t * sh.limb.len / LOOK.U];
+}
+function surface(acc, sh, p) {
+  shellUV(sh);
+  ({ plates: surfPlates, scales: surfScales, lamellar: surfScales, mail: surfSheet, quilt: surfSheet, plain: surfSheet })[p.surface](acc, sh, p);
+}
+const pt = (sh, t, ang, r) => sh.limb.axis(t).addScaledVector(sh.limb.out(ang), r);
+function surfSheet(acc, sh, p) {   // one sheet: mail and quilting are its texture, plain cloth or leather is just it
+  const thick = sh.thick * (p.surface === 'mail' ? .5 : p.surface === 'quilt' ? 1.6 : 1), rows = lin(sh.ta, sh.tb, 40);
+  const [slot, role] = { mail: [MAIL, 'mail'], quilt: [CLOTH, 'quilt'] }[p.surface] || [PLATE, 'plate'];
+  for (const arc of sh.arcs) {
+    const cols = colsOf(arc);
+    solid(acc, rows, cols, arc[2], (i, j, s) => pt(sh, rows[i], cols[j], sh.r(rows[i], cols[j]) + (s ? thick : 0)), slot, role,
+      (i, j) => sh.uv(rows[i], cols[j]), (i, j) => sh.P.faceAt(rows[i], cols[j]));
+  }
+  sh.outer = (t, ang) => sh.r(t, ang) + thick;
+}
+function surfPlates(acc, sh, p) {   // bands along, each a little wider than the next so the upper one overlaps it, rolled rims, rivets
+  const { R, ta, tb, limb } = sh, n = Math.max(1, Math.round(p.plates)), step = p.step * R, rimh = p.rim * R, span = (tb - ta) / n;
+  const rimW = Math.min(.35 * span, .12 * R * 4 / limb.len);   // the rolled rim's width, along
+  const bands = [];
+  for (let k = 0; k < n; k++) {
+    const a0 = ta + k * span - (k ? .18 * span : 0), a1 = ta + (k + 1) * span;
+    const off = (n - 1 - (sh.top === 'a' ? k : n - 1 - k)) * step;   // counted from the end the plates hang from
+    const rows = lin(a0, a1, Math.max(5, Math.floor(24 / n)) + 1);
+    const rim = (t) => { const e = Math.min(t - a0, a1 - t) / Math.max(rimW, 1e-9); return e < 1 ? rimh * Math.max(0, 1 - e) ** 2 : 0; };
+    for (const arc of sh.arcs) {
+      const cols = colsOf(arc);
+      solid(acc, rows, cols, arc[2], (i, j, s) => pt(sh, rows[i], cols[j], sh.r(rows[i], cols[j]) + off + (s ? sh.thick + rim(rows[i]) : 0)),
+        PLATE, 'plate', (i, j) => sh.uv(rows[i], cols[j]), (i, j) => sh.P.faceAt(rows[i], cols[j]));
+    }
+    bands.push([a0, a1, off]);
+  }
+  const offAt = (t) => bands[Math.min(n - 1, Math.max(0, Math.floor((t - ta) / span)))][2];
+  sh.outer = (t, ang) => sh.r(t, ang) + offAt(t) + sh.thick + rimh * .3;
+  const spacing = p.rivets * R, rs = p.rivet_size * R;   // rivets on the rims
+  if (spacing > 0) for (const [a0, a1, off] of bands) for (const t of [a0 + .5 * rimW, a1 - .5 * rimW]) for (const [b0, b1, closed] of sh.arcs) {
+    const cnt = Math.max(2, Math.floor((b1 - b0) * (sh.r(t, (b0 + b1) / 2) + off + sh.thick) / spacing));
+    for (let c = 0; c < (closed ? cnt : cnt + 1); c++) {
+      const ang = closed ? b0 + TAU * c / cnt : b0 + (b1 - b0) * (.05 + .9 * c / cnt);
+      rivet(acc, pt(sh, t, ang, sh.r(t, ang) + off + sh.thick + rimh * .6), limb.out(ang), rs, DETAIL, 'rivet', sh.P.faceAt(t, ang));
+    }
+  }
+}
+// scales (round, staggered) or lamellae (narrow upright plates, laced in rows) on a leather backing; each row's free
+// ends lie over the next row's laced ends
+function surfScales(acc, sh, p) {
+  const lam = p.surface === 'lamellar', { limb, ta, tb } = sh;
+  const back = .35 * sh.thick;
+  for (const arc of sh.arcs) {
+    const rows = lin(ta, tb, 30), cols = colsOf(arc);
+    solid(acc, rows, cols, arc[2], (i, j, s) => pt(sh, rows[i], cols[j], sh.r(rows[i], cols[j]) + (s ? back : 0)), LEATHER, 'backing',
+      (i, j) => sh.uv(rows[i], cols[j]), (i, j) => sh.P.faceAt(rows[i], cols[j]));
+  }
+  const size = p.scale_size / 1000 * HEIGHT, wid = lam ? .55 * size : size, hgt = lam ? 1.9 * size : 1.1 * size;
+  const adv = hgt * (1 - p.overlap / 100), st = Math.max(.25 * sh.thick, .04 * size), tilt = .6 * st + .1 * size;
+  const ds = sh.top === 'a' ? 1 : -1, start = sh.top === 'a' ? ta : tb;
+  const nRows = Math.max(1, Math.ceil((tb - ta) * limb.len / adv));
+  const A = [0, .25, .5, .75, 1], B = [0, .3, .6, .82, 1];
+  for (let rI = 0; rI < nRows; rI++) {
+    const tA = start + ds * rI * adv / limb.len;   // the laced end of this row
+    for (const [a0, a1, closed] of sh.arcs) {
+      const rm = sh.r(tA, (a0 + a1) / 2) + back, cnt = Math.max(1, Math.round((a1 - a0) * rm / (wid * (lam ? 1 : .9))));
+      const sp = (a1 - a0) / cnt, shift = !lam && rI % 2 ? .5 * sp : 0;
+      for (let c = 0; c < (closed ? cnt : cnt); c++) {
+        const ac = a0 + sp * (c + .5) + shift;
+        if (!closed && ac > a1) continue;
+        const half = (lam ? .52 : .56) * sp, lift = lam ? (c % 2) * .3 * st : 0;
+        const shape = (b) => (lam ? (b > .9 ? .8 : 1) : b < .45 ? 1 : Math.max(.15, Math.sqrt(Math.max(0, 1 - ((b - .45) / .55) ** 2))));
+        const tAt = (b) => tA + ds * b * hgt / limb.len, angAt = (a, b) => ac + (A[a] * 2 - 1) * half * shape(B[b]);
+        solid(acc, B, A, false, (i, j, s) => {
+          const b = B[i], t = tAt(b), ang = angAt(j, i), aa = A[j] * 2 - 1;
+          const r = sh.r(t, ang) + back + lift + tilt * b + (lam ? .06 : .14) * wid * (1 - aa * aa) * Math.sin(Math.PI * Math.min(1, b * 1.2)) + (s ? st : 0);
+          return pt(sh, t, ang, r);
+        }, PLATE, 'plate', (i, j) => sh.uv(tAt(B[i]), angAt(j, i)), (i, j) => sh.P.faceAt(tAt(B[i]), angAt(j, i)));
+      }
+    }
+    if (lam) for (const b of [.12, .55]) {   // the lacing across the row
+      const t = tA + ds * b * hgt / limb.len, w2 = .05 * hgt / limb.len, rows = [t - w2, t + w2];
+      for (const arc of sh.arcs) {
+        const cols = colsOf(arc);
+        solid(acc, rows, cols, arc[2], (i, j, s) => pt(sh, rows[i], cols[j], sh.r(rows[i], cols[j]) + back + tilt * b + .3 * st + st + (s ? .5 * st : 0)),
+          LEATHER, 'strap', (i, j) => sh.uv(rows[i], cols[j]), (i, j) => sh.P.faceAt(rows[i], cols[j]));
+      }
+    }
+  }
+  sh.outer = (t, ang) => sh.r(t, ang) + back + tilt + 1.4 * st;
+}
+// straps round the part at the given rows (round the back of an open piece), with buckles on the outer side
+function straps(acc, sh, p, ts, side, mid) {
+  const { R, limb } = sh, w = p.strap_width * R * .5 / limb.len, st = .05 * R;
+  for (const tc of ts) {
+    const rows = [tc - w, tc, tc + w], sa = lin(0, TAU, 73);
+    const base = (t, ang) => (inArcs(sh.arcs, ang) ? sh.outer(t, ang) + .2 * st
+      : Math.max(sh.P.rSkin(t, ang) + .25 * p.gap * R, sh.r(t, ang) - .5 * p.gap * R));
+    let brad = rows.map((t) => sa.map((a) => base(t, a)));
+    brad = brad.map((row) => row.map((x, j) => Math.max(x, row[(j + 71) % 72], row[(j + 1) % 72])));
+    for (const row of brad) row[72] = row[0];
+    solid(acc, rows, sa, true, (i, j, sd) => pt(sh, rows[i], sa[j], brad[i][j] + (sd ? st : 0)), LEATHER, 'strap',
+      (i, j) => sh.uv(rows[i], sa[j]), (i, j) => sh.P.faceAt(rows[i], sa[j]));
+    if (p.buckle) {
+      const full = sh.arcs.length === 1 && sh.arcs[0][2], span = full ? 0 : sh.arcs.at(-1)[1] - sh.arcs[0][0];
+      const ang = mid + (full ? THREE.MathUtils.degToRad(70) : Math.min(span, THREE.MathUtils.degToRad(300)) / 2 + THREE.MathUtils.degToRad(15)) * (side !== 'R' ? 1 : -1);
+      const j = Math.round((((ang % TAU) + TAU) % TAU) / TAU * 72) % 72;
+      const nrm = limb.out(ang), pc = limb.axis(tc).addScaledVector(nrm, brad[1][j] + st), tan = limb.u.clone().cross(nrm).normalize();
+      const hw = 1.25 * w * limb.len, hh = .9 * w * limb.len, bt = .35 * st, f = sh.P.faceAt(tc, ang);
+      for (const c of [pc.clone().addScaledVector(limb.u, hw), pc.clone().addScaledVector(limb.u, -hw)])
+        box(acc, c.addScaledVector(nrm, bt), [tan, limb.u, nrm], hh, bt, bt * 1.2, DETAIL, 'buckle', f);
+      for (const c of [pc.clone().addScaledVector(tan, hh), pc.clone().addScaledVector(tan, -hh)])
+        box(acc, c.addScaledVector(nrm, bt), [tan, limb.u, nrm], bt, hw, bt * 1.2, DETAIL, 'buckle', f);
+    }
+  }
+  return w;
+}
+function shoulderStraps(acc, limb, P, t1, hw, p) {   // leather straps from the breastplate's top over each shoulder to the back
+  const top = limb.axis(t1), neck = joint('neck'), st = .05 * P.R;
+  for (const s of 'LR') {
+    const J = joint('arm_' + s);
+    if (!J || !neck) continue;
+    const x = (neck.x + J.x) / 2;
+    const reach = 1.6 * Math.max(J.y - top.y, 0) + 2 * P.R;   // no farther than over the shoulder (a hat or a hood is above it)
+    const N = 21, pts = [];
+    for (let i = 0; i < N; i++) {
+      const th = Math.PI * i / (N - 1), d = new V3(0, Math.sin(th), Math.cos(th));
+      pts.push([-hw, hw].map((dx) => {
+        const o = new V3(x + dx, top.y, top.z), h = cast(o, d, reach);
+        const r = (h ? h.distance : Math.min(reach, Math.max(J.y - top.y, P.R))) + p.gap * P.R + p.thickness * P.R * (i === 0 || i === N - 1 ? 1 : .3);
+        return [o, d, r, h ? h.faceIndex : P.faceAt(t1, limb.angOf(new V3(J.x - top.x, 0, 0)))];
+      }));
+    }
+    const V = [0, 1].map((sd) => pts.map((row, i) => row.map(([o, d, r, f]) => acc.vert(o.clone().addScaledVector(d, r + (sd ? st : 0)), i / 6, 0, f))));
+    for (const sd of [0, 1]) for (let i = 0; i < N - 1; i++) {
+      const q = [V[sd][i][0], V[sd][i][1], V[sd][i + 1][1], V[sd][i + 1][0]]; acc.face(sd ? q : q.reverse(), LEATHER, 'strap');
+    }
+    for (let i = 0; i < N - 1; i++) for (const e of [0, 1]) {
+      const q = [V[0][i][e], V[0][i + 1][e], V[1][i + 1][e], V[1][i][e]]; acc.face(e ? q : q.reverse(), LEATHER, 'strap');
+    }
+    for (const i of [0, N - 1]) { const q = [V[0][i][0], V[0][i][1], V[1][i][1], V[1][i][0]]; acc.face(i === 0 ? q : q.reverse(), LEATHER, 'strap'); }
+  }
+}
+// a muscle cuirass: the chest and the abdomen raised on the front (positions from the joints), «anatomy» high
+function muscles(limb, P, mid, k) {
+  if (k <= 0) return () => 0;
+  const JL = joint('arm_L'), JR = joint('arm_R'), W = Math.abs(JL.x - JR.x) / 2, tArm = JL.clone().sub(limb.a).dot(limb.u) / limb.len;
+  const H = limb.len, A = k * .3 * P.R, side = new V3(1, 0, 0);
+  const tp = tArm - .27, pads = [];
+  for (const [r, a] of [[.27, .75], [.42, .75], [.56, .65]]) for (const x of [-1, 1]) pads.push([tp - r, x * .15 * W, a]);
+  return (t, ang) => {
+    const o = limb.out(ang), f = o.dot(FRONT); if (f <= .15) return 0;
+    const x = o.dot(side) * P.rIn(t, ang), y = t * H, fade = Math.min(1, (f - .15) / .45);
+    let h = 0;
+    for (const sx of [-1, 1]) {   // the pectorals: domes with a sharp lower edge
+      const dx = (x - sx * .45 * W) / (.42 * W), dy = (y - tp * H) / ((y < tp * H ? .13 : .2) * H), e = dx * dx + dy * dy;
+      if (e < 1) h = Math.max(h, (1 - e) ** .6);
+    }
+    for (const [tc, xc, a] of pads) {   // the abdomen: rounded pads, grooves between them
+      const dx = (x - xc) / (.13 * W), dy = (y - tc * H) / (.065 * H), e = dx ** 4 + dy ** 4;
+      if (e < 1) h = Math.max(h, a * (1 - e) ** .5);
+    }
+    return A * h * fade;
+  };
+}
+
+// a ring of radii (evenly spaced angles) -> the radii of its convex hull: a breastplate has no hollows
+function convexRow(row) {
+  const NA = row.length, pts = row.map((r, j) => [r * Math.cos(j / NA * TAU), r * Math.sin(j / NA * TAU)]);
+  const srt = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1]), cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lo = [], hi = [];
+  for (const q of srt) { while (lo.length >= 2 && cr(lo.at(-2), lo.at(-1), q) <= 0) lo.pop(); lo.push(q); }
+  for (const q of srt.reverse()) { while (hi.length >= 2 && cr(hi.at(-2), hi.at(-1), q) <= 0) hi.pop(); hi.push(q); }
+  const H = lo.slice(0, -1).concat(hi.slice(0, -1));
+  return row.map((r, j) => {
+    const dx = Math.cos(j / NA * TAU), dy = Math.sin(j / NA * TAU);
+    let best = r;
+    for (let k = 0; k < H.length; k++) {
+      const a = H[k], b = H[(k + 1) % H.length], ex = b[0] - a[0], ey = b[1] - a[1], den = ex * dy - dx * ey;
+      if (Math.abs(den) < 1e-12) continue;
+      const t = (ex * a[1] - a[0] * ey) / den, u = (dx * a[1] - dy * a[0]) / den;
+      if (t > 0 && u >= -1e-9 && u <= 1 + 1e-9) best = Math.max(best, t);
+    }
+    return best;
+  });
+}
+// a breastplate's shell: convex round, widest at the chest, never wider going down (the flare belongs to the fauld
+// below it); waist 1: in with the body's waist, 0: straight down from the chest
+function cuirassShape(P, waist, gap) {
+  const hull = P.inner.map(convexRow), n = hull.length, k0 = Math.floor(n * .66);
+  const chest = Array.from({ length: P.NA }, (_, j) => Math.max(...hull.slice(k0).map((r) => r[j])));
+  const barrel = hull.map((r) => [...r]);
+  for (let i = n - 2; i >= 0; i--) for (let j = 0; j < P.NA; j++) barrel[i][j] = Math.min(barrel[i][j], barrel[i + 1][j]);
+  const g = blur(barrel.map((r) => r.map((x, j) => x + (1 - waist) * Math.max(0, chest[j] - x))), 2);
+  return g.map((r, i) => r.map((x, j) => Math.max(x, P.skin[i][j] + .5 * gap * P.R)));
+}
+// spaulders: half-round lames across each shoulder (round its top, from the front over to the back), from the neck's
+// side down the upper arm, the upper over the lower; their weights from the skin under them, so they bend with the arm
+function spaulders(acc, p, under) {
+  for (const s of 'LR') {
+    if (!PB['shoulder_' + s]) continue;
+    const { limb } = limbOf('rerebrace', s), t0 = -p.sp_start, t1 = p.sp_reach;
+    const P = profile('spaulder' + s, limb, t0, t1, { foreign: ['Head', 'Hand'] });
+    P.shell(p.gap + .06, .15);   // a plate, not the muscles under it
+    const up = UP.clone().addScaledVector(limb.u, -UP.dot(limb.u)).normalize();
+    acc.w = weigher('limb', PB['shoulder_' + s], .35);
+    const sh = { limb, P, ta: t0, tb: t1, top: 'a', arcs: arcsOf(limb.angOf(up), p.sp_span, 0), R: P.R, thick: p.thickness * P.R,
+      r: (t, a) => P.rIn(t, a) + under };
+    shellUV(sh);
+    surfPlates(acc, sh, { ...p, plates: p.spaulders });
+  }
+}
+
+// one piece into parts {acc, R, ...}; p: the parameters as fractions
+function buildPiece(kind, sides, p) {
+  const P0 = PIECES[kind], fam = P0.family, parts = [];
+  const look = (limb, side) => {   // the middle of an open plate: front, a cuisse's turned outwards, an arm's outer side
+    const outer = new V3(side !== 'R' ? 1 : -1, 0, 0);
+    const front = ({ greave: FRONT.clone(), cuisse: FRONT.clone().addScaledVector(outer, .7) })[kind] || (side === 'C' ? FRONT.clone() : outer.clone());
+    front.addScaledVector(limb.u, -front.dot(limb.u));
+    return limb.angOf(front.normalize());
+  };
+  if (fam === 'limb') for (const side of sides) {
+    const { limb } = limbOf(kind, side), P = profile(kind + side, limb, p.t0, p.t1, { foreign: P0.foreign, limbOnly: true });
+    P.shell(p.gap, p.relief);
+    const acc = new Acc(); acc.w = weigher(fam, PB[P0.joints[2] + '_' + side], p.rigidity);
+    const mid = look(limb, side);
+    const sh = { limb, P, ta: p.t0, tb: p.t1, top: 'a', arcs: arcsOf(mid, p.sector, 0), r: (t, a) => P.rIn(t, a), R: P.R, thick: p.thickness * P.R };
+    surface(acc, sh, p);
+    if (p.straps) straps(acc, sh, p, lin(0, 1, Math.round(p.straps) + 2).slice(1, -1).map((x) => p.t0 + (p.t1 - p.t0) * x), side, mid);
+    parts.push({ side, acc, R: P.R, loose: P.R > .6 * limb.len });
+  }
+  if (kind === 'cuirass') {   // from the waist to under the armpits; under it, a mail shirt; over the shoulders, spaulders
+    const { limb, arms } = limbOf(kind, 'C');
+    const top = Math.min(...['L', 'R'].map((s) => joint('arm_' + s)).filter(Boolean).map((J) => J.clone().sub(limb.a).dot(limb.u) / limb.len)) - .1;
+    const t1 = Math.min(p.t1, top), tLow = p.t0 - (p.mail_under ? p.hem : 0);
+    const P = profile('cuirass', limb, tLow, t1, { foreign: P0.foreign, arms, over: 1.15 });
+    P.shell(p.gap, p.relief);
+    const acc = new Acc(); acc.w = weigher(fam, PB.spine1, p.rigidity);
+    const mid = look(limb, 'C'), mus = muscles(limb, P, mid, p.anatomy), thick = p.thickness * P.R;
+    const shape = cuirassShape(P, p.waist, p.gap), base = (t, a) => P.at(shape, t, a) + mus(t, a);
+    const mailT = p.mail_under ? .5 * thick : 0, lift = mailT * 1.3;
+    if (p.mail_under) {   // the mail shirt: under the plates, its skirt hanging below them to the body
+      const r = (t, a) => { const k = smooth(p.t0 - .06, p.t0, t); return P.rIn(t, a) * (1 - k) + base(t, a) * k; };
+      surface(acc, { limb, P, ta: tLow, tb: t1, top: 'b', arcs: arcsOf(mid, 360, 0), r, R: P.R, thick }, { ...p, surface: 'mail' });
+      if (p.sleeves > 0) for (const s of 'LR') {   // short sleeves over the upper arms
+        const { limb: al } = limbOf('rerebrace', s), SP = profile('sleeve' + s, al, -.08, p.sleeves, { foreign: PIECES.rerebrace.foreign });
+        SP.shell(p.gap, p.relief);
+        acc.w = weigher('limb', PB['arm_' + s], .2);
+        surface(acc, { limb: al, P: SP, ta: -.08, tb: p.sleeves, top: 'a', arcs: arcsOf(0, 360, 0), r: (t, a) => SP.rIn(t, a), R: SP.R, thick: p.thickness * SP.R },
+          { ...p, surface: 'mail' });
+      }
+      acc.w = weigher(fam, PB.spine1, p.rigidity);
+    }
+    // the plates: one surface, or a chest (one plate or two) over a lower part of its own (lames, mail, scales...)
+    const split = p.low_surface !== 'same' ? p.t0 + (t1 - p.t0) * p.split / 100 : null, d = THREE.MathUtils.degToRad(2);
+    const upArcs = p.two_plates ? [[mid + d, mid + Math.PI, false], [mid - Math.PI, mid - d, false]] : arcsOf(mid, p.sector, 0);
+    const up = { limb, P, ta: split ?? p.t0, tb: t1, top: 'b', arcs: upArcs, R: P.R, thick, r: (t, a) => base(t, a) + lift + (split ? .6 * thick : 0) };
+    surface(acc, up, split && p.surface === 'plates' ? { ...p, plates: 1 } : p);
+    let low = null;
+    if (split) {   // the lower part goes up under the chest's edge
+      low = { limb, P, ta: p.t0, tb: split + .08 * (t1 - p.t0), top: 'b', arcs: arcsOf(mid, p.sector, 0), R: P.R, thick, r: (t, a) => base(t, a) + lift };
+      surface(acc, low, { ...p, surface: p.low_surface });
+    }
+    if (p.straps) {
+      const whole = { ...up, arcs: arcsOf(mid, p.sector, 0), outer: (t, a) => (low && t < split ? low : up).outer(t, a) };
+      const w = straps(acc, whole, p, lin(0, 1, Math.round(p.straps) + 2).slice(1, -1).map((x) => p.t0 + (t1 - p.t0) * x), 'C', mid);
+      shoulderStraps(acc, limb, P, t1, w * limb.len, p);
+    }
+    if (p.spaulders > 0) spaulders(acc, p, mailT);
+    parts.push({ side: 'C', acc, R: P.R, clamped: t1 < p.t1, t1 });
+  }
+  if (kind === 'tassets') {   // a skirt of lames from the waist down: hangs straight, never in to the legs, cut into panels
+    const { limb } = limbOf('cuirass', 'C'), P = profile('tassets', limb, p.t0, p.t1, { foreign: P0.foreign, skirt: true, over: 1.5 });
+    P.shell(p.gap, p.relief);
+    const acc = new Acc(); acc.w = weigher(fam, PB.hips, p.rigidity);
+    const mid = look(limb, 'C');
+    const sh = { limb, P, ta: p.t0, tb: p.t1, top: 'b', arcs: arcsOf(mid, p.sector, Math.round(p.splits)), R: P.R, thick: p.thickness * P.R,
+      r: (t, a) => P.rIn(t, a) + p.flare * P.R * (p.t1 - t) / (p.t1 - p.t0) };
+    surface(acc, sh, p);
+    if (p.straps) straps(acc, sh, p, [p.t1 - p.strap_width * P.R * .5 / limb.len], 'C', mid);   // the belt it hangs from
+    parts.push({ side: 'C', acc, R: P.R });
+  }
+  if (kind === 'trousers') {   // the seat round the hips down to the crotch, then each leg down from the hip joint
+    const acc = new Acc(), { limb: torso } = limbOf('cuirass', 'C');
+    const down = cast(torso.a, torso.u.clone().negate(), torso.len), tc = down ? -down.distance / torso.len + .03 : -.12;
+    const PB0 = profile('seat', torso, tc, p.t0, { foreign: ['Arm', 'Hand'], over: 1.5 });
+    PB0.shell(p.gap, p.relief);
+    acc.w = weigher(fam, PB.hips, p.rigidity);
+    const seat = { limb: torso, P: PB0, ta: tc, tb: p.t0, top: 'b', arcs: arcsOf(look(torso, 'C'), 360, 0), R: PB0.R, thick: p.thickness * PB0.R,
+      r: (t, a) => PB0.rIn(t, a) + p.thickness * PB0.R };   // over the legs' tops
+    surface(acc, seat, p);
+    if (p.straps) straps(acc, seat, p, [p.t0 - p.strap_width * PB0.R * .5 / torso.len], 'C', look(torso, 'C'));   // the belt
+    for (const side of 'LR') {
+      const { limb } = limbOf(kind, side), other = side === 'L' ? 'Right' : 'Left';
+      const P = profile(kind + side, limb, 0, p.t1, { foreign: [...P0.foreign, other], over: 1.8 });
+      P.shell(p.gap, p.relief);
+      acc.w = weigher(fam, PB['upleg_' + side], p.rigidity);
+      const R = P.R, ph = (p.seed * 1.7) % TAU, cuff = p.cuffs ? (t) => smooth(p.t1 - .12, p.t1 - .03, t) : () => 0;
+      const leg = { limb, P, ta: 0, tb: p.t1, top: 'a', arcs: arcsOf(look(limb, side), 360, 0), R, thick: p.thickness * R,
+        r: (t, a) => {
+          const loose = P.rIn(t, a) + p.loose * .8 * (P.rWide(t, a) - P.rSkin(t, a));
+          const folds = p.folds * R * .09 * (.3 + p.loose) * Math.sin(a * 6 + 2.5 * Math.sin(t * limb.len / R * .9 + ph));
+          return loose + folds * (1 - cuff(t)) + (P.rIn(t, a) - loose) * cuff(t);
+        } };
+      surface(acc, leg, p);
+      const wraps = Math.round(p.straps) - 1;   // the rest of the straps: wrappings round the shin
+      if (wraps > 0) straps(acc, leg, p, lin(.58, p.t1 - .06, wraps + 2).slice(1, -1), side, look(limb, side));
+      if (p.cuffs) straps(acc, leg, { ...p, buckle: false, strap_width: p.strap_width * .8 }, [p.t1 - .025], side, 0);
+    }
+    parts.push({ side: 'C', acc, R: PB0.R });
+  }
+  return parts;
+}
+
+// ------------------------------------------------------------------ the look: colour noise and patterns like the baked shaders
+function lin2s(x) { return x <= .0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - .055; }
+function hash(i, j, s) { let h = (i * 374761393 + j * 668265263 + s * 2147483647) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
+function vnoise(x, y, per, s) {   // periodic value noise
+  const i = Math.floor(x), j = Math.floor(y), fx = x - i, fy = y - j, sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  const h = (a, b) => hash(((a % per) + per) % per, ((b % per) + per) % per, s);
+  return (h(i, j) * (1 - sx) + h(i + 1, j) * sx) * (1 - sy) + (h(i, j + 1) * (1 - sx) + h(i + 1, j + 1) * sx) * sy;
+}
+function fbm(x, y, per, oct, s) { let a = 0, w = .5, t = 0; for (let k = 0; k < oct; k++) { a += w * vnoise(x, y, per, s + k); t += w; x *= 2; y *= 2; per *= 2; w *= .5; } return a / t; }
+const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+// a pattern tile (8 x 8 cells, seamless): height and how much light gets in (dark gaps between rings, sunk seams)
+const PT = 128, patCache = new Map();
+function patternTile(kind) {
+  if (patCache.has(kind)) return patCache.get(kind);
+  const h = new Float32Array(PT * PT), g = new Float32Array(PT * PT);
+  for (let y = 0; y < PT; y++) for (let x = 0; x < PT; x++) {
+    const u = x / PT * 8, v = y / PT * 8;
+    let hh = 0, gg = 1;
+    if (kind === 'mail') {   // rows of rings, each row offset by half a ring and tilted the other way
+      gg = .12;
+      for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+        const r = Math.floor(v) + dr, cx = Math.floor(u - (r & 1) * .5) + dc + .5 + (r & 1) * .5, cy = r + .5;
+        const dx = u - cx, dy = v - cy, d = Math.abs(Math.hypot(dx, dy) - .5), wire = .16;
+        if (d < wire) { const s = Math.sqrt(1 - (d / wire) ** 2) * (.72 + .28 * ((r & 1) ? 1 : -1) * dx / .5); if (s > hh) { hh = s; gg = .7 + .3 * s; } }
+      }
+    } else if (kind === 'quilt') {   // diamonds sewn through: puffed between the seams
+      const a = (u + v) / 2, b = (u - v) / 2, da = Math.abs(a - Math.round(a)), db = Math.abs(b - Math.round(b)), m = Math.min(da, db);
+      hh = smooth(0, .5, m) ** .6; gg = m < .03 ? .5 : .62 + .38 * hh;
+    }
+    h[y * PT + x] = hh; g[y * PT + x] = gg;
+  }
+  const cv = document.createElement('canvas'); cv.width = cv.height = PT;
+  const cx = cv.getContext('2d'), im = cx.createImageData(PT, PT);
+  for (let i = 0; i < PT * PT; i++) { im.data[4 * i] = 255 * h[i]; im.data[4 * i + 1] = 255 * g[i]; im.data[4 * i + 2] = 0; im.data[4 * i + 3] = 255; }
+  cx.putImageData(im, 0, 0);
+  const bump = document.createElement('canvas'); bump.width = bump.height = PT;
+  const bx = bump.getContext('2d'), bi = bx.createImageData(PT, PT);
+  for (let i = 0; i < PT * PT; i++) { bi.data[4 * i] = bi.data[4 * i + 1] = bi.data[4 * i + 2] = 255 * h[i]; bi.data[4 * i + 3] = 255; }
+  bx.putImageData(bi, 0, 0);
+  const tx = new THREE.CanvasTexture(bump); tx.wrapS = tx.wrapT = THREE.RepeatWrapping;
+  const res = { h, g, png: cv.toDataURL('image/png').split(',')[1], bump: tx };
+  patCache.set(kind, res); return res;
+}
+const texCache = new Map();
+// the colour: n x n pattern tiles (about one limb radius, the shaders' noise is in those units)
+function lookTexture(spec, wear, seed, pat, n) {
+  const key = JSON.stringify([spec, wear, seed, pat ? pat.png.length : 0, n]);
+  if (texCache.has(key)) return texCache.get(key);
+  const S = pat ? 512 : 256, cv = document.createElement('canvas'); cv.width = cv.height = S;
+  const cx = cv.getContext('2d'), im = cx.createImageData(S, S), col = spec.col, spot = spec.spot;
+  const dark = col.map((c) => c * (spec.kind === 'metal' ? .38 : .55)), r0 = Math.max(0, .72 - .35 * wear);
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const u = x / S, v = y / S;
+    const big = fbm(u * 2, v * 2, 2, 4, seed * 7 + 1), fine = fbm(u * 14, v * 14, 14, 3, seed * 7 + 3);
+    // Blender's noise keeps close to .5: the blotches stay half way to the dark, rust shows only past its threshold
+    const r = smooth(r0, r0 + .08, .5 + (fine - .5) * .35), k = 4 * (y * S + x);
+    const gp = pat ? pat.g[Math.floor((v * n % 1) * PT) * PT + Math.floor((u * n % 1) * PT)] : 1;
+    for (let c = 0; c < 3; c++) {
+      const base = col[c] + (dark[c] - col[c]) * Math.min(1, Math.max(0, .5 + (big - .5) * .9));
+      im.data[k + c] = 255 * lin2s(Math.min(1, (base + (spot[c] - base) * r) * gp));
+    }
+    im.data[k + 3] = 255;
+  }
+  cx.putImageData(im, 0, 0);
+  const tx = new THREE.CanvasTexture(cv); tx.colorSpace = THREE.SRGBColorSpace; tx.wrapS = tx.wrapT = THREE.RepeatWrapping; tx.anisotropy = 4;
+  tx.repeat.set(1 / n, 1 / n);
+  texCache.set(key, tx); return tx;
+}
+function reliefTexture(kind, seed) {   // the hammered dents of metal, the grain of leather: cells, as the shaders' Voronoi
+  const key = 'relief' + kind + seed;
+  if (texCache.has(key)) return texCache.get(key);
+  const S = 256, n = kind === 'metal' ? 9 : 28, cell = S / n;   // cells per limb radius
+  const cv = document.createElement('canvas'); cv.width = cv.height = S;
+  const cx = cv.getContext('2d'), im = cx.createImageData(S, S);
+  const ptc = (i, j) => [(i + hash(i, j, seed * 5 + 11)) * cell, (j + hash(i, j, seed * 5 + 12)) * cell];
+  const wrapI = (i) => ((i % n) + n) % n;
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const ci = Math.floor(x / cell), cj = Math.floor(y / cell); let d = 1e9;
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
+      const i = ci + a, j = cj + b, [px, py] = ptc(wrapI(i), wrapI(j));
+      d = Math.min(d, Math.hypot(x - (px + (i - wrapI(i)) * cell), y - (py + (j - wrapI(j)) * cell)));
+    }
+    const v = 255 * Math.min(1, d / cell), k = 4 * (y * S + x);
+    im.data[k] = im.data[k + 1] = im.data[k + 2] = v; im.data[k + 3] = 255;
+  }
+  cx.putImageData(im, 0, 0);
+  const tx = new THREE.CanvasTexture(cv); tx.wrapS = tx.wrapT = THREE.RepeatWrapping;
+  texCache.set(key, tx); return tx;
+}
+const ROLE_MAT = { plate: PLATE, mail: MAIL, quilt: CLOTH, backing: LEATHER, strap: LEATHER, rivet: DETAIL, buckle: DETAIL };
+const mats = {};
+for (const r of Object.keys(ROLE_MAT)) mats[r] = new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, emissive: 0x000000 });
+// the texture units: a pattern tile (8 cells) when mail or quilting is in the piece, else a limb radius; n tiles under
+// one colour tile
+const LOOK = { U: 1, n: 1, specs: null };
+function lookSpecs(p) {   // the five materials as Blender bakes them (blender_armour_gen.node_mat)
+  const tint = new THREE.Color(p.tint), leather = [tint.r, tint.g, tint.b];   // the pickers' sRGB colours -> linear
+  const ct = new THREE.Color(p.cloth), cloth = [ct.r, ct.g, ct.b];
+  const scuff = (c) => c.map((x) => Math.min(1, x * 1.6));
+  const metal = PRESETS[p.material][2] > 0 ? p.material : 'iron', [mc, mr, mm] = PRESETS[metal];   // rings, rivets: metal
+  const rust = metal === 'bronze' ? [.20, .38, .30] : [.33, .14, .05];
+  const metalSpec = { kind: 'metal', col: mc, spot: rust, rough: mr, metal: mm };
+  const clothSpec = { kind: 'leather', col: cloth, spot: scuff(cloth), rough: .9, metal: 0 };
+  const plate = p.material === 'leather' ? { kind: 'leather', col: leather, spot: scuff(leather), rough: .72, metal: 0 }
+    : p.material === 'cloth' ? { ...clothSpec } : { ...metalSpec };
+  const strap = leather.map((c) => c * .7);
+  return [plate, { kind: 'leather', col: strap, spot: scuff(strap), rough: .75, metal: 0 }, metalSpec,
+    { ...metalSpec, pattern: 'mail' }, { ...clothSpec, pattern: 'quilt' }];
+}
+function patterned(p) {   // mail or quilting anywhere in the piece
+  const kinds = [p.surface];
+  if (S.piece === 'cuirass') { if (p.low_surface !== 'same') kinds.push(p.low_surface); if (p.mail_under) kinds.push('mail'); }
+  return kinds.some((k) => k === 'mail' || k === 'quilt');
+}
+function applyLook(p, R) {
+  const specs = lookSpecs(p), pat = patterned(p);
+  LOOK.U = pat ? p.cell / 1000 * HEIGHT * 8 : (R || LOOK.U);
+  LOOK.n = pat && R ? Math.max(1, Math.round(R / LOOK.U)) : 1;
+  LOOK.specs = specs;
+  for (const [role, slot] of Object.entries(ROLE_MAT)) {
+    const s = specs[slot], m = mats[role], tile = s.pattern ? patternTile(s.pattern) : null;
+    m.map = lookTexture(s, p.wear, p.seed, tile, tile ? LOOK.n : 1);
+    m.roughness = s.rough; m.metalness = s.metal;
+    m.bumpMap = tile ? tile.bump : reliefTexture(s.kind, p.seed); m.bumpScale = tile ? 3 : s.kind === 'metal' ? 1.2 : .6;
+    m.needsUpdate = true;
+  }
+}
+
+// ------------------------------------------------------------------ the controls
+const LABEL = Object.fromEntries(Object.keys(PIECES).map((k) => [k, PIECES[k].label]));
+const SURFACES = ['plates', 'scales', 'lamellar', 'mail', 'quilt', 'plain'];
+const isS = (...k) => () => k.includes(S.p.surface), isP = (...k) => () => k.includes(S.piece);
+// [group title, the roles it lights, [key, min, max, step, label, info, unit, shown when]]
+const SPEC = [
+  ['{{js:ag.shape}}', ['plate', 'mail', 'quilt', 'backing'], [
+    ['t0', 0, 60, 1, '{{js:ag.from}}', '{{js:ag.from_info}}', 'seg'],
+    ['t1', 40, 100, 1, '{{js:ag.to}}', '', 'seg'],
+    ['sector', 60, 360, 10, '{{js:ag.sector}}', '{{js:ag.sector_info}}', 'deg', () => S.piece !== 'trousers'],
+    ['gap', 0, 30, 1, '{{js:ag.gap}}', '', 'rad'],
+    ['thickness', 2, 30, 1, '{{js:ag.thickness}}', '', 'rad'],
+    ['relief', 0, 1, .05, '{{js:ag.relief}}', '{{js:ag.relief_info}}', ''],
+    ['waist', 0, 1, .05, '{{js:ag.waist_in}}', '{{js:ag.waist_in_info}}', '', isP('cuirass')],
+    ['anatomy', 0, 1, .05, '{{js:ag.anatomy}}', '{{js:ag.anatomy_info}}', '', isP('cuirass')],
+    ['splits', 0, 8, 1, '{{js:ag.splits}}', '{{js:ag.splits_info}}', '', isP('tassets')],
+    ['flare', 0, 1, .05, '{{js:ag.flare}}', '', '', isP('tassets')],
+    ['loose', 0, 1, .05, '{{js:ag.loose}}', '{{js:ag.loose_info}}', '', isP('trousers')],
+    ['folds', 0, 1, .05, '{{js:ag.folds}}', '', '', isP('trousers')]]],
+  ['{{js:ag.surface}}', ['plate', 'mail', 'quilt', 'backing', 'rivet'], [
+    ['plates', 1, 6, 1, '{{js:ag.plates}}', '', '', isS('plates')],
+    ['step', 0, 15, 1, '{{js:ag.step}}', '{{js:ag.step_info}}', 'rad', isS('plates')],
+    ['rim', 0, 15, 1, '{{js:ag.rim}}', '', 'rad', isS('plates')],
+    ['rivets', 0, 200, 5, '{{js:ag.rivets}}', '{{js:ag.rivets_info}}', 'rad', isS('plates')],
+    ['rivet_size', 2, 15, 1, '{{js:ag.rivet_size}}', '', 'rad', isS('plates')],
+    ['scale_size', 8, 80, 1, '{{js:ag.scale_size}}', '{{js:ag.scale_size_info}}', 'h', isS('scales', 'lamellar')],
+    ['overlap', 10, 70, 5, '{{js:ag.overlap}}', '', 'pc', isS('scales', 'lamellar')],
+    ['cell', 3, 30, 1, '{{js:ag.cell}}', '{{js:ag.cell_info}}', 'h', () => patterned(S.p)],
+    ['split', 20, 85, 1, '{{js:ag.split}}', '{{js:ag.split_info}}', 'pc', () => S.piece === 'cuirass' && S.p.low_surface !== 'same']]],
+  ['{{js:ag.shoulders_group}}', ['plate', 'mail', 'rivet'], [
+    ['spaulders', 0, 6, 1, '{{js:ag.spaulders}}', '{{js:ag.spaulders_info}}', ''],
+    ['sp_start', 0, 60, 1, '{{js:ag.sp_start}}', '{{js:ag.sp_start_info}}', 'pc', () => S.p.spaulders > 0],
+    ['sp_reach', 10, 80, 1, '{{js:ag.sp_reach}}', '{{js:ag.sp_reach_info}}', 'pc', () => S.p.spaulders > 0],
+    ['sp_span', 90, 300, 10, '{{js:ag.sp_span}}', '{{js:ag.sp_span_info}}', 'deg', () => S.p.spaulders > 0],
+    ['hem', 0, 40, 1, '{{js:ag.hem}}', '{{js:ag.hem_info}}', 'pc', () => S.p.mail_under],
+    ['sleeves', 0, 80, 5, '{{js:ag.sleeves}}', '{{js:ag.sleeves_info}}', 'pc', () => S.p.mail_under]], isP('cuirass')],
+  ['{{js:ag.straps_group}}', ['strap', 'buckle'], [
+    ['straps', 0, 4, 1, '{{js:ag.straps}}', '', ''],
+    ['strap_width', 10, 80, 5, '{{js:ag.strap_width}}', '', 'rad']]],
+  ['{{js:ag.material_title}}', Object.keys(ROLE_MAT), [
+    ['wear', 0, 1, .05, '{{js:ag.wear}}', '{{js:ag.wear_info}}', '']]],
+  ['{{js:ag.motion_group}}', [], [
+    ['rigidity', 0, 1, .05, '{{js:ed.rigidity}}', '{{js:ag.rigidity_info}}', '']]],
+];
+const ALL = SPEC.flatMap((g) => g[2]);
+const DEFAULTS = Object.assign({ gap: 8, thickness: 12, relief: .35, step: 5, rim: 6, rivets: 60, rivet_size: 6, strap_width: 35,
+  buckle: true, material: 'iron', wear: .35, tint: '#6b4128', cloth: '#56606e', tex: 1024, seed: 1, surface: 'plates', scale_size: 25,
+  overlap: 40, cell: 8, anatomy: 0, splits: 4, flare: .3, loose: .3, folds: .3, cuffs: false, waist: .6, low_surface: 'same', split: 55,
+  two_plates: false, spaulders: 0, sp_start: 30, sp_reach: 45, sp_span: 200, mail_under: false, hem: 15, sleeves: 30 }, PIECES.bracer.defaults);
+const S = { piece: 'bracer', sides: ['L', 'R'], name: 'proc_bracer', nameTouched: false, p: { ...DEFAULTS }, armour: null };
+let clampTo = 0, curView = 'front';   // clampTo: a cuirass's top, held under the armpits (%)
+
+const fmt = (key, x) => {
+  const sp = ALL.find((s) => s[0] === key), unit = sp ? sp[6] : '';
+  if (key === 't1' && clampTo && clampTo < x) return `${x}% → ${clampTo}%`;
+  if (unit === 'seg' || unit === 'rad' || unit === 'pc') return `${x}%`;
+  if (unit === 'h') return `${(x / 10).toFixed(1)}%`;
+  if (unit === 'deg') return `${x}°`;
+  return String(x);
+};
+function buildPanel() {
+  $('pieces').innerHTML = Object.keys(PIECES).map((k) => `<button data-piece="${k}">${PIECES[k].label}</button>`).join('');
+  const html = SPEC.map(([title, roles, list], gi) => `<div class="box" id="g_${gi}" data-roles="${roles.join(' ')}"><div class="grp">${title}</div>` +
+    (gi === 1 ? `<div class="row" style="margin:2px 0 6px"><span class="seg" id="surfSeg">${SURFACES.map((m) => `<button data-surf="${m}">${DATA.surface_labels[m]}</button>`).join('')}</span></div>` +
+      `<div id="lowRow"><div class="note">{{js:ag.low_surface}}</div><div class="row" style="margin:2px 0 6px"><span class="seg" id="lowSeg">` +
+      ['same', ...SURFACES].map((m) => `<button data-low="${m}">${m === 'same' ? '{{js:ag.low_same}}' : DATA.surface_labels[m]}</button>`).join('') + `</span></div>` +
+      `<label class="chk"><input type="checkbox" id="i_two_plates"> {{js:ag.two_plates}}</label></div>` : '') +
+    list.map(([k, a, b, st, lab, inf]) => `<div class="sl" id="r_${k}"><span class="lab" id="l_${k}">${lab}</span><span class="val" id="v_${k}"></span>` +
+      `<input type="range" id="i_${k}" min="${a}" max="${b}" step="${st}"><span class="inf" id="n_${k}">${inf}</span></div>`).join('') +
+    (gi === 0 ? `<label class="chk" id="r_cuffs"><input type="checkbox" id="i_cuffs"> {{js:ag.cuffs}}</label>` : '') +
+    (gi === 2 ? `<label class="chk"><input type="checkbox" id="i_mail_under"> {{js:ag.mail_under}}</label>` : '') +
+    (gi === 3 ? `<label class="chk"><input type="checkbox" id="i_buckle"> {{js:ag.buckles}}</label>` : '') +
+    (gi === 4 ? `<div class="row" style="margin:4px 0 6px"><span class="seg" id="matSeg">${Object.keys(PRESETS).map((m) => `<button data-mat="${m}">${DATA.mat_labels[m]}</button>`).join('')}</span></div>` +
+      `<div class="row"><span class="note">{{js:ag.leather}}</span><input type="color" id="i_tint"><span class="note" style="margin-left:8px">{{js:ag.cloth}}</span><input type="color" id="i_cloth"></div>` +
+      `<div class="row" style="margin-top:6px"><span class="note">{{js:ag.texture}}</span><select id="i_tex"><option>512</option><option>1024</option><option>2048</option></select>` +
+      `<span class="note" style="margin-left:8px">{{js:ag.seed}}</span><input type="number" id="i_seed" style="width:60px" step="1"></div>` +
+      `<div class="note" style="margin-top:6px">{{js:ag.look_note}}</div>` : '') + '</div>').join('');
+  $('groups').innerHTML = html;
+  for (const sp of ALL) $('i_' + sp[0]).addEventListener('input', (e) => { S.p[sp[0]] = +e.target.value; changed(sp[0]); });
+  $('i_buckle').addEventListener('change', (e) => { S.p.buckle = e.target.checked; changed('buckle'); });
+  for (const k of ['cuffs', 'two_plates', 'mail_under']) $('i_' + k).addEventListener('change', (e) => { S.p[k] = e.target.checked; changed(k); });
+  $('lowSeg').addEventListener('click', (e) => { const m = e.target.dataset.low; if (m) { S.p.low_surface = m; changed('surface'); } });
+  $('i_tint').addEventListener('input', (e) => { S.p.tint = e.target.value; changed('look'); });
+  $('i_cloth').addEventListener('input', (e) => { S.p.cloth = e.target.value; changed('look'); });
+  $('i_tex').addEventListener('change', (e) => { S.p.tex = +e.target.value; });
+  $('i_seed').addEventListener('change', (e) => { S.p.seed = Math.round(+e.target.value || 1); changed('seed'); });
+  $('matSeg').addEventListener('click', (e) => { const m = e.target.dataset.mat; if (m) { S.p.material = m; changed('look'); } });
+  $('surfSeg').addEventListener('click', (e) => { const m = e.target.dataset.surf; if (m) { S.p.surface = m; changed('surface'); } });
+  $('pieces').addEventListener('click', (e) => { const k = e.target.dataset.piece; if (k) setPiece(k); });
+  $('sidesRow').addEventListener('click', (e) => {
+    const s = e.target.dataset.side; if (!s) return;
+    S.sides = S.sides.includes(s) ? S.sides.filter((x) => x !== s) : [...S.sides, s].sort(); changed('sides');
+  });
+  $('name').addEventListener('input', (e) => { S.name = e.target.value; S.nameTouched = true; });
+  // the group under the pointer lights its part of the piece up
+  for (const bx of document.querySelectorAll('#groups .box')) {
+    bx.addEventListener('pointerenter', () => hot(bx.dataset.roles.split(' ').filter(Boolean), bx));
+    bx.addEventListener('pointerleave', () => hot([], null));
+  }
+}
+function hot(roles, bx) {
+  for (const b of document.querySelectorAll('#groups .box')) b.classList.toggle('hot', b === bx && roles.length > 0);
+  const all = roles.length >= Object.keys(ROLE_MAT).length;
+  for (const [r, m] of Object.entries(mats)) m.emissive.setHex(!all && roles.includes(r) ? 0xd2691e : 0x000000);
+}
+function syncPanel() {
+  const pc = PIECES[S.piece], [a0, b0, a1, b1] = pc.range;
+  $('i_t0').min = a0; $('i_t0').max = b0; $('i_t1').min = a1; $('i_t1').max = b1;
+  $('l_t0').textContent = pc.tlabels[0]; $('l_t1').textContent = pc.tlabels[1]; $('n_t0').textContent = pc.tinfo;
+  for (const sp of ALL) {
+    $('i_' + sp[0]).value = S.p[sp[0]]; $('v_' + sp[0]).textContent = fmt(sp[0], S.p[sp[0]]);
+    $('r_' + sp[0]).hidden = sp[7] ? !sp[7]() : false; $('n_' + sp[0]).hidden = !$('n_' + sp[0]).textContent;
+  }
+  $('r_cuffs').hidden = S.piece !== 'trousers';
+  $('lowRow').hidden = S.piece !== 'cuirass';
+  SPEC.forEach((g, gi) => { if (g[3]) $('g_' + gi).hidden = !g[3](); });
+  for (const k of ['buckle', 'cuffs', 'two_plates', 'mail_under']) $('i_' + k).checked = !!S.p[k];
+  for (const b of $('lowSeg').children) b.classList.toggle('on', b.dataset.low === S.p.low_surface);
+  $('i_tint').value = S.p.tint; $('i_cloth').value = S.p.cloth; $('i_tex').value = String(S.p.tex); $('i_seed').value = S.p.seed;
+  for (const b of $('matSeg').children) b.classList.toggle('on', b.dataset.mat === S.p.material);
+  for (const b of $('surfSeg').children) b.classList.toggle('on', b.dataset.surf === S.p.surface);
+  for (const b of $('pieces').children) b.classList.toggle('on', b.dataset.piece === S.piece);
+  for (const b of $('sidesRow').querySelectorAll('button')) b.classList.toggle('on', S.sides.includes(b.dataset.side));
+  $('sidesRow').hidden = PIECES[S.piece].family !== 'limb';
+  $('name').value = S.name;
+}
+function setPiece(k, keep) {
+  const was = S.piece;
+  S.piece = k;
+  if (!keep) {   // trousers are cloth: the armour's own material and surface come back after them
+    if (k === 'trousers' && was !== 'trousers') S.armour = { material: S.p.material, surface: S.p.surface };
+    if (k !== 'trousers' && was === 'trousers' && S.armour) Object.assign(S.p, S.armour);
+    Object.assign(S.p, PIECES[k].defaults);
+  }
+  if (!S.nameTouched) S.name = 'proc_' + k;
+  framed = false;
+  changed('piece');
+}
+
+// ------------------------------------------------------------------ rebuilding on every change (once per frame)
+const pieceGroup = new THREE.Group(); scene.add(pieceGroup);
+let parts = [], lastBuild = null, pending = false, framed = false, resultRoot = null, showResult = false;
+function changed(what) {
+  syncPanel();
+  if (what === 'look') { applyLook(S.p, LOOK.R); if (!pending) return; }
+  if (resultRoot && what !== 'look') setShow(false);
+  if (pending) return;
+  pending = true;
+  requestAnimationFrame(() => { pending = false; rebuild(); });
+}
+const fractions = (p) => ({ ...p, t0: p.t0 / 100, t1: p.t1 / 100, gap: p.gap / 100, thickness: p.thickness / 100, step: p.step / 100,
+  rim: p.rim / 100, rivets: p.rivets / 100, rivet_size: p.rivet_size / 100, strap_width: p.strap_width / 100, hem: p.hem / 100,
+  sleeves: p.sleeves / 100, sp_start: p.sp_start / 100, sp_reach: p.sp_reach / 100 });
+function rebuild() {
+  if (!bodyGeo) return;
+  const t = performance.now();
+  restPose();   // the piece is made on the rest pose; its weights carry it into the chosen one
+  for (const m of [...pieceGroup.children]) { pieceGroup.remove(m); m.geometry.dispose(); }
+  parts = [];
+  const sides = PIECES[S.piece].family === 'limb' ? S.sides : ['C'];
+  const warn = [];
+  let info = null;
+  try {
+    const p = fractions(S.p);
+    applyLook(S.p, LOOK.R);
+    parts = buildPiece(S.piece, sides, p);
+    if (parts.length && Math.abs(parts[0].R - (LOOK.R || 0)) > .01 * parts[0].R) {   // the texture units follow the part's size
+      LOOK.R = parts[0].R; applyLook(S.p, LOOK.R); parts = buildPiece(S.piece, sides, p);
+    }
+    for (const part of parts) for (const m of meshesOf(part.acc)) pieceGroup.add(m);
+    if (parts.length) {
+      const nv = parts.reduce((s, x) => s + x.acc.v.length / 3, 0);
+      info = '{{js:ag.info_line}}'.replace('{0}', nv.toLocaleString()).replace('{1}', (performance.now() - t).toFixed(0));
+      if (parts.some((x) => x.loose)) warn.push('{{js:ag.over_clothes}}');
+      const cl = parts.find((x) => x.clamped);
+      clampTo = cl ? Math.round(cl.t1 * 100) : 0; $('v_t1').textContent = fmt('t1', S.p.t1);
+    } else warn.push('{{js:ag.choose_a_side}}');
+  } catch (e) { warn.push(e.message); console.error(e); }
+  lastBuild = parts.length ? { piece: S.piece, sides } : null;
+  $('info').textContent = info || '';
+  $('warn').textContent = warn.join(' '); $('warn').hidden = !warn.length;
+  $('go').disabled = !lastBuild || busy;
+  applyPose();
+  if (!framed && parts.length) { framed = true; view(curView); }   // a new piece: the camera on it
+}
+function meshesOf(acc) {   // one skinned mesh per role (each lights up on its own), quads as two triangles
+  const out = [];
+  for (const role of Object.keys(ROLE_MAT)) {
+    const map = new Map(), pos = [], uv = [], si = [], sw = [], idx = [];
+    const vid = (i) => {
+      if (!map.has(i)) {
+        map.set(i, pos.length / 3); pos.push(acc.v[3 * i], acc.v[3 * i + 1], acc.v[3 * i + 2]); uv.push(acc.uv[2 * i], acc.uv[2 * i + 1]);
+        for (let k = 0; k < 4; k++) { si.push(acc.bi[4 * i + k]); sw.push(acc.bw[4 * i + k]); }
+      }
+      return map.get(i);
+    };
+    acc.f.forEach((f, k) => { if (acc.role[k] !== role) return; const q = f.map(vid); for (let j = 1; j < q.length - 1; j++) idx.push(q[0], q[j], q[j + 1]); });
+    if (!idx.length) continue;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4)); g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
+    g.setIndex(idx); g.computeVertexNormals();
+    const N = g.attributes.normal, same = new Map();   // a tube's seam: its two columns share their normals
+    for (let i = 0; i < pos.length / 3; i++) {
+      const key = `${pos[3 * i].toFixed(6)},${pos[3 * i + 1].toFixed(6)},${pos[3 * i + 2].toFixed(6)}`;
+      (same.get(key) || same.set(key, []).get(key)).push(i);
+    }
+    for (const ids of same.values()) if (ids.length > 1) {
+      const n = new V3(); for (const i of ids) n.add(new V3().fromBufferAttribute(N, i)); n.normalize();
+      for (const i of ids) N.setXYZ(i, n.x, n.y, n.z);
+    }
+    const m = new THREE.SkinnedMesh(g, mats[role]); m.bind(SKEL, new THREE.Matrix4()); m.frustumCulled = false;
+    out.push(m);
+  }
+  return out;
+}
+
+// ------------------------------------------------------------------ poses: the character's bones turned, the piece goes with its weights
+let pose = 'rest';
+function turn(b, axis, deg) {   // a bone turned about a world axis through its head
+  const q = new Q().setFromAxisAngle(axis, THREE.MathUtils.degToRad(deg));
+  const wq = b.getWorldQuaternion(new Q()), pq = b.parent.getWorldQuaternion(new Q()).invert();
+  b.quaternion.copy(pq.multiply(q.multiply(wq))); b.updateMatrixWorld(true);
+}
+function restPose() {
+  for (const [b, q] of REST) b.quaternion.copy(q);
+  charRoot.updateMatrixWorld(true);
+}
+function applyPose() {
+  if (!charRoot) return;
+  restPose();
+  const dir = (a, b) => (PB[a] && PB[b] ? joint(b).sub(joint(a)).normalize() : null);
+  for (const s of 'LR') {
+    if (pose === 'side' || pose === 'front') {   // the arm raised 100° (the collarbone 20° of it), as the clips do
+      const d = dir('arm_' + s, 'forearm_' + s); if (!d) continue;
+      const ax = d.clone().cross(pose === 'side' ? UP : FRONT).normalize();
+      if (PB['shoulder_' + s]) turn(PB['shoulder_' + s], ax, 20);
+      turn(PB['arm_' + s], ax, 80);
+    } else if (pose === 'elbows') {
+      const d = dir('forearm_' + s, 'hand_' + s); if (!d) continue;
+      turn(PB['forearm_' + s], d.clone().cross(FRONT).normalize(), 95);
+    } else if (pose === 'squat') {
+      const d = dir('upleg_' + s, 'leg_' + s); if (!d || !dir('leg_' + s, 'foot_' + s)) continue;
+      turn(PB['upleg_' + s], d.clone().cross(FRONT).normalize(), 75);
+      turn(PB['leg_' + s], dir('leg_' + s, 'foot_' + s).cross(FRONT.clone().negate()).normalize(), 100);
+    }
+  }
+  charRoot.updateMatrixWorld(true);
+}
+
+// ------------------------------------------------------------------ views and the character's look
+function view(v) {
+  const box = new THREE.Box3();
+  for (const m of pieceGroup.children) {
+    const g = m.geometry; g.computeBoundingBox();
+    if (v === 'close' && parts.length > 1) {   // the left one
+      const P = g.attributes.position; for (let i = 0; i < P.count; i++) if (P.getX(i) > (joint('hips') || new V3()).x) box.expandByPoint(new V3().fromBufferAttribute(P, i));
+    } else box.union(g.boundingBox);
+  }
+  if (box.isEmpty()) box.setFromObject(charRoot || scene);
+  const c = box.getCenter(new V3()), size = Math.max(box.getSize(new V3()).length(), 1e-3);
+  const eye = { front: new V3(0, .12, 1), side: new V3(1, .12, .35), close: new V3(.55, .25, 1) }[v].normalize();
+  const k = v === 'close' ? 1.1 : 1.35;
+  const dist = k * size / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
+  camera.position.copy(c).addScaledVector(eye, dist); controls.target.copy(c); camera.near = dist / 100; camera.far = dist * 100; camera.updateProjectionMatrix();
+  curView = v;
+  for (const b of $('views').children) b.classList.toggle('on', b.dataset.v === v);
+}
+const plainMat = new THREE.MeshStandardMaterial({ color: 0x8c9670, roughness: .8 });
+const xrayMat = new THREE.MeshStandardMaterial({ color: 0x8c9670, roughness: .8, transparent: true, opacity: .3, depthWrite: false });
+function skin(s) {
+  for (const [o, m] of ORIG) o.material = s === 'own' ? m : s === 'plain' ? plainMat : xrayMat;
+  for (const b of $('skins').children) b.classList.toggle('on', b.dataset.s === s);
+}
+$('views').addEventListener('click', (e) => e.target.dataset.v && view(e.target.dataset.v));
+$('skins').addEventListener('click', (e) => e.target.dataset.s && skin(e.target.dataset.s));
+$('poses').addEventListener('click', (e) => {
+  if (!e.target.dataset.p) return;
+  pose = e.target.dataset.p; for (const b of $('poses').children) b.classList.toggle('on', b === e.target); applyPose();
+});
+$('shows').addEventListener('click', (e) => e.target.dataset.r && setShow(e.target.dataset.r === '1'));
+function setShow(r) {
+  showResult = r && !!resultRoot;
+  pieceGroup.visible = !showResult; if (resultRoot) resultRoot.visible = showResult;
+  for (const b of $('shows').children) b.classList.toggle('on', (b.dataset.r === '1') === showResult);
+}
+
+// ------------------------------------------------------------------ to SF3D: the geometry, weights and materials, answered by a status file
+const fileUrl = (p) => new URL('/file=' + p, window.parent.location.href).href;
+const b64 = (ta) => { const u = new Uint8Array(ta.buffer, ta.byteOffset, ta.byteLength); let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
+function payload() {   // every part in one mesh: positions (glTF axes), faces (sizes, vertices, material slots), texture
+  const v = [], uv = [], bi = [], bw = [], sizes = [], f = [], m = [];   // coordinates of the pattern, the weights by bone
+  for (const part of parts) {
+    const a = part.acc, base = v.length / 3;
+    for (const [to, from] of [[v, a.v], [uv, a.uv], [bi, a.bi], [bw, a.bw]]) for (const x of from) to.push(x);   // no spread: too many
+    a.f.forEach((q, k) => { sizes.push(q.length); for (const i of q) f.push(base + i); m.push(a.m[k]); });
+  }
+  return { v: b64(Float32Array.from(v)), uv: b64(Float32Array.from(uv)), n: b64(Uint8Array.from(sizes)), f: b64(Uint32Array.from(f)),
+    m: b64(Uint8Array.from(m)), bi: b64(Uint16Array.from(bi)), bw: b64(Float32Array.from(bw)), bones: boneNames,
+    mats: LOOK.specs, patterns: { mail: patternTile('mail').png, quilt: patternTile('quilt').png }, pattern_unit: LOOK.U,
+    radius: parts.reduce((s, x) => s + x.R, 0) / parts.length, over_clothes: parts.some((x) => x.loose) };
+}
+let busy = false;
+async function send(action, extra, wait, statusName) {
+  const req = Object.assign({ id: Date.now(), action, rigged: DATA.rigged }, extra);
+  try {
+    const ta = window.parent.document.querySelector('#' + DATA.target + ' textarea');
+    ta.value = JSON.stringify(req); ta.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 400));
+    window.parent.document.querySelector('#' + DATA.go).click();
+  } catch (e) { $('status').textContent = '{{js:ed.could_not_send_to_sf3d}}' + e.message; return null; }
+  $('status').textContent = wait;
+  const status = DATA.rigged.replace(/[^/]*$/, '') + DATA.stem + statusName + '.wear.json';
+  for (let k = 0; k < 600; k++) {
+    await new Promise((r) => setTimeout(r, 1500));
+    let js = null;
+    try { const r = await fetch(fileUrl(status) + '?t=' + Date.now()); if (r.ok) js = await r.json(); } catch (e) { /* not yet */ }
+    if (!js || js.id !== req.id) continue;
+    $('status').textContent = js.log;
+    return js;
+  }
+  $('status').textContent = '{{js:ed.sf3d_did_not_answer_see_the_armour}}';
+  return null;
+}
+const itemName = () => (S.name || 'proc_' + S.piece).trim().replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'proc_' + S.piece;
+$('go').addEventListener('click', async () => {
+  if (!lastBuild || busy) return;
+  busy = true; $('go').disabled = true;
+  const item = itemName();
+  let js = null;
+  try {
+    js = await send('generate', { item, piece: S.piece, sides: lastBuild.sides.filter((s) => s !== 'C'),
+      params: { ...S.p }, mesh: payload() }, '{{js:ag.working}}', '_wear_' + item);
+  } catch (e) { $('status').textContent = '{{js:ed.could_not_send_to_sf3d}}' + e.message; console.error(e); }
+  busy = false; $('go').disabled = !lastBuild;
+  if (js && js.ok) {
+    const i = DATA.saved.findIndex((x) => x.item === item);
+    const entry = { item, piece: S.piece, sides: [...S.sides], params: { ...S.p } };
+    if (i >= 0) DATA.saved[i] = entry; else DATA.saved.push(entry);
+    listSaved(item);
+    await loadResult(js.glb);
+  }
+});
+$('room').addEventListener('click', () => send('wardrobe', {}, '{{js:ag.opening_room}}', '_wardrobe'));
+async function loadResult(glb) {   // the baked piece, on the character's own bones (it follows the poses)
+  if (resultRoot) { scene.remove(resultRoot); resultRoot = null; }
+  try {
+    const gltf = await new GLTFLoader().loadAsync(fileUrl(glb) + '?t=' + Date.now());
+    resultRoot = gltf.scene;
+    resultRoot.traverse((o) => {
+      if (o.isSkinnedMesh) { o.skeleton.bones = o.skeleton.bones.map((b) => byName[b.name] || b); o.frustumCulled = false; }
+      if (o.isMesh) for (const mt of [].concat(o.material)) mt.side = THREE.DoubleSide;
+    });
+    scene.add(resultRoot);
+    $('shows').hidden = false; setShow(true);
+  } catch (e) { console.error(e); }
+}
+function listSaved(sel) {
+  $('savedRow').hidden = !DATA.saved.length;
+  $('saved').innerHTML = `<option value="">{{js:ag.saved_new}}</option>` + DATA.saved.map((x, i) => `<option value="${i}">${x.item} — ${LABEL[x.piece] || x.piece}</option>`).join('');
+  $('saved').value = sel ? String(DATA.saved.findIndex((x) => x.item === sel)) : '';
+}
+$('saved').addEventListener('change', (e) => {
+  const x = DATA.saved[+e.target.value]; if (e.target.value === '' || !x) return;
+  S.p = { ...DEFAULTS, ...PIECES[x.piece].defaults, ...x.params }; S.sides = x.sides && x.sides.length ? [...x.sides] : ['L', 'R'];
+  S.name = x.item; S.nameTouched = true; setPiece(x.piece, true);
+});
+
+// ------------------------------------------------------------------ start
+buildPanel(); syncPanel(); listSaved();
+try {
+  await loadCharacter();
+  $('msg').hidden = true;
+  rebuild();
+} catch (e) { $('msg').textContent = e.message; console.error(e); }
+</script>
+</body>
+</html>

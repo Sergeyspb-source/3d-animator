@@ -3118,6 +3118,7 @@ $('wFile').onchange = async () => {
 };
 $('wOpen').onclick = async () => {
   const f = wearFits[+$('wSaved').value]; if (!f) return;
+  if (f.procedural) { $('wStatus').textContent = '{{js:ed.procedural_piece}}'; return; }   // made from parameters: change it there
   $('wStatus').textContent = '{{js:ed.opening_2}}';
   try {
     const st = await (await fetch(fileUrl(f.fit) + '?t=' + Date.now())).json();

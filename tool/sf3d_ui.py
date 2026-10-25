@@ -21,6 +21,7 @@ import sf3d_tool as T  # noqa: E402  (заодно добавляет sf3d-src �
 import rwt_ui  # GPT: Mount isolated weight repair without extending rig generation.
 import landmarks_ui  # hand-placed landmark skeleton (Mixamo-like)
 import face_parts_ui  # procedural eyes, teeth, tongue
+import armour_gen_ui  # procedural armour from the character's own skin
 import i18n
 from i18n import t as _t
 PORT = 7861
@@ -2350,6 +2351,9 @@ def build():
                             with gr.Column(scale=1):
                                 fit_m3d = gr.Model3D(label=_t("ui.model"), height=420, clear_color=(0.9, 0.9, 0.9, 1))
                                 fit_view = gr.Gallery(label=_t("ui.how_it_sits_front_and_side"), columns=2, height=300)
+
+                    with gr.Tab(_t("ui.equipment_procedural"), id="proc_armour"):
+                        armour_gen_ui.mount(T.load_config)
 
                     with gr.Tab(_t("ui.weight_fixing"), id="rwt"):
                         rwt_ui.mount(T.load_config, accordion=False)  # GPT: Optional repair retains the skeleton.

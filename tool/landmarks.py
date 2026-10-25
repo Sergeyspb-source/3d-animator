@@ -149,7 +149,8 @@ def _fit_entry(fit: Path) -> dict:
     return {"item": saved.get("item") or base, "fit": fit.resolve().as_posix(),
             "src": fit.with_name(base + ".src.glb").resolve().as_posix(), "glb": glb.resolve().as_posix() if glb.exists() else None,
             "under": (saved.get("state") or {}).get("under") or [],   # the pieces it was put on over
-            "part": (saved.get("state") or {}).get("part")}
+            "part": (saved.get("state") or {}).get("part"),
+            "procedural": bool(saved.get("procedural"))}   # made in «Equipment: procedural» (not reopened in the editor)
 
 
 def saved_fits(rigged: Path) -> list:
