@@ -1,0 +1,177 @@
+[
+ {
+  "file": "ElbowArmor/elbow_builders.py",
+  "from": "game-project/Blender-models/ElbowArmor/elbow_builders.py",
+  "sha256": "dd76097dbb5d0b736282105dfe9e68f161f2d47b00cdf3b4989565e0ce73e31d"
+ },
+ {
+  "file": "ElbowArmor/elbow_catalog.py",
+  "from": "game-project/Blender-models/ElbowArmor/elbow_catalog.py",
+  "sha256": "650665255f8b0b7fa9942947f1031fc5abc1eb493d27755ff824a56d38ee6a5f"
+ },
+ {
+  "file": "ElbowArmor/elbow_export.py",
+  "from": "game-project/Blender-models/ElbowArmor/elbow_export.py",
+  "sha256": "f07f7401ff0e9b470d1a77114e91dadfc16c23b39fcaab710945b80bab33d012"
+ },
+ {
+  "file": "ElbowArmor/elbow_fittings.py",
+  "from": "game-project/Blender-models/ElbowArmor/elbow_fittings.py",
+  "sha256": "2fd60f5ef0ef5b8bee2704fe1ded8a4fd5b79500f0534f8cf034b3c713fbce13"
+ },
+ {
+  "file": "ElbowArmor/elbow_geometry.py",
+  "from": "game-project/Blender-models/ElbowArmor/elbow_geometry.py",
+  "sha256": "fd47c80d6678f1958b414d4608059221b7766c0d4f5261a3314ced88d55bb59d"
+ },
+ {
+  "file": "ElbowArmor/elbow_mail.py",
+  "from": "game-project/Blender-models/ElbowArmor/elbow_mail.py",
+  "sha256": "b6a85574c22597ff925bae6e43b55232b8931b9638aa32deea60988359e8b488"
+ },
+ {
+  "file": "ElbowArmor/generate_elbow.py",
+  "from": "game-project/Blender-models/ElbowArmor/generate_elbow.py",
+  "sha256": "7f78058a26187ef5347df9815425fd123d28115fc75a98953f7d17dee7b62ca8"
+ },
+ {
+  "file": "ElbowArmor/README.md",
+  "from": "game-project/Blender-models/ElbowArmor/README.md",
+  "sha256": "e0065eeb925b39d37506a29b6e9fbb782b4f52ed14fa7f5537d91437572729d1"
+ },
+ {
+  "file": "ElbowArmor/Sources.md",
+  "from": "game-project/Blender-models/ElbowArmor/Sources.md",
+  "sha256": "51b50bb1a454564a7cc91ac6e81715b062384cdaf6fbef80f6e7e710278ecac5"
+ },
+ {
+  "file": "Footwear/footwear_builders.py",
+  "from": "game-project/Blender-models/Footwear/footwear_builders.py",
+  "sha256": "6e37c3b74cb0e69d5e51289412de4c884efea83e0104545992bbc45153c00c90"
+ },
+ {
+  "file": "Footwear/footwear_catalog.py",
+  "from": "game-project/Blender-models/Footwear/footwear_catalog.py",
+  "sha256": "7dc27fdde6d89be83260159a4127db8276544987259845afc2df7ae8cabc5064"
+ },
+ {
+  "file": "Footwear/footwear_export.py",
+  "from": "game-project/Blender-models/Footwear/footwear_export.py",
+  "sha256": "008b63172eefcb2cb3df7f46069719f19278ffa4f29d835cc0067294dca5fcda"
+ },
+ {
+  "file": "Footwear/footwear_fittings.py",
+  "from": "game-project/Blender-models/Footwear/footwear_fittings.py",
+  "sha256": "4b373754427d73f08cd6dfc7cad54994b0b61b3a619f51251079d8efcc4fa13c"
+ },
+ {
+  "file": "Footwear/footwear_last.py",
+  "from": "game-project/Blender-models/Footwear/footwear_last.py",
+  "sha256": "da71c7e93389938995922f859c0886520faf9bfdfdcfff23e8633f9a3787f8fc"
+ },
+ {
+  "file": "Footwear/footwear_mail.py",
+  "from": "game-project/Blender-models/Footwear/footwear_mail.py",
+  "sha256": "6fd780036b736f13d6bb64537d0377a9fe52806e1eda2251e05173216ee50370"
+ },
+ {
+  "file": "Footwear/footwear_pair.py",
+  "from": "game-project/Blender-models/Footwear/footwear_pair.py",
+  "sha256": "4ad7abd6da5df6014d97c7df6d18b0bea2897c4014587a536ecaa4b52d4210a2"
+ },
+ {
+  "file": "Footwear/footwear_plates.py",
+  "from": "game-project/Blender-models/Footwear/footwear_plates.py",
+  "sha256": "2b669a83446e36d314216806396360d39ebb3b09fff0885c96b3b00f5d854784"
+ },
+ {
+  "file": "Footwear/generate_footwear.py",
+  "from": "game-project/Blender-models/Footwear/generate_footwear.py",
+  "sha256": "f2cc3d65d15ff8f34f736999c03e140174de7155cc4d3512b389223838967267"
+ },
+ {
+  "file": "Footwear/README.md",
+  "from": "game-project/Blender-models/Footwear/README.md",
+  "sha256": "cde9e07c6279058423d65f1a0e5d3908466b9c42f93563cc4800e97bd87f8591"
+ },
+ {
+  "file": "Footwear/Sources.md",
+  "from": "game-project/Blender-models/Footwear/Sources.md",
+  "sha256": "c053cb2b11e25cd4c6348195d597be620d0a79664a2260cb8ba3e5b74bbacc29"
+ },
+ {
+  "file": "HelmetVariants/armet.py",
+  "from": "game-project/Blender-models/HelmetVariants/armet.py",
+  "sha256": "17843f3fd96be1c7bafa7dba81ebdfe7b7464cc775205890b2585cc7be145401"
+ },
+ {
+  "file": "HelmetVariants/barbute.py",
+  "from": "game-project/Blender-models/HelmetVariants/barbute.py",
+  "sha256": "d52f25d5c80481a78235b4cadcded36e61bd2d3c145b7f301d2ec2cd19180981"
+ },
+ {
+  "file": "HelmetVariants/generate_helmet.py",
+  "from": "game-project/Blender-models/HelmetVariants/generate_helmet.py",
+  "sha256": "1eb484dab867a18c9c48ed81415ec45bf2f0b19f3cbd99f39d11b66cb17ac6c2"
+ },
+ {
+  "file": "HelmetVariants/helmet_fittings.py",
+  "from": "game-project/Blender-models/HelmetVariants/helmet_fittings.py",
+  "sha256": "f9a6be086a88b4e874a159b704d91e3735ae240e3065b9157d6ab335ef55b4bc"
+ },
+ {
+  "file": "HelmetVariants/helmet_geometry.py",
+  "from": "game-project/Blender-models/HelmetVariants/helmet_geometry.py",
+  "sha256": "71adc88b96c07e064c59be95897b309c3e0cfee898f9fdbd87d18124ff9b5ace"
+ },
+ {
+  "file": "HelmetVariants/helmet_mail.py",
+  "from": "game-project/Blender-models/HelmetVariants/helmet_mail.py",
+  "sha256": "d43dedfcfa21bb83fa12ca21d8e54fefb713eddba773fcac09449fcbd8c7924c"
+ },
+ {
+  "file": "HelmetVariants/open_bascinet.py",
+  "from": "game-project/Blender-models/HelmetVariants/open_bascinet.py",
+  "sha256": "9d80ca9cd74186114efdf9da601d431c83d0461cc27a1210597f7509a94ce084"
+ },
+ {
+  "file": "HelmetVariants/README.md",
+  "from": "game-project/Blender-models/HelmetVariants/README.md",
+  "sha256": "a05f08210b711f9bb99ceade6e5897b3c380454585f135b1a74f0ecd7cb5833b"
+ },
+ {
+  "file": "HelmetVariants/sallet.py",
+  "from": "game-project/Blender-models/HelmetVariants/sallet.py",
+  "sha256": "6bf83d129de91cf2b0871204bbf9db12ec7d72585a9ead0de421615d9d2a308c"
+ },
+ {
+  "file": "HelmetVariants/visored_bascinet.py",
+  "from": "game-project/Blender-models/HelmetVariants/visored_bascinet.py",
+  "sha256": "7d1e1c558bc0b6493d679b15158d708a8c1c6efe653ca2855fc677598a3b58b4"
+ },
+ {
+  "file": "KettleHat/generate_kettle_hat.py",
+  "from": "game-project/Blender-models/KettleHat/generate_kettle_hat.py",
+  "sha256": "850d7d777f28ab2760446ea59a3d39cd4f7c0948c61202c39cabd522d932eab8"
+ },
+ {
+  "file": "KettleHat/kettle_hat_details.py",
+  "from": "game-project/Blender-models/KettleHat/kettle_hat_details.py",
+  "sha256": "c7d2e2eea9aa3c573a385201cac214e3f6c53a43ae3830eab8c779866b444ecc"
+ },
+ {
+  "file": "KettleHat/kettle_hat_review.py",
+  "from": "game-project/Blender-models/KettleHat/kettle_hat_review.py",
+  "sha256": "86d2f55289341d463ef6fbff8dc309d1c3cbb69869f5c55f76544d502a67bb04"
+ },
+ {
+  "file": "KettleHat/parameters.json",
+  "from": "game-project/Blender-models/KettleHat/parameters.json",
+  "sha256": "cba2cff6ab1762ffa946f3904bc56ab68da8bf2567eabf3adb77eeccc981fc73"
+ },
+ {
+  "file": "KettleHat/README.md",
+  "from": "game-project/Blender-models/KettleHat/README.md",
+  "sha256": "6259a8402fe9ec5fb41b2a4853682b24c0aa5dae0e52ac857114167cc9f0b098"
+ }
+]

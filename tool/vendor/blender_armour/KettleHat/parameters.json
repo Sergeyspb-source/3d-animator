@@ -1,0 +1,19 @@
+{
+  "crown_radius_x": 0.096,
+  "crown_radius_y": 0.114,
+  "crown_height": 0.145,
+  "brim_width": 0.058,
+  "brim_drop": 0.03,
+  "front_point": 0.01,
+  "rear_extension": 0.008,
+  "crest_height": 0.009,
+  "crest_width": 0.008,
+  "steel_thickness": 0.002,
+  "rim_radius": 0.0018,
+  "strap_width": 0.015,
+  "strap_drop": 0.133,
+  "segments": 96,
+  "crown_rings": 24,
+  "brim_rings": 10,
+  "rivet_count": 16
+}

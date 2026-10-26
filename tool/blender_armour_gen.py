@@ -342,8 +342,20 @@ if pv:
         bpy.ops.render.render(write_still=True)
 
 if job.get("mask"):   # what of the body the piece hides (the game takes it away while it is on: body_mask.py)
-    from body_mask import body_mask
-    Path(job["mask"]).write_text(json.dumps(body_mask(body, [obj])), encoding="utf-8")
+    from body_mask import body_mask, held, where
+    keys = {tuple(x) for x in body_mask(body, [obj])}
+    head_b = arm.data.bones.get(names.get("head", ""))
+    if job.get("style") == "coif" and head_b:
+        # the hair goes under a coif (a bag round the head, the hair may be sculpted on the skin): on the head what it
+        # holds round, and only that (an ear through it stays whole)
+        Wa = arm.matrix_world
+        HJ = Wa @ head_b.head_local
+        eyes = [Wa @ arm.data.bones[names[f"eye_{s}"]].head_local for s in "LR" if names.get(f"eye_{s}") in arm.data.bones]
+        E = sum(eyes, Vector()) / len(eyes) if len(eyes) == 2 else HJ
+        hb = {head_b.name} | {b.name for b in head_b.children_recursive}
+        keys -= {tuple(x) for x in where(body, hb, lambda q: True)}
+        keys |= {tuple(x) for x in held(body, hb, [obj], Vector((HJ.x, HJ.y, E.z)))}
+    Path(job["mask"]).write_text(json.dumps([list(x) for x in sorted(keys)]), encoding="utf-8")
 
 for o in list(bpy.data.objects):   # the skeleton and the piece only
     if o.type == "MESH" and o is not obj:

@@ -24,12 +24,12 @@ def _bvh(objs):
     return BVHTree.FromPolygons(verts, polys)
 
 
-def body_mask(body, pieces, share=.5, reach=.1, through=.1, thin=.04, around=.12, beside=.06):
+def body_mask(body, pieces, share=.5, reach=.1, through=.1, thin=.04, around=.12, beside=.06, erode=0):
     """body: the character's skinned meshes (rest pose); pieces: the piece's meshes (rest pose, weighted). reach: how
     far out the piece may be over the skin, through: how close behind a thing poking out of it, thin: what is thin (an
     ear, a cord; not an arm beside a cuirass), around: how near the piece is round a thing it closes round, beside: how near past the piece the body is
     when a thing is beside it, not under it, all as
-    shares of the piece's size.
+    shares of the piece's size; erode: rings of vertices given back at the hidden part's edge.
     Returns [[x, y, z], ...]: the hidden vertices' glTF positions in thousandths (integers)."""
     # the bones it really moves with (an imported skin lists every joint of the skeleton as a group, most of them empty)
     bones = {o.vertex_groups[g.group].name for o in pieces for v in o.data.vertices for g in v.groups if g.weight > .05}
@@ -108,11 +108,96 @@ def body_mask(body, pieces, share=.5, reach=.1, through=.1, thin=.04, around=.12
                 continue
             if sum(tree.ray_cast(p, d, around * size)[0] is not None for d in dirs) >= 5:
                 hidden[j] = True
+        # erode: the hidden part kept that many rings of vertices in from its edge (a piece that turns over a joint
+        # uncovers the skin near its rim as it bends)
+        for _ in range(erode):
+            edge = [j for j in range(len(hidden)) if hidden[j] and any(not hidden[k] for k in nb[j])]
+            for j in edge:
+                hidden[j] = False
         for v in me.vertices:
             if hidden[v.index]:
                 c = v.co
                 out.add((round(c.x * 1000), round(c.z * 1000), round(-c.y * 1000)))   # Blender -> glTF axes, mesh-local
     return [list(x) for x in sorted(out)]
+
+
+def ears(body, bones, centre, radius, zlo, zhi, out=1.3, share=.5):
+    """What sticks out of the head sideways (a goblin's or an elf's ears), to go under a helmet with the head even where
+    the helmet does not reach (a kettle hat's brim is above them): the body's vertices moving mostly with the head's
+    bones (bones), between the heights zlo and zhi, further than out x radius to the side (x) from the head's middle
+    centre (not the nose, forward), and from there, along the mesh, what is thin (its other side close behind it) down
+    to the head.
+    Returns the hidden vertices' glTF positions in thousandths, as body_mask."""
+    body_tree = _bvh(body)
+    out_keys = set()
+    for o in body:
+        names = [g.name for g in o.vertex_groups]
+        W, N = o.matrix_world, o.matrix_world.to_3x3().inverted().transposed()
+        me = o.data
+        cand = [False] * len(me.vertices)
+        hidden = [False] * len(me.vertices)
+        for v in me.vertices:
+            tot = sum(g.weight for g in v.groups)
+            on = sum(g.weight for g in v.groups if names[g.group] in bones)
+            p = W @ v.co
+            if tot <= 1e-9 or on / tot < share or not zlo <= p.z <= zhi:
+                continue
+            cand[v.index] = True
+            if abs(p.x - centre.x) > out * radius:
+                hidden[v.index] = True
+        nb = [[] for _ in me.vertices]
+        for ed in me.edges:
+            a, b2 = ed.vertices
+            nb[a].append(b2)
+            nb[b2].append(a)
+        thin = .2 * radius
+        front = [i for i, h in enumerate(hidden) if h]
+        while front:
+            nxt = []
+            for i in front:
+                for j in nb[i]:
+                    if hidden[j] or not cand[j]:
+                        continue
+                    v = me.vertices[j]
+                    p, n = W @ v.co, (N @ v.normal).normalized()
+                    if body_tree.ray_cast(p - n * 1e-4 * radius, -n, thin)[0] is not None:
+                        hidden[j] = True
+                        nxt.append(j)
+            front = nxt
+        for v in me.vertices:
+            if hidden[v.index]:
+                c = v.co
+                out_keys.add((round(c.x * 1000), round(c.z * 1000), round(-c.y * 1000)))
+    return [list(x) for x in sorted(out_keys)]
+
+
+def where(body, bones, test, share=.5):
+    """The body's vertices moving mostly with the bones for which test(world position) holds. As body_mask's."""
+    out = set()
+    for o in body:
+        names = [g.name for g in o.vertex_groups]
+        W = o.matrix_world
+        for v in o.data.vertices:
+            tot = sum(g.weight for g in v.groups)
+            on = sum(g.weight for g in v.groups if names[g.group] in bones)
+            if tot > 1e-9 and on / tot >= share and test(W @ v.co):
+                c = v.co
+                out.add((round(c.x * 1000), round(c.z * 1000), round(-c.y * 1000)))
+    return [list(x) for x in sorted(out)]
+
+
+def held(body, bones, piece, centre, share=.5):
+    """What a piece closed round a part holds (a coif round the head: the hair under it): the body's vertices moving
+    mostly with the bones from which a ray going out (away from centre, the part's middle) meets the piece. Through its
+    openings (the face) and past it (an ear's tip) the rays go out: those stay. As body_mask's."""
+    tree = _bvh(piece)
+    return where(body, bones, lambda p: tree.ray_cast(p, (p - centre).normalized())[0] is not None, share)
+
+
+def above(body, bones, z, share=.5):
+    """What a helmet takes the place of on the head: the body's vertices moving mostly with the head's bones (bones)
+    higher than z (the brow): the hair, a hat or a crown modelled on the character. As body_mask's."""
+    return where(body, bones, lambda p: p.z > z, share)
 
 
 if __name__ == "__main__":   # a piece put on before masks were made: blender -b -P body_mask.py -- rigged.glb piece.glb out.json

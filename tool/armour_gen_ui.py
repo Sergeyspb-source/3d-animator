@@ -47,11 +47,58 @@ PIECES = {"bracer": ("forearm", "hand", "forearm", ("Spine", "Hips", "Chest", "U
                             loose=.3, folds=.3, cuffs=False, buckle=True)),
           "brayette": ("upleg", "foot", "upleg", ("Arm", "Hand"), "upleg", "legs", (-10, 30, 4, 40),
                        dict(t0=8, t1=8, straps=1, rigidity=.15, gap=4, thickness=6, relief=.4, surface="mail", material="iron", loose=.05,
-                            folds=0, cuffs=False, buckle=True, strap_width=25))}
+                            folds=0, cuffs=False, buckle=True, strap_width=25)),
+          # made by the helmet and elbow generators (vendor/blender_armour) in Blender (MADE), not of the skin
+          "helmet": ("head", "head", "head", (), "head", "head", (0, 0, 0, 0),
+                     dict(helmet="barbute", head_gap=7, visor_angle=0, cheek_angle=0, tail=100, brim=100)),
+          "elbow": ("arm", "forearm", "forearm", (), "elbow", "joint", (0, 0, 0, 0),
+                    dict(elbow="elbow_winged_plate", limb_gap=8, wing=100)),
+          "footwear": ("leg", "foot", "foot", (), "foot", "joint", (0, 0, 0, 0), dict(footwear="foot_ankle_boot", foot_gap=6)),
+          # of the hand's own skin, offset (each finger with its bones), and a cuff round the wrist
+          "glove": ("forearm", "hand", "hand", ("Spine", "Hips", "Chest", "UpLeg", "UpperLeg"), "hand", "glove", (0, 0, 0, 0),
+                    dict(glove="plain_leather", cuff=14, flare=.2, gap=2, thickness=6, straps=1, strap_width=10, buckle=False,
+                         material="leather", surface="plain", rigidity=.3)),
+          # under the armour: clothes cut on the body (a shirt, an aketon, a gambeson, doublets, a vest, braies) and a coif
+          "undercloth": ("hips", "neck", "spine1", (), "torso", "cloth", (0, 0, 0, 0),
+                         dict(cloth_style="shirt", cloth_quilt=False, quilt_lines=False, material="cloth", cloth="#d2c6aa", gap=4, thickness=2, straps=0,
+                              surface="plain", rigidity=0))}
+CLOTHS = ("cloth_shirt", "cloth_aketon", "cloth_gambeson", "cloth_doublet", "cloth_voider", "cloth_vest", "cloth_braies", "cloth_braies_long",
+          "cloth_coif")
+GLOVES = ("glove_plain_leather", "glove_reinforced_leather", "glove_mail_mitten", "glove_hourglass", "glove_plate_mitten", "glove_hybrid")
+HELMETS = ("kettle_hat", "open_bascinet", "barbute", "visored_bascinet", "sallet", "armet")
+FOOTWEAR = ("foot_leather_shoe", "foot_ankle_boot", "foot_mail_foot", "foot_round_sabaton", "foot_pointed_sabaton", "foot_hybrid_boot")
+ELBOWS = ("elbow_leather", "elbow_mail", "elbow_early_plate", "elbow_winged_plate", "elbow_articulated_plate", "elbow_plate_mail_hybrid")
+
+
+def _helmet_params(params) -> dict:
+    """The editor's helmet parameters (percent) as blender_helmet_gen.py's."""
+    return {"gap": float(params.get("head_gap", 7)) / 100, "visor_angle": float(params.get("visor_angle", 0)),
+            "cheek_angle": float(params.get("cheek_angle", 0)), "tail": float(params.get("tail", 100)) / 100,
+            "brim": float(params.get("brim", 100)) / 100}
+
+
+def _elbow_params(params) -> dict:
+    return {"gap": float(params.get("limb_gap", 8)) / 100, "wing": float(params.get("wing", 100)) / 100}
+
+
+def _foot_params(params) -> dict:
+    return {"gap": float(params.get("foot_gap", 6)) / 100}
+
+
+# pieces the generators make: piece -> (the Blender script, its styles (the editor's keys), the style key's prefix in
+# them, the editor's parameters -> the script's, the parameters a style's preview depends on besides the gap)
+MADE = {"helmet": ("blender_helmet_gen.py", HELMETS, "", _helmet_params,
+                   {"visored_bascinet": ("visor_angle",), "armet": ("visor_angle", "cheek_angle"), "sallet": ("tail",),
+                    "kettle_hat": ("brim",)}),
+        "elbow": ("blender_elbow_gen.py", ELBOWS, "elbow_", _elbow_params,
+                  {k: ("wing",) for k in ("elbow_winged_plate", "elbow_articulated_plate", "elbow_plate_mail_hybrid")}),
+        "footwear": ("blender_footwear_gen.py", FOOTWEAR, "foot_", _foot_params, {})}
 # «from» / «to» labels: a limb's along it, a torso piece's bottom and top, trousers' waist and leg length
 T_LABELS = {"limb": ("ag.from", "ag.to", "ag.from_info"), "torso": ("ag.bottom", "ag.top", "ag.bottom_info"),
             "cuirass": ("ag.bottom", "ag.neck_top", "ag.bottom_info"), "pauldron": ("ag.pauldron_from", "ag.sp_reach", "ag.pauldron_info"),
-            "hips": ("ag.bottom", "ag.top", "ag.tassets_info"), "legs": ("ag.waist", "ag.leg_length", "ag.waist_info")}
+            "hips": ("ag.bottom", "ag.top", "ag.tassets_info"), "legs": ("ag.waist", "ag.leg_length", "ag.waist_info"),
+            "head": ("ag.from", "ag.to", "ag.from_info"), "joint": ("ag.from", "ag.to", "ag.from_info"),
+            "glove": ("ag.from", "ag.to", "ag.from_info"), "cloth": ("ag.from", "ag.to", "ag.from_info")}
 # (linear colour, roughness, metallic): metallic kept moderate, a game scene without reflections shows a full metal black
 PRESETS = {"iron": ((.34, .34, .35), .55, .55), "steel": ((.56, .58, .61), .35, .65),
            "bronze": ((.55, .36, .17), .42, .6), "leather": ((.30, .17, .09), .72, 0.0), "cloth": ((.25, .27, .3), .9, 0.0),
@@ -63,7 +110,7 @@ CHOICES = {"opening_labels": ("none", "left", "right", "back", "front"), "closur
            "shoulder_labels": ("straps", "yoke", "none"),
            "style_labels": ("leather", "steel", "mail", "splints", "covered", "plate_mail", "lamellar", "brigandine", "wool", "leather_tr",
                             "mail_chausses", "plate_cuisses", "hidden_plate", "plate_and_mail", "compact", "extended", "carrier",
-                            "short_mail", "wrap_mail", "carrier_mail", "lames"),
+                            "short_mail", "wrap_mail", "carrier_mail", "lames", *HELMETS, *ELBOWS, *FOOTWEAR, *GLOVES, *CLOTHS),
            "thigh_labels": ("none", "mail", "plate", "panels", "plate_mail"), "knee_labels": ("none", "patch", "cop")}
 
 
@@ -117,6 +164,36 @@ def editor_page(rigged: Path) -> str:
     return page.replace("@@DATA@@", json.dumps(data, ensure_ascii=False).replace("</", "<\\/"))
 
 
+def made_preview(cfg, req) -> dict:
+    """A piece the generators make (MADE: a helmet, elbows), of a style, made for the character to look at while it is
+    chosen (as «Generate» makes it, 5-20 s): work/helmets/<character>/<style>_<the parameters>.glb with its mask, made
+    once. {ok, log, preview: {glb, mask, v}}."""
+    piece, style, rigged = req.get("piece", "helmet"), req.get("style"), Path(req["rigged"])
+    if piece not in MADE or style not in MADE[piece][1]:
+        return {"ok": False, "log": _t("ag.unknown_piece", style)}
+    script, _, prefix, to_job, own = MADE[piece]
+    hp = to_job(req.get("params") or {})
+    sides = [x for x in req.get("sides") or [] if x in ("L", "R")]
+    tag = "".join(f"_{k[0]}{round(hp[k] * (1 if 'angle' in k else 100))}" for k in ("gap", *own.get(style, ()))) + ("_" + "".join(sides) if sides else "")
+    d = Path(cfg["work_dir"]) / "helmets" / LM._slug(LM._stem(rigged))
+    d.mkdir(parents=True, exist_ok=True)
+    glb, mask = d / f"{style}{tag}.glb", d / f"{style}{tag}.mask.json"
+    if not (glb.exists() and mask.exists() and glb.stat().st_mtime > max(rigged.stat().st_mtime, (ROOT / script).stat().st_mtime)):
+        job = {"style": style[len(prefix):], "params": hp, "sides": sides, "out": str(glb), "work": str(d), "character": str(rigged),
+               "names": {n: LM.bone_names(n) for n in ("mixamo", "godot")}, "mask": str(mask)}
+        (d / f"{style}{tag}.job.json").write_text(json.dumps(job, ensure_ascii=False), encoding="utf-8")
+        blender = cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe"
+        r = subprocess.run([blender, "-b", "--factory-startup", "-P", str(ROOT / script), "--", str(d / f"{style}{tag}.job.json")],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=900,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        (d / f"{style}{tag}.log").write_text(r.stdout + r.stderr, encoding="utf-8")
+        if not any(x.startswith("ARMOUR_GEN_OK") for x in r.stdout.splitlines()):
+            bad = next((x[len("ARMOUR_GEN_FAIL "):] for x in r.stdout.splitlines() if x.startswith("ARMOUR_GEN_FAIL")), None)
+            return {"ok": False, "log": _t("ag.failed") + (bad or (r.stdout + r.stderr)[-1500:])}
+    return {"ok": True, "log": _t("ag.helmet_ready"),
+            "preview": {"glb": glb.resolve().as_posix(), "mask": mask.resolve().as_posix(), "v": int(glb.stat().st_mtime)}}
+
+
 def generate(cfg, req) -> dict:
     """The editor's request {rigged, item, piece, sides, params, mesh}: Blender finishes the piece, it is put on."""
     rigged = Path(req["rigged"])
@@ -128,16 +205,24 @@ def generate(cfg, req) -> dict:
     out = rigged.parent / f"{stem}_wear_{item}.glb"
     work = Path(cfg["work_dir"]) / "armour_gen" / f"{stem}_{item}"
     work.mkdir(parents=True, exist_ok=True)
-    (work / "mesh.json").write_text(json.dumps(req["mesh"]), encoding="utf-8")
-    sides = [s for s in req.get("sides") or [] if s in ("L", "R")] if PIECES[piece][5] == "limb" else []
+    made = MADE.get(piece)
+    if not made:
+        (work / "mesh.json").write_text(json.dumps(req["mesh"]), encoding="utf-8")
+    sides = [s for s in req.get("sides") or [] if s in ("L", "R")] if PIECES[piece][5] in ("limb", "joint", "glove") else []
     job = {"character": str(rigged), "out": str(work / "piece.glb"), "preview": str(work / "preview"), "work": str(work),
            "item": item, "names": {n: LM.bone_names(n) for n in ("mixamo", "godot")}, "piece": piece, "sides": sides,
            "mesh": str(work / "mesh.json"), "mask": str(work / "mask.json"), "wear": float(params.get("wear", .35)), "tex": int(params.get("tex", 1024)),
            "seed": int(params.get("seed", 1))}
+    if piece == "undercloth":
+        job["style"] = params.get("cloth_style")
+    if made:
+        style = params.get(piece) if params.get(piece) in made[1] else made[1][0]
+        job.update(style=style[len(made[2]):], params=made[3](params))
     (work / "job.json").write_text(json.dumps(job, ensure_ascii=False, indent=1), encoding="utf-8")
     blender = cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe"
     t = datetime.now()
-    r = subprocess.run([blender, "-b", "--factory-startup", "-P", str(ROOT / "blender_armour_gen.py"), "--", str(work / "job.json")],
+    script = made[0] if made else "blender_armour_gen.py"
+    r = subprocess.run([blender, "-b", "--factory-startup", "-P", str(ROOT / script), "--", str(work / "job.json")],
                        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=1800,
                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     (work / "blender.log").write_text(r.stdout + r.stderr, encoding="utf-8")
@@ -171,6 +256,15 @@ def handle(cfg, text):
     req = json.loads(text)
     if req.get("action") == "wardrobe":
         return LM.wear(cfg, text), None
+    if req.get("action") == "made_preview":   # answered in <stem>_helmet_<style>.wear.json
+        rigged = Path(req["rigged"])
+        try:
+            res = made_preview(cfg, req)
+        except Exception as e:  # noqa: BLE001
+            res = {"ok": False, "log": _t("lm.error", e)}
+        (rigged.parent / f"{LM._stem(rigged)}_helmet_{req.get('style')}.wear.json").write_text(
+            json.dumps({"id": req.get("id"), **res}, ensure_ascii=False), encoding="utf-8")
+        return res["log"], None
     rigged = Path(req["rigged"])
     item = re.sub(r"[^A-Za-z0-9_-]+", "_", req.get("item") or "").strip("_") or f"proc_{req.get('piece')}"
     try:
