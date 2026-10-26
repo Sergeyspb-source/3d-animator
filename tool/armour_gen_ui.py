@@ -37,14 +37,17 @@ PIECES = {"bracer": ("forearm", "hand", "forearm", ("Spine", "Hips", "Chest", "U
           "cuisse": ("upleg", "leg", "upleg", ("Arm", "Hand"), "upleg", "limb", (0, 60, 40, 100),
                      dict(t0=25, t1=85, sector=220, plates=3, straps=2, rigidity=.8)),
           "cuirass": ("hips", "neck", "spine1", ("Arm", "Hand"), "torso", "torso", (-10, 60, 40, 100),
-                      dict(t0=6, t1=100, sector=360, plates=2, straps=1, rigidity=.5, anatomy=0, waist=.6)),
+                      dict(t0=20, t1=100, sector=360, plates=2, straps=1, rigidity=.5, anatomy=0, waist=.9, gap=3, thickness=6)),
           "pauldron": ("arm", "forearm", "shoulder", ("Head", "Hand"), "pauldron", "limb", (-60, 0, 10, 80),
                        dict(t0=-30, t1=45, sector=200, plates=4, straps=0, rigidity=.4, cap=1.8)),
           "tassets": ("hips", "neck", "hips", ("Arm", "Hand"), "torso", "hips", (-80, 0, -10, 30),
                       dict(t0=-45, t1=10, sector=360, plates=4, straps=1, rigidity=.4, gap=16, splits=4, flare=.3)),
           "trousers": ("upleg", "foot", "upleg", ("Arm", "Hand"), "upleg", "legs", (-10, 30, 30, 100),
                        dict(t0=8, t1=92, straps=1, rigidity=.1, gap=3, thickness=5, relief=.6, surface="plain", material="cloth",
-                            loose=.3, folds=.3, cuffs=False, buckle=True))}
+                            loose=.3, folds=.3, cuffs=False, buckle=True)),
+          "brayette": ("upleg", "foot", "upleg", ("Arm", "Hand"), "upleg", "legs", (-10, 30, 4, 40),
+                       dict(t0=8, t1=8, straps=1, rigidity=.15, gap=4, thickness=6, relief=.4, surface="mail", material="iron", loose=.05,
+                            folds=0, cuffs=False, buckle=True, strap_width=25))}
 # «from» / «to» labels: a limb's along it, a torso piece's bottom and top, trousers' waist and leg length
 T_LABELS = {"limb": ("ag.from", "ag.to", "ag.from_info"), "torso": ("ag.bottom", "ag.top", "ag.bottom_info"),
             "cuirass": ("ag.bottom", "ag.neck_top", "ag.bottom_info"), "pauldron": ("ag.pauldron_from", "ag.sp_reach", "ag.pauldron_info"),
@@ -53,7 +56,15 @@ T_LABELS = {"limb": ("ag.from", "ag.to", "ag.from_info"), "torso": ("ag.bottom",
 PRESETS = {"iron": ((.34, .34, .35), .55, .55), "steel": ((.56, .58, .61), .35, .65),
            "bronze": ((.55, .36, .17), .42, .6), "leather": ((.30, .17, .09), .72, 0.0), "cloth": ((.25, .27, .3), .9, 0.0),
            "brass": ((.62, .46, .2), .35, .65), "gold": ((.83, .6, .24), .3, .7)}
-SURFACES = ("plates", "scales", "lamellar", "mail", "quilt", "plain")
+SURFACES = ("plates", "scales", "lamellar", "mail", "quilt", "plain", "splints", "brigandine")
+# the editor's choices with labels: where a cuirass opens, how an opening fastens, what goes over its shoulders, the
+# reference styles
+CHOICES = {"opening_labels": ("none", "left", "right", "back", "front"), "closure_labels": ("across", "lace", "round"),
+           "shoulder_labels": ("straps", "yoke", "none"),
+           "style_labels": ("leather", "steel", "mail", "splints", "covered", "plate_mail", "lamellar", "brigandine", "wool", "leather_tr",
+                            "mail_chausses", "plate_cuisses", "hidden_plate", "plate_and_mail", "compact", "extended", "carrier",
+                            "short_mail", "wrap_mail", "carrier_mail", "lames"),
+           "thigh_labels": ("none", "mail", "plate", "panels", "plate_mail"), "knee_labels": ("none", "patch", "cop")}
 
 
 def characters(cfg):
@@ -75,6 +86,24 @@ def saved(rigged: Path) -> list:
     return out
 
 
+def _kind(glb: Path):
+    """What a piece put on is: the procedural piece it was made as, or the body part it was fitted to («torso»...)."""
+    try:
+        fit = json.loads(glb.with_suffix(".fit.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return (fit.get("procedural") or {}).get("piece") or (fit.get("state") or {}).get("part")
+
+
+def worn(rigged: Path) -> list:
+    """Every piece put on the character so far (made here or fitted in «Armour»): [{item, glb, piece}] — the editor
+    shows them and fits a new piece over the ones ticked (under the ones that go over it: a cuirass over a skirt)."""
+    stem = LM._stem(rigged)
+    return [{"item": f.name[len(stem) + 6:-4], "glb": f.resolve().as_posix(), "v": int(f.stat().st_mtime), "piece": _kind(f),
+             "mask": f.with_suffix(".mask.json").resolve().as_posix() if f.with_suffix(".mask.json").exists() else None}
+            for f in sorted(rigged.parent.glob(f"{stem}_wear_*.glb")) if not f.name.endswith(".src.glb")]
+
+
 def editor_page(rigged: Path) -> str:
     page = i18n.fill(EDITOR.read_text(encoding="utf-8"))
     data = {"rigged": rigged.resolve().as_posix(), "rigged_v": int(rigged.stat().st_mtime), "stem": LM._stem(rigged),
@@ -83,7 +112,8 @@ def editor_page(rigged: Path) -> str:
                            "label": _t(f"ag.piece_{k}"), "tlabels": [_t(x) for x in T_LABELS.get(k, T_LABELS[v[5]])[:2]], "tinfo": _t(T_LABELS.get(k, T_LABELS[v[5]])[2])}
                        for k, v in PIECES.items()},
             "presets": PRESETS, "mat_labels": {k: _t(f"ag.mat_{k}") for k in PRESETS},
-            "surface_labels": {k: _t(f"ag.surf_{k}") for k in SURFACES}, "saved": saved(rigged)}
+            "surface_labels": {k: _t(f"ag.surf_{k}") for k in SURFACES}, "saved": saved(rigged), "worn": worn(rigged),
+            **{grp: {k: _t(f"ag.{grp.split('_')[0]}_{k}") for k in keys} for grp, keys in CHOICES.items()}}
     return page.replace("@@DATA@@", json.dumps(data, ensure_ascii=False).replace("</", "<\\/"))
 
 
@@ -102,7 +132,7 @@ def generate(cfg, req) -> dict:
     sides = [s for s in req.get("sides") or [] if s in ("L", "R")] if PIECES[piece][5] == "limb" else []
     job = {"character": str(rigged), "out": str(work / "piece.glb"), "preview": str(work / "preview"), "work": str(work),
            "item": item, "names": {n: LM.bone_names(n) for n in ("mixamo", "godot")}, "piece": piece, "sides": sides,
-           "mesh": str(work / "mesh.json"), "wear": float(params.get("wear", .35)), "tex": int(params.get("tex", 1024)),
+           "mesh": str(work / "mesh.json"), "mask": str(work / "mask.json"), "wear": float(params.get("wear", .35)), "tex": int(params.get("tex", 1024)),
            "seed": int(params.get("seed", 1))}
     (work / "job.json").write_text(json.dumps(job, ensure_ascii=False, indent=1), encoding="utf-8")
     blender = cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe"
@@ -117,17 +147,21 @@ def generate(cfg, req) -> dict:
         return {"ok": False, "log": _t("ag.failed") + (bad or (r.stdout + r.stderr)[-1500:])}
     info = json.loads(line.split(" ", 1)[1])
     shutil.copy2(work / "piece.glb", out)
+    if (work / "mask.json").exists():   # what of the body it hides: SF3DEquip.wear() takes it away while it is on
+        shutil.copy2(work / "mask.json", rigged.parent / f"{stem}_wear_{item}.mask.json")
     # the editor's list of pieces: a fit.json and a source next to the result (marked: it is changed here, not there)
     shutil.copy2(work / "piece.glb", rigged.parent / f"{stem}_wear_{item}.src.glb")
     (rigged.parent / f"{stem}_wear_{item}.fit.json").write_text(json.dumps(
         {"item": item, "src": f"{stem}_wear_{item}.src.glb", "saved": datetime.now().isoformat(timespec="seconds"),
          "procedural": {"piece": piece, "sides": sides, "params": params},
-         "state": {"part": PIECES[piece][4], "under": []}}, ensure_ascii=False, indent=1), encoding="utf-8")
+         "state": {"part": PIECES[piece][4], "under": [str(x) for x in req.get("under") or []]}}, ensure_ascii=False, indent=1),
+        encoding="utf-8")
     shots = [str(work / f"preview_{v}.png") for v in ("front", "side", "close") if (work / f"preview_{v}.png").exists()]
     msg = _t("ag.done", out.name, info["vertices"], ", ".join(info["bones"]), (datetime.now() - t).seconds)
     if info.get("over_clothes"):
         msg += "\n" + _t("ag.over_clothes")
-    return {"ok": True, "log": msg, "glb": out.resolve().as_posix(), "shots": shots}
+    mask = rigged.parent / f"{stem}_wear_{item}.mask.json"
+    return {"ok": True, "log": msg, "glb": out.resolve().as_posix(), "mask": mask.resolve().as_posix() if mask.exists() else None, "shots": shots}
 
 
 def handle(cfg, text):

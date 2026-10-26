@@ -9,6 +9,7 @@ import base64
 import glob
 import json
 import re
+import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -179,7 +180,7 @@ def _wear(cfg, req, rigged: Path, item: str, put_on: bool) -> dict:
            "placements": req["placements"], "offset": float(req.get("offset", 0.0)), "deforms": req.get("deforms", []),
            "conform": float(req.get("conform", 0.5)), "rigidity": float(req.get("rigidity", 0.8)), "wall": req.get("wall"),
            "rings": req.get("rings", []), "under": _under(rigged, item, req.get("under") or []),
-           "report": str(work / "report.json")}
+           "report": str(work / "report.json"), "mask": str(work / "mask.json")}
     (work / "job.json").write_text(json.dumps(job, ensure_ascii=False), encoding="utf-8")
     blender = cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe"
     r = subprocess.run([blender, "-b", "--factory-startup", "-P", str(ROOT / "blender_wear_fit.py"), "--", str(work / "job.json")],
@@ -190,6 +191,8 @@ def _wear(cfg, req, rigged: Path, item: str, put_on: bool) -> dict:
         return {"ok": False, "fit": entry,
                 "log": _t("lm.failed") + next((x for x in r.stdout.splitlines() if x.startswith("WEAR_FAIL")), (r.stdout + r.stderr)[-600:])}
     rep = json.loads(line.split(" ", 1)[1])
+    if (work / "mask.json").exists():   # what of the body it hides: SF3DEquip.wear() takes it away while it is on
+        shutil.copy2(work / "mask.json", rigged.parent / f"{stem}_wear_{item}.mask.json")
     equip = ROOT / "godot" / "sf3d_equip.gd"   # the folder goes into a Godot project as is: SF3DEquip.wear() puts it on
     if equip.exists():
         (rigged.parent / equip.name).write_bytes(equip.read_bytes())
@@ -334,7 +337,10 @@ def wardrobe(cfg, rigged: Path) -> dict:
     proj.mkdir(parents=True, exist_ok=True)
     model = _animated_model(cfg, rigged, proj)
     files = {"character.glb": model, **{f"wear_{p.name[len(stem) + 6:]}": p for p in pieces}}
-    for old in proj.glob("wear_*.glb"):   # a piece taken off since the last time
+    for p in pieces:   # what of the body each one hides: SF3DEquip.wear() reads it beside the piece
+        if p.with_suffix(".mask.json").exists():
+            files[f"wear_{p.name[len(stem) + 6:-4]}.mask.json"] = p.with_suffix(".mask.json")
+    for old in [*proj.glob("wear_*.glb"), *proj.glob("wear_*.mask.json")]:   # a piece taken off since the last time
         if old.name not in files:
             old.unlink()
             Path(str(old) + ".import").unlink(missing_ok=True)
@@ -356,7 +362,7 @@ run/main_scene="res://wardrobe.tscn"
 window/size/viewport_width=1280
 window/size/viewport_height=800
 """, encoding="utf-8")
-    names = [n for n in files if n.startswith("wear_")]
+    names = [n for n in files if n.startswith("wear_") and n.endswith(".glb")]
     ext = "\n".join(f'[ext_resource type="PackedScene" path="res://{n}" id="{i + 3}"]' for i, n in enumerate(names))
     (proj / "wardrobe.tscn").write_text(f"""[gd_scene load_steps={len(names) + 3} format=3]
 

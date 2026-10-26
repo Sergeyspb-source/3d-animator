@@ -139,7 +139,7 @@ func _ui() -> void:
 		var cb := CheckBox.new()
 		cb.text = name
 		cb.button_pressed = true
-		cb.toggled.connect(func(on): for mi in _worn[name]: mi.visible = on)
+		cb.toggled.connect(func(on): Equip.show(_worn[name], on))
 		box.add_child(cb)
 	box.add_child(_label("{{js:gd.mouse_hint}}"))
 

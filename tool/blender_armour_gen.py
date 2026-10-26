@@ -341,6 +341,10 @@ if pv:
         sc.render.filepath = f"{pv}_{vn}.png"
         bpy.ops.render.render(write_still=True)
 
+if job.get("mask"):   # what of the body the piece hides (the game takes it away while it is on: body_mask.py)
+    from body_mask import body_mask
+    Path(job["mask"]).write_text(json.dumps(body_mask(body, [obj])), encoding="utf-8")
+
 for o in list(bpy.data.objects):   # the skeleton and the piece only
     if o.type == "MESH" and o is not obj:
         bpy.data.objects.remove(o, do_unlink=True)

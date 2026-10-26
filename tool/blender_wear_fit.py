@@ -702,6 +702,10 @@ for pl in job["placements"]:
     report[o.name] = rep
 bpy.data.objects.remove(src, do_unlink=True)
 
+if job.get("mask"):   # what of the body the pieces hide (the game takes it away while they are on: body_mask.py)
+    from body_mask import body_mask
+    Path(job["mask"]).write_text(json.dumps(body_mask(body, pieces)), encoding="utf-8")
+
 # export the skeleton and the pieces only
 for o in list(bpy.data.objects):
     if o.type == "MESH" and o not in pieces:
