@@ -155,7 +155,7 @@ A «Helmet» is not made of the skin: it is one of six constructions of the helm
 
 ![Under the armour on the goblin: linen shirt, short aketon, long gambeson, arming doublet, doublet with mail voiders; quilted vest, braies, long braies, the gambeson from the side](docs/images/procedural_undercloth.jpg)
 
-![Breastplates: anatomical, scales, lamellar, mail; a skirt of tassets; loose trousers with cuffs](docs/images/procedural_surfaces.jpg)
+![Breastplates: anatomical, scales, lamellar; mail, brigandine, plate over mail](docs/images/procedural_surfaces.jpg)
 
 ![Plate: a breastplate up to the neck with armholes; with spaulders, lames, gold trim and mail under; the same baked; a pauldron alone](docs/images/procedural_cuirass.jpg)
 
@@ -163,7 +163,7 @@ A «Helmet» is not made of the skin: it is one of six constructions of the helm
 
 ![The procedural editor: the plate breastplate made over a whole set (an arming doublet, a mail skirt, steel arms and legs), arms up](docs/images/procedural_editor.jpg)
 
-The piece is put on next to the character like one fitted in «Armour», so the Godot fitting room and the editor's other pieces have it. It fits by construction, needs no fitting, and a whole set comes out in one style, each piece made over the ones under it (the steel arms over the doublet's sleeves). It works on other bodies too: on the right, a sallet on a fairy.
+The piece is put on next to the character like one fitted in «Armour», so the Godot fitting room and the editor's other pieces have it. It fits by construction, needs no fitting, and a whole set comes out in one style, each piece made over the ones under it (the steel arms over the doublet's sleeves). It works on other bodies too: on the right, a sallet on a fairy. It can still be corrected by hand: in «Armour» any of them (helmets, elbows, footwear, gloves and clothes too) opens as made, part «The piece as made»: moved, turned and sized with the gizmo, reshaped with points, openings and the wall thickness; «Put on» keeps its own weights and what its mask hides (the ears under a helmet). Generating it again replaces the corrections.
 
 ![A whole procedural set in the Godot fitting room from the front, the side and the back: an armet, a plate breastplate with pauldrons over an arming doublet, a mail skirt, steel arms and legs, hourglass gauntlets, sabatons; a sallet on a fairy](docs/images/procedural_pieces.jpg)
 

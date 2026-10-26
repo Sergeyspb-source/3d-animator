@@ -137,8 +137,12 @@ def _save_fit(rigged: Path, item: str, piece: bytes, state) -> dict:
     src = rigged.parent / f"{stem}_wear_{item}.src.glb"
     fit = rigged.parent / f"{stem}_wear_{item}.fit.json"
     src.write_bytes(piece)
+    try:   # a piece made in «Equipment: procedural» and corrected here keeps its parameters (it opens there again)
+        made = json.loads(fit.read_text(encoding="utf-8")).get("procedural") if fit.exists() else None
+    except (OSError, ValueError):
+        made = None
     fit.write_text(json.dumps({"item": item, "src": src.name, "saved": datetime.now().isoformat(timespec="seconds"),
-                               "state": state}, ensure_ascii=False, indent=1), encoding="utf-8")
+                               **({"procedural": made} if made else {}), "state": state}, ensure_ascii=False, indent=1), encoding="utf-8")
     return _fit_entry(fit)
 
 
@@ -151,7 +155,7 @@ def _fit_entry(fit: Path) -> dict:
             "src": fit.with_name(base + ".src.glb").resolve().as_posix(), "glb": glb.resolve().as_posix() if glb.exists() else None,
             "under": (saved.get("state") or {}).get("under") or [],   # the pieces it was put on over
             "part": (saved.get("state") or {}).get("part"),
-            "procedural": bool(saved.get("procedural"))}   # made in «Equipment: procedural» (not reopened in the editor)
+            "procedural": bool(saved.get("procedural"))}   # made in «Equipment: procedural»: opened as made (its own weights)
 
 
 def saved_fits(rigged: Path) -> list:
@@ -176,7 +180,12 @@ def _wear(cfg, req, rigged: Path, item: str, put_on: bool) -> dict:
     piece = work / "piece.glb"
     piece.write_bytes(piece_bytes)
     out = rigged.parent / f"{stem}_wear_{item}.glb"
-    job = {"character": str(rigged), "armour": str(clean_glb(piece)), "out": str(out), "item": item,
+    keep = bool(req.get("keep_weights"))   # a procedural piece corrected by hand: its own skin, weights and mask stay
+    mask_keep = rigged.parent / f"{stem}_wear_{item}.mask.json"
+    if keep and mask_keep.exists():   # what it hid as made (ears under a helmet...): kept aside, the new one adds to it
+        shutil.copy2(mask_keep, work / "mask_made.json")
+    job = {"character": str(rigged), "armour": str(piece if keep else clean_glb(piece)), "out": str(out), "item": item,
+           "keep_weights": keep, "mask_keep": str(work / "mask_made.json") if keep else None,
            "placements": req["placements"], "offset": float(req.get("offset", 0.0)), "deforms": req.get("deforms", []),
            "conform": float(req.get("conform", 0.5)), "rigidity": float(req.get("rigidity", 0.8)), "wall": req.get("wall"),
            "rings": req.get("rings", []), "under": _under(rigged, item, req.get("under") or []),

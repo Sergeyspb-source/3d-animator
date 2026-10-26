@@ -12,6 +12,9 @@ job.json: {"character": rigged.glb, "armour": piece.glb, "out": out.glb, "item":
            "wall": {"k": wall thickness factor, "mid", "axis": the piece's tube axis in its own space},
            "rings": [{"c", "n", "r", "s", "b"}: openings drawn in, piece space],
            "under": [fitted.glb, ...]: pieces already put on that this one goes over,
+           "keep_weights": true (a piece made in «Equipment: procedural», corrected by hand: it keeps its own weights,
+                           is not fitted or pushed again, only moved and reshaped as the editor shows it),
+           "mask_keep": its own mask.json (what it hid as made: ears under a helmet, hair under a coif) added to the new one,
            "report": path.json}
 
 The editor (landmark_editor.html, mode «Броня») already placed each copy: along the limb between its joints, sized
@@ -44,6 +47,7 @@ from i18n import t as _t
 
 job = json.loads(Path(sys.argv[sys.argv.index("--") + 1]).read_text(encoding="utf-8"))
 report = {}
+KEEP = bool(job.get("keep_weights"))
 
 
 def fail(msg):
@@ -80,7 +84,8 @@ for o in src_meshes:
     o.data = o.data.copy()
     o.data.transform(mw)
     o.matrix_world = Matrix()
-    o.vertex_groups.clear()
+    if not KEEP:
+        o.vertex_groups.clear()
     if o.data.shape_keys:
         o.shape_key_clear()
 new_names = [o.name for o in new]   # the join removes objects: keep names, not references
@@ -667,7 +672,12 @@ for pl in job["placements"]:
     bpy.context.scene.collection.objects.link(o)
     rep = {"vertices": len(me.vertices)}
     limb = None
-    if pl.get("limb"):
+    if KEEP:   # its own weights: the mesh's groups by the same names, in the same order
+        for g in src.vertex_groups:
+            o.vertex_groups.new(name=g.name)
+        used = {g.group for v in me.vertices for g in v.groups if g.weight > 1e-3}
+        rep["bones"] = [g.name for g in o.vertex_groups if g.index in used]
+    elif pl.get("limb"):
         limb = Limb((CONV @ Vector(pl["limb"]["a"]).to_4d()).to_3d(), (CONV @ Vector(pl["limb"]["b"]).to_4d()).to_3d())
         tight = [(CONV @ Vector(p).to_4d()).to_3d() for p in pl.get("tight") or []]   # glTF -> Blender
         rep.update(fit_limb(me, limb, tight, ("Arm", "Hand") if tight else (), pl.get("follow") != "down"))
@@ -681,12 +691,16 @@ for pl in job["placements"]:
             rep["inside_under"] = push_out(me, .3 * size, cap_under_need(J, float(pl.get("r", .1 * size))), rigid=True)
     me.update()
     radius = 0.0
-    if limb:   # about half the limb's thickness: the piece bends smoothly, never vertex by vertex
+    if KEEP:
+        pass
+    elif limb:   # about half the limb's thickness: the piece bends smoothly, never vertex by vertex
         rs = sorted(limb.cyl(v.co)[2].length for v in me.vertices)
         radius = min(.5 * rs[len(rs) // 2], .25 * limb.len)
     else:      # by the skeleton: a tenth of the piece, so a boot still bends at the ankle
         radius = .1 * size
-    if pl.get("weights"):   # the same weights for every vertex (a pauldron: between the collarbone and the arm)
+    if KEEP:
+        pass
+    elif pl.get("weights"):   # the same weights for every vertex (a pauldron: between the collarbone and the arm)
         ws = {n: w for n, w in pl["weights"].items() if n in arm.data.bones and w > 1e-3}
         tot = sum(ws.values()) or 1.0
         for n, w in ws.items():
@@ -704,7 +718,10 @@ bpy.data.objects.remove(src, do_unlink=True)
 
 if job.get("mask"):   # what of the body the pieces hide (the game takes it away while they are on: body_mask.py)
     from body_mask import body_mask
-    Path(job["mask"]).write_text(json.dumps(body_mask(body, pieces)), encoding="utf-8")
+    keys = {tuple(x) for x in body_mask(body, pieces)}
+    if job.get("mask_keep") and Path(job["mask_keep"]).exists():
+        keys |= {tuple(x) for x in json.loads(Path(job["mask_keep"]).read_text(encoding="utf-8"))}
+    Path(job["mask"]).write_text(json.dumps([list(x) for x in sorted(keys)]), encoding="utf-8")
 
 # export the skeleton and the pieces only
 for o in list(bpy.data.objects):

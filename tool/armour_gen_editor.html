@@ -1200,17 +1200,19 @@ function glove(side, p) {
 // or laced, arming points at the shoulders, the arms and the hem, mail voiders at the armpits. Braies are loose
 // trousers, a padded coif a bag round the head
 const GARMENTS = {
-  // top: where the body ends and the skirt goes on (along the torso from the hips: 0 the hips, 1 the neck); hem: the
-  // skirt's bottom (null: none); waist: the body in with the waist (0: straight down from the chest); ease: how loose
-  // (in the limbs' radii, over the gap); open: the front fastened with 'ties' or 'lace'; collar: a standing collar's
-  // height (along the neck); slits: [angle from the front (deg), depth (of the skirt's length), half width (deg)]
-  shirt: { top: .1, hem: -.5, waist: 0, ease: .12, flare: .25, folds: .15, sleeves: true, neckTie: true, slits: [[90, .35, 6], [-90, .35, 6]] },
-  aketon: { top: .12, hem: -.36, waist: .35, ease: .08, flare: .2, folds: .1, sleeves: true, open: 'ties', ties: 5, collar: .3, cuffTies: true,
-    slits: [[90, .4, 6], [-90, .4, 6]] },
-  gambeson: { top: .1, hem: -.62, waist: .6, ease: .08, flare: .7, folds: .2, sleeves: true, open: 'ties', ties: 6, collar: .35, slits: [[180, .45, 6]] },
-  doublet: { top: -.04, hem: null, waist: 1, ease: .05, sleeves: true, open: 'lace', collar: .35, points: true },
-  voider: { top: -.04, hem: null, waist: 1, ease: .05, sleeves: true, open: 'lace', collar: .35, points: true, voiders: true },
-  vest: { top: .16, hem: -.16, waist: .8, ease: .06, flare: .6, folds: .1, sleeves: false, open: 'ties', ties: 5, collar: .3, slits: [[90, .8, 6], [-90, .8, 6]] },
+  // top: where the body ends and the skirt goes on (along the torso from the hips: 0 the hips, 1 the neck); hem: how far
+  // the skirt comes down the thigh from the crotch, as a share of the thigh's length (the legs' own: a goblin's short
+  // ones get a short skirt, not a dress; negative: above the crotch; null: none); waist: the body in with the waist (0:
+  // straight down from the chest); ease: how loose (in the limbs' radii, over the gap); open: the front fastened with
+  // 'ties' or 'lace'; collar: a standing collar's height (along the neck); slits: [angle from the front (deg), depth (of
+  // the skirt's length), half width (deg)]
+  shirt: { top: .02, hem: .25, waist: .6, ease: .06, flare: .08, folds: .1, sleeves: true, neckTie: true, slits: [[90, .45, 6], [-90, .45, 6]] },
+  aketon: { top: .02, hem: .12, waist: .8, ease: .05, flare: .06, folds: .05, sleeves: true, open: 'ties', ties: 5, collar: .3, cuffTies: true,
+    slits: [[90, .5, 6], [-90, .5, 6]] },
+  gambeson: { top: .02, hem: .4, waist: .85, ease: .05, flare: .3, folds: .1, sleeves: true, open: 'ties', ties: 6, collar: .35, slits: [[180, .5, 6]] },
+  doublet: { top: -.04, hem: null, waist: 1, ease: .04, sleeves: true, open: 'lace', collar: .35, points: true },
+  voider: { top: -.04, hem: null, waist: 1, ease: .04, sleeves: true, open: 'lace', collar: .35, points: true, voiders: true },
+  vest: { top: .14, hem: -.05, waist: .85, ease: .05, flare: .4, folds: .05, sleeves: false, open: 'ties', ties: 5, collar: .3, slits: [[90, .7, 6], [-90, .7, 6]] },
 };
 // a bow (a tie, an arming point): a knot, two loops and two ends hanging, s its size, on the surface at c (normal n)
 function bow(acc, c, n, up, s, face) {
@@ -1227,14 +1229,14 @@ const bowOn = (acc, sh, t, a, s, down) => { prepShell(sh); bow(acc, pt(sh, t, a,
 // the direction d round a limb's axis, as its angle
 const angAt = (limb, d) => limb.angOf(d.clone().addScaledVector(limb.u, -d.dot(limb.u)).normalize());
 function sleeve(p, G, s, thick) {   // round the upper arm from the shoulder over the elbow, round the forearm to the wrist
-  const acc = new Acc(), gap = p.gap + G.ease, sf = { ...p, surface: p.cloth_quilt ? 'quilt' : 'plain' };
+  const acc = new Acc(), gap = p.gap + .7 * G.ease, sf = { ...p, surface: p.cloth_quilt ? 'quilt' : 'plain' };
   const { limb: ul } = limbOf('rerebrace', s), PU = profile('sleeve_up' + s, ul, -.2, 1.08, { foreign: PIECES.rerebrace.foreign, limbOnly: true });
   PU.shell(gap, .3);
   acc.w = weigher('limb', PB['arm_' + s], p.rigidity);
-  // wider at its top, most under the arm: over the armhole's edge, which turns in under it (the armpit's folds)
+  // a little wider at its top, most under the arm: over the armhole's edge, which turns in under it (the armpit's folds)
   const upA = angAt(ul, UP), under = (a) => (1 - Math.cos(a - upA)) / 2;
   const up = { limb: ul, P: PU, ta: -.2, tb: 1.08, top: 'a', arcs: arcsOf(0, 360, 0), R: PU.R, thick,
-    r: (t, a) => PU.rIn(t, a) + .3 * PU.R * smooth(.3, -.1, t) * (.4 + .6 * under(a)) };
+    r: (t, a) => PU.rIn(t, a) + .18 * PU.R * smooth(.15, -.1, t) * (.4 + .6 * under(a)) };
   surface(acc, up, sf);
   const { limb: fl } = limbOf('bracer', s), PF = profile('sleeve_lo' + s, fl, -.08, .97, { foreign: PIECES.bracer.foreign, limbOnly: true });
   PF.shell(gap, .3);
@@ -1279,7 +1281,11 @@ function garment(p, G) {
   const [body] = buildPiece('cuirass', ['C'], { ...q, t0: G.top, waist: G.waist, sector: 360, opening: G.open ? 'front' : 'none',
     closure: G.open || 'across', ties: G.ties || 0, shoulders: 'yoke', neckline: G.collar ? .03 : .08, armhole: 30, relief: .3, neck_tie: !!G.neckTie });
   const out = [body], thick = body.thick;
-  if (G.hem !== null) out.push(...buildPiece('tassets', ['C'], { ...q, t0: G.hem, t1: G.top + .05, splits: 0, sector: 360, flare: G.flare, folds: G.folds,
+  // the hem from the crotch (straight down from the hips) and the thigh's length, along the torso
+  const { limb: tl } = limbOf('cuirass', 'C'), down = cast(tl.a, tl.u.clone().negate(), tl.len), tcr = down ? -down.distance / tl.len : -.12;
+  const thighs = ['L', 'R'].filter((s) => PB['upleg_' + s] && PB['leg_' + s]).map((s) => joint('upleg_' + s).distanceTo(joint('leg_' + s)));
+  const thigh = (thighs.length ? thighs.reduce((x, y) => x + y) / thighs.length : .25 * HEIGHT) / tl.len;
+  if (G.hem !== null) out.push(...buildPiece('tassets', ['C'], { ...q, t0: Math.min(tcr - G.hem * thigh, G.top - .1), t1: G.top + .05, splits: 0, sector: 360, flare: G.flare, folds: G.folds,
     wrap: false, front_panel: false, hem_band: false, relief: .95, rigidity: .1, floor: (a) => body.ring(G.top, a), tuck: G.top,
     skirt_open: G.open ? D(2) : 0, slits: (G.slits || []).map(([a, d, w]) => [D(a), d, D(w)]) }));
   if (G.points) {   // at the hem, for the leg harness

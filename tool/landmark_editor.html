@@ -27,6 +27,7 @@
   .wearpanel button.on { background:var(--accent); color:var(--accent-fg); }
   .wearpanel .small { color:var(--muted); font-size:12px; }
   .wearpanel.skel .limbonly { display:none; }
+  .wearpanel.ready .limbonly:not(.manual), .wearpanel.ready .notready { display:none; }
   body.wear #mWear { background:var(--accent); color:var(--accent-fg); }
   .stage { position:relative; flex:1; background:var(--stage); border:1px solid var(--line); border-radius:10px; overflow:hidden; min-height:320px; }
   /* tool bar over the stage: view and display, then the pose check */
@@ -153,31 +154,32 @@
         <option value="boot">{{ed.boot_stands_upright_the_shaft_on_the}}</option>
         <option value="pauldron">{{ed.pauldron}}</option>
         <option value="torso">{{ed.torso_breastplate}}</option><option value="head">{{ed.head_helmet}}</option>
-        <option value="skeleton">{{ed.the_whole_piece_by_its_own_skeleton}}</option></select></label>
-      <label>{{ed.side_2}} <select id="wSide"><option value="L">{{ed.left_on_the_right_of_the_screen}}</option><option value="R">{{ed.right_on_the_left_of_the_screen}}</option></select></label>
-      <label class="chk"><input type="checkbox" id="wMirror" checked> {{ed.mirror_onto_the_other_side}}</label>
+        <option value="skeleton">{{ed.the_whole_piece_by_its_own_skeleton}}</option>
+        <option value="ready">{{ed.ready_piece}}</option></select></label>
+      <label class="notready">{{ed.side_2}} <select id="wSide"><option value="L">{{ed.left_on_the_right_of_the_screen}}</option><option value="R">{{ed.right_on_the_left_of_the_screen}}</option></select></label>
+      <label class="chk notready"><input type="checkbox" id="wMirror" checked> {{ed.mirror_onto_the_other_side}}</label>
       <label class="limbonly">{{ed.position_along}} <input type="range" id="wPos" min="-0.3" max="1.2" step="0.01"></label>
       <label class="limbonly">{{ed.length}} <input type="range" id="wLen" min="0.5" max="2" step="0.01" value="1"></label>
       <label class="limbonly" title="{{ed.scale_across_the_arm_the_whole_piece}}">{{ed.girth}} <input type="range" id="wThick" min="0.6" max="1.6" step="0.01" value="1"></label>
-      <label class="limbonly" title="{{ed.the_thickness_of_the_armour_itself}}">{{ed.wall_thickness}} <input type="range" id="wWall" min="0.3" max="1.6" step="0.01" value="1"></label>
+      <label class="limbonly manual" title="{{ed.the_thickness_of_the_armour_itself}}">{{ed.wall_thickness}} <input type="range" id="wWall" min="0.3" max="1.6" step="0.01" value="1"></label>
       <label class="limbonly">{{ed.twist_about_the_axis}} <input type="range" id="wTwist" min="-180" max="180" step="1" value="0"></label>
-      <label>{{ed.gap_to_the_skin}} <input type="range" id="wGap" min="0" max="0.3" step="0.01" value="0.04"></label>
+      <label class="notready">{{ed.gap_to_the_skin}} <input type="range" id="wGap" min="0" max="0.3" step="0.01" value="0.04"></label>
       <label class="limbonly" title="{{ed.0_the_piece_s_shape_as_it_is_pushed}}">{{ed.fit_to_the_body}} <input type="range" id="wConform" min="0" max="1" step="0.05" value="0.5"></label>
       <label class="limbonly" title="{{ed.1_the_piece_moves_with_the_bone_and}}"><span id="wRigidName">{{ed.rigidity}}</span> <input type="range" id="wRigid" min="0" max="1" step="0.05" value="0.8"></label>
       <label class="chk limbonly" title="{{ed.nodes_of_the_inner_wall_red_under}}"><input type="checkbox" id="wInside" checked> {{ed.fit_nodes}}</label>
       <div class="small limbonly" id="wInfo"></div>
-      <div class="row limbonly"><button id="wMove" title="{{ed.arrows_on_the_piece_move_g}}">{{ed.move}}</button><button id="wRot" title="{{ed.rotate_about_the_middle_of_the_bone}}">{{ed.rotate}}</button><button id="wScale" title="{{ed.size_the_green_axis_is_the_length}}">{{ed.size}}</button></div>
-      <div class="row limbonly"><button id="wPoints" title="{{ed.a_click_on_the_piece_places_a_point}}">{{ed.points}}</button><button id="wDel" title="{{ed.remove_the_selected_point_delete}}">{{ed.remove}}</button><button id="wDelAll" title="{{ed.remove_all_points_the_piece_returns}}">{{ed.remove_all}}</button></div>
-      <div class="row limbonly"><button id="wRing" title="{{ed.click_on_the_edge_of_an_opening_arm}}">{{ed.opening}}</button><button id="wRingDel" title="{{ed.remove_the_selected_opening}}">{{ed.remove_the_opening}}</button></div>
-      <label class="limbonly" title="{{ed.draws_the_edge_of_the_selected}}">{{ed.narrow_the_opening}} <input type="range" id="wRingS" min="0" max="0.6" step="0.01" value="0"></label>
-      <label class="limbonly" title="{{ed.how_far_around_the_edge_the_armour}}">{{ed.edge_width}} <input type="range" id="wRingB" min="0.2" max="1.5" step="0.05" value="0.6"></label>
-      <label class="chk limbonly"><input type="checkbox" id="wRingSym" checked> {{ed.and_the_symmetric_opening}}</label>
+      <div class="row limbonly manual"><button id="wMove" title="{{ed.arrows_on_the_piece_move_g}}">{{ed.move}}</button><button id="wRot" title="{{ed.rotate_about_the_middle_of_the_bone}}">{{ed.rotate}}</button><button id="wScale" title="{{ed.size_the_green_axis_is_the_length}}">{{ed.size}}</button></div>
+      <div class="row limbonly manual"><button id="wPoints" title="{{ed.a_click_on_the_piece_places_a_point}}">{{ed.points}}</button><button id="wDel" title="{{ed.remove_the_selected_point_delete}}">{{ed.remove}}</button><button id="wDelAll" title="{{ed.remove_all_points_the_piece_returns}}">{{ed.remove_all}}</button></div>
+      <div class="row limbonly manual"><button id="wRing" title="{{ed.click_on_the_edge_of_an_opening_arm}}">{{ed.opening}}</button><button id="wRingDel" title="{{ed.remove_the_selected_opening}}">{{ed.remove_the_opening}}</button></div>
+      <label class="limbonly manual" title="{{ed.draws_the_edge_of_the_selected}}">{{ed.narrow_the_opening}} <input type="range" id="wRingS" min="0" max="0.6" step="0.01" value="0"></label>
+      <label class="limbonly manual" title="{{ed.how_far_around_the_edge_the_armour}}">{{ed.edge_width}} <input type="range" id="wRingB" min="0.2" max="1.5" step="0.05" value="0.6"></label>
+      <label class="chk limbonly manual"><input type="checkbox" id="wRingSym" checked> {{ed.and_the_symmetric_opening}}</label>
       <div class="row limbonly"><select id="wOpenEnd" title="{{ed.which_end_of_the_piece_is_closed_on}}">
         <option value="bottom">{{ed.lower_end}}</option><option value="top">{{ed.upper_end}}</option><option value="both">{{ed.both_ends}}</option></select>
         <button id="wHollow" title="{{ed.a_generated_piece_is_sometimes}}">{{ed.open_up}}</button></div>
       <div class="row limbonly"><button id="wRepaint" title="{{ed.hunyuan3d_paint_paints_the_texture}}">{{ed.repaint_for_the_shape}}</button></div>
       <label class="limbonly" title="{{ed.the_front_view_the_piece_was_made}}">{{ed.piece_picture}} <input type="file" id="wRef" accept="image/*"></label>
-      <label class="limbonly">{{ed.point_radius}} <input type="range" id="wRad" min="0.05" max="1" step="0.01" value="0.25"></label>
+      <label class="limbonly manual">{{ed.point_radius}} <input type="range" id="wRad" min="0.05" max="1" step="0.01" value="0.25"></label>
       <div class="row limbonly"><button id="wFit" title="{{ed.find_the_position_tilt_thickness_and}}">{{ed.fit_to_the_skin}}</button></div>
       <div id="wUnderBox" class="limbonly" hidden title="{{ed.under_hint}}"><div class="sub">{{ed.goes_over}}</div><div id="wUnder"></div></div>
       <div class="row"><button id="wReset">{{ed.reset}}</button><button id="wSave" title="{{ed.save_the_fitting_next_to_the}}">{{ed.save}}</button><button id="wApply" class="primary" title="{{ed.fit_in_blender_and_save}}">{{ed.put_on}}</button></div>
@@ -2575,6 +2577,11 @@ function wearRetargetAll() {   // every copy: its side, mirrored when the piece 
   if ($('wMirror').checked) wear.rgeo[od] = wearRetarget(od !== wear.skel.side);
 }
 const isSkelMode = () => $('wPart').value === 'skeleton';
+// a piece made in «Equipment: procedural» (or by its generators), opened as it was made: already on this character with
+// its own weights; moved, turned, sized as a whole, reshaped by points, openings and its wall, then Blender keeps its
+// weights and mask (blender_wear_fit.py keep_weights)
+const isReady = () => $('wPart').value === 'ready';
+const pointUnit = () => (isReady() ? .25 * H : wear.pca.L);   // a point's radius: of the piece (a pair of gloves is wide)
 function wearSkelBones() {   // the character's bones the piece follows (Blender takes the weights only from them)
   const used = new Set(), names = new Map();
   for (const tbl of Object.values(DATA.names || {})) for (const n of Object.values(tbl)) names.set(THREE.PropertyBinding.sanitizeNodeName(n), n);
@@ -2594,6 +2601,13 @@ async function wearExport() {   // the copies as shown, as one GLB (plain meshes
 const wv = (id) => +$(id).value;
 function wearAuto() {
   $('wearPanel').classList.toggle('skel', isSkelMode());
+  $('wearPanel').classList.toggle('ready', isReady());
+  if (isReady()) {   // where it is; the gizmo about its middle, in the world's frame
+    const box = new THREE.Box3(); for (const p of wear.parts) { p.geo.computeBoundingBox(); box.union(p.geo.boundingBox); }
+    wear.fit = {}; wear.off = new V3(); wear.q0 = new Q(); wear.mid = box.getCenter(new V3());
+    wearHelper.quaternion.identity(); wearHelper.scale.set(1, 1, 1); $('wWall').value = 1; tcW.detach(); wearDeform();
+    return true;
+  }
   if (isSkelMode()) {
     if (!wear.skel) { $('wStatus').textContent = '{{js:ed.the_piece_has_no_skeleton_of_its_own}}'; return false; }
     wear.fit = {}; wear.off = new V3(); tcW.detach(); wearRetargetAll(); return true;
@@ -2711,6 +2725,11 @@ function wearPlacement(L) {   // armour space -> world, from the sliders (withou
 }
 function wearMatrices() {   // [{side, M, M0, L}]: every copy (M0 as placed, M with its fit by the skin) and its limb
   const part = $('wPart').value, sd = $('wSide').value;
+  if (part === 'ready') {   // as made, with the gizmo's move, turn and size about its middle
+    const mid = wear.mid, h = mid.clone().add(wear.off || new V3());
+    const E = new THREE.Matrix4().compose(h, wearHelper.quaternion, wearHelper.scale).multiply(new THREE.Matrix4().makeTranslation(-mid.x, -mid.y, -mid.z));
+    return [{ side: 'C', M: E, M0: E, L: null }];
+  }
   if (part === 'skeleton') {   // already on the character: geometries per copy, no limb
     if (!wear.rgeo) return [];
     return Object.entries(wear.rgeo).map(([side, geos]) => ({ side, M: new THREE.Matrix4(), M0: new THREE.Matrix4(), L: null, geos }));
@@ -2751,7 +2770,7 @@ function wearDraw() {
   wearGroup.updateMatrixWorld(true);
   if (!tcW.dragging && wear.mid) wearHelper.position.copy(wear.mid.clone().add(wear.off || new V3()));
   const r = .011 * H / Math.max(1, camera.zoom);   // the surface points, on every copy
-  for (const { M, L } of mats) if (L) wear.handles.forEach((hd, i) => {
+  for (const { M, L } of mats) if (L || isReady()) wear.handles.forEach((hd, i) => {
     const sp = new THREE.Mesh(sphereGeo, i === wear.sel ? COL.sel : COL.bad); sp.scale.setScalar(r); sp.renderOrder = 999;
     sp.position.copy(hd.p.clone().add(hd.d).applyMatrix4(M)); wearGroup.add(sp);
   });
@@ -2853,7 +2872,7 @@ function ringDraw(mats) {   // the rim points and the fitted circles, on every c
   (wear.rings || []).forEach((g, gi) => {
     const f = ringFit(g.pts);
     for (const { M, L } of mats) {
-      if (!L) continue;
+      if (!L && !isReady()) continue;
       for (const p of g.pts) {
         const sp = new THREE.Mesh(sphereGeo, gi === wear.ringSel ? COL.sel : COL.derived); sp.scale.setScalar(r); sp.renderOrder = 999;
         sp.position.copy(p.clone().applyMatrix4(M)); wearGroup.add(sp);
@@ -2887,14 +2906,14 @@ function wearPick(e) {   // a click on the first copy: an existing point (by scr
   const hit = r.intersectObjects(copies, true)[0]; if (!hit) { $('wStatus').textContent = '{{js:ed.missed_the_piece_click_on_the_armour}}'; return; }
   let g = hit.object; while (g.parent && g.parent !== wearGroup) g = g.parent;
   const loc = hit.point.clone().applyMatrix4(g.matrix.clone().invert()), copy = copies.indexOf(g);
-  wear.handles.push({ p: loc, d: new V3(), r: +$('wRad').value * wear.pca.L });
+  wear.handles.push({ p: loc, d: new V3(), r: +$('wRad').value * pointUnit() });
   wearSelect(wear.handles.length - 1, copy);
   $('wStatus').textContent = `{{raw:ed.point_placed_yellow_drag_its_arrows}}`;
 }
 function wearSelect(i, copy = wear.selCopy || 0) {
   wear.sel = i; wear.selCopy = copy; for (const id of ['wMove', 'wRot', 'wScale']) $(id).classList.remove('on');
   if (i >= 0) {
-    const h = wear.handles[i]; $('wRad').value = h.r / wear.pca.L;
+    const h = wear.handles[i]; $('wRad').value = h.r / pointUnit();
     wearPoint.position.copy(h.p.clone().add(h.d).applyMatrix4(wearCopyM())); wearPoint.quaternion.copy(wearHelper.quaternion);
     tcW.setMode('translate'); tcW.attach(wearPoint);
   } else tcW.detach();
@@ -2933,7 +2952,7 @@ const WEAR_NAMES = [[/boot|shoe|sabaton|сапог|ботин/i, 'boot'], [/cuis
   [/helm|hat|hood|head|шлем|голов/i, 'head'], [/cuirass|breast|chest|vest|torso|armou?r_?plate|нагруд|кирас|торс/i, 'torso']];
 const wearGuessPart = (name) => (WEAR_NAMES.find(([re]) => re.test(name)) || [])[1] || null;
 const wearItem = (name) => name.replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'item';
-async function wearLoad(buf, name, state, keepPart = false) {
+async function wearLoad(buf, name, state, keepPart = false, ready = false) {
   const gltf = await new Promise((res, rej) => new GLTFLoader().parse(buf, '', res, rej));
   gltf.scene.updateMatrixWorld(true);
   const parts = [];
@@ -2962,12 +2981,14 @@ async function wearLoad(buf, name, state, keepPart = false) {
     if (a) { wear.pca = wearShape(parts, a); wear.wall = wallGrid(parts, wear.pca); }
   }
   const guess = wearGuessPart(name);
-  if (!state && !keepPart && wear.skel && guess !== 'pauldron') {   // a piece with its own skeleton (a pauldron: a dome, never a tube): on one limb segment, or the whole piece by the skeleton
+  if (ready && !state) $('wPart').value = 'ready';
+  else if (!state && !keepPart && wear.skel && guess !== 'pauldron') {   // a piece with its own skeleton (a pauldron: a dome, never a tube): on one limb segment, or the whole piece by the skeleton
     console.log('piece skeleton', wear.skel.part, wear.skel.side, wear.skel.topShare.toFixed(2), 'tube on', wear.skel.tube);
     $('wSide').value = wear.skel.side;
     $('wPart').value = wear.skel.tube || 'skeleton';   // a tube on one limb segment by the skin; feet, hands and longer pieces by the skeleton
   } else if (!state && !keepPart && guess) { $('wPart').value = guess; if (wear.skel) $('wSide').value = wear.skel.side; }
   $('wearPanel').classList.toggle('skel', isSkelMode());
+  $('wearPanel').classList.toggle('ready', isReady());
   if (state ? wearRestore(state) : wearAuto()) {
     wearDraw();
     $('wStatus').textContent = state ? '{{js:ed.saved_fitting_opened}}' : '{{js:ed.the_piece_is_in_place_adjust_it_with}}';
@@ -3077,6 +3098,13 @@ function capWeights(sd) {   // a pauldron moves as one piece: the same weights e
   return sh && ar ? { [sh]: 1 - k, [ar]: k } : { [sh || ar]: 1 };
 }
 async function wearRequest() {   // the piece, where it sits and how to fit it: for «Надеть» and «Сохранить»
+  if (isReady()) {   // the piece as made goes as it is: its move, its reshaping; its weights stay
+    return { item: wear.item, glb: wear.b64, keep_weights: true, offset: 0, conform: 0, rigidity: 0,
+             wall: { k: wv('wWall'), mid: wear.pca.mid.toArray(), axis: wear.pca.axis.toArray() },
+             deforms: wear.handles.filter((h) => h.d.lengthSq() > 0).map((h) => ({ p: h.p.toArray(), d: h.d.toArray(), r: h.r })),
+             rings: ringList().map((g) => ({ c: g.c.toArray(), n: g.n.toArray(), r: g.r, s: g.s, b: g.b })), under: [],
+             placements: [{ side: 'C', matrix: Array.from(wearMatrices()[0].M.elements) }], state: wearState() };
+  }
   if (isSkelMode()) {   // the copies as shown; the original piece goes along for «Открыть»
     const Ld = limbOf(wear.skel.part in WEAR_PARTS ? wear.skel.part : 'forearm', $('wSide').value);
     return { item: wear.item, glb: await wearExport(), src_glb: wear.b64, offset: wv('wGap') * .5 * (Ld ? Ld.r : .05 * H), conform: 0, rigidity: 0,
@@ -3118,11 +3146,13 @@ $('wFile').onchange = async () => {
 };
 $('wOpen').onclick = async () => {
   const f = wearFits[+$('wSaved').value]; if (!f) return;
-  if (f.procedural) { $('wStatus').textContent = '{{js:ed.procedural_piece}}'; return; }   // made from parameters: change it there
   $('wStatus').textContent = '{{js:ed.opening_2}}';
   try {
     const st = await (await fetch(fileUrl(f.fit) + '?t=' + Date.now())).json();
-    await wearLoad(await (await fetch(fileUrl(f.src) + '?t=' + Date.now())).arrayBuffer(), f.item, st.state);
+    // a procedural piece: as made (its corrections, when there are any, over it)
+    const ready = f.procedural, state = ready ? (st.state && st.state.part === 'ready' ? st.state : null) : st.state;
+    await wearLoad(await (await fetch(fileUrl(f.src) + '?t=' + Date.now())).arrayBuffer(), f.item, state, false, ready);
+    if (ready) $('wStatus').textContent = '{{js:ed.ready_opened}}';
     if (f.glb) await wearShowFitted(f.glb);
   } catch (e) { $('wStatus').textContent = '{{js:ed.could_not_open_the_saved_fitting}}' + e.message; }
 };
@@ -3210,7 +3240,7 @@ $('wRingDel').onclick = () => { if (!wear || wear.ringSel < 0) return; wear.ring
 for (const [id, key] of [['wRingS', 's'], ['wRingB', 'b']]) $(id).addEventListener('input', () => {
   const g = wear && wear.rings[wear.ringSel]; if (!g) return; g[key] = +$(id).value; wearDeform(); wearEdited(); });
 $('wRingSym').addEventListener('change', () => { const g = wear && wear.rings[wear.ringSel]; if (!g) return; g.sym = $('wRingSym').checked; wearDeform(); wearEdited(); });
-$('wRad').addEventListener('input', () => { if (wear && wear.sel >= 0) { wear.handles[wear.sel].r = +$('wRad').value * wear.pca.L; wearDeform(); wearDraw(); } });
+$('wRad').addEventListener('input', () => { if (wear && wear.sel >= 0) { wear.handles[wear.sel].r = +$('wRad').value * pointUnit(); wearDeform(); wearDraw(); } });
 canvas.addEventListener('pointerdown', (e) => {
   if (wearOn && wear && wear.ringMode && e.button === 0 && !tcW.axis) { ringPick(e); e.stopImmediatePropagation(); return; }
   if (!wearOn || !wear || !wear.points || e.button !== 0 || tcW.axis) return;
