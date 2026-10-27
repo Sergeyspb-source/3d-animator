@@ -125,6 +125,37 @@ def mount(config_loader, asset, upload, accordion=True):
         return data, editor
 
 
+def mount_wear(config_loader, char):
+    """«Equipment: fitting a piece»: the markup editor's armour mode («Броня») opened at once on the current character
+    (char: its model with a landmark skeleton), with its own hidden textbox and button to send through."""
+    gr.Markdown(_t("lm.wear_tab_intro"))
+    reopen = gr.Button(_t("lm.wear_reopen"))
+    editor = gr.HTML()
+    ids = (LM.WEAR_ID + "_tab", LM.WEAR_GO + "_tab")
+    gr.HTML("<style>.sf3d-hidden{display:none!important}</style>")
+    req = gr.Textbox(elem_id=ids[0], elem_classes=["sf3d-hidden"], show_label=False)
+    btn = gr.Button("wear", elem_id=ids[1], elem_classes=["sf3d-hidden"])
+    log = gr.Textbox(label=_t("lm.armour"), lines=2, interactive=False)
+
+    def open_editor(rigged):
+        cfg = config_loader()
+        rigged = Path(rigged) if rigged else None
+        if not rigged or not rigged.name.endswith("_landmarks_rigged.glb") or not rigged.exists():
+            return _t("lm.wear_needs_landmarks")
+        src = rigged   # the built model stands for the source here: only the armour mode is used
+        return _frame(LM.editor_page(src, LM.initial_state(src, cfg["export_dir"], ""), rigged, mode="wear", wear_ids=ids))
+
+    def do_wear(text):
+        try:
+            return LM.wear(config_loader(), text)
+        except Exception as e:  # noqa: BLE001
+            return _t("lm.error_2") + str(e)
+
+    char.change(open_editor, char, editor, show_progress="hidden")
+    reopen.click(open_editor, char, editor)
+    btn.click(do_wear, req, log, concurrency_id="landmark_rig", concurrency_limit=1, show_progress="minimal")
+
+
 def _say_frame(page):   # the lipsync viewer: it may play the line's sound at once (the click was on this page)
     return ('<iframe allow="autoplay" srcdoc="%s" style="width:100%%;height:max(560px,62vh);border:0;border-radius:10px"></iframe>'
             % _html.escape(page, quote=True))

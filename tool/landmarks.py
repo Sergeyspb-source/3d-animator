@@ -444,12 +444,14 @@ def parse(text):
     return data
 
 
-def editor_page(src: Path, state: dict | None, rigged: Path | None = None, mode: str | None = None, say: str | None = None):
+def editor_page(src: Path, state: dict | None, rigged: Path | None = None, mode: str | None = None, say: str | None = None,
+                wear_ids: tuple[str, str] = (WEAR_ID, WEAR_GO)):
     """rigged: built GLB for the pose mode (fetched by the page through Gradio's /file= route, so it must lie in
     an allowed path such as export_dir); mode='pose' opens the page straight in the pose mode, mode='say' only
-    looks: the face close with the lip-sync clip say (its name) chosen and played."""
+    looks: the face close with the lip-sync clip say (its name) chosen and played, mode='wear' opens it straight in the
+    armour mode («Броня»). wear_ids: the hidden textbox and button its armour mode sends through (each tab its own)."""
     page = i18n.fill(EDITOR.read_text(encoding="utf-8"))
-    data = {"state": state, "target": TARGET_ID, "wear_target": WEAR_ID, "wear_go": WEAR_GO, "source": str(src), "mode": mode, "say": say,
+    data = {"state": state, "target": TARGET_ID, "wear_target": wear_ids[0], "wear_go": wear_ids[1], "source": str(src), "mode": mode, "say": say,
             "rigged": Path(rigged).resolve().as_posix() if rigged and Path(rigged).exists() else None,
             "rigged_v": int(Path(rigged).stat().st_mtime) if rigged and Path(rigged).exists() else 0,
             "names": {"mixamo": bone_names("mixamo"), "godot": bone_names("godot")},

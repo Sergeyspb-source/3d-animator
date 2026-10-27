@@ -1642,5 +1642,9 @@
  "ui.char_has": "Model {0} · Skeleton {1} · Body in parts (for sets) {2} · Lipsync clips: {3} · Pieces put on: {4}",
  "ui.the_piece": "The piece",
  "face.preview_updated": "The preview is updated. «Generate the set» saves it to export/face_parts.",
- "face.preview_3d": "The set in 3D (turn it with the mouse)"
+ "face.preview_3d": "The set in 3D (turn it with the mouse)",
+ "ui.equipment_fitting": "Equipment: fitting a piece",
+ "lm.wear_tab_intro": "A finished piece (a GLB from generation, from a site or made on the procedural tab) is put on the current character: choose the file or a saved fitting in the «Armour» panel on the left. The piece goes onto its body part by the skin (bracers onto both arms at once); then it can be moved, turned, sized, reshaped with points and openings, put on over other pieces. «Put on» carries the weights over and saves the fitting: the Godot fitting room and the procedural editor see it. The character needs a landmark skeleton.",
+ "lm.wear_reopen": "Open again",
+ "lm.wear_needs_landmarks": "The current character has no landmark skeleton: build it on the «Skeleton» tab → «By hand with landmarks»."
 }

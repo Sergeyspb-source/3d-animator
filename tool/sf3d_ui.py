@@ -855,7 +855,7 @@ def char_for_tabs(value):
     rig = str(f["rigged"]) if f.get("rigged") else None
     return (value if f.get("source") or f.get("rigged") else None,   # skeleton, lipsync: "category/name"
             value if f.get("rigged") else None, value if f.get("rigged") else None,   # animations
-            str(f["parts"]) if f.get("parts") else None, str(f["parts"]) if f.get("parts") else None,   # whole set, one piece
+            str(f["parts"]) if f.get("parts") else None,   # whole set
             rig)   # procedural, weights
 
 
@@ -1002,120 +1002,9 @@ def split_run(upload, asset):
     yield emit()
 
 
-SLOT_LABELS = {_t("ui.breastplate"): "chest", _t("ui.helmet"): "helmet", _t("ui.gloves"): "gloves", _t("ui.boots"): "boots",
-               _t("ui.trousers_greaves"): "pants", _t("ui.bracers"): "bracers", _t("ui.pauldrons"): "pauldrons"}
-
-
-# the slot a piece is for, from its name (generated pieces are named after what they are)
-SLOT_NAMES = [(r"boot|shoe|sabaton|сапог|ботин", "boots"), (r"helm|hat|hood|шлем", "helmet"), (r"glove|gauntlet|перчат|рукавиц", "gloves"),
-              (r"pauldron|spaulder|shoulder|наплеч", "pauldrons"), (r"bracer|vambrace|наруч", "bracers"),
-              (r"greave|cuisse|pants|trouser|legging|понож|штан", "pants"), (r"chest|cuirass|breast|torso|нагруд|кирас", "chest")]
-
-
-def fit_item_pick(upload, asset, slot_label):
-    """The piece chosen: shown on its own at once, and its slot guessed from its name."""
-    src = (upload if isinstance(upload, str) else getattr(upload, "name", None)) if upload else (asset if asset and Path(asset).is_file() else None)
-    name = Path(src).stem.lower() if src else ""
-    slot = next((k for re_, k in SLOT_NAMES if re.search(re_, name)), None)
-    label = next((lb for lb, k in SLOT_LABELS.items() if k == slot), slot_label)
-    return src, label
-
-
-def _piece_assets():
-    """[(path under export without .glb, the file)]: the pieces under export/equipment and export/item, whatever their
-    depth (generated_armour/models/leather_boot/...), not the fitted or source copies of the character's own."""
-    ex = Path(T.load_config()["export_dir"])
-    out = []
-    for root in ("equipment", "item"):
-        for f in sorted((ex / root).rglob("*.glb")):
-            if re.search(r"_rigged|_parts$|\.src$|_wear_", f.stem):
-                continue
-            out.append((f.relative_to(ex).with_suffix("").as_posix(), str(f)))
-    return out
-
-
-def fit_auto(body, upload, asset, *rest):
-    """«Подогнать» right after a piece is chosen (nothing when none is)."""
-    if upload or asset:
-        yield from fit_run(body, upload, asset, *rest)
-
-
 def _parts_bodies():
     cfg = T.load_config()
     return [str(p) for p in sorted(Path(cfg["export_dir"]).rglob("*_parts.glb"))]
-
-
-LENGTH_LABELS = {_t("ui.slot_default"): "", _t("ui.to_the_chest"): "chest", _t("ui.to_the_waist"): "waist", _t("ui.to_the_hips"): "hips",
-                 _t("ui.to_the_knees"): "knees", _t("ui.to_the_ankles"): "ankles"}
-
-
-FIT_MODES = {_t("ui.scale_only_the_armour_keeps_its"): "uniform",
-             _t("ui.by_the_skeleton_s_landmarks_fit"): "landmarks"}
-
-
-def _on_body(body, piece, cfg):
-    """The fitted piece together with the body it was fitted on, as one GLB for the 3D view (work_dir/fit_view);
-    the piece alone when they cannot be put together."""
-    try:
-        import trimesh
-        sc, pc = trimesh.load(str(body), force="scene"), trimesh.load(str(piece), force="scene")
-        for node in pc.graph.nodes_geometry:   # each part where it is, with its material
-            tf, geom = pc.graph[node]
-            sc.add_geometry(pc.geometry[geom], node_name=f"piece_{node}", transform=tf)
-        out = Path(cfg["work_dir"]) / "fit_view" / f"{Path(piece).stem}_on_body.glb"
-        out.parent.mkdir(parents=True, exist_ok=True)
-        sc.export(str(out))
-        return str(out)
-    except Exception:  # noqa: BLE001
-        return str(piece)
-
-
-def fit_run(body, armour_upload, armour_asset, slot_label, length_label=_t("ui.slot_default"),
-            width=100, height=100, depth=100, up_cm=0, gap_mm=6, scale=100,
-            mode_label=_t("ui.scale_only_the_armour_keeps_its"), hide_body=False, shrink_pct=0):
-    """The 'Подогнать броню' button. Sliders are percentages / centimetres / millimetres."""
-    import rigging as RG
-
-    cfg = T.load_config()
-    log, last, pics = [], [None], [[]]
-
-    def emit():
-        return "\n".join(log), last[0], pics[0]
-
-    if not body:
-        log.append(_t("ui.choose_a_body_split_into_parts_the"))
-        yield emit()
-        return
-    if armour_upload:
-        src = Path(armour_upload if isinstance(armour_upload, str) else armour_upload.name)
-    elif armour_asset and Path(armour_asset).is_file():   # a file from the list of pieces
-        src = Path(armour_asset)
-    elif armour_asset:
-        cat, nm = armour_asset.split("/", 1)
-        src = Path(cfg["export_dir"]) / cat / nm / f"{nm}.glb"
-    else:
-        log.append(_t("ui.choose_an_armour_model_or_load_a_glb"))
-        yield emit()
-        return
-    slot = SLOT_LABELS[slot_label]
-    body_name = Path(body).stem.removesuffix("_parts")
-    dst = Path(cfg["export_dir"]) / "equipment" / body_name / f"{T.slug(src.stem)}_{slot}.glb"
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    opts = dict(length=LENGTH_LABELS.get(length_label, ""), width=width / 100, height=height / 100,
-                depth=depth / 100, up=up_cm / 100, offset=gap_mm / 1000, scale=scale / 100,
-                mode=FIT_MODES.get(mode_label, "uniform"), shrink=(shrink_pct or 0) / 100)
-    log.append(_t("ui.fitting_as_onto_about_30_seconds", src.name, slot_label.lower(), body_name))
-    yield emit()
-    try:
-        man = RG.fit_armour(body, src, slot, dst, cfg.get("blender_exe"), opts, hide_body=bool(hide_body))
-        log += [f"  {x}" for x in man["log"]]
-        log.append(_t("ui.done_hides_manifest", dst, ', '.join(man['hides']) or 'ничего (тело остаётся под бронёй)', dst.with_suffix('.item.json').name))
-        log.append(_t("ui.don_t_like_the_fit_change_the_length"))
-        last[0] = _on_body(body, dst, cfg)
-        pics[0] = [(p, _t("ui.front") if "front" in p else _t("ui.side")) for p in man.get("previews", [])]
-    except Exception as e:  # noqa: BLE001
-        log.append(_t("ui.error_2", e))
-    yield emit()
 
 
 RIG_KINDS = {_t("ui.humanoid_two_legs_arms_fingers"): "humanoid",
@@ -2471,41 +2360,8 @@ def build():
                         out_btn = gr.Button(_t("ui.transfer_the_set"), variant="primary")
                         out_log = gr.Textbox(label=_t("face.progress"), lines=8, interactive=False)
                         out_view = gr.Gallery(label=_t("ui.result_on_the_base_body"), columns=4, height=420)
-                    with gr.Tab(_t("ui.equipment_one_piece")):
-                        with gr.Row():
-                            with gr.Column(scale=1):
-                                gr.Markdown(_t("ui.puts_a_separately_generated_piece_on"))
-                                with gr.Row(visible=False):   # the current character's body in parts (above)
-                                    fit_body = gr.Dropdown(_parts_bodies(), label=_t("ui.body_parts_glb"), scale=4, allow_custom_value=True)
-                                    fit_refresh = gr.Button(_t("ui.refresh"), scale=1)
-                                with gr.Row():
-                                    fit_asset = gr.Dropdown(_piece_assets(), label=_t("ui.piece_from_finished_models"), scale=3)
-                                    fit_items_refresh = gr.Button(_t("ui.refresh"), scale=1)
-                                    fit_slot = gr.Dropdown(list(SLOT_LABELS), value=_t("ui.breastplate"), label=_t("ui.slot"),
-                                                           scale=2)
-                                fit_upload = gr.File(label=_t("ui.or_load_the_piece_s_glb"), file_types=[".glb"],
-                                                     type="filepath")
-                                fit_item = gr.Model3D(label=_t("ui.the_piece"), height=220, clear_color=(0.9, 0.9, 0.9, 1))
-                                fit_mode = gr.Radio(list(FIT_MODES), value=list(FIT_MODES)[0], label=_t("ui.fit_2"))
-                                with gr.Accordion(_t("ui.fine_tuning"), open=False):
-                                    fit_scale = gr.Slider(50, 150, value=100, step=1, label=_t("ui.scale"))
-                                    fit_hide = gr.Checkbox(label=_t("ui.hide_the_body_part_under_the_piece"), value=False)
-                                    fit_length = gr.Dropdown(list(LENGTH_LABELS), value=_t("ui.slot_default"),
-                                                             label=_t("ui.length_breastplate_from_the_collar"))
-                                    fit_gap = gr.Slider(0, 20, value=6, step=1, label=_t("ui.gap_to_the_body_mm"))
-                                    fit_shrink = gr.Slider(0, 100, value=0, step=5,
-                                                           label=_t("ui.shrink_to_the_body_pulls_in_hanging"))
-                                    with gr.Row():
-                                        fit_w = gr.Slider(70, 140, value=100, step=1, label=_t("ui.width"))
-                                        fit_h = gr.Slider(60, 160, value=100, step=1, label=_t("ui.length"))
-                                    with gr.Row():
-                                        fit_d = gr.Slider(70, 150, value=100, step=1, label=_t("ui.depth"))
-                                        fit_up = gr.Slider(-10, 10, value=0, step=0.5, label=_t("ui.up_down_cm"))
-                                fit_btn = gr.Button(_t("ui.fit"), variant="primary")
-                                fit_log = gr.Textbox(label=_t("face.progress"), lines=4, interactive=False)
-                            with gr.Column(scale=1):
-                                fit_m3d = gr.Model3D(label=_t("ui.model"), height=420, clear_color=(0.9, 0.9, 0.9, 1))
-                                fit_view = gr.Gallery(label=_t("ui.how_it_sits_front_and_side"), columns=2, height=300)
+                    with gr.Tab(_t("ui.equipment_fitting"), id="wear"):   # «Броня» on the current character
+                        landmarks_ui.mount_wear(T.load_config, char_rig)
 
                     with gr.Tab(_t("ui.equipment_procedural"), id="proc_armour"):
                         armour_gen_ui.mount(T.load_config, char_rig)
@@ -2682,10 +2538,10 @@ def build():
         # the current character: its view, what it has, its files in every tab
         char_dd.change(char_info, char_dd, [char_md, char_view], show_progress="hidden")
         char_dd.change(char_remember, char_dd, None, show_progress="hidden")
-        char_dd.change(char_for_tabs, char_dd, [rig_asset, ha_asset, fx_asset, out_body, fit_body, char_rig], show_progress="hidden")
+        char_dd.change(char_for_tabs, char_dd, [rig_asset, ha_asset, fx_asset, out_body, char_rig], show_progress="hidden")
         char_refresh.click(lambda v: gr.update(choices=_characters(), value=v), char_dd, char_dd)
         char_up.upload(char_add, char_up, char_dd)
-        ui.load(char_for_tabs, char_dd, [rig_asset, ha_asset, fx_asset, out_body, fit_body, char_rig], show_progress="hidden")
+        ui.load(char_for_tabs, char_dd, [rig_asset, ha_asset, fx_asset, out_body, char_rig], show_progress="hidden")
 
         # rigging
         rig_refresh_btn.click(rig_refresh, None, rig_asset)
@@ -2707,20 +2563,7 @@ def build():
         split_btn.click(split_run, [rig_upload, rig_asset], [rig_log, rig_view])
 
         # equipment
-        def refresh_bodies():
-            return gr.update(choices=_parts_bodies()), gr.update(choices=_piece_assets())
-
-        fit_refresh.click(refresh_bodies, None, [fit_body, fit_asset])
-        fit_items_refresh.click(lambda: gr.update(choices=_piece_assets()), None, fit_asset)
         out_refresh.click(lambda: gr.update(choices=_parts_bodies()), None, out_body)
-        fit_body.change(lambda p: p or None, fit_body, fit_m3d, show_progress="hidden")
-        # a piece chosen: shown on its own, its slot guessed, then put on the character at once (on the right)
-        fit_inputs = [fit_body, fit_upload, fit_asset, fit_slot, fit_length, fit_w, fit_h, fit_d, fit_up, fit_gap, fit_scale, fit_mode, fit_hide, fit_shrink]
-        for _src in (fit_asset, fit_upload):
-            _src.change(fit_item_pick, [fit_upload, fit_asset, fit_slot], [fit_item, fit_slot], show_progress="hidden").then(
-                fit_auto, fit_inputs, [fit_log, fit_m3d, fit_view])
-        fit_btn.click(fit_run, [fit_body, fit_upload, fit_asset, fit_slot, fit_length, fit_w, fit_h, fit_d,
-                                fit_up, fit_gap, fit_scale, fit_mode, fit_hide, fit_shrink], [fit_log, fit_m3d, fit_view])
         out_model.change(lambda f: (f if isinstance(f, str) else getattr(f, "name", None)) if f else None,
                          out_model, out_m3d, show_progress="hidden")
         out_scan_btn.click(outfit_scan, out_model, [out_note, out_thumbs, out_names, out_name, *out_dd])

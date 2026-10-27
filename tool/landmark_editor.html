@@ -3276,6 +3276,9 @@ addEventListener('keydown', (e) => {   // G / R / S like the joints
     if (S.phase === 'place') current = nextMark().id;
     resize(); setView('front'); sync();
     if (DATA.mode === 'view' && DATA.rigged) { document.body.classList.add('viewonly'); $('guide').hidden = true; await setPose(true); $('guide').hidden = true; }
+    else if (DATA.mode === 'wear' && DATA.rigged) {   // the equipment tab: the armour panel at once, on the built character
+      document.body.classList.add('viewonly'); $('guide').hidden = true; await setPose(true); $('guide').hidden = true; await wearMode(true);
+    }
     else if (DATA.mode === 'say' && DATA.rigged) {   // the lipsync tab's viewer: the face close, the clip just made, played
       document.body.classList.add('viewonly'); $('guide').hidden = true; await setPose(true); $('guide').hidden = true;
       const k = Math.max(0, (DATA.clips || []).findIndex((c) => c.name === DATA.say));
