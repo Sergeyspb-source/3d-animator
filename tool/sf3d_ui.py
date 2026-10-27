@@ -1939,6 +1939,13 @@ def on_category(category_label):
 # ------------------------------------------------------------------ интерфейс
 UI_CSS = """
 .gradio-container { max-width: 1400px !important; }
+/* «Character»: its tabs' buttons first, then the current character, then the tab (the tabs' box lets its parts
+   take their places among the column's) */
+.char-wrap { display: flex !important; flex-direction: column; }
+.char-wrap > .char-tabs { display: contents !important; }
+.char-wrap > .char-tabs > .tab-nav { order: 1; }
+.char-wrap > .char-bar { order: 2; }
+.char-wrap > .char-tabs > .tabitem { order: 3; }
 .tab-nav button { font-size: 15px; font-weight: 600; }
 /* two levels of tabs: sections big, the tools inside them smaller */
 #maintabs > .tab-nav button { font-size: 17px; font-weight: 700; padding: 8px 18px; }
@@ -2238,7 +2245,7 @@ def build():
                                                    label=_t("ui.done_4"), interactive=False, wrap=True)
                         batch_gallery = gr.Gallery(label=_t("ui.preview"), columns=6, height=150)
 
-            with gr.Tab(_t("ui.character"), id="g_char"):
+            with gr.Tab(_t("ui.character"), id="g_char"), gr.Column(elem_classes=["char-wrap"]):
                 with gr.Row(elem_classes=["char-bar"]):   # the current character: every tool below works on it
                     with gr.Column(scale=3):
                         with gr.Row():
@@ -2250,7 +2257,8 @@ def build():
                         char_view = gr.Model3D(value=char_info(_char_default())[1], label=_t("ui.model"), height=230,
                                                clear_color=(0.9, 0.9, 0.9, 1))
                 char_rig = gr.Textbox(visible=False)   # its model with a skeleton, for the tools that take a path
-                with gr.Tabs() as tabs_char:
+                char_tab = gr.State("")   # the label of the «Character» tab shown (heavy editors run only there)
+                with gr.Tabs(elem_classes=["char-tabs"]) as tabs_char:
                     with gr.Tab(_t("ui.skeleton"), id="rig"):
                         with gr.Row():
                             with gr.Column(scale=1):
@@ -2282,8 +2290,7 @@ def build():
                                         seam_btn = gr.Button(_t("ui.fix_the_seams_between_parts_the"))
                                         split_btn = gr.Button(_t("ui.split_the_body_into_parts_for_armour"))
                                     rig_log = gr.Textbox(label=_t("face.progress"), lines=8, interactive=False)
-                            with gr.Column(scale=1):
-                                rig_view = gr.Model3D(label=_t("ui.model"), height=460, clear_color=(0.9, 0.9, 0.9, 1))
+                            with gr.Column(scale=1):   # the model itself is in the character's view above the tabs
                                 jaw_gallery = gr.Gallery(label=_t("ui.jaw_closed_and_open"), columns=4, height=220)
                         creature_state = gr.State(None)
                         with gr.Column(visible=False) as rig_manual_box:
@@ -2360,11 +2367,11 @@ def build():
                         out_btn = gr.Button(_t("ui.transfer_the_set"), variant="primary")
                         out_log = gr.Textbox(label=_t("face.progress"), lines=8, interactive=False)
                         out_view = gr.Gallery(label=_t("ui.result_on_the_base_body"), columns=4, height=420)
-                    with gr.Tab(_t("ui.equipment_fitting"), id="wear"):   # «Броня» on the current character
-                        landmarks_ui.mount_wear(T.load_config, char_rig)
+                    with gr.Tab(_t("ui.equipment_fitting"), id="wear") as tab_wear:   # «Броня» on the current character
+                        landmarks_ui.mount_wear(T.load_config, char_rig, tab_wear, char_tab)
 
-                    with gr.Tab(_t("ui.equipment_procedural"), id="proc_armour"):
-                        armour_gen_ui.mount(T.load_config, char_rig)
+                    with gr.Tab(_t("ui.equipment_procedural"), id="proc_armour") as tab_proc:
+                        armour_gen_ui.mount(T.load_config, char_rig, tab_proc, char_tab)
 
                     with gr.Tab(_t("ui.weight_fixing"), id="rwt"):
                         rwt_ui.mount(T.load_config, accordion=False, char=char_rig)  # GPT: Optional repair retains the skeleton.
@@ -2536,6 +2543,10 @@ def build():
         gpu_close.click(gpu_close_proc, [gpu_proc, gpu_force], [gpu_msg, gpu_md, gpu_proc])
 
         # the current character: its view, what it has, its files in every tab
+        def tab_shown(evt: gr.SelectData):   # its label
+            return evt.value
+
+        tabs_char.select(tab_shown, None, char_tab, show_progress="hidden")
         char_dd.change(char_info, char_dd, [char_md, char_view], show_progress="hidden")
         char_dd.change(char_remember, char_dd, None, show_progress="hidden")
         char_dd.change(char_for_tabs, char_dd, [rig_asset, ha_asset, fx_asset, out_body, char_rig], show_progress="hidden")
@@ -2545,8 +2556,7 @@ def build():
 
         # rigging
         rig_refresh_btn.click(rig_refresh, None, rig_asset)
-        rig_asset.change(preview_pick, [rig_upload, rig_asset], rig_view, show_progress="hidden")
-        rig_upload.change(preview_pick, [rig_upload, rig_asset], rig_view, show_progress="hidden")
+        rig_upload.change(preview_pick, [rig_upload, rig_asset], char_view, show_progress="hidden")   # a one-off model
 
         def on_kind(label):
             c = RIG_KINDS.get(label) == "creature"
@@ -2554,13 +2564,13 @@ def build():
 
         rig_kind.change(on_kind, rig_kind, [rig_human, rig_creature, rig_extra], show_progress="hidden")
         rig_btn.click(rig_dispatch, [rig_upload, rig_asset, rig_naming, rig_tries, rig_kind, jaw_line, jaw_hinge],
-                      [rig_log, rig_view, jaw_gallery, creature_state])
+                      [rig_log, char_view, jaw_gallery, creature_state])
         creature_state.change(lambda s: gr.update(visible=bool(s)), creature_state, rig_creature_after,
                               show_progress="hidden")
         rejaw_btn.click(creature_rejaw, [creature_state, jaw_line, jaw_hinge],
-                        [rig_log, rig_view, jaw_gallery, creature_state])
-        seam_btn.click(seam_run, [rig_upload, rig_asset], [rig_log, rig_view])
-        split_btn.click(split_run, [rig_upload, rig_asset], [rig_log, rig_view])
+                        [rig_log, char_view, jaw_gallery, creature_state])
+        seam_btn.click(seam_run, [rig_upload, rig_asset], [rig_log, char_view])
+        split_btn.click(split_run, [rig_upload, rig_asset], [rig_log, char_view])
 
         # equipment
         out_refresh.click(lambda: gr.update(choices=_parts_bodies()), None, out_body)

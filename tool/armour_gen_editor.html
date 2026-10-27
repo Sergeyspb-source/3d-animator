@@ -161,7 +161,9 @@ function resize() {
   renderer.setSize(w, h, false); camera.aspect = w / Math.max(h, 1); camera.updateProjectionMatrix();
 }
 new ResizeObserver(resize).observe(stage); resize();
-renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+// not drawn while its tab is hidden (the page in a hidden tab would keep the GPU and a core busy for nothing)
+const frameHidden = () => { try { return !!window.frameElement && !window.frameElement.offsetParent; } catch (e) { return false; } };
+renderer.setAnimationLoop(() => { if (frameHidden()) return; controls.update(); renderer.render(scene, camera); });
 
 // ------------------------------------------------------------------ the character: skin for the rays, bones, poses
 let charRoot = null, bodyGeo = null, vBone = null, vW = null, boneNames = [];
@@ -2077,7 +2079,9 @@ SPEC.push(['{{js:ag.made_group}}', [], [
   ['visor_angle', 0, 65, 5, '{{js:ag.visor_angle}}', '', 'deg', hs('visored_bascinet', 'armet')],
   ['cheek_angle', 0, 35, 5, '{{js:ag.cheek_angle}}', '', 'deg', hs('armet')],
   ['tail', 0, 130, 5, '{{js:ag.helmet_tail}}', '', 'pc', hs('sallet')],
-  ['brim', 40, 170, 5, '{{js:ag.helmet_brim}}', '', 'pc', hs('kettle_hat')]], isMade]);
+  ['brim', 40, 170, 5, '{{js:ag.helmet_brim}}', '', 'pc', hs('kettle_hat')],
+  ['strap', -50, 50, 1, '{{js:ag.helmet_strap}}', '{{js:ag.helmet_strap_info}}', 'pc', hs('barbute', 'open_bascinet', 'sallet', 'kettle_hat')],
+  ['strap_fwd', -50, 50, 1, '{{js:ag.helmet_strap_fwd}}', '', 'pc', hs('barbute', 'open_bascinet', 'sallet', 'kettle_hat')]], isMade]);
 const ALL = SPEC.flatMap((g) => g[2]);
 const DEFAULTS = Object.assign({ gap: 8, thickness: 12, relief: .35, step: 5, rim: 6, rivets: 60, rivet_size: 6, strap_width: 35,
   buckle: true, material: 'iron', wear: .35, tint: '#6b4128', cloth: '#56606e', tex: 1024, seed: 1, surface: 'plates', scale_size: 25,
@@ -2085,7 +2089,7 @@ const DEFAULTS = Object.assign({ gap: 8, thickness: 12, relief: .35, step: 5, ri
   two_plates: false, spaulders: 0, sp_start: 30, sp_reach: 45, sp_span: 260, neckline: 8, armhole: 40, point: 0, ridge: 0, cap: 1.6, trim: '', hammer: .5, arm_share: .7, mail_under: false, hem: 15, sleeves: 30, top_cut: 0, bottom_cut: 0, splints: 6, stitch: false,
   closure: 'across', hinges: false, opening: 'none', shoulders: 'straps', yoke: 70, thigh: 'none', knee: 'none', fly: false, wrap: false,
   front_panel: false, hem_band: false, helmet: 'barbute', head_gap: 7, visor_angle: 0, cheek_angle: 0, tail: 100, brim: 100,
-  elbow: 'elbow_winged_plate', limb_gap: 8, wing: 100, footwear: 'foot_ankle_boot', foot_gap: 6, glove: 'plain_leather', cuff: 14,
+  strap: 0, strap_fwd: 0, elbow: 'elbow_winged_plate', limb_gap: 8, wing: 100, footwear: 'foot_ankle_boot', foot_gap: 6, glove: 'plain_leather', cuff: 14,
   cloth_style: 'shirt', cloth_quilt: false, quilt_lines: false }, PIECES.bracer.defaults);
 const S = { piece: 'bracer', sides: ['L', 'R'], name: 'proc_bracer', nameTouched: false, p: { ...DEFAULTS }, armour: null };
 let clampTo = 0, curView = 'front';   // clampTo: a cuirass's top, held under the armpits (%)

@@ -74,7 +74,8 @@ def _helmet_params(params) -> dict:
     """The editor's helmet parameters (percent) as blender_helmet_gen.py's."""
     return {"gap": float(params.get("head_gap", 7)) / 100, "visor_angle": float(params.get("visor_angle", 0)),
             "cheek_angle": float(params.get("cheek_angle", 0)), "tail": float(params.get("tail", 100)) / 100,
-            "brim": float(params.get("brim", 100)) / 100}
+            "brim": float(params.get("brim", 100)) / 100, "strap": float(params.get("strap", 0)) / 100,
+            "strap_fwd": float(params.get("strap_fwd", 0)) / 100}
 
 
 def _elbow_params(params) -> dict:
@@ -88,8 +89,8 @@ def _foot_params(params) -> dict:
 # pieces the generators make: piece -> (the Blender script, its styles (the editor's keys), the style key's prefix in
 # them, the editor's parameters -> the script's, the parameters a style's preview depends on besides the gap)
 MADE = {"helmet": ("blender_helmet_gen.py", HELMETS, "", _helmet_params,
-                   {"visored_bascinet": ("visor_angle",), "armet": ("visor_angle", "cheek_angle"), "sallet": ("tail",),
-                    "kettle_hat": ("brim",)}),
+                   {"visored_bascinet": ("visor_angle",), "armet": ("visor_angle", "cheek_angle"), "sallet": ("tail", "strap", "strap_fwd"),
+                    "kettle_hat": ("brim", "strap", "strap_fwd"), "barbute": ("strap", "strap_fwd"), "open_bascinet": ("strap", "strap_fwd")}),
         "elbow": ("blender_elbow_gen.py", ELBOWS, "elbow_", _elbow_params,
                   {k: ("wing",) for k in ("elbow_winged_plate", "elbow_articulated_plate", "elbow_plate_mail_hybrid")}),
         "footwear": ("blender_footwear_gen.py", FOOTWEAR, "foot_", _foot_params, {})}
@@ -281,9 +282,10 @@ def _frame(page):
             % _html.escape(page, quote=True))
 
 
-def mount(config_loader, char=None):
-    """char: the app's current character (its model with a skeleton): the editor opens on it at once when it changes;
-    without it the tab has its own choice."""
+def mount(config_loader, char=None, tab=None, active=None):
+    """char: the app's current character (its model with a skeleton); without it the tab has its own choice. tab: this
+    tab, active: the label of the tab shown: the editor (a heavy 3D page) opens when the tab is entered, and on a new
+    character only while the tab is shown (else it goes, not to run hidden)."""
     cfg0 = config_loader()
     gr.Markdown(_t("ag.intro"))
     with gr.Row():
@@ -312,8 +314,13 @@ def mount(config_loader, char=None):
 
     refresh.click(lambda: gr.update(choices=characters(config_loader())), None, rig)
     open_btn.click(open_editor, rig, editor)
-    if char is not None:   # the current character: on it at once
-        char.change(lambda r: (r, open_editor(r) if r and str(r).endswith("_landmarks_rigged.glb") else _t("ag.choose_a_character")),
-                    char, [rig, editor], show_progress="hidden")
+    if char is not None:   # the current character: on it as soon as the tab is seen
+        opened = gr.State("")
+        here = _t("ui.equipment_procedural")
+        ok = lambda r: bool(r) and str(r).endswith("_landmarks_rigged.glb")  # noqa: E731
+        char.change(lambda r, act: (r, open_editor(r) if ok(r) else _t("ag.choose_a_character"), r) if act == here else (r, "", ""),
+                    [char, active], [rig, editor, opened], show_progress="hidden")
+        tab.select(lambda r, op: (open_editor(r) if ok(r) else _t("ag.choose_a_character"), r) if r != op else (gr.update(), op),
+                   [char, opened], [editor, opened], show_progress="hidden")
     go.click(lambda: _t("ag.working"), None, log).then(run, req, [log, shots], concurrency_id="armour_gen", concurrency_limit=1,
                                                          show_progress="minimal")

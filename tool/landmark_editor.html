@@ -3293,8 +3293,11 @@ addEventListener('keydown', (e) => {   // G / R / S like the joints
   } catch (e) { $('msg').textContent = '{{js:ed.could_not_open_the_model}}' + e.message; }
 })();
 new ResizeObserver(resize).observe(canvas);
+// not drawn while its tab is hidden (the page in a hidden tab would keep the GPU and a core busy for nothing)
+const frameHidden = () => { try { return !!window.frameElement && !window.frameElement.offsetParent; } catch (e) { return false; } };
 renderer.setAnimationLoop(() => {
   const dt = clock.getDelta();
+  if (frameHidden()) return;
   if (mixer && playing && poseOn) { mixer.update(dt); if (hoverId) poseHighlight(); }
   if (poseOn) sayFrame();
   renderer.render(scene, camera);

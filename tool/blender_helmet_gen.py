@@ -122,13 +122,13 @@ centre = Vector((C.x, C.y + (back - front) / 2, C.z))
 
 # the chin: going down the face's front from the eyes, where it goes back sharply (to the throat)
 step, far = half_d / 20, 4 * half_d
-chin, prev = None, None
+chin, prev, chin_y = None, None, centre.y - half_d   # chin_y: the chin's front (its tip)
 z = E.z
 while z > E.z - 2.5 * half_d:
     h = tree.ray_cast(Vector((E.x, centre.y - far, z)), Vector((0, 1, 0)), 2 * far)
     y = h[0].y if h[0] is not None else None
     if prev is not None and y is not None and y - prev > .25 * half_d:
-        chin = z + step
+        chin, chin_y = z + step, prev
         break
     prev, z = y, z - step
 if chin is None:   # the jaw's end, else a man's proportions
@@ -242,6 +242,25 @@ if style != "kettle_hat":
         for v in o.data.vertices:
             if v.co.z < FACE_Z:
                 v.co.z = FACE_Z + (v.co.z - FACE_Z) * squeeze
+
+# the chin strap: a U from the helmet's sides made for a man's jaw (on a goblin it hangs under the neck): its bottom
+# just under the chin, a little behind its tip; «strap» moves it up (+) or down, «strap_fwd» forward (+) or back, in
+# shares of the head's half depth
+straps = [o for o in parts if o.name.startswith(("Chinstrap", "Buckle"))]
+if straps:
+    vs = [v for o in straps for v in o.data.vertices]
+    zt, zb = max(v.co.z for v in vs), min(v.co.z for v in vs)
+    low = [v.co.y for v in vs if v.co.z < zb + .002]
+    yb = sum(low) / len(low)
+    tz = frame_z(chin - (.08 - float(prm.get("strap", 0))) * half_d)
+    ty = (chin_y + (.3 - float(prm.get("strap_fwd", 0))) * half_d - centre.y) / s
+    if zt - zb > 1e-6 and tz < zt:
+        for v in vs:
+            t = (zt - v.co.z) / (zt - zb)
+            v.co.z = zt + (v.co.z - zt) * (tz - zt) / (zb - zt)
+            v.co.y += t * (ty - yb)
+        for o in straps:
+            o.data.update()
 
 # an aventail: from where it hangs (drawn up with the helmet) down to the shoulders' top, closing in round the neck;
 # in front it goes across from the leather carrier's ends (at the visor's lower back corners) before the neck, behind

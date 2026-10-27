@@ -125,9 +125,11 @@ def mount(config_loader, asset, upload, accordion=True):
         return data, editor
 
 
-def mount_wear(config_loader, char):
+def mount_wear(config_loader, char, tab, active):
     """«Equipment: fitting a piece»: the markup editor's armour mode («Броня») opened at once on the current character
-    (char: its model with a landmark skeleton), with its own hidden textbox and button to send through."""
+    (char: its model with a landmark skeleton), with its own hidden textbox and button to send through. The editor (a
+    heavy 3D page) opens when the tab is entered (tab), and on a new character only while the tab is shown (active: the
+    label of the tab shown); else it goes, not to run hidden."""
     gr.Markdown(_t("lm.wear_tab_intro"))
     reopen = gr.Button(_t("lm.wear_reopen"))
     editor = gr.HTML()
@@ -151,7 +153,10 @@ def mount_wear(config_loader, char):
         except Exception as e:  # noqa: BLE001
             return _t("lm.error_2") + str(e)
 
-    char.change(open_editor, char, editor, show_progress="hidden")
+    opened = gr.State("")
+    here = _t("ui.equipment_fitting")
+    char.change(lambda r, act: (open_editor(r), r) if act == here else ("", ""), [char, active], [editor, opened], show_progress="hidden")
+    tab.select(lambda r, op: (open_editor(r), r) if r != op else (gr.update(), op), [char, opened], [editor, opened], show_progress="hidden")
     reopen.click(open_editor, char, editor)
     btn.click(do_wear, req, log, concurrency_id="landmark_rig", concurrency_limit=1, show_progress="minimal")
 
