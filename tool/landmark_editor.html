@@ -101,6 +101,8 @@
     pointer-events:none; }
   .posebar > * { pointer-events:auto; }
   .posebar button { background:var(--panel); }
+  .saybig { position:absolute; left:50%; bottom:64px; transform:translateX(-50%); z-index:7; font-size:18px; padding:10px 24px;
+    background:var(--accent); color:var(--accent-fg); border:0; border-radius:10px; cursor:pointer; }
   .posebar button.on { background:var(--accent); color:var(--accent-fg); }
   .pinfo { background:color-mix(in srgb,var(--panel) 90%,transparent); border-radius:6px; padding:4px 8px; font:12px var(--mono); }
   .pinfo.stop { color:#e5484d; }
@@ -203,6 +205,7 @@
     </div>
     <div class="hint" id="hint" hidden></div>
     <div class="msg" id="msg">{{ed.loading_the_model}}</div>
+    <button class="saybig" id="sayBig" hidden>{{ed.line}}</button>
     <div class="posebar" id="poseBar" hidden>
       <button id="pReset">{{ed.reset_the_pose}}</button><button id="pCheck">{{ed.check_pose}}</button><button id="pSquat">{{ed.crouch}}</button><button id="pFist">{{ed.fist}}</button><button id="pJaw">{{ed.open_the_mouth}}</button>
       <select id="pClipFace" hidden title="{{ed.lipsync_lines_next_to_the_model}}"></select><button id="pSay" hidden>{{ed.line}}</button>
@@ -1899,14 +1902,15 @@ function setHinge(id, a) {
 let say = null;   // { audio, clip }
 const fileUrl = (p) => new URL('/file=' + p, window.parent.location.href).href;
 async function playLine() {
-  if (say) { say.audio.pause(); say = null; $('pSay').textContent = '{{js:ed.line}}'; for (const m of poseMeshes) if (m.morphTargetInfluences) m.morphTargetInfluences.fill(0); return; }
+  if (say) { say.audio.pause(); say = null; $('pSay').textContent = '{{js:ed.line}}'; $('sayBig').textContent = '{{js:ed.line}}'; for (const m of poseMeshes) if (m.morphTargetInfluences) m.morphTargetInfluences.fill(0); return; }
   const c = DATA.clips[+$('pClipFace').value || 0];
   const clip = await (await fetch(fileUrl(c.clip))).json();
   const audio = new Audio(fileUrl(c.audio));
-  say = { audio, clip }; $('pSay').textContent = '{{js:ed.stop}}';
+  say = { audio, clip }; $('pSay').textContent = '{{js:ed.stop}}'; $('sayBig').textContent = '{{js:ed.stop}}';
   audio.onended = () => { if (say && say.audio === audio) playLine(); };
-  await audio.play();
+  try { await audio.play(); } catch (e) { say = null; $('pSay').textContent = '{{js:ed.line}}'; $('sayBig').textContent = '{{js:ed.line}}'; }   // the browser waits for a click
 }
+$('sayBig').onclick = () => playLine();
 function sayFrame() {
   if (!say) return;
   const { clip, audio } = say, f = Math.max(0, Math.min(clip.frames - 1, Math.round((audio.currentTime + clip.lead_in) * clip.fps)));
@@ -3272,6 +3276,16 @@ addEventListener('keydown', (e) => {   // G / R / S like the joints
     if (S.phase === 'place') current = nextMark().id;
     resize(); setView('front'); sync();
     if (DATA.mode === 'view' && DATA.rigged) { document.body.classList.add('viewonly'); $('guide').hidden = true; await setPose(true); $('guide').hidden = true; }
+    else if (DATA.mode === 'say' && DATA.rigged) {   // the lipsync tab's viewer: the face close, the clip just made, played
+      document.body.classList.add('viewonly'); $('guide').hidden = true; await setPose(true); $('guide').hidden = true;
+      const k = Math.max(0, (DATA.clips || []).findIndex((c) => c.name === DATA.say));
+      $('pClipFace').value = String(k); $('pClipFace').hidden = !(DATA.clips || []).length;
+      if (S.pos.head && S.pos.head_top) faceView();
+      if (skelHelp) skelHelp.visible = false;   // only the face: no bone lines over it
+      $('hint').hidden = true;
+      $('sayBig').hidden = !(DATA.clips || []).length;
+      if (!$('sayBig').hidden) playLine();
+    }
     else if (DATA.mode === 'pose' && DATA.rigged) await setPose(true);
   } catch (e) { $('msg').textContent = '{{js:ed.could_not_open_the_model}}' + e.message; }
 })();

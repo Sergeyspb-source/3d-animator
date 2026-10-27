@@ -12,6 +12,7 @@ job.json (all optional except out_dir):
           arch_width (m, default 0.05), gum [r,g,b], height (0.5..1.6 crown length), volume (0 = one white strip,
           1 = separate teeth), canines (bool, false = canines shaped like incisors: no fangs)
   tongue: colour [r,g,b], length (m, default 0.055)
+  preview_glb: true also writes preview.glb, the picture's layout in 3D (the editor's live view)
 
 Real-world sizes in metres; the fitting step scales them into the skull. Writes eyes.glb (Eye_L, Eye_R with the iris
 along -Y, Blender forward), teeth.glb (Teeth_Upper, Teeth_Lower, Gum_Upper, Gum_Lower), tongue.glb, preview.png and
@@ -400,6 +401,11 @@ for o in (tl, gl):
     if o:
         o.location = (0.0, o.location.y, -0.012)
 tongue.location = (0.075, 0, 0); tongue.rotation_euler = (math.radians(-25), 0, math.radians(55))   # shown three-quarter
+if job.get("preview_glb"):   # the editor's live view: the same layout in 3D, both eyes (the second above the first)
+    keep = eyes[1].location.copy()
+    eyes[1].location = (-0.07, 0, 2.6 * eye_r)
+    export([*eyes, tu, tl, gu, gl, tongue], "preview.glb")
+    eyes[1].location = keep
 cam = bpy.data.objects.new("cam", bpy.data.cameras.new("cam")); scene.collection.objects.link(cam); scene.camera = cam
 cam.data.type = "ORTHO"; cam.data.ortho_scale = 0.2
 cam.location = (0, -0.3, 0.12); cam.rotation_euler = (math.radians(68), 0, 0)

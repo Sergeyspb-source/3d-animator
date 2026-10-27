@@ -21,13 +21,14 @@ def _rgb(hex_or_rgb):
 
 
 def generate(cfg, name, iris, pupil, slit, sclera_yel, veins, per_side, missing, missing_rand, yellow, crooked, fangs,
-             tongue_col, seed, eye_style=_t("face.realistic"), iris_size=0, t_height=1.0, t_volume=1.0, canines=True):
+             tongue_col, seed, eye_style=_t("face.realistic"), iris_size=0, t_height=1.0, t_volume=1.0, canines=True, preview=False):
+    """preview: the live view while the sliders move, made in work_dir (the set is saved only by the button)."""
     name = re.sub(r"[^\w.-]+", "_", (name or "face_parts").strip()) or "face_parts"
-    out = Path(cfg["export_dir"]) / "face_parts" / name
+    out = (Path(cfg["work_dir"]) / "face_parts_preview" / name) if preview else (Path(cfg["export_dir"]) / "face_parts" / name)
     out.mkdir(parents=True, exist_ok=True)
     white, yel = [0.93, 0.91, 0.87], [0.95, 0.86, 0.55]
     sclera = [w + (y - w) * float(sclera_yel) for w, y in zip(white, yel)]
-    job = {"out_dir": str(out), "seed": int(seed),
+    job = {"out_dir": str(out), "seed": int(seed), "preview_glb": True,
            "eye": {"iris": _rgb(iris), "pupil": float(pupil), "slit": bool(slit), "sclera": sclera, "veins": float(veins),
                    "style": "anime" if eye_style == _t("face.anime") else "real", **({"iris_size": float(iris_size)} if iris_size else {})},
            "teeth": {"per_side": int(per_side), "missing": missing or "", "missing_random": float(missing_rand),
@@ -41,10 +42,12 @@ def generate(cfg, name, iris, pupil, slit, sclera_yel, veins, per_side, missing,
                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     line = next((x for x in r.stdout.splitlines() if x.startswith("FACE_PARTS_OK")), None)
     if not line:
-        return _t("face.failed") + (r.stdout + r.stderr)[-1500:], None, None
+        return _t("face.failed") + (r.stdout + r.stderr)[-1500:], None, None, None
     info = json.loads(line.split(" ", 1)[1])
+    if preview:
+        return _t("face.preview_updated"), str(out / "preview.png"), None, str(out / "preview.glb")
     msg = (_t("face.done_eyes_radius_mm_teeth_per_half", out, info['eye_radius'] * 1000, info['teeth_per_side'], ', '.join(info['missing']) or 'нет', ' + случайные' if float(missing_rand) else ''))
-    return msg, str(out / "preview.png"), [str(out / f) for f in ("eyes.glb", "teeth.glb", "tongue.glb", "parts.json")]
+    return msg, str(out / "preview.png"), [str(out / f) for f in ("eyes.glb", "teeth.glb", "tongue.glb", "parts.json")], str(out / "preview.glb")
 
 
 def mount(config_loader, accordion=True):
@@ -78,10 +81,19 @@ def mount(config_loader, accordion=True):
                 seed = gr.Number(value=1, precision=0, label=_t("face.variant_random_seed"))
                 go = gr.Button(_t("face.generate_the_set"), variant="primary")
         with gr.Row():
-            log = gr.Textbox(label=_t("face.progress"), lines=4, interactive=False)
-            pic = gr.Image(label=_t("face.preview"), type="filepath", height=260)
+            pic = gr.Image(label=_t("face.preview"), type="filepath", height=300)
+            view = gr.Model3D(label=_t("face.preview_3d"), height=300, clear_color=(0.75, 0.74, 0.72, 1), camera_position=(90, 75, None))
+        log = gr.Textbox(label=_t("face.progress"), lines=3, interactive=False)
         files = gr.File(label=_t("face.files"), file_count="multiple", interactive=False)
+        args = [name, iris, pupil, slit, sclera, veins, per, missing, mrand, yellow, crooked, fangs, tongue, seed,
+                eye_style, iris_size, t_height, t_volume, canines]
         go.click(lambda *a: generate(config_loader(), *a),
-                 [name, iris, pupil, slit, sclera, veins, per, missing, mrand, yellow, crooked, fangs, tongue, seed,
-                  eye_style, iris_size, t_height, t_volume, canines],
-                 [log, pic, files], concurrency_id="face_parts", concurrency_limit=1)
+                 args, [log, pic, files, view], concurrency_id="face_parts", concurrency_limit=1)
+        # the live view: remade when a slider is let go or a choice changes (the newest request wins)
+        def remake(*a):
+            msg, png, _, glb = generate(config_loader(), *a, preview=True)
+            return msg, png, glb
+        for c in args[1:]:   # not the set's name
+            ev = c.release if isinstance(c, gr.Slider) else c.input if isinstance(c, (gr.ColorPicker, gr.Textbox, gr.Number)) else c.change
+            ev(remake, args, [log, pic, view], concurrency_id="face_parts", concurrency_limit=1, trigger_mode="always_last",
+               show_progress="minimal")

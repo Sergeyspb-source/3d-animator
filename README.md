@@ -43,7 +43,9 @@ It glues several open-source models together (Stable Fast 3D, Hunyuan3D-2, UniRi
 | Create → Materials | Recognises metal/wood/stone/cloth on an existing GLB and writes a metallic-roughness map | CLIP |
 | Create → Batch processing (also the File menu) | Whole folder of pictures in one run (overnight) | all of the above |
 | Options menu + GPU strip | Paths, OpenRouter key, who holds GPU memory, unload models; live VRAM strip at the top | – |
-| Character → Weight fixing, Face parts, Lipsync | Weight repair, shared eyes/teeth/tongue kit, lip-sync clip for the speech mouth | Blender |
+| Character → Weight fixing, Face parts, Lipsync | Weight repair, shared eyes/teeth/tongue kit with a live preview, lip-sync clip for the speech mouth watched right in the tab | Blender |
+
+Every «Character» tool works on the **current character**, chosen once above the tabs and shown there in 3D with what it already has (the model, the skeleton, the body in parts for sets, lip-sync clips, pieces put on). A character is a folder `export\character\<name>\`; «Add a model…» makes one from a GLB. The choice is kept between runs. A tab's own «load a file» stays for a one-off job on a model that is not a character.
 
 Outputs go to `export\<category>\<name>\` (GLB + JSON stats + icon). Scratch files go to `work\`. Neither folder is in the repository.
 
@@ -117,7 +119,7 @@ Every «Put on» also saves the fitting (`<character>_wear_<item>.fit.json`); «
 
 ### Equipment: procedural
 
-Character → «Equipment: procedural» makes a piece from parameters instead of a model: a bracer, a rerebrace, a greave, a cuisse, a breastplate, a skirt of tassets (from the waist, so there is no gap between the breastplate and the cuisses), a pauldron, trousers or a brayette (mail briefs), built from the skin of a character with a landmark skeleton. Choose the character and press «Open the editor»: the page (`tool/armour_gen_editor.html`) shows the character with the piece on it and rebuilds the piece on every move of a slider, in a few hundredths of a second. What is on screen is what is made:
+Character → «Equipment: procedural» makes a piece from parameters instead of a model: a bracer, a rerebrace, a greave, a cuisse, a breastplate, a skirt of tassets (from the waist, so there is no gap between the breastplate and the cuisses), a pauldron, trousers or a brayette (mail briefs), built from the skin of a character with a landmark skeleton. The editor opens on the current character at once: the page (`tool/armour_gen_editor.html`) shows the character with the piece on it and rebuilds the piece on every move of a slider, in a few hundredths of a second. What is on screen is what is made:
 
 - Pointing at a group of parameters (plates, rivets, straps) lights up the part of the piece it changes.
 - The views (front, side, close-up), the character in its own colours, plain or see-through (to see the gap to the skin).
@@ -279,7 +281,7 @@ D:\conda\envs\sf3d\python.exe -m pip install --target tool\vendor\rwt\deps libig
 Self-contained: `tool\vendor\lipsync\transcribe.py` (local Whisper) and `lipsync.py` (ARKit face curves) run in the
 `sf3d` env (numpy, scipy, torch, transformers; `soundfile` or ffmpeg for mp3/ogg). The `openai/whisper-small` model
 (~1 GB) is downloaded on the first run into `hf_home` from `tool\config.json` (default `D:/conda/hf`); an existing
-Hugging Face cache is reused. Output: `<model folder>\<voice>.face.json` + the audio copy.
+Hugging Face cache is reused. Output: `<model folder>\<voice>.face.json` + the audio copy. The clip is played right in the tab: the face close, the line with its sound; «▶ Watch» plays any clip the character has.
 
 In Godot: copy `tool\godot\face_curves_clip.gd` and `face_curves_player.gd` into your project, add a
 `FaceCurvesPlayer` node (`audio` = the voice `AudioStreamPlayer3D`, `face_root` = the character, `clip_path` = the

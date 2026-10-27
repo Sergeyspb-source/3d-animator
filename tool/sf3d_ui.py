@@ -774,6 +774,99 @@ def batch_run(root, default_label, overwrite, make_preview, auto_materials=False
 RIG_NAMINGS = {_t("lm.mixamo_for_mixamo_animations"): "mixamo", _t("lm.godot_humanoid_profile"): "godot"}
 
 
+# ---------------------------------------------------------------- the current character: one choice for every tool
+# of the «Character» tab. A character is a folder export/<category>/<name>/ with its model: <name>.glb (the source),
+# <name>_landmarks_rigged.glb / <name>_rigged.glb (with a skeleton), <name>_parts.glb (the body in parts, for whole
+# sets), its lip-sync clips and the pieces put on. Every tab takes its file from it; a tab's own «load a file» stays
+# for a one-off job on a model that is not a character
+def _char_files(value):
+    """{name, dir, source, rigged, parts} of the character "category/name" (None for what it lacks)."""
+    if not value or "/" not in value:
+        return None
+    cat, nm = value.split("/", 1)
+    d = Path(T.load_config()["export_dir"]) / cat / nm
+    first = lambda *ns: next((d / n for n in ns if (d / n).exists()), None)  # noqa: E731
+    return {"name": nm, "dir": d, "source": first(f"{nm}.glb"), "rigged": first(f"{nm}_landmarks_rigged.glb", f"{nm}_rigged.glb"),
+            "parts": first(f"{nm}_parts.glb")}
+
+
+def _characters():
+    """[(label, "category/name")]: every folder of export/character with a model, and any other export folder with a
+    skeleton or a body in parts."""
+    ex, out = Path(T.load_config()["export_dir"]), []
+    for d in sorted(x for x in ex.glob("*/*") if x.is_dir()):
+        f = _char_files(f"{d.parent.name}/{d.name}")
+        if f["rigged"] or f["parts"] or (d.parent.name == "character" and f["source"]):
+            out.append((d.name if d.parent.name == "character" else f"{d.name} ({d.parent.name})", f"{d.parent.name}/{d.name}"))
+    return out
+
+
+def _char_memo():
+    return Path(T.load_config()["work_dir"]) / "current_character.txt"
+
+
+def _char_default():
+    """The character chosen last time (kept in work_dir), else the first with a skeleton."""
+    chars = _characters()
+    try:
+        last = _char_memo().read_text(encoding="utf-8").strip()
+    except OSError:
+        last = ""
+    if any(v == last for _, v in chars):
+        return last
+    return next((v for _, v in chars if (_char_files(v) or {}).get("rigged")), chars[0][1] if chars else None)
+
+
+def char_remember(value):
+    if value:
+        try:
+            _char_memo().write_text(value, encoding="utf-8")
+        except OSError:
+            pass
+
+
+def char_info(value):
+    """What the character has, in one line, and its model for the 3D view (the skeleton's when it has one)."""
+    f = _char_files(value)
+    if not f:
+        return _t("ui.char_none"), None
+    yes = lambda x: "✓" if x else "—"  # noqa: E731
+    clips = len(list(f["dir"].glob("*.face.json")))
+    worn = len([x for x in f["dir"].glob("*_wear_*.glb") if not x.name.endswith(".src.glb")])
+    return (_t("ui.char_has", yes(f["source"] or f["rigged"]), yes(f["rigged"]), yes(f["parts"]), clips, worn),
+            str(f["rigged"] or f["source"] or f["parts"]) if (f["rigged"] or f["source"] or f["parts"]) else None)
+
+
+def char_add(upload):
+    """A model loaded as a new character: export/character/<name>/<name>.glb."""
+    if not upload:
+        return gr.update()
+    src = Path(upload if isinstance(upload, str) else upload.name)
+    name = T.slug(src.stem)
+    d = Path(T.load_config()["export_dir"]) / "character" / name
+    d.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, d / f"{name}.glb")
+    return gr.update(choices=_characters(), value=f"character/{name}")
+
+
+def char_for_tabs(value):
+    """The current character's files, each in the form its tab's (hidden) picker takes."""
+    f = _char_files(value) or {}
+    rig = str(f["rigged"]) if f.get("rigged") else None
+    return (value if f.get("source") or f.get("rigged") else None,   # skeleton, lipsync: "category/name"
+            value if f.get("rigged") else None, value if f.get("rigged") else None,   # animations
+            str(f["parts"]) if f.get("parts") else None, str(f["parts"]) if f.get("parts") else None,   # whole set, one piece
+            rig)   # procedural, weights
+
+
+def _asset_src(asset):
+    """A model picked as "category/name": its source, else its skeleton's model (a source loaded once and never kept)."""
+    f = _char_files(asset)
+    if not f:
+        return None
+    return f["source"] or f["rigged"] or f["dir"] / f"{f['name']}.glb"
+
+
 def _export_assets():
     cfg = T.load_config()
     out = []
@@ -853,10 +946,7 @@ def seam_run(upload, asset):
     if upload:
         src = Path(upload if isinstance(upload, str) else upload.name)
     elif asset:
-        cat, nm = asset.split("/", 1)
-        src = Path(cfg["export_dir"]) / cat / nm / f"{nm}.glb"
-        if not src.exists():  # rigged exports are not in the dropdown, but allow typing/choosing a plain one
-            src = src.with_name(f"{nm}_rigged.glb")
+        src = _asset_src(asset)
     else:
         log.append(_t("ui.choose_a_finished_model_or_load_a_3"))
         yield emit()
@@ -890,11 +980,8 @@ def split_run(upload, asset):
     if upload:
         src = Path(upload if isinstance(upload, str) else upload.name)
     elif asset:
-        cat, nm = asset.split("/", 1)
-        base = Path(cfg["export_dir"]) / cat / nm
-        src = base / f"{nm}_rigged.glb"
-        if not src.exists():
-            src = base / f"{nm}.glb"
+        f = _char_files(asset)
+        src = f["rigged"] or f["source"] or f["dir"] / f"{f['name']}.glb"
     else:
         log.append(_t("ui.choose_a_model_with_a_skeleton_or"))
         yield emit()
@@ -919,6 +1006,40 @@ SLOT_LABELS = {_t("ui.breastplate"): "chest", _t("ui.helmet"): "helmet", _t("ui.
                _t("ui.trousers_greaves"): "pants", _t("ui.bracers"): "bracers", _t("ui.pauldrons"): "pauldrons"}
 
 
+# the slot a piece is for, from its name (generated pieces are named after what they are)
+SLOT_NAMES = [(r"boot|shoe|sabaton|сапог|ботин", "boots"), (r"helm|hat|hood|шлем", "helmet"), (r"glove|gauntlet|перчат|рукавиц", "gloves"),
+              (r"pauldron|spaulder|shoulder|наплеч", "pauldrons"), (r"bracer|vambrace|наруч", "bracers"),
+              (r"greave|cuisse|pants|trouser|legging|понож|штан", "pants"), (r"chest|cuirass|breast|torso|нагруд|кирас", "chest")]
+
+
+def fit_item_pick(upload, asset, slot_label):
+    """The piece chosen: shown on its own at once, and its slot guessed from its name."""
+    src = (upload if isinstance(upload, str) else getattr(upload, "name", None)) if upload else (asset if asset and Path(asset).is_file() else None)
+    name = Path(src).stem.lower() if src else ""
+    slot = next((k for re_, k in SLOT_NAMES if re.search(re_, name)), None)
+    label = next((lb for lb, k in SLOT_LABELS.items() if k == slot), slot_label)
+    return src, label
+
+
+def _piece_assets():
+    """[(path under export without .glb, the file)]: the pieces under export/equipment and export/item, whatever their
+    depth (generated_armour/models/leather_boot/...), not the fitted or source copies of the character's own."""
+    ex = Path(T.load_config()["export_dir"])
+    out = []
+    for root in ("equipment", "item"):
+        for f in sorted((ex / root).rglob("*.glb")):
+            if re.search(r"_rigged|_parts$|\.src$|_wear_", f.stem):
+                continue
+            out.append((f.relative_to(ex).with_suffix("").as_posix(), str(f)))
+    return out
+
+
+def fit_auto(body, upload, asset, *rest):
+    """«Подогнать» right after a piece is chosen (nothing when none is)."""
+    if upload or asset:
+        yield from fit_run(body, upload, asset, *rest)
+
+
 def _parts_bodies():
     cfg = T.load_config()
     return [str(p) for p in sorted(Path(cfg["export_dir"]).rglob("*_parts.glb"))]
@@ -930,6 +1051,23 @@ LENGTH_LABELS = {_t("ui.slot_default"): "", _t("ui.to_the_chest"): "chest", _t("
 
 FIT_MODES = {_t("ui.scale_only_the_armour_keeps_its"): "uniform",
              _t("ui.by_the_skeleton_s_landmarks_fit"): "landmarks"}
+
+
+def _on_body(body, piece, cfg):
+    """The fitted piece together with the body it was fitted on, as one GLB for the 3D view (work_dir/fit_view);
+    the piece alone when they cannot be put together."""
+    try:
+        import trimesh
+        sc, pc = trimesh.load(str(body), force="scene"), trimesh.load(str(piece), force="scene")
+        for node in pc.graph.nodes_geometry:   # each part where it is, with its material
+            tf, geom = pc.graph[node]
+            sc.add_geometry(pc.geometry[geom], node_name=f"piece_{node}", transform=tf)
+        out = Path(cfg["work_dir"]) / "fit_view" / f"{Path(piece).stem}_on_body.glb"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        sc.export(str(out))
+        return str(out)
+    except Exception:  # noqa: BLE001
+        return str(piece)
 
 
 def fit_run(body, armour_upload, armour_asset, slot_label, length_label=_t("ui.slot_default"),
@@ -950,6 +1088,8 @@ def fit_run(body, armour_upload, armour_asset, slot_label, length_label=_t("ui.s
         return
     if armour_upload:
         src = Path(armour_upload if isinstance(armour_upload, str) else armour_upload.name)
+    elif armour_asset and Path(armour_asset).is_file():   # a file from the list of pieces
+        src = Path(armour_asset)
     elif armour_asset:
         cat, nm = armour_asset.split("/", 1)
         src = Path(cfg["export_dir"]) / cat / nm / f"{nm}.glb"
@@ -971,7 +1111,7 @@ def fit_run(body, armour_upload, armour_asset, slot_label, length_label=_t("ui.s
         log += [f"  {x}" for x in man["log"]]
         log.append(_t("ui.done_hides_manifest", dst, ', '.join(man['hides']) or 'ничего (тело остаётся под бронёй)', dst.with_suffix('.item.json').name))
         log.append(_t("ui.don_t_like_the_fit_change_the_length"))
-        last[0] = str(dst)
+        last[0] = _on_body(body, dst, cfg)
         pics[0] = [(p, _t("ui.front") if "front" in p else _t("ui.side")) for p in man.get("previews", [])]
     except Exception as e:  # noqa: BLE001
         log.append(_t("ui.error_2", e))
@@ -990,9 +1130,8 @@ def _src_of(upload, asset):
         name = T.slug(src.stem)
         return src, name, Path(cfg["export_dir"]) / "character" / name
     if asset:
-        cat, nm = asset.split("/", 1)
-        src = Path(cfg["export_dir"]) / cat / nm / f"{nm}.glb"
-        return src, T.slug(nm), src.parent
+        src = _asset_src(asset)
+        return src, T.slug(asset.split("/", 1)[1]), src.parent
     return None, None, None
 
 
@@ -1099,8 +1238,8 @@ def rig_run(upload, asset, naming_label, tries=3):
         name = T.slug(src.stem)
         dst = Path(cfg["export_dir"]) / "character" / name / f"{name}_rigged.glb"
     elif asset:
-        cat, nm = asset.split("/", 1)
-        src = Path(cfg["export_dir"]) / cat / nm / f"{nm}.glb"
+        nm = asset.split("/", 1)[1]
+        src = _asset_src(asset)
         name = T.slug(nm)
         dst = src.with_name(f"{nm}_rigged.glb")
     else:
@@ -1679,9 +1818,12 @@ def _rigged_assets():
     return out
 
 
-def _rigged_path(asset):
+def _rigged_path(asset):   # "category/name" (the current character) or "category/<name>_rigged" (a file)
+    f = _char_files(asset)
+    if f and f["rigged"]:
+        return f["rigged"]
     cat, nm = asset.split("/", 1)
-    return Path(T.load_config()["export_dir"]) / cat / nm.split("_rigged")[0] / f"{nm}.glb"
+    return Path(T.load_config()["export_dir"]) / cat / re.sub(r"(_landmarks)?_rigged.*$", "", nm) / f"{nm}.glb"
 
 
 def hanim_pick(upload, asset):
@@ -2208,14 +2350,25 @@ def build():
                         batch_gallery = gr.Gallery(label=_t("ui.preview"), columns=6, height=150)
 
             with gr.Tab(_t("ui.character"), id="g_char"):
+                with gr.Row(elem_classes=["char-bar"]):   # the current character: every tool below works on it
+                    with gr.Column(scale=3):
+                        with gr.Row():
+                            char_dd = gr.Dropdown(_characters(), value=_char_default(), label=_t("ui.current_character"), scale=4)
+                            char_refresh = gr.Button(_t("ui.refresh"), scale=1)
+                            char_up = gr.UploadButton(_t("ui.char_add"), file_types=[".glb"], type="filepath", scale=2)
+                        char_md = gr.Markdown(char_info(_char_default())[0])
+                    with gr.Column(scale=2):
+                        char_view = gr.Model3D(value=char_info(_char_default())[1], label=_t("ui.model"), height=230,
+                                               clear_color=(0.9, 0.9, 0.9, 1))
+                char_rig = gr.Textbox(visible=False)   # its model with a skeleton, for the tools that take a path
                 with gr.Tabs() as tabs_char:
                     with gr.Tab(_t("ui.skeleton"), id="rig"):
                         with gr.Row():
                             with gr.Column(scale=1):
                                 gr.Markdown(_t("ui.1_model_choose_one_you_made_or_load"))
-                                with gr.Row():
+                                with gr.Row(visible=False):   # the current character's (above)
                                     rig_asset = gr.Dropdown(_export_assets(), label=_t("ui.finished_model_category_name"),
-                                                            scale=4)
+                                                            scale=4, allow_custom_value=True)
                                     rig_refresh_btn = gr.Button(_t("ui.refresh"), scale=1)
                                 rig_upload = gr.File(label=_t("ui.or_load_a_glb"), file_types=[".glb"], type="filepath")
                                 rig_mode = gr.Radio(list(RIG_MODES), value=list(RIG_MODES)[0], label=_t("ui.2_how_to_build_the_skeleton"))
@@ -2252,8 +2405,8 @@ def build():
                         with gr.Row():
                             with gr.Column(scale=1):
                                 gr.Markdown(_t("ui.a_set_of_ready_clips_for_a_humanoid"))
-                                with gr.Row():
-                                    ha_asset = gr.Dropdown(_rigged_assets(), label=_t("lm.model_with_a_skeleton"), scale=4)
+                                with gr.Row(visible=False):   # the current character's (above)
+                                    ha_asset = gr.Dropdown(_rigged_assets(), label=_t("lm.model_with_a_skeleton"), scale=4, allow_custom_value=True)
                                     ha_refresh_btn = gr.Button(_t("ui.refresh"), scale=1)
                                 ha_upload = gr.File(label=_t("ui.or_load_a_glb_with_a_skeleton"), file_types=[".glb"],
                                                     type="filepath")
@@ -2272,8 +2425,8 @@ def build():
                         with gr.Row():
                             with gr.Column(scale=4):
                                 gr.Markdown(_t("ui.animations_from_mixamo_fbx_without"))
-                                with gr.Row():
-                                    fx_asset = gr.Dropdown(_rigged_assets(), label=_t("lm.model_with_a_skeleton"), scale=4)
+                                with gr.Row(visible=False):   # the current character's (above)
+                                    fx_asset = gr.Dropdown(_rigged_assets(), label=_t("lm.model_with_a_skeleton"), scale=4, allow_custom_value=True)
                                     fx_refresh = gr.Button(_t("ui.refresh"), scale=1)
                                 fx_upload = gr.File(label=_t("ui.or_your_own_glb_with_a_skeleton"), file_types=[".glb"], type="filepath")
                                 fx_folder = gr.Textbox(value=_fbx_dir(), label=_t("ui.folder_with_fbx"))
@@ -2299,9 +2452,9 @@ def build():
                                     _t("ui.generate_the_same_character_in_the"))
                                 out_model = gr.File(label=_t("ui.glb_of_the_dressed_model_with"), file_types=[".glb"],
                                                     type="filepath")
-                                with gr.Row():
+                                with gr.Row(visible=False):   # the current character's body in parts (above)
                                     out_body = gr.Dropdown(_parts_bodies(), label=_t("ui.onto_which_body_parts_glb"),
-                                                           scale=3)
+                                                           scale=3, allow_custom_value=True)
                                     out_refresh = gr.Button(_t("ui.refresh"), scale=1)
                                 out_name = gr.Textbox(label=_t("ui.set_name_folder_in_equipment"))
                                 out_scan_btn = gr.Button(_t("ui.split_into_segments"))
@@ -2322,15 +2475,17 @@ def build():
                         with gr.Row():
                             with gr.Column(scale=1):
                                 gr.Markdown(_t("ui.puts_a_separately_generated_piece_on"))
-                                with gr.Row():
-                                    fit_body = gr.Dropdown(_parts_bodies(), label=_t("ui.body_parts_glb"), scale=4)
+                                with gr.Row(visible=False):   # the current character's body in parts (above)
+                                    fit_body = gr.Dropdown(_parts_bodies(), label=_t("ui.body_parts_glb"), scale=4, allow_custom_value=True)
                                     fit_refresh = gr.Button(_t("ui.refresh"), scale=1)
                                 with gr.Row():
-                                    fit_asset = gr.Dropdown(_export_assets(), label=_t("ui.piece_from_finished_models"), scale=3)
+                                    fit_asset = gr.Dropdown(_piece_assets(), label=_t("ui.piece_from_finished_models"), scale=3)
+                                    fit_items_refresh = gr.Button(_t("ui.refresh"), scale=1)
                                     fit_slot = gr.Dropdown(list(SLOT_LABELS), value=_t("ui.breastplate"), label=_t("ui.slot"),
                                                            scale=2)
                                 fit_upload = gr.File(label=_t("ui.or_load_the_piece_s_glb"), file_types=[".glb"],
                                                      type="filepath")
+                                fit_item = gr.Model3D(label=_t("ui.the_piece"), height=220, clear_color=(0.9, 0.9, 0.9, 1))
                                 fit_mode = gr.Radio(list(FIT_MODES), value=list(FIT_MODES)[0], label=_t("ui.fit_2"))
                                 with gr.Accordion(_t("ui.fine_tuning"), open=False):
                                     fit_scale = gr.Slider(50, 150, value=100, step=1, label=_t("ui.scale"))
@@ -2353,10 +2508,10 @@ def build():
                                 fit_view = gr.Gallery(label=_t("ui.how_it_sits_front_and_side"), columns=2, height=300)
 
                     with gr.Tab(_t("ui.equipment_procedural"), id="proc_armour"):
-                        armour_gen_ui.mount(T.load_config)
+                        armour_gen_ui.mount(T.load_config, char_rig)
 
                     with gr.Tab(_t("ui.weight_fixing"), id="rwt"):
-                        rwt_ui.mount(T.load_config, accordion=False)  # GPT: Optional repair retains the skeleton.
+                        rwt_ui.mount(T.load_config, accordion=False, char=char_rig)  # GPT: Optional repair retains the skeleton.
                     with gr.Tab(_t("ui.face_parts"), id="face"):
                         face_parts_ui.mount(T.load_config, accordion=False)
                     with gr.Tab(_t("ui.lipsync"), id="lipsync"):
@@ -2524,6 +2679,14 @@ def build():
         gpu_btn.click(gpu_status, None, [gpu_md, gpu_proc])
         gpu_close.click(gpu_close_proc, [gpu_proc, gpu_force], [gpu_msg, gpu_md, gpu_proc])
 
+        # the current character: its view, what it has, its files in every tab
+        char_dd.change(char_info, char_dd, [char_md, char_view], show_progress="hidden")
+        char_dd.change(char_remember, char_dd, None, show_progress="hidden")
+        char_dd.change(char_for_tabs, char_dd, [rig_asset, ha_asset, fx_asset, out_body, fit_body, char_rig], show_progress="hidden")
+        char_refresh.click(lambda v: gr.update(choices=_characters(), value=v), char_dd, char_dd)
+        char_up.upload(char_add, char_up, char_dd)
+        ui.load(char_for_tabs, char_dd, [rig_asset, ha_asset, fx_asset, out_body, fit_body, char_rig], show_progress="hidden")
+
         # rigging
         rig_refresh_btn.click(rig_refresh, None, rig_asset)
         rig_asset.change(preview_pick, [rig_upload, rig_asset], rig_view, show_progress="hidden")
@@ -2545,13 +2708,17 @@ def build():
 
         # equipment
         def refresh_bodies():
-            return gr.update(choices=_parts_bodies()), gr.update(choices=_export_assets())
+            return gr.update(choices=_parts_bodies()), gr.update(choices=_piece_assets())
 
         fit_refresh.click(refresh_bodies, None, [fit_body, fit_asset])
+        fit_items_refresh.click(lambda: gr.update(choices=_piece_assets()), None, fit_asset)
         out_refresh.click(lambda: gr.update(choices=_parts_bodies()), None, out_body)
         fit_body.change(lambda p: p or None, fit_body, fit_m3d, show_progress="hidden")
-        fit_asset.change(preview_pick, [fit_upload, fit_asset], fit_m3d, show_progress="hidden")
-        fit_upload.change(preview_pick, [fit_upload, fit_asset], fit_m3d, show_progress="hidden")
+        # a piece chosen: shown on its own, its slot guessed, then put on the character at once (on the right)
+        fit_inputs = [fit_body, fit_upload, fit_asset, fit_slot, fit_length, fit_w, fit_h, fit_d, fit_up, fit_gap, fit_scale, fit_mode, fit_hide, fit_shrink]
+        for _src in (fit_asset, fit_upload):
+            _src.change(fit_item_pick, [fit_upload, fit_asset, fit_slot], [fit_item, fit_slot], show_progress="hidden").then(
+                fit_auto, fit_inputs, [fit_log, fit_m3d, fit_view])
         fit_btn.click(fit_run, [fit_body, fit_upload, fit_asset, fit_slot, fit_length, fit_w, fit_h, fit_d,
                                 fit_up, fit_gap, fit_scale, fit_mode, fit_hide, fit_shrink], [fit_log, fit_m3d, fit_view])
         out_model.change(lambda f: (f if isinstance(f, str) else getattr(f, "name", None)) if f else None,

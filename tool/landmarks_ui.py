@@ -125,8 +125,14 @@ def mount(config_loader, asset, upload, accordion=True):
         return data, editor
 
 
+def _say_frame(page):   # the lipsync viewer: it may play the line's sound at once (the click was on this page)
+    return ('<iframe allow="autoplay" srcdoc="%s" style="width:100%%;height:max(560px,62vh);border:0;border-radius:10px"></iframe>'
+            % _html.escape(page, quote=True))
+
+
 def mount_lipsync(config_loader, asset, upload, data, editor, accordion=True):
-    """Lip-sync clip for the mouth plate. asset / upload: the pickers of the rigging tab; data / editor: from mount()."""
+    """Lip-sync clip for the mouth plate. asset / upload: the pickers of the rigging tab; data / editor: from mount().
+    The clip made (or one made before) is shown right here: the face close, the line played."""
     with (gr.Accordion(_t("lm.line_lipsync_for_a_model_with_a"), open=False) if accordion
           else contextlib.nullcontext()):
         gr.Markdown(_t("lm.the_model_is_taken_from_the_skeleton"))
@@ -137,31 +143,56 @@ def mount_lipsync(config_loader, asset, upload, data, editor, accordion=True):
                 ls_lang = gr.Radio(["ru", "en"], value="ru", label=_t("face.tongue"))
                 ls_btn = gr.Button(_t("lm.make_the_lipsync_clip"), variant="primary")
         ls_log = gr.Textbox(label=_t("face.progress"), lines=5, interactive=False)
+        with gr.Row():
+            ls_clip = gr.Dropdown([], label=_t("lm.lipsync_clips"), scale=4, allow_custom_value=False)
+            ls_show = gr.Button(_t("lm.watch_the_line"), variant="primary", scale=1)
+        ls_view = gr.HTML()
+
+        def model(up, name):   # (the source, the built model) or (None, None)
+            cfg = config_loader()
+            src = LM.source_path(up, name, cfg["export_dir"])
+            if not src or not src.exists():
+                return None, None, cfg
+            rigged = LM.output_paths(src, cfg["export_dir"])[0]
+            return src, (rigged if rigged.exists() else None), cfg
+
+        def view(src, rigged, cfg, clip, state_text):
+            return _say_frame(LM.editor_page(src, LM.initial_state(src, cfg["export_dir"], state_text), rigged, mode="say", say=clip))
+
+        def show(up, name, clip, state_text):
+            src, rigged, cfg = model(up, name)
+            if not rigged:
+                return gr.update(), _t("lm.build_the_skeleton_from_the_markup"), gr.update()
+            clips = [c["name"] for c in LM.face_clips(rigged)]
+            if not clips:
+                return gr.update(choices=[], value=None), _t("lm.no_lipsync_clips_yet"), ""
+            clip = clip if clip in clips else max(clips, key=lambda c: (rigged.parent / f"{c}.face.json").stat().st_mtime)
+            return gr.update(choices=clips, value=clip), gr.update(), view(src, rigged, cfg, clip, state_text)
 
         def lipsync(up, name, audio, text, lang, state_text):
             import lipsync_link as LL
-            cfg = config_loader()
-            src = LM.source_path(up, name, cfg["export_dir"])
-            if not src or not src.exists() or not audio:
-                yield _t("lm.a_model_tab_skeleton_and_audio_are"), gr.update()
+            src, rigged, cfg = model(up, name)
+            if not src or not audio:
+                yield _t("lm.a_model_tab_skeleton_and_audio_are"), gr.update(), gr.update(), gr.update()
                 return
-            rigged = LM.output_paths(src, cfg["export_dir"])[0]
-            if not rigged.exists():
-                yield _t("lm.build_the_skeleton_from_the_markup"), gr.update()
+            if not rigged:
+                yield _t("lm.build_the_skeleton_from_the_markup"), gr.update(), gr.update(), gr.update()
                 return
             lines = []
             try:
                 for step in LL.make_clip(Path(audio), text.strip(), lang, rigged, cfg):
                     if isinstance(step, dict):
                         lines.append(_t("lm.done_open_pose_line", step['clip']))
-                        yield "\n".join(lines), _frame(LM.editor_page(
-                            src, LM.initial_state(src, cfg["export_dir"], state_text), rigged, mode="pose"))
+                        clip = Path(step["clip"]).name[:-len(".face.json")]
+                        yield ("\n".join(lines), _frame(LM.editor_page(src, LM.initial_state(src, cfg["export_dir"], state_text), rigged, mode="pose")),
+                               gr.update(choices=[c["name"] for c in LM.face_clips(rigged)], value=clip), view(src, rigged, cfg, clip, state_text))
                     else:
                         lines.append(step)
-                        yield "\n".join(lines), gr.update()
+                        yield "\n".join(lines), gr.update(), gr.update(), gr.update()
             except Exception as e:
                 lines.append(_t("lm.error_2") + str(e))
-                yield "\n".join(lines), gr.update()
+                yield "\n".join(lines), gr.update(), gr.update(), gr.update()
 
-        ls_btn.click(lipsync, [upload, asset, ls_audio, ls_text, ls_lang, data], [ls_log, editor], concurrency_id="lipsync",
+        ls_btn.click(lipsync, [upload, asset, ls_audio, ls_text, ls_lang, data], [ls_log, editor, ls_clip, ls_view], concurrency_id="lipsync",
                      concurrency_limit=1)
+        ls_show.click(show, [upload, asset, ls_clip, data], [ls_clip, ls_log, ls_view])

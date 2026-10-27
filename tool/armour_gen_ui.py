@@ -281,12 +281,15 @@ def _frame(page):
             % _html.escape(page, quote=True))
 
 
-def mount(config_loader):
+def mount(config_loader, char=None):
+    """char: the app's current character (its model with a skeleton): the editor opens on it at once when it changes;
+    without it the tab has its own choice."""
     cfg0 = config_loader()
     gr.Markdown(_t("ag.intro"))
     with gr.Row():
-        rig = gr.Dropdown(characters(cfg0), value=(characters(cfg0) or [(None, None)])[0][1], label=_t("ag.character"), scale=4)
-        refresh = gr.Button(_t("ui.refresh"), scale=1)
+        rig = gr.Dropdown(characters(cfg0), value=(characters(cfg0) or [(None, None)])[0][1], label=_t("ag.character"), scale=4,
+                          visible=char is None, allow_custom_value=True)
+        refresh = gr.Button(_t("ui.refresh"), scale=1, visible=char is None)
         open_btn = gr.Button(_t("ag.open_editor"), variant="primary", scale=2)
     editor = gr.HTML()
     gr.HTML("<style>.sf3d-hidden{display:none!important}</style>")
@@ -309,5 +312,8 @@ def mount(config_loader):
 
     refresh.click(lambda: gr.update(choices=characters(config_loader())), None, rig)
     open_btn.click(open_editor, rig, editor)
+    if char is not None:   # the current character: on it at once
+        char.change(lambda r: (r, open_editor(r) if r and str(r).endswith("_landmarks_rigged.glb") else _t("ag.choose_a_character")),
+                    char, [rig, editor], show_progress="hidden")
     go.click(lambda: _t("ag.working"), None, log).then(run, req, [log, shots], concurrency_id="armour_gen", concurrency_limit=1,
                                                          show_progress="minimal")

@@ -6,13 +6,13 @@ from rwt_strings import TEXT as S
 
 
 # GPT: Own all RWT controls and callbacks here so the large generation UI contains wiring only.
-def mount(config_loader, accordion=True):
+def mount(config_loader, accordion=True, char=None):
     with (gr.Accordion(S['title'],open=False) if accordion else contextlib.nullcontext()):
         gr.Markdown(S['intro']);gr.Markdown(S['limit'])
         with gr.Row():
             with gr.Column():
                 upload=gr.File(label=S['upload'],file_types=['.glb','.blend'],type='filepath')
-                path=gr.Textbox(label=S['path'])
+                path=gr.Textbox(label=S['path'],visible=char is None)  # the current character's model (char), or typed
                 mesh=gr.Textbox(label=S['mesh'])
                 region=gr.Radio(choices=[(S['auto'],'auto'),(S['group'],'group')],value='auto',label=S['region'])
                 group=gr.Textbox(label=S['group_name'],visible=False)
@@ -24,6 +24,8 @@ def mount(config_loader, accordion=True):
                 log=gr.Textbox(label=S['log'],lines=8,interactive=False)
                 files=gr.File(label=S['files'],file_count='multiple',interactive=False)
         region.change(lambda r:gr.update(visible=r=='group'),region,group,show_progress='hidden')
+        if char is not None:  # the current character: its model with a skeleton (shown above the tabs)
+            char.change(lambda r:r or '',char,path,show_progress='hidden')
         def execute(uploaded,local,mesh_name,mode,mask_group,power,scale):
             source=uploaded or local
             if not source or not Path(source).is_file():

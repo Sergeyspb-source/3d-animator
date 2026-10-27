@@ -54,9 +54,10 @@ def bone_names(naming="mixamo"):
 def source_path(upload, asset, export_dir):
     if upload:
         return Path(upload if isinstance(upload, str) else upload.name)
-    if asset:
+    if asset:   # "category/name": its source, else (a source loaded once and never kept) its skeleton's model
         cat, nm = asset.split("/", 1)
-        return Path(export_dir) / cat / nm / f"{nm}.glb"
+        d = Path(export_dir) / cat / nm
+        return next((d / n for n in (f"{nm}.glb", f"{nm}_landmarks_rigged.glb", f"{nm}_rigged.glb") if (d / n).exists()), d / f"{nm}.glb")
     return None
 
 
@@ -443,11 +444,12 @@ def parse(text):
     return data
 
 
-def editor_page(src: Path, state: dict | None, rigged: Path | None = None, mode: str | None = None):
+def editor_page(src: Path, state: dict | None, rigged: Path | None = None, mode: str | None = None, say: str | None = None):
     """rigged: built GLB for the pose mode (fetched by the page through Gradio's /file= route, so it must lie in
-    an allowed path such as export_dir); mode='pose' opens the page straight in the pose mode."""
+    an allowed path such as export_dir); mode='pose' opens the page straight in the pose mode, mode='say' only
+    looks: the face close with the lip-sync clip say (its name) chosen and played."""
     page = i18n.fill(EDITOR.read_text(encoding="utf-8"))
-    data = {"state": state, "target": TARGET_ID, "wear_target": WEAR_ID, "wear_go": WEAR_GO, "source": str(src), "mode": mode,
+    data = {"state": state, "target": TARGET_ID, "wear_target": WEAR_ID, "wear_go": WEAR_GO, "source": str(src), "mode": mode, "say": say,
             "rigged": Path(rigged).resolve().as_posix() if rigged and Path(rigged).exists() else None,
             "rigged_v": int(Path(rigged).stat().st_mtime) if rigged and Path(rigged).exists() else 0,
             "names": {"mixamo": bone_names("mixamo"), "godot": bone_names("godot")},
