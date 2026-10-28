@@ -1649,5 +1649,7 @@
  "lm.wear_needs_landmarks": "The current character has no landmark skeleton: build it on the «Skeleton» tab → «By hand with landmarks».",
  "ag.helmet_strap": "Strap: up / down",
  "ag.helmet_strap_info": "The chin strap goes under the chin by itself; here it is raised (+) or lowered (−), the next slider moves it forward (+) or back (−). Shares of the head's half depth.",
- "ag.helmet_strap_fwd": "Strap: forward / back"
+ "ag.helmet_strap_fwd": "Strap: forward / back",
+ "ed.anchor": "Anchor",
+ "ed.anchor_hint": "Where it grows from: «Size» and «Rotate» go about the chosen point of the piece (like a canvas size in a picture editor). ↑ — the top stays, the piece grows down: the straps stay on the shoulders."
 }
