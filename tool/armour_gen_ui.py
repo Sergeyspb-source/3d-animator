@@ -158,6 +158,12 @@ DECALS = ROOT / "decals"   # the shared emblems and digits (decals/make_decals.p
 def decals(folder: Path) -> list:
     """The pictures the «Paint» brush can put on (export/decals): the shared set is copied there the first time, and
     any PNG put there is offered too. [{name, path, label}]"""
+    if not any(DECALS.glob("*.png")):   # the repository keeps the script, not the pictures: drawn once here
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("make_decals", DECALS / "make_decals.py")
+        md = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(md)
+        md.main(DECALS)
     if not folder.exists():
         folder.mkdir(parents=True, exist_ok=True)
         for f in DECALS.glob("*.png"):
