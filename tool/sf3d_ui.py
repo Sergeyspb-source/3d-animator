@@ -2375,8 +2375,8 @@ def build():
 
                     with gr.Tab(_t("ui.weight_fixing"), id="rwt"):
                         rwt_ui.mount(T.load_config, accordion=False, char=char_rig)  # GPT: Optional repair retains the skeleton.
-                    with gr.Tab(_t("ui.face_parts"), id="face"):
-                        face_parts_ui.mount(T.load_config, accordion=False)
+                    with gr.Tab(_t("ui.face_parts"), id="face") as tab_face:
+                        face_parts_ui.mount(T.load_config, accordion=False, tab=tab_face)
                     with gr.Tab(_t("ui.lipsync"), id="lipsync"):
                         landmarks_ui.mount_lipsync(T.load_config, rig_asset, rig_upload, lm_data, lm_editor, accordion=False)
 

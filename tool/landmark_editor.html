@@ -125,6 +125,9 @@
   .legend i { display:inline-block; width:70px; height:8px; border-radius:4px;
     background:linear-gradient(90deg,#1a33cc,#19c2c2,#2fbf3a,#e8d21d,#e5484d); }
   kbd { font:11px var(--mono); border:1px solid var(--line); border-radius:4px; padding:0 4px; }
+  /* a tool, not a page: its labels are not selected (Ctrl+A, a drag), the fields are */
+  body { -webkit-user-select:none; user-select:none; }
+  input, textarea, select { -webkit-user-select:text; user-select:text; }
 </style>
 </head>
 <body>
@@ -209,7 +212,7 @@
         <span class="r">{{ed.rmb}}</span> {{ed.rotate_the_view}}<br>
         <span class="w">{{ed.wheel}}</span> {{ed.zoom_hold_pan}}<br>
         <kbd>1</kbd> {{ed.front_2}} <kbd>3</kbd> {{ed.side_3}} <kbd>F</kbd> {{ed.fit_2}} <kbd>H</kbd> {{ed.hand_2}} <kbd>Alt+Z</kbd> {{ed.x_ray_2}}<br>
-        <kbd>G</kbd> {{ed.move_2}} <kbd>R</kbd> {{ed.rotate_2}} <kbd>Ctrl+Z</kbd> {{ed.undo}} <kbd>Esc</kbd> {{ed.deselect}}</div>
+        <kbd>G</kbd> {{ed.move_2}} <kbd>R</kbd> {{ed.rotate_2}} <kbd>Ctrl+Z</kbd> {{ed.undo}} <kbd>Ctrl+Shift+Z</kbd> {{ed.redo_kbd}} <kbd>Esc</kbd> {{ed.deselect}}</div>
     </div>
     <div class="hint" id="hint" hidden></div>
     <div class="msg" id="msg">{{ed.loading_the_model}}</div>
@@ -291,7 +294,7 @@
       <div class="small warn" id="warn"></div>
       <div class="sync" id="sync" style="margin-top:6px"></div>
       <div class="row">
-        <button id="undo" title="Ctrl+Z">{{ed.undo_2}}</button>
+        <button id="undo" title="Ctrl+Z">{{ed.undo_2}}</button><button id="redo" title="Ctrl+Shift+Z">{{ed.redo}}</button>
         <button id="rebuild" title="{{ed.recompute_the_pelvis_spine_neck}}">{{ed.recompute_derived_joints}}</button>
         <span class="grow"></span>
         <button id="reset" class="danger" title="{{ed.delete_the_whole_markup}}">{{ed.start_over}}</button>
@@ -411,7 +414,7 @@ let current = null;       // landmark being placed
 let selected = null;      // joint selected in edit phase
 let view = 'front', xray = false;
 let railTab = 'nodes';     // right panel: 'nodes' (list) or 'extra' (fingers, face, mouth)
-const undoStack = [];
+const undoStack = [], redoStack = [];
 
 // ---------------------------------------------------------------- helpers
 function measure() {
@@ -815,19 +818,20 @@ function refreshAll() {
   $('warn').innerHTML = w.length ? w.map((x) => '⚠ ' + x.text).join('<br>') : (S.phase === 'edit' ? '{{js:ed.joint_bends_are_normal}}' : '');
   $('sym').checked = S.sym; $('xray').classList.toggle('on', xray);
   $('yawTxt').textContent = S.yaw ? `{{raw:ed.model_turned_by}}` : '';
-  $('rebuild').disabled = S.phase !== 'edit'; $('undo').disabled = !undoStack.length;
+  $('rebuild').disabled = S.phase !== 'edit'; $('undo').disabled = !undoStack.length; $('redo').disabled = !redoStack.length;
   for (const [id, v] of [['vFront', 'front'], ['vSide', 'side'], ['vFree', 'free']]) $(id).classList.toggle('on', view === v);
   $('badge').textContent = { front: '{{js:ed.front_view}}', side: '{{js:ed.side_view_from_the_character_s_left}}', free: '{{js:ed.free_view}}' }[view];
 }
 
 // ---------------------------------------------------------------- state changes
 const snap = () => JSON.stringify(S);
-function pushUndo() { undoStack.push(snap()); if (undoStack.length > 100) undoStack.shift(); }
-function undo() {
-  if (!undoStack.length) return; Object.assign(S, JSON.parse(undoStack.pop()));
+function pushUndo() { undoStack.push(snap()); if (undoStack.length > 100) undoStack.shift(); redoStack.length = 0; }
+function stepBack(from, to) {   // undo: from the undo stack, the state now onto the redo one (redo: the other way)
+  if (!from.length) return; to.push(snap()); Object.assign(S, JSON.parse(from.pop()));
   if (selected && S.phase !== 'edit') select(null); else if (selected) attach();
   applyYaw(); refreshAll(); sync();
 }
+const undo = () => stepBack(undoStack, redoStack), redo = () => stepBack(redoStack, undoStack);
 const getRot = (id) => S.rot[id] ? new THREE.Quaternion(...S.rot[id]) : new THREE.Quaternion();
 
 function setPos(id, p) {
@@ -1592,10 +1596,18 @@ canvas.addEventListener('pointerup', (e) => {
     select(id);
   }
 });
+// Ctrl+A outside a field selects nothing; any click takes a selection away (the 3D view's clicks do not on their own)
+const inField = (t) => !!(t && t.closest && t.closest('input[type=text], input[type=number], textarea, select'));
+addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.code === 'KeyA' && !inField(e.target)) { e.preventDefault(); getSelection().removeAllRanges(); }
+});
+addEventListener('pointerdown', (e) => {   // the app's page too: a Ctrl+A there stays otherwise
+  if (!inField(e.target)) { getSelection().removeAllRanges(); try { if (window.parent !== window) window.parent.getSelection().removeAllRanges(); } catch (er) { /* another origin */ } }
+}, true);
 addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT') return;
   const k = e.key.toLowerCase();
-  if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); undo(); }
+  if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyZ' || e.code === 'KeyY')) { e.preventDefault(); (e.shiftKey || e.code === 'KeyY' ? redo : undo)(); }
   else if (k === 'g' || k === 'п') { tc.setMode('translate'); refreshFields(); }
   else if (k === 'r' || k === 'к') { tc.setMode('rotate'); refreshFields(); }
   else if (e.key === 'Escape') { if (ovalMode) $('ovalBtn').onclick(); else select(null); }
@@ -1608,7 +1620,7 @@ $('vFront').onclick = () => setView('front'); $('vSide').onclick = () => setView
 $('xray').onclick = () => setXray(!xray);
 $('mMove').onclick = () => { tc.setMode('translate'); refreshFields(); };
 $('mRot').onclick = () => { tc.setMode('rotate'); refreshFields(); };
-$('undo').onclick = undo;
+$('undo').onclick = undo; $('redo').onclick = redo;
 $('sym').onchange = () => {
   pushUndo(); S.sym = $('sym').checked;
   if (S.sym) { rightMarks(); if (S.phase === 'edit') for (const j of live()) if (j.id.endsWith('_L')) setPos(j.id, V(S.pos[j.id])); }

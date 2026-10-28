@@ -55,6 +55,19 @@
   .foot { position:sticky; bottom:0; box-shadow:0 -6px 8px -6px rgba(0,0,0,.25); }
   .status { font-size:12px; color:var(--muted); white-space:pre-wrap; margin-top:6px; max-height:9em; overflow:auto; }
   .note { font-size:11.5px; color:var(--muted); }
+  .hint { position:absolute; left:10px; bottom:10px; font-size:12px; color:var(--fg); background:color-mix(in srgb,var(--panel) 88%,transparent);
+    border:1px solid var(--accent); padding:4px 9px; border-radius:7px; pointer-events:none; max-width:calc(100% - 20px); }
+  details.help summary { cursor:pointer; font-size:12px; color:var(--accent); margin-top:6px; }
+  details.help ul { margin:4px 0 0; padding-left:18px; font-size:12px; color:var(--muted); }
+  details.help li { margin:2px 0; }
+  .stage.pinching canvas { cursor:crosshair; }
+  .decals { display:grid; grid-template-columns:repeat(6,1fr); gap:3px; margin:4px 0; }
+  .decals button { padding:2px; background:#3a322b; border-radius:6px; }
+  .decals button img { width:100%; aspect-ratio:1; display:block; pointer-events:none; }
+  .decals button.on { outline:2px solid var(--accent); }
+  /* a tool, not a page: its labels are not selected (Ctrl+A, a drag), the fields are */
+  body { -webkit-user-select:none; user-select:none; }
+  input, textarea, select, .status { -webkit-user-select:text; user-select:text; }
 </style>
 </head>
 <body>
@@ -72,6 +85,8 @@
       <span class="seg" id="poses" title="{{ag.pose_title}}">
         <button data-p="rest" class="on">{{ag.pose_rest}}</button><button data-p="side">{{ag.pose_side}}</button><button data-p="front">{{ag.pose_front}}</button><button data-p="elbows">{{ag.pose_elbows}}</button><button data-p="squat">{{ag.pose_squat}}</button><button data-p="stride">{{ag.pose_stride}}</button><button data-p="fist">{{ag.pose_fist}}</button>
       </span>
+      <span class="sep"></span>
+      <span class="seg"><button id="undoBtn" title="{{ag.undo_title}}">↶</button><button id="redoBtn" title="{{ag.redo_title}}">↷</button></span>
       <span class="grow"></span>
       <span class="seg" id="shows" hidden>
         <button data-r="0" class="on">{{ag.show_preview}}</button><button data-r="1">{{ag.show_result}}</button>
@@ -81,6 +96,7 @@
       <div class="badge" id="info"></div>
       <div class="warn" id="warn" hidden></div>
       <div class="msg" id="msg">{{ag.loading_character}}</div>
+      <div class="hint" id="pinchHint" hidden>{{ag.pinch_hint}}</div>
     </div>
   </div>
   <div class="rail" id="rail">
@@ -101,6 +117,49 @@
       </div>
     </div>
     <div id="groups"></div>
+    <div class="box" id="pinchBox">
+      <div class="grp">{{ag.brush}}</div>
+      <div class="row"><button id="pinchOn">{{ag.pinch_on}}</button><button id="paintOn">{{ag.paint_on}}</button></div>
+      <div class="note" id="pinchCount"></div>
+      <div id="pinchTools" hidden>
+        <div id="pinchOnly">
+          <div class="row" style="margin:6px 0 2px"><span class="seg" id="pinchMode"><button data-m="pull">{{ag.pinch_pull}}</button><button data-m="paint">{{ag.pinch_paint}}</button></span></div>
+          <div class="row" id="pinchKindRow" style="margin:4px 0 2px"><span class="seg" id="pinchKind"><button data-k="raise">{{ag.pinch_raise}}</button><button data-k="press">{{ag.pinch_press}}</button><button data-k="smooth">{{ag.pinch_smooth}}</button></span></div>
+        </div>
+        <div id="paintOnly">
+          <div class="row" style="margin:6px 0 2px"><span class="seg" id="paintFill"><button data-f="brush">{{ag.paint_brush}}</button><button data-f="part">{{ag.paint_part}}</button><button data-f="all">{{ag.paint_all}}</button><button data-f="erase">{{ag.paint_erase}}</button><button data-f="decal">{{ag.paint_decal}}</button></span></div>
+          <div id="paintDecalRow">
+            <div class="decals" id="paintDecals"></div>
+            <div class="row"><span class="note">{{ag.paint_number}}</span><input type="text" id="i_paint_num" style="width:70px" maxlength="6" placeholder="10">
+              <label class="chk" style="margin:0 0 0 8px"><input type="checkbox" id="i_paint_flip"> {{ag.paint_flip}}</label></div>
+          </div>
+          <div class="row" id="paintLookRow" style="margin:4px 0 2px"><span class="seg" id="paintLook"><button data-l="paint">{{ag.look_paint}}</button><button data-l="gold">{{ag.look_gold}}</button><button data-l="silver">{{ag.look_silver}}</button><button data-l="rust">{{ag.look_rust}}</button><button data-l="soot">{{ag.look_soot}}</button><button data-l="blood">{{ag.look_blood}}</button><button data-l="image">{{ag.look_image}}</button></span></div>
+          <div class="row" id="paintColRow" style="margin:4px 0 2px"><span class="note">{{ag.paint_colour}}</span><input type="color" id="i_paint_c"></div>
+          <div class="sl" id="paintOpRow"><span class="lab">{{ag.paint_opacity}}</span><span class="val" id="v_paint_a"></span>
+            <input type="range" id="i_paint_a" min="0.1" max="1" step="0.05"><span class="inf">{{ag.paint_opacity_info}}</span></div>
+        </div>
+        <div class="note" id="pinchModeNote"></div>
+        <div id="brushRows">
+          <div class="row" id="r_pinch_shape" style="margin:6px 0 0"><span class="note">{{ag.pinch_shape}}</span><span class="seg" id="pinchShape"><button data-sh="circle">{{ag.pinch_circle}}</button><button data-sh="oval">{{ag.pinch_oval}}</button><button data-sh="square">{{ag.pinch_square}}</button><button data-sh="strip">{{ag.pinch_strip}}</button></span></div>
+          <div id="pinchShapeTools">
+            <div class="sl" id="r_pinch_asp"><span class="lab">{{ag.pinch_asp}}</span><span class="val" id="v_pinch_asp"></span>
+              <input type="range" id="i_pinch_asp" min="0.1" max="1" step="0.05"><span class="inf">{{ag.pinch_asp_info}}</span></div>
+            <div class="sl"><span class="lab">{{ag.pinch_ang}}</span><span class="val" id="v_pinch_ang"></span>
+              <input type="range" id="i_pinch_ang" min="0" max="175" step="5"><span class="inf">{{ag.pinch_ang_info}}</span></div>
+          </div>
+          <div class="sl"><span class="lab">{{ag.pinch_radius}}</span><span class="val" id="v_pinch_r"></span>
+            <input type="range" id="i_pinch_r" min="1" max="15" step="0.5"><span class="inf">{{ag.pinch_radius_info}}</span></div>
+          <div class="sl" id="pinchKRow"><span class="lab" id="l_pinch_k">{{ag.pinch_strength}}</span><span class="val" id="v_pinch_k"></span>
+            <input type="range" id="i_pinch_k" min="0.2" max="3" step="0.1"><span class="inf" id="n_pinch_k">{{ag.pinch_strength_info}}</span></div>
+          <div class="sl"><span class="lab">{{ag.pinch_soft}}</span><span class="val" id="v_pinch_s"></span>
+            <input type="range" id="i_pinch_s" min="0" max="1" step="0.05"><span class="inf">{{ag.pinch_soft_info}}</span></div>
+        </div>
+      </div>
+      <div class="row" style="margin-top:4px"><button id="pinchClear">{{ag.pinch_clear}}</button><button id="paintClear">{{ag.paint_clear}}</button></div>
+      <details class="help"><summary>{{ag.pinch_help_title}}</summary><ul>
+        <li>{{ag.pinch_help_1}}</li><li>{{ag.pinch_help_2}}</li><li>{{ag.pinch_help_paint}}</li><li>{{ag.paint_help}}</li><li>{{ag.pinch_help_3}}</li><li>{{ag.pinch_help_4}}</li><li>{{ag.pinch_help_5}}</li>
+      </ul></details>
+    </div>
     <div class="box foot">
       <div class="row"><button class="primary grow" id="go">{{ag.generate}}</button><button id="room">{{ed.fitting_room_in_godot}}</button></div>
       <div class="status" id="status">{{ag.preview_note}}</div>
@@ -1470,6 +1529,10 @@ function buildPiece(kind, sides, p) {
     const wid = Math.max(0, Math.round((p.armhole - 40) / 5));   // wider armholes: the arm's columns spread to their neighbours
     let LO = armTop.map((_, j) => Math.max(...Array.from({ length: 2 * wid + 1 }, (_, k) => armTop[(j + k - wid + NA) % NA])));
     LO = blur([LO], 5)[0];
+    // its thin ends trimmed: where the hole would be a narrow slit (in front of the arm and behind it) the cap's foot
+    // and the ring's top stay together, one surface, instead of two edges at different depths with a slot between;
+    // never below where the rays meet the arm (the plate would go on inside the shoulder)
+    { const mx = Math.max(...LO, 1e-6), cut = .3 * mx; LO = LO.map((x, j) => Math.max(Math.max(0, x - cut) * mx / (mx - cut), armTop[j])); }
     let HI = blur([neckBot], 3)[0].map((x, j) => x - 2.5 * p.neckline * (bump(rel(colA(j)), D(60)) + .4 * bump(Math.abs(rel(colA(j))) - Math.PI, D(60))));
     HI = HI.map((x, j) => Math.max(x, LO[j] + D(8)));
     const at1 = (arr) => (a) => { const x = (((a / TAU) % 1) + 1) % 1 * NA, k = Math.floor(x) % NA, f = x - Math.floor(x); return arr[k] * (1 - f) + arr[(k + 1) % NA] * f; };
@@ -1484,14 +1547,23 @@ function buildPiece(kind, sides, p) {
     // the armhole's round bottom: the ring comes down where the cap goes up, so the two edges make one round hole
     const maxLO = Math.max(...LO, 1e-6), pitHi = (a) => tPit - .14 * (capLo(a) / maxLO) ** .7;
     if (p.mail_under) {   // the mail shirt: under the plates, its skirt hanging below them to the body, over the shoulders
+      // its armholes are its own, close round the arms (the plates' wide ones would leave the shoulders' tops bare and
+      // a sleeve hanging on its own below them)
+      const LOm = blur([armTop], 5)[0], maxLOm = Math.max(...LOm, 1e-6), capLoM = at1(LOm);
+      const pitHiM = (a) => tPit - .14 * (capLoM(a) / maxLOm) ** .7;
       const r = (t, a) => { const k = smooth(lo(a) - .06, lo(a), t); return P.rIn(t, a) * (1 - k) + base(t, a) * k; };
-      surface(acc, ringShell({ ta: p.t0, tb: tPit, lo: (a) => lo(a) - p.hem, hi: pitHi, arcs: arcsOf(mid, 360, 0), r, open: { b: true } }), { ...p, surface: 'mail' });
-      surface(acc, capShell({ arcs: arcsOf(mid, 360, 0), r: capBase }), { ...p, surface: 'mail' });
-      if (p.sleeves > 0) for (const s of 'LR') {   // short sleeves over the upper arms
-        const { limb: al } = limbOf('rerebrace', s), SP = profile('sleeve' + s, al, -.08, p.sleeves, { foreign: PIECES.rerebrace.foreign });
+      surface(acc, ringShell({ ta: p.t0, tb: tPit, lo: (a) => lo(a) - p.hem, hi: pitHiM, arcs: arcsOf(mid, 360, 0), r, open: { b: true } }), { ...p, surface: 'mail' });
+      // over the shoulders it lies on the arms' tops too (the plates' cap looks past them: the deltoids would show through)
+      const PM = profile('cuirass_mail', limb, 0, PHI, { foreign: ['Neck', 'Head'], ray: capRay });
+      PM.shell(p.gap, .5 * p.relief);
+      const hullM = PM.inner.map(convexRow);
+      const mailBase = (f, a) => { const k = smooth(0, .85 * PHI, f); return (Math.max(PM.at(hullM, f, a), PC.at(hull, f, a)) + ridge(a)) * k + base(tPit, a) * (1 - k); };
+      surface(acc, capShell({ arcs: arcsOf(mid, 360, 0), r: mailBase, lo: capLoM }), { ...p, surface: 'mail' });
+      if (p.sleeves > 0) for (const s of 'LR') {   // short sleeves over the upper arms, their tops up under the shirt's armhole
+        const { limb: al } = limbOf('rerebrace', s), SP = profile('sleeve' + s, al, -.2, p.sleeves, { foreign: PIECES.rerebrace.foreign, limbOnly: true });
         SP.shell(p.gap, p.relief);
         acc.w = weigher('limb', PB['arm_' + s], .2);
-        surface(acc, { limb: al, P: SP, ta: -.08, tb: p.sleeves, top: 'a', arcs: arcsOf(0, 360, 0), r: (t, a) => SP.rIn(t, a), R: SP.R, thick: p.thickness * SP.R },
+        surface(acc, { limb: al, P: SP, ta: -.2, tb: p.sleeves, top: 'a', arcs: arcsOf(0, 360, 0), r: (t, a) => SP.rIn(t, a), R: SP.R, thick: p.thickness * SP.R },
           { ...p, surface: 'mail' });
       }
       acc.w = weigher(fam, PB.spine1, p.rigidity);
@@ -1510,14 +1582,23 @@ function buildPiece(kind, sides, p) {
     const whole = p.shoulders === 'yoke', fr = D(78);
     const capArcs = whole ? upArcs : [...(p.two_plates ? [[mid - fr, mid - d, false], [mid + d, mid + fr, false]] : [[mid - fr, mid + fr, false]]),
       ...(p.sector >= 300 ? [[mid + Math.PI - fr, mid + Math.PI + fr, false]] : [])];
-    const plateHi = (a) => { const x = Math.min(Math.abs(rel(a)), Math.PI - Math.abs(rel(a))); return capLo(a) + (capHi(a) - capLo(a)) * Math.max(.05, bump(x, fr) ** .5); };
+    // and it ends before the arm: where the armhole rises (the arm's columns) its band thins out, no sliver going on
+    // round the armhole under the shoulder's skin
+    const plateHi = (a) => { const x = Math.min(Math.abs(rel(a)), Math.PI - Math.abs(rel(a))), arm = 1 - smooth(.25, .75, capLo(a) / maxLO);
+      return capLo(a) + (capHi(a) - capLo(a)) * Math.max(.01, bump(x, fr) ** .5 * arm); };
     const pUp = split && p.surface === 'plates' ? { ...p, plates: 1 } : p, upLift = split ? .6 * thick : 0;
     const zones = [];
     const up = ringShell({ ta: p.t0, tb: tPit, lo: split ? () => split : lo, hi: pitHi, arcs: upArcs, r: (t, a) => base(t, a) + lift + upLift, open: { b: true } });
     surface(acc, up, { ...pUp, plates: Math.max(1, pUp.plates - 1) }); zones.push(up);
     // a garment's armhole edge turned in under the sleeve's top
     const tuckIn = p.garment ? (f, a) => 1.5 * thick * (1 - smooth(0, D(14), f - capLo(a))) : () => 0;
-    const capS = capShell({ arcs: capArcs, r: (f, a) => capBase(f, a) + lift + upLift - tuckIn(f, a), ...(whole ? {} : { hi: plateHi }) });
+    // at its edges (the top, the armholes) it comes down onto the body: the convex cap bridges the hollows under the
+    // collarbones and at the shoulders, and its rim would stand off them, a dark gap all along (over a mail shirt it
+    // lies on the mail)
+    const edgeW = (f, a) => Math.max(smooth((whole ? capHi(a) : plateHi(a)) - D(14), whole ? capHi(a) : plateHi(a), f), 1 - smooth(capLo(a), capLo(a) + D(12), f));
+    // not closer than a little over the gap: the body moves under it by its own weights (the shoulders, the neck)
+    const hug = (f, a) => p.mail_under ? 0 : .85 * smooth(0, .85 * PHI, f) * edgeW(f, a) * Math.max(0, PC.at(hull, f, a) - PC.at(PC.inner, f, a) - .06 * P.R);
+    const capS = capShell({ arcs: capArcs, r: (f, a) => capBase(f, a) + lift + upLift - tuckIn(f, a) - hug(f, a), ...(whole ? {} : { hi: plateHi }) });
     surface(acc, capS, { ...pUp, plates: 1 });
     if (split) {   // the lower part goes up under the chest's edge
       const low = ringShell({ ta: p.t0, tb: split, lo, hi: () => split + .08 * (tPit - p.t0), arcs: bodyArcs, r: (t, a) => base(t, a) + lift });
@@ -1543,11 +1624,15 @@ function buildPiece(kind, sides, p) {
     else if (p.straps) straps(acc, body, p, ts, 'C', mid);
     if (p.neck_tie) bowOn(acc, capS, .9 * PHI, mid, .16 * P.R);   // a shirt's neck, tied with a cord
     if (p.shoulders === 'straps') {   // from the breastplate's top over the shoulder down onto the backplate
-      const capPt = (f, a, extra) => { const [o, dd] = capRay(f, a); return o.clone().addScaledVector(dd, capBase(f, a) + lift + upLift + extra); };
+      // on the plate as it lies (its rim come down onto the body); over the shoulder as before, across the hollows: the
+      // shoulder moves under it, a strap lying on the skin would go into it
+      const onPlate = (f, a) => 1 - smooth(plateHi(a) - D(3), plateHi(a) + D(3), f);
+      const capPt = (f, a, extra) => { const [o, dd] = capRay(f, a); return o.clone().addScaledVector(dd, capBase(f, a) - hug(f, a) * onPlate(f, a) + lift + upLift + extra); };
       const st = .06 * P.R, w = Math.max(.08, p.strap_width * .5) * P.R, N = 25;
       for (const sgn of [1, -1]) {
         const sd = Math.sign(rel(sideAng(sgn))), af = mid + sd * D(40), ab = mid + sd * D(140), as = mid + sd * D(90);
-        const fTop = (capLo(as) + capHi(as)) / 2, fF = capHi(af) - D(14), fB = capHi(ab) - D(14);
+        // its ends riveted on the breast- and backplate, below their tops (a plate's top comes down at its sides)
+        const fTop = (capLo(as) + capHi(as)) / 2, fF = Math.min(capHi(af), plateHi(af)) - D(14), fB = Math.min(capHi(ab), plateHi(ab)) - D(14);
         const path = (u) => { const a = af + (ab - af) * u, base0 = fF + (fB - fF) * u; return [base0 + (fTop - base0) * Math.sin(Math.PI * u) ** .7, a]; };
         acc.w = weigher('torso', PB['shoulder_' + (sgn > 0 ? 'L' : 'R')] || PB.spine2 || PB.spine1, .3);
         const rows = [];
@@ -1894,6 +1979,92 @@ function reliefTexture(kind, seed) {   // the hammered dents of metal, the grain
 const ROLE_MAT = { plate: PLATE, trim: TRIM, mail: MAIL, quilt: CLOTH, backing: LEATHER, strap: LEATHER, rivet: DETAIL, buckle: DETAIL };
 const mats = {};
 for (const r of Object.keys(ROLE_MAT)) mats[r] = new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, emissive: 0x000000 });
+// the pinch's brush drawn on the piece: a grid over what moves (fainter where it moves less), a ring at its edge
+const BRUSH = { uBrushOn: { value: 0 }, uBrushC: { value: new V3() }, uBrushN: { value: new V3(0, 0, 1) }, uBrushR: { value: .05 },
+  uBrushSoft: { value: .7 }, uBrushCol: { value: new THREE.Color(0xff7a2f) }, uBrushShape: { value: 0 }, uBrushAsp: { value: 1 },
+  uBrushAng: { value: 0 }, uLens: { value: 0 } };
+// the pictures (decals) put on: up to 16 at once here, from one atlas (4 x 4 cells), each projected along the surface's
+// direction where it was put, onto the rest pose. Blender lays every one of them on the texture (paint_layers)
+const DECAL_N = 16;
+const DECAL = { uDecalN: { value: 0 }, uDecalAtlas: { value: null }, uDecalP: { value: Array.from({ length: DECAL_N }, () => new V3()) },
+  uDecalU: { value: Array.from({ length: DECAL_N }, () => new V3()) }, uDecalV: { value: Array.from({ length: DECAL_N }, () => new V3()) },
+  uDecalNr: { value: Array.from({ length: DECAL_N }, () => new V3()) }, uDecalCol: { value: Array.from({ length: DECAL_N }, () => new THREE.Vector4()) },
+  uDecalA: { value: Array.from({ length: DECAL_N }, () => new THREE.Vector4()) } };
+const DECAL_GLSL = `uniform int uDecalN; uniform sampler2D uDecalAtlas; uniform vec3 uDecalP[${DECAL_N}], uDecalU[${DECAL_N}], uDecalV[${DECAL_N}], uDecalNr[${DECAL_N}];
+uniform vec4 uDecalCol[${DECAL_N}], uDecalA[${DECAL_N}];
+vec3 decals(inout vec3 col) {   // over the colour; returns (roughness, metalness, how much) for the others
+  vec3 rm = vec3(0.);
+  for (int i = 0; i < ${DECAL_N}; i++) {
+    if (i >= uDecalN) break;
+    vec3 rel = vRest - uDecalP[i];
+    if (abs(dot(rel, uDecalNr[i])) > uDecalA[i].w) continue;
+    vec2 q = vec2(dot(rel, uDecalU[i]), dot(rel, uDecalV[i]));
+    if (abs(q.x) > 1. || abs(q.y) > 1.) continue;
+    vec2 cell = vec2(float(i - (i / 4) * 4), float(i / 4));
+    vec4 t = texture2D(uDecalAtlas, (cell + (q * .49 + .5)) / 4.);
+    float w = t.a * uDecalA[i].z;
+    col = mix(col, uDecalCol[i].w > .5 ? t.rgb : uDecalCol[i].rgb, w);
+    rm = vec3(mix(rm.xy, uDecalA[i].xy, w / max(rm.z + w * (1. - rm.z), 1e-4)), rm.z + w * (1. - rm.z));
+  }
+  return rm;
+}
+`;
+// the brush's shape, as pinchShapeW measures it: the distance from its centre, 1 at its edge (a circle in space; an
+// oval, a rectangle in the surface's plane, turned by the angle, within the radius off the plane)
+const BRUSH_GLSL = `varying vec3 vBW; uniform float uBrushOn, uBrushR, uBrushSoft, uBrushShape, uBrushAsp, uBrushAng, uLens; uniform vec3 uBrushC, uBrushN, uBrushCol;
+float brushD(vec3 p, out vec2 g) {
+  vec3 rel = p - uBrushC;
+  vec3 t1 = normalize(cross(uBrushN, abs(uBrushN.y) < .9 ? vec3(0., 1., 0.) : vec3(1., 0., 0.))), t2 = cross(uBrushN, t1);
+  float c = cos(uBrushAng), s = sin(uBrushAng);
+  vec3 u = c * t1 + s * t2, v = -s * t1 + c * t2;
+  g = vec2(dot(rel, u), dot(rel, v)) / (uBrushR / 4.);
+  if (uBrushShape < .5) return length(rel) / uBrushR;
+  if (abs(dot(rel, uBrushN)) > uBrushR) return 9.;
+  vec2 q = vec2(dot(rel, u) / uBrushR, dot(rel, v) / (uBrushR * uBrushAsp));
+  return uBrushShape < 1.5 ? length(q) : max(abs(q.x), abs(q.y));
+}
+`;
+const withBW = (vs) => 'varying vec3 vBW;\n' + vs.replace('#include <project_vertex>', '#include <project_vertex>\n  vBW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+for (const m of Object.values(mats)) m.onBeforeCompile = (sh) => {
+  Object.assign(sh.uniforms, BRUSH);
+  Object.assign(sh.uniforms, DECAL);
+  sh.vertexShader = 'attribute vec4 aPaint; attribute vec2 aPaintRM; varying vec4 vPaint; varying vec2 vPaintRM; varying vec3 vRest;\n' +
+    withBW(sh.vertexShader).replace('#include <begin_vertex>', '#include <begin_vertex>\n  vPaint = aPaint; vPaintRM = aPaintRM; vRest = position;');
+  sh.fragmentShader = 'varying vec4 vPaint; varying vec2 vPaintRM; varying vec3 vRest;\n' + DECAL_GLSL + BRUSH_GLSL + sh.fragmentShader
+    .replace('#include <color_fragment>', '#include <color_fragment>\n  diffuseColor.rgb = mix(diffuseColor.rgb, vPaint.rgb, vPaint.a);\n  vec3 dRM = decals(diffuseColor.rgb);')
+    .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n  roughnessFactor = mix(roughnessFactor, vPaintRM.x, vPaint.a);\n  roughnessFactor = mix(roughnessFactor, dRM.x, dRM.z);')
+    .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\n  metalnessFactor = mix(metalnessFactor, vPaintRM.y, vPaint.a);\n  metalnessFactor = mix(metalnessFactor, dRM.y, dRM.z);')
+    .replace('#include <dithering_fragment>', `#include <dithering_fragment>
+  if (uBrushOn > .5) {
+    vec2 g; float dn = brushD(vBW, g);
+    if (dn < 1.) {
+      float w = 1. - smoothstep(1. - uBrushSoft, 1., dn);
+      vec2 l = 1. - smoothstep(vec2(0.), 1.5 * fwidth(g), abs(fract(g + .5) - .5));
+      gl_FragColor.rgb = mix(gl_FragColor.rgb, uBrushCol, .18 * w + .7 * max(l.x, l.y) * (.35 + .65 * w));
+    }
+    if (dn < 1.5) gl_FragColor.rgb = mix(gl_FragColor.rgb, uBrushCol, 1. - smoothstep(0., 1.5 * fwidth(dn), abs(dn - 1.)));
+  }`);
+};
+// the skin opened round the brush when the armour under it is hidden by the body (a part sunk into the arm, behind
+// it, under the armpit): the hidden part shows, to be pulled out
+function lensOn(mat) {
+  for (const m of [].concat(mat)) {
+    if (!m || m.userData.lens) continue;
+    m.userData.lens = true;
+    m.onBeforeCompile = (sh) => {
+      if (!sh.vertexShader.includes('#include <project_vertex>')) return;
+      Object.assign(sh.uniforms, BRUSH);
+      sh.vertexShader = withBW(sh.vertexShader);
+      // a tube along the view through the brush: the skin between the eye and the hidden part, as wide as the brush
+      sh.fragmentShader = BRUSH_GLSL + sh.fragmentShader.replace('void main() {', `void main() {
+  if (uBrushOn > .5 && uLens > .5) {
+    vec3 dir = normalize(uBrushC - cameraPosition), rel = vBW - uBrushC; float along = dot(rel, dir);
+    if (along < .5 * uBrushR && length(rel - along * dir) < 1.15 * uBrushR) discard;
+  }`);
+    };
+    m.needsUpdate = true;
+  }
+}
 // the texture units: a pattern tile (8 cells) when mail or quilting is in the piece, else a limb radius; n tiles under
 // one colour tile
 const LOOK = { U: 1, n: 1, specs: null };
@@ -2090,7 +2261,7 @@ const DEFAULTS = Object.assign({ gap: 8, thickness: 12, relief: .35, step: 5, ri
   closure: 'across', hinges: false, opening: 'none', shoulders: 'straps', yoke: 70, thigh: 'none', knee: 'none', fly: false, wrap: false,
   front_panel: false, hem_band: false, helmet: 'barbute', head_gap: 7, visor_angle: 0, cheek_angle: 0, tail: 100, brim: 100,
   strap: 0, strap_fwd: 0, elbow: 'elbow_winged_plate', limb_gap: 8, wing: 100, footwear: 'foot_ankle_boot', foot_gap: 6, glove: 'plain_leather', cuff: 14,
-  cloth_style: 'shirt', cloth_quilt: false, quilt_lines: false }, PIECES.bracer.defaults);
+  cloth_style: 'shirt', cloth_quilt: false, quilt_lines: false, pinches: [], paints: [] }, PIECES.bracer.defaults);
 const S = { piece: 'bracer', sides: ['L', 'R'], name: 'proc_bracer', nameTouched: false, p: { ...DEFAULTS }, armour: null };
 let clampTo = 0, curView = 'front';   // clampTo: a cuirass's top, held under the armpits (%)
 
@@ -2209,6 +2380,7 @@ function syncPanel() {
   for (const b of $('sidesRow').querySelectorAll('button')) b.classList.toggle('on', S.sides.includes(b.dataset.side));
   $('sidesRow').hidden = !['limb', 'joint', 'glove'].includes(PIECES[S.piece].family);
   $('name').value = S.name;
+  pinchSync();
 }
 function setPiece(k, keep) {
   const was = S.piece;
@@ -2217,6 +2389,7 @@ function setPiece(k, keep) {
     if (k === 'trousers' && was !== 'trousers') S.armour = { material: S.p.material, surface: S.p.surface };
     if (k !== 'trousers' && was === 'trousers' && S.armour) Object.assign(S.p, S.armour);
     Object.assign(S.p, PIECES[k].defaults);
+    S.p.pinches = []; S.p.paints = [];
   }
   if (!S.nameTouched) S.name = 'proc_' + k;
   if (!keep) S.style = null;
@@ -2228,6 +2401,7 @@ function setPiece(k, keep) {
 const pieceGroup = new THREE.Group(); scene.add(pieceGroup);
 let parts = [], lastBuild = null, pending = false, framed = false, resultRoot = null, showResult = false;
 function changed(what) {
+  histNote(what);
   syncPanel();
   if (what === 'look') { applyLook(S.p, LOOK.R); if (!pending) return; }
   if (resultRoot && what !== 'look') setShow(false);
@@ -2259,7 +2433,9 @@ function rebuild() {
     if (parts.length && Math.abs(parts[0].R - (LOOK.R || 0)) > .01 * parts[0].R) {   // the texture units follow the part's size
       LOOK.R = parts[0].R; applyLook(S.p, LOOK.R); parts = buildPiece(S.piece, sides, p);
     }
-    for (const part of parts) for (const m of meshesOf(part.acc)) pieceGroup.add(m);
+    for (const part of parts) applyPinches(part.acc.v, S.p.pinches, null, () => part.acc.f.filter((f, k) => SMOOTHED.has(part.acc.role[k])));
+    parts.forEach((part, pi) => { for (const m of meshesOf(part.acc)) { m.userData.part = pi; pieceGroup.add(m); } });
+    paintAll();
     if (parts.length) {
       const nv = parts.reduce((s, x) => s + x.acc.v.length / 3, 0);
       info = '{{js:ag.info_line}}'.replace('{0}', nv.toLocaleString()).replace('{1}', (performance.now() - t).toFixed(0));
@@ -2278,10 +2454,10 @@ function rebuild() {
 function meshesOf(acc) {   // one skinned mesh per role (each lights up on its own), quads as two triangles
   const out = [];
   for (const role of Object.keys(ROLE_MAT)) {
-    const map = new Map(), pos = [], uv = [], si = [], sw = [], idx = [];
+    const map = new Map(), pos = [], uv = [], si = [], sw = [], idx = [], src = [];
     const vid = (i) => {
       if (!map.has(i)) {
-        map.set(i, pos.length / 3); pos.push(acc.v[3 * i], acc.v[3 * i + 1], acc.v[3 * i + 2]); uv.push(acc.uv[2 * i], acc.uv[2 * i + 1]);
+        map.set(i, pos.length / 3); src.push(i); pos.push(acc.v[3 * i], acc.v[3 * i + 1], acc.v[3 * i + 2]); uv.push(acc.uv[2 * i], acc.uv[2 * i + 1]);
         for (let k = 0; k < 4; k++) { si.push(acc.bi[4 * i + k]); sw.push(acc.bw[4 * i + k]); }
       }
       return map.get(i);
@@ -2292,6 +2468,8 @@ function meshesOf(acc) {   // one skinned mesh per role (each lights up on its o
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
     g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4)); g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
     g.setIndex(idx); g.computeVertexNormals();
+    g.setAttribute('aPaint', new THREE.Float32BufferAttribute(new Float32Array(4 * src.length), 4));   // the paint (none yet)
+    g.setAttribute('aPaintRM', new THREE.Float32BufferAttribute(new Float32Array(2 * src.length), 2));
     const N = g.attributes.normal, same = new Map();   // a tube's seam: its two columns share their normals
     for (let i = 0; i < pos.length / 3; i++) {
       const key = `${pos[3 * i].toFixed(6)},${pos[3 * i + 1].toFixed(6)},${pos[3 * i + 2].toFixed(6)}`;
@@ -2301,7 +2479,7 @@ function meshesOf(acc) {   // one skinned mesh per role (each lights up on its o
       const n = new V3(); for (const i of ids) n.add(new V3().fromBufferAttribute(N, i)); n.normalize();
       for (const i of ids) N.setXYZ(i, n.x, n.y, n.z);
     }
-    const m = new THREE.SkinnedMesh(g, mats[role]); m.bind(SKEL, new THREE.Matrix4()); m.frustumCulled = false;
+    const m = new THREE.SkinnedMesh(g, mats[role]); m.bind(SKEL, new THREE.Matrix4()); m.frustumCulled = false; m.userData.role = role; m.userData.src = Int32Array.from(src);
     out.push(m);
   }
   return out;
@@ -2438,6 +2616,551 @@ function setShow(r) {
   for (const b of $('shows').children) b.classList.toggle('on', (b.dataset.r === '1') === showResult);
 }
 
+// ------------------------------------------------------------------ the pinch: the left button held on the piece and dragged
+// lifts (or presses in) the surface round that point. Each pinch is kept in the piece's parameters on the rest pose (a
+// point, the surface's direction there, a radius, how far, how soft its edge) and put on the piece after every rebuild,
+// so it stays through other changes and goes to Blender with the geometry
+const PINCH = { on: false, tool: 'pinch', mode: 'pull', kind: 'raise', r: 4, k: 1, s: .7, sh: 'circle', asp: 1, ang: 0 };   // on: a brush tool chosen (tool: pinch or paint)   // sh: the brush's shape, asp: its width / length, ang: its turn (°)   // r: % of the height; mode: pull or paint; kind: a stroke's raise, press or smooth
+let pinchHover = null, pinchDrag = null, pinchRaf = 0;
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+function pinchWeight(d, r, soft) { return d >= r ? 0 : 1 - smooth(r * (1 - soft), r, d); }
+// a point's weight under a brush (q: r, s and the shape sh, asp, ang) put at a surface with the direction n; rel: the
+// point from the brush's centre. Its frame in the surface's plane is kept per brush (key) as the shader makes it
+const FRAMES = new WeakMap(), XV = new V3(1, 0, 0);
+function frameOf(key, nx, ny, nz, ang) {
+  let f = FRAMES.get(key); if (f) return f;
+  const n = new V3(nx, ny, nz), t1 = n.clone().cross(Math.abs(ny) < .9 ? UP : XV).normalize(), t2 = n.clone().cross(t1), c = Math.cos(ang), s = Math.sin(ang);
+  f = [c * t1.x + s * t2.x, c * t1.y + s * t2.y, c * t1.z + s * t2.z, -s * t1.x + c * t2.x, -s * t1.y + c * t2.y, -s * t1.z + c * t2.z];
+  FRAMES.set(key, f); return f;
+}
+function pinchShapeW(x, y, z, nx, ny, nz, q, key) {
+  const along = x * nx + y * ny + z * nz;
+  if (along < -.5 * q.r) return 0;   // the far side of a limb: not this one
+  if (!q.sh) { const d2 = x * x + y * y + z * z; return d2 >= q.r * q.r ? 0 : pinchWeight(Math.sqrt(d2), q.r, q.s); }
+  if (Math.abs(along) > q.r) return 0;
+  const f = frameOf(key, nx, ny, nz, q.ang || 0), a = (x * f[0] + y * f[1] + z * f[2]) / q.r, b = (x * f[3] + y * f[4] + z * f[5]) / (q.r * (q.asp || 1));
+  const dn = q.sh === 'oval' ? Math.hypot(a, b) : Math.max(Math.abs(a), Math.abs(b));
+  return dn >= 1 ? 0 : 1 - smooth(1 - q.s, 1, dn);
+}
+const shapeOf = () => (PINCH.sh === 'circle' ? {} : { sh: PINCH.sh === 'oval' ? 'oval' : 'rect', asp: PINCH.asp, ang: Math.round(PINCH.ang * Math.PI / 180 * 1e5) / 1e5 });
+const _po = new V3(), _pd = new V3();
+function inward(x, y, z, nx, ny, nz, d) {   // a press-in stops a little above the skin: the piece does not go into the body
+  if (d >= 0 || !bodyGeo) return d;
+  const margin = .004 * HEIGHT, h = cast(_po.set(x, y, z), _pd.set(-nx, -ny, -nz), margin - d);
+  return h ? -Math.max(0, h.distance - margin) : d;
+}
+function applyPinches(v, list, base, faces) {   // v: flat positions (rest), moved in place (from base's when given); faces(): the smoothed ones
+  if (base) v.set(base);
+  if (!list || !list.length) return;
+  let T = null;
+  for (const q of list) {
+    if (q.smooth) {
+      if (!faces) continue;
+      T = T || topology(v, faces());
+      const W = strokeW(v, T, q), before = v.slice(); relax(v, T, W, q.smooth);
+      const details = []; for (let i = 0; i < T.canon.length; i++) if (!T.nb.has(T.canon[i])) details.push(i);
+      carry(v, before, [...T.nb.keys()].filter((i) => W[i] > 0), details, q);
+      continue;
+    }
+    if (q.pts) { applyStroke(v, q); continue; }
+    const [px, py, pz] = q.p, [nx, ny, nz] = q.n;
+    for (let i = 0; i < v.length; i += 3) {
+      const wt = pinchShapeW(v[i] - px, v[i + 1] - py, v[i + 2] - pz, nx, ny, nz, q, q); if (!wt) continue;
+      const w = inward(v[i], v[i + 1], v[i + 2], nx, ny, nz, q.h * wt);
+      v[i] += nx * w; v[i + 1] += ny * w; v[i + 2] += nz * w;
+    }
+  }
+}
+// a painted stroke: the points the brush went over, each with the surface's direction there; every vertex goes up by
+// the strongest of them (not their sum), so the stroke is one even ridge of its height however densely it was painted
+function strokeBox(q) {
+  const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+  for (const c of q.pts) for (let a = 0; a < 3; a++) { lo[a] = Math.min(lo[a], c[a] - q.r); hi[a] = Math.max(hi[a], c[a] + q.r); }
+  return [lo, hi];
+}
+function stampWeight(v, i, c, q) { return pinchShapeW(v[i] - c[0], v[i + 1] - c[1], v[i + 2] - c[2], c[3], c[4], c[5], q, c); }
+function applyStroke(v, q) {
+  const [lo, hi] = strokeBox(q);
+  for (let i = 0; i < v.length; i += 3) {
+    if (v[i] < lo[0] || v[i] > hi[0] || v[i + 1] < lo[1] || v[i + 1] > hi[1] || v[i + 2] < lo[2] || v[i + 2] > hi[2]) continue;
+    let bw = 0, bc = null;
+    for (const c of q.pts) { const w = stampWeight(v, i, c, q); if (w > bw) { bw = w; bc = c; } }
+    if (bc) { const d = inward(v[i], v[i + 1], v[i + 2], bc[3], bc[4], bc[5], q.h * bw); v[i] += bc[3] * d; v[i + 1] += bc[4] * d; v[i + 2] += bc[5] * d; }
+  }
+}
+// a smoothing stroke: the surface under it relaxed (Taubin's two steps, one in, one out, so it smooths without
+// shrinking), as much as the brush's weight there. Only the sheets are smoothed (not rivets, buckles, straps); the
+// vertices at one place (a tube's seam) move as one
+const SMOOTHED = new Set(['plate', 'mail', 'quilt', 'backing', 'trim']);
+function topology(v, faces) {
+  const n = v.length / 3, canon = new Int32Array(n), at = new Map();
+  for (let i = 0; i < n; i++) {
+    const k = `${v[3 * i].toFixed(5)},${v[3 * i + 1].toFixed(5)},${v[3 * i + 2].toFixed(5)}`, c = at.get(k);
+    if (c === undefined) { at.set(k, i); canon[i] = i; } else canon[i] = c;
+  }
+  const nb = new Map(), link = (a, b) => (nb.get(a) || nb.set(a, new Set()).get(a)).add(b);
+  for (const f of faces) for (let j = 0; j < f.length; j++) { const a = canon[f[j]], b = canon[f[(j + 1) % f.length]]; if (a !== b) { link(a, b); link(b, a); } }
+  return { canon, nb: new Map([...nb].map(([k, x]) => [k, [...x]])) };
+}
+function strokeW(v, T, q) {   // the brush's weight at each welded vertex: the strongest of the stroke's points
+  const W = new Float32Array(v.length / 3), [lo, hi] = strokeBox(q);
+  for (const i of T.nb.keys()) {
+    const x = v[3 * i], y = v[3 * i + 1], z = v[3 * i + 2];
+    if (x < lo[0] || x > hi[0] || y < lo[1] || y > hi[1] || z < lo[2] || z > hi[2]) continue;
+    for (const c of q.pts) W[i] = Math.max(W[i], stampWeight(v, 3 * i, c, q));
+  }
+  return W;
+}
+function relax(v, T, W, passes) {
+  const ids = [...T.nb.keys()].filter((i) => W[i] > 0), d = new Float32Array(3 * ids.length);
+  for (let p = 0; p < 2 * passes; p++) {
+    const lam = p % 2 ? -.53 : .5;
+    ids.forEach((i, k) => {
+      const nb = T.nb.get(i); let x = 0, y = 0, z = 0;
+      for (const j of nb) { x += v[3 * j]; y += v[3 * j + 1]; z += v[3 * j + 2]; }
+      d[3 * k] = x / nb.length - v[3 * i]; d[3 * k + 1] = y / nb.length - v[3 * i + 1]; d[3 * k + 2] = z / nb.length - v[3 * i + 2];
+    });
+    ids.forEach((i, k) => { const w = lam * W[i]; v[3 * i] += w * d[3 * k]; v[3 * i + 1] += w * d[3 * k + 1]; v[3 * i + 2] += w * d[3 * k + 2]; });
+  }
+  for (let i = 0; i < T.canon.length; i++) { const c = T.canon[i]; if (c !== i) { v[3 * i] = v[3 * c]; v[3 * i + 1] = v[3 * c + 1]; v[3 * i + 2] = v[3 * c + 2]; } }
+}
+// what is on the smoothed sheets (rivets, buckles, straps) goes with them: each of its vertices moves as the sheet's
+// nearest moved vertex did, so a rivet stays on the plate instead of standing out of it (or sinking into it)
+function carry(v, before, moved, details, q, src) {   // src: the moved vertices' arrays when they are other meshes' (the live view)
+  if (!moved.length || !details.length) return;
+  const [lo, hi] = strokeBox(q), M = moved.length, mp = new Float32Array(3 * M), md = new Float32Array(3 * M);
+  moved.forEach((m, k) => {
+    const [A, B, i] = src ? m : [v, before, m];
+    for (let a = 0; a < 3; a++) { mp[3 * k + a] = B[3 * i + a]; md[3 * k + a] = A[3 * i + a] - B[3 * i + a]; }
+  });
+  const lim = (.5 * q.r) ** 2;
+  for (const i of details) {
+    const x = before[3 * i], y = before[3 * i + 1], z = before[3 * i + 2];
+    if (x < lo[0] || x > hi[0] || y < lo[1] || y > hi[1] || z < lo[2] || z > hi[2]) continue;
+    let best = lim, bk = -1;
+    for (let k = 0; k < M; k++) { const dx = mp[3 * k] - x, dy = mp[3 * k + 1] - y, dz = mp[3 * k + 2] - z, d = dx * dx + dy * dy + dz * dz; if (d < best) { best = d; bk = k; } }
+    if (bk >= 0) { v[3 * i] = x + md[3 * bk]; v[3 * i + 1] = y + md[3 * bk + 1]; v[3 * i + 2] = z + md[3 * bk + 2]; }
+  }
+}
+const smoothPasses = () => Math.round(4 + 12 * PINCH.k);
+const trisOf = (g) => { const I = g.index.array, out = []; for (let i = 0; i < I.length; i += 3) out.push([I[i], I[i + 1], I[i + 2]]); return out; };
+// ------------------------------------------------------------------ the paint: colour and material laid on the piece in layers, over
+// one another in order (S.p.paints): a brush stroke (its points, as a pinch's), a fill of one part (the welded piece of
+// one role under a point) or of all parts of that role, an eraser stroke. Shown here per vertex; Blender lays them on
+// the baked textures per pixel (blender_armour_gen.paint_layers), so the result is as sharp as the texture
+const PAINT = { fill: 'brush', look: 'paint', c: '#8a1c1c', a: 1, decal: ((DATA.decals || [])[0] || {}).name || '', num: '', flip: false };
+// a look: its colour (sRGB; paint's is chosen), roughness and metalness — the same table goes to Blender with the mesh
+const LOOKS = { paint: [null, .5, 0], gold: ['#d9a441', .28, 1], silver: ['#d8d8d4', .22, 1], rust: ['#7a3f1d', .9, 0], soot: ['#1c1916', .95, 0], blood: ['#5a0a08', .35, 0] };
+const lookOf = (L) => { const [c, r, m] = LOOKS[L.look] || LOOKS.paint; return { c: c || L.c || '#8a1c1c', r, m }; };
+const LOOK_LIN = new WeakMap();
+const lookLin = (L) => { let x = LOOK_LIN.get(L); if (!x) { const k = lookOf(L), c = new THREE.Color(k.c); x = [c.r, c.g, c.b, k.r, k.m]; LOOK_LIN.set(L, x); } return x; };
+// rust, soot and blood lie in patches: their weight times a value noise over the rest pose (Blender's paint_layers has
+// the same one), cells half the brush's radius
+const PATCHY = new Set(['rust', 'soot', 'blood']);
+const hash3 = (i, j, k) => { const x = Math.sin(i * 127.1 + j * 311.7 + k * 74.7) * 43758.5453; return x - Math.floor(x); };
+function vnoise3(x, y, z) {
+  const i = Math.floor(x), j = Math.floor(y), k = Math.floor(z), sm = (t) => t * t * (3 - 2 * t), u = sm(x - i), v = sm(y - j), w = sm(z - k);
+  const L = (a, b, t) => a + (b - a) * t;
+  return L(L(L(hash3(i, j, k), hash3(i + 1, j, k), u), L(hash3(i, j + 1, k), hash3(i + 1, j + 1, k), u), v),
+    L(L(hash3(i, j, k + 1), hash3(i + 1, j, k + 1), u), L(hash3(i, j + 1, k + 1), hash3(i + 1, j + 1, k + 1), u), v), w);
+}
+function patchy(L, x, y, z) {
+  if (!PATCHY.has(L.look)) return 1;
+  const c = .5 * L.r, n = .65 * vnoise3(x / c, y / c, z / c) + .35 * vnoise3(2.7 * x / c, 2.7 * y / c, 2.7 * z / c);
+  return smooth(.3, .7, n);
+}
+function layerOver(C, RM, i, L, w) {   // one layer over what is under it at vertex i (C: rgba, RM: roughness, metalness)
+  if (w <= 0) return;
+  if (L.t === 'erase') { C[4 * i + 3] *= 1 - w; return; }
+  const lk = lookLin(L), A = C[4 * i + 3], A2 = A + w * (1 - A), k = w / A2;
+  for (let a = 0; a < 3; a++) C[4 * i + a] += (lk[a] - C[4 * i + a]) * k;
+  RM[2 * i] += (lk[3] - RM[2 * i]) * k; RM[2 * i + 1] += (lk[4] - RM[2 * i + 1]) * k; C[4 * i + 3] = A2;
+}
+let paintMembers = [];   // per part: layer index -> its fill's vertices (1/0), for the payload too
+function fillMembers() {
+  const layers = S.p.paints || [], mem = parts.map(() => new Map());
+  layers.forEach((L, li) => {
+    if (L.t === 'all') parts.forEach((pt, pi) => {
+      const a = pt.acc, f = new Uint8Array(a.v.length / 3); a.f.forEach((q, k) => { if (a.role[k] === L.role) for (const i of q) f[i] = 1; }); mem[pi].set(li, f);
+    });
+    if (L.t !== 'part') return;
+    let best = Infinity, bp = -1, bi = -1;   // the nearest vertex of that role to the point: the part clicked
+    parts.forEach((pt, pi) => { const a = pt.acc; a.f.forEach((q, k) => {
+      if (a.role[k] !== L.role) return;
+      for (const i of q) { const d = (a.v[3 * i] - L.p[0]) ** 2 + (a.v[3 * i + 1] - L.p[1]) ** 2 + (a.v[3 * i + 2] - L.p[2]) ** 2; if (d < best) { best = d; bp = pi; bi = i; } }
+    }); });
+    if (bp < 0) return;
+    const a = parts[bp].acc, T = topology(a.v, a.f.filter((q, k) => a.role[k] === L.role)), seen = new Set([T.canon[bi]]), st = [T.canon[bi]];
+    while (st.length) { const i = st.pop(); for (const j of T.nb.get(i) || []) if (!seen.has(j)) { seen.add(j); st.push(j); } }
+    const f = new Uint8Array(a.v.length / 3); for (let i = 0; i < f.length; i++) if (seen.has(T.canon[i])) f[i] = 1; mem[bp].set(li, f);
+  });
+  paintMembers = mem;
+}
+function strokeWAt(P, i, L) {   // a stroke's weight at a vertex: the strongest of its points
+  let w = 0; for (const c of L.pts) w = Math.max(w, pinchShapeW(P[3 * i] - c[0], P[3 * i + 1] - c[1], P[3 * i + 2] - c[2], c[3], c[4], c[5], L, c)); return w;
+}
+function paintMesh(m) {   // every layer at every vertex of a mesh, into its paint attributes
+  const layers = S.p.paints || [], g = m.geometry, P = g.attributes.position.array, n = P.length / 3, src = m.userData.src;
+  const C = g.attributes.aPaint.array, RM = g.attributes.aPaintRM.array, mem = paintMembers[m.userData.part] || new Map();
+  C.fill(0); RM.fill(0);
+  layers.forEach((L, li) => {
+    if (L.t === 'decal') return;   // the shader draws the pictures
+    if (L.pts) {
+      const [lo, hi] = strokeBox(L);
+      for (let i = 0; i < n; i++) {
+        if (P[3 * i] < lo[0] || P[3 * i] > hi[0] || P[3 * i + 1] < lo[1] || P[3 * i + 1] > hi[1] || P[3 * i + 2] < lo[2] || P[3 * i + 2] > hi[2]) continue;
+        layerOver(C, RM, i, L, strokeWAt(P, i, L) * L.a * patchy(L, P[3 * i], P[3 * i + 1], P[3 * i + 2]));
+      }
+    } else { const f = mem.get(li); if (f) for (let i = 0; i < n; i++) if (f[src[i]]) layerOver(C, RM, i, L, L.a * patchy(L, P[3 * i], P[3 * i + 1], P[3 * i + 2])); }
+  });
+  g.attributes.aPaint.needsUpdate = true; g.attributes.aPaintRM.needsUpdate = true;
+}
+function paintAll() { fillMembers(); for (const m of pieceGroup.children) paintMesh(m); decalSync(); }
+// ---- pictures: an atlas of the ones in use, the layers' frames into the shader's uniforms
+const DECAL_IMG = new Map();   // path -> a loaded image
+const decalImg = (path) => {
+  let im = DECAL_IMG.get(path);
+  if (!im) { im = new Image(); im.crossOrigin = 'anonymous'; im.onload = () => decalSync(); im.src = fileUrl(path); DECAL_IMG.set(path, im); }
+  return im;
+};
+const atlasCanvas = document.createElement('canvas'); atlasCanvas.width = atlasCanvas.height = 1024;
+const atlasTex = new THREE.CanvasTexture(atlasCanvas); atlasTex.colorSpace = THREE.SRGBColorSpace; DECAL.uDecalAtlas.value = atlasTex;
+let decalGhost = null;   // the picture under the pointer before it is put on (a layer not yet in the list)
+function decalFrame(n, ang) {   // the picture's right and up on the surface: right across the up direction, then turned
+  const N = new V3(...n), up = Math.abs(N.y) < .9 ? UP : XV, right = new V3().crossVectors(up, N).normalize(), upv = new V3().crossVectors(N, right);
+  const c = Math.cos(ang), s = Math.sin(ang);
+  return [right.clone().multiplyScalar(c).addScaledVector(upv, s), right.clone().multiplyScalar(-s).addScaledVector(upv, c), N];
+}
+function decalSync() {
+  const list = [...(S.p.paints || []).filter((L) => L.t === 'decal'), ...(decalGhost || [])].slice(-DECAL_N);
+  const ctx = atlasCanvas.getContext('2d'); ctx.clearRect(0, 0, 1024, 1024);
+  list.forEach((L, i) => {
+    const im = decalImg(L.img), [R, U, N] = decalFrame(L.n, L.ang || 0), asp = L.asp || 1;
+    if (im.complete && im.naturalWidth) ctx.drawImage(im, (i % 4) * 256, (3 - Math.floor(i / 4)) * 256, 256, 256);   // the canvas's top row is the texture's last
+    DECAL.uDecalP.value[i].fromArray(L.p); DECAL.uDecalNr.value[i].copy(N);
+    DECAL.uDecalU.value[i].copy(R).multiplyScalar((L.flip ? -1 : 1) / (L.r * asp)); DECAL.uDecalV.value[i].copy(U).multiplyScalar(1 / L.r);
+    const lk = L.look === 'image' ? null : new THREE.Color(lookOf(L).c);
+    DECAL.uDecalCol.value[i].set(lk ? lk.r : 0, lk ? lk.g : 0, lk ? lk.b : 0, lk ? 0 : 1);
+    DECAL.uDecalA.value[i].set(L.look === 'image' ? .5 : lookOf(L).r, L.look === 'image' ? 0 : lookOf(L).m, L.ghost ? .6 * L.a : L.a, L.r);
+  });
+  DECAL.uDecalN.value = list.length; atlasTex.needsUpdate = true;
+}
+const decalOf = (name) => (DATA.decals || []).find((d) => d.name === name);
+function decalLayers(hit, ghost) {   // the picture chosen, or each digit of the number side by side
+  const r5 = (x) => Math.round(x * 1e5) / 1e5, ang = Math.round(PINCH.ang * Math.PI / 180 * 1e5) / 1e5, r = pinchR();
+  const num = (PAINT.num || '').replace(/\D/g, ''), names = num ? [...num].map((d) => 'digit_' + d) : [PAINT.decal];
+  const [R] = decalFrame(hit.nRest.toArray(), ang), step = 1.4 * r;   // a digit takes about 0.6 of its picture's width (2r)
+  const look = { look: PAINT.look, ...(PAINT.look === 'paint' ? { c: PAINT.c } : {}) };
+  return names.map((nm, k) => decalOf(nm)).filter(Boolean).map((d, k, all) => {
+    const off = (k - (all.length - 1) / 2) * step * (PAINT.flip ? -1 : 1), p = hit.rest.clone().addScaledVector(R, off);
+    return { t: 'decal', img: d.path, name: d.name, p: p.toArray().map(r5), n: hit.nRest.toArray().map(r5), r: r5(r), ang, flip: PAINT.flip, a: PAINT.a, ...look, ...(ghost ? { ghost: true } : {}) };
+  });
+}
+function paintPayload() {   // the layers with their looks, and each fill's faces in the payload's order
+  const layers = S.p.paints || []; if (!layers.length) return null;
+  return { layers: layers.map((L) => ({ ...L, look_c: lookOf(L).c, look_r: lookOf(L).r, look_m: lookOf(L).m })),
+    faces: layers.map((L, li) => {
+      if (L.t !== 'part' && L.t !== 'all') return null;
+      const out = [];
+      parts.forEach((pt, pi) => { const a = pt.acc, f = (paintMembers[pi] || new Map()).get(li); a.f.forEach((q, k) => out.push(f && a.role[k] === L.role && f[q[0]] ? 1 : 0)); });
+      return b64(Uint8Array.from(out));
+    }) };
+}
+function paintDown(hit, m) {   // a fill at once; a stroke goes on with the pointer
+  const r5 = (x) => Math.round(x * 1e5) / 1e5;
+  const look = PAINT.fill === 'erase' ? {} : { look: PAINT.look, ...(PAINT.look === 'paint' ? { c: PAINT.c } : {}) };
+  if (PAINT.fill === 'decal') {
+    decalGhost = null;
+    const add = decalLayers(hit, false);
+    if (add.length) { S.p.paints = [...(S.p.paints || []), ...add]; changed('paint'); }
+    return;
+  }
+  if (PAINT.fill === 'part' || PAINT.fill === 'all') {
+    S.p.paints = [...(S.p.paints || []), { t: PAINT.fill, p: hit.rest.toArray().map(r5), role: m.userData.role, a: PAINT.a, r: r5(pinchR()), ...look }];   // r: the patches' size
+    changed('paint'); return;
+  }
+  const L = { t: PAINT.fill === 'erase' ? 'erase' : 'brush', pts: [], r: pinchR(), s: PINCH.s, a: PINCH.tool === 'paint' && PAINT.fill === 'erase' ? 1 : PAINT.a, ...shapeOf(), ...look };
+  pinchDrag = { paint: L, q: L, base: pieceGroup.children.map((x) => [x.geometry.attributes.aPaint.array.slice(), x.geometry.attributes.aPaintRM.array.slice()]),
+    W: pieceGroup.children.map((x) => new Float32Array(x.geometry.attributes.position.count)) };
+  paintStamp(hit);
+}
+function paintStamp(hit) {   // one more point of a paint stroke: the vertices it covers more than the stroke so far
+  const D = pinchDrag, L = D.paint, c = [...hit.rest.toArray(), ...hit.nRest.toArray()], last = L.pts[L.pts.length - 1];
+  if (last && Math.hypot(c[0] - last[0], c[1] - last[1], c[2] - last[2]) < .15 * L.r) return;
+  L.pts.push(c);
+  pieceGroup.children.forEach((m, k) => {
+    const g = m.geometry, P = g.attributes.position.array, C = g.attributes.aPaint.array, RM = g.attributes.aPaintRM.array, [BC, BR] = D.base[k], W = D.W[k];
+    let any = false;
+    for (let i = 0; i < W.length; i++) {
+      const w = stampWeight(P, 3 * i, c, L); if (w <= W[i]) continue;
+      W[i] = w; any = true;
+      for (let a = 0; a < 4; a++) C[4 * i + a] = BC[4 * i + a];
+      RM[2 * i] = BR[2 * i]; RM[2 * i + 1] = BR[2 * i + 1];
+      layerOver(C, RM, i, L, w * L.a * patchy(L, P[3 * i], P[3 * i + 1], P[3 * i + 2]));
+    }
+    if (any) { g.attributes.aPaint.needsUpdate = true; g.attributes.aPaintRM.needsUpdate = true; }
+  });
+}
+function pinchHit(e, src) {   // the piece under the pointer: the posed point and normal, and the same on the rest pose (src: a stroke's start)
+  if (!PINCH.on || showResult || isMade() || !pieceGroup.children.length) return null;
+  const rc = cnv.getBoundingClientRect();
+  ndc.set((e.clientX - rc.left) / rc.width * 2 - 1, -(e.clientY - rc.top) / rc.height * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  for (const m of pieceGroup.children) if (m.userData.bsPose !== pose) { m.boundingSphere = null; m.userData.bsPose = pose; }
+  const h = ray.intersectObjects(pieceGroup.children, false)[0];
+  if (!h || !h.face) return null;
+  const m = h.object, mi = pieceGroup.children.indexOf(m), ids = [h.face.a, h.face.b, h.face.c];
+  const P = src ? { array: src.base[mi] } : m.geometry.attributes.position, N = src ? { array: src.nbase[mi] } : m.geometry.attributes.normal;
+  const at = (A, i) => new V3(A.array[3 * i], A.array[3 * i + 1], A.array[3 * i + 2]);
+  const posed = ids.map((i) => m.getVertexPosition(i, new V3()).applyMatrix4(m.matrixWorld));
+  const bc = THREE.Triangle.getBarycoord(h.point, posed[0], posed[1], posed[2], new V3());
+  const rest = new V3(), nRest = new V3();
+  ids.forEach((i, k) => { const w = bc.getComponent(k); rest.addScaledVector(at(P, i), w); nRest.addScaledVector(at(N, i), w); });
+  const nPosed = new THREE.Triangle(...posed).getNormal(new V3());
+  if (nPosed.dot(nRest) < 0 && nRest.lengthSq() > 0) nPosed.negate();   // the winding's side: the surface's own way out
+  if (nPosed.dot(ray.ray.direction) > 0) { nPosed.negate(); nRest.negate(); }   // the side the camera sees
+  return { point: h.point.clone(), n: nPosed, rest, nRest: nRest.normalize(), mesh: m };
+}
+const pinchR = () => PINCH.r / 100 * HEIGHT;
+function showBrush(hit) {
+  BRUSH.uBrushOn.value = hit ? 1 : 0;
+  if (!hit) return;
+  BRUSH.uBrushC.value.copy(hit.point); BRUSH.uBrushN.value.copy(hit.n); BRUSH.uBrushR.value = pinchR(); BRUSH.uBrushSoft.value = PINCH.s;
+  BRUSH.uBrushShape.value = { circle: 0, oval: 1, square: 2, strip: 2 }[PINCH.sh]; BRUSH.uBrushAsp.value = PINCH.asp; BRUSH.uBrushAng.value = PINCH.ang * Math.PI / 180;
+  BRUSH.uLens.value = hiddenByBody(hit.point) ? 1 : 0;
+}
+function hiddenByBody(at) {   // the body between the camera and that point (in another pose than the rest: taken as hidden)
+  if (pose !== 'rest' || !bodyGeo) return true;
+  const d = at.clone().sub(camera.position), len = d.length();
+  return !!cast(camera.position, d.normalize(), len - .002 * HEIGHT);
+}
+function pxWorld(at) {   // the world size of a screen pixel at that point
+  const d = camera.position.distanceTo(at);
+  return 2 * d * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / Math.max(1, cnv.clientHeight);
+}
+function screenDir(at, n) {   // which way on the screen the surface's direction points (up if it looks at the camera)
+  const a = at.clone().project(camera), b = at.clone().addScaledVector(n, pinchR()).project(camera);
+  const v = new THREE.Vector2((b.x - a.x) * cnv.clientWidth / 2, -(b.y - a.y) * cnv.clientHeight / 2);
+  return v.length() > .5 * pinchR() / pxWorld(at) ? v.normalize() : new THREE.Vector2(0, -1);   // facing the camera: up lifts
+}
+// capture on the stage: before the camera's own handlers, which keep the button when it starts off the piece
+stage.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0 || e.target !== cnv) return;
+  const hit = pinchHit(e); if (!hit) return;
+  e.stopPropagation(); e.preventDefault(); window.focus();   // the keys (Ctrl+Z, [ ]) come here then
+  cnv.setPointerCapture(e.pointerId);
+  if (PINCH.tool === 'paint') { paintDown(hit, hit.mesh); if (pinchDrag) showBrush(hit); return; }
+  const base = pieceGroup.children.map((m) => m.geometry.attributes.position.array.slice());
+  if (PINCH.mode === 'paint') {   // a stroke: raise or press in by the height the strength sets (Shift: the other way), or smooth
+    const smoothing = PINCH.kind === 'smooth', down = (PINCH.kind === 'press') !== e.shiftKey;
+    const q = smoothing ? { pts: [], r: pinchR(), s: PINCH.s, smooth: smoothPasses(), ...shapeOf() } : { pts: [], r: pinchR(), h: (down ? -1 : 1) * .3 * PINCH.k * pinchR(), s: PINCH.s, ...shapeOf() };
+    pinchDrag = { q, base, nbase: pieceGroup.children.map((m) => m.geometry.attributes.normal.array.slice()),
+      W: pieceGroup.children.map((m) => new Float32Array(m.geometry.attributes.position.count)),
+      T: smoothing ? pieceGroup.children.map((m, k) => (SMOOTHED.has(m.userData.role) ? topology(base[k], trisOf(m.geometry)) : null)) : null };
+    stamp(hit);
+  } else {
+    const q = { p: hit.rest.toArray(), n: hit.nRest.toArray(), r: pinchR(), h: 0, s: PINCH.s, ...shapeOf() };
+    pinchDrag = { q, x: e.clientX, y: e.clientY, dir: screenDir(hit.point, hit.n), px: pxWorld(hit.point), hit, base };
+  }
+  showBrush(hit);
+}, true);
+function stamp(hit) {   // one more point of the stroke: the vertices it lifts more than the stroke did so far go up to it
+  const D = pinchDrag, q = D.q, c = [...hit.rest.toArray(), ...hit.nRest.toArray()];
+  const last = q.pts[q.pts.length - 1];
+  if (last && Math.hypot(c[0] - last[0], c[1] - last[1], c[2] - last[2]) < .2 * q.r) return;
+  q.pts.push(c);
+  if (q.smooth) {   // the whole stroke so far, from where it started (the same as the rebuild will make)
+    const moved = [];
+    pieceGroup.children.forEach((m, k) => {
+      const T = D.T[k]; if (!T) return;
+      const a = m.geometry.attributes.position, W = D.W[k];
+      for (const i of T.nb.keys()) W[i] = Math.max(W[i], stampWeight(D.base[k], 3 * i, c, q));
+      a.array.set(D.base[k]); relax(a.array, T, W, q.smooth); a.needsUpdate = true; m.geometry.computeVertexNormals();
+      for (const i of T.nb.keys()) if (W[i] > 0) moved.push([a.array, D.base[k], i]);
+    });
+    pieceGroup.children.forEach((m, k) => {   // the rivets, buckles and straps on them
+      if (D.T[k]) return;
+      const a = m.geometry.attributes.position; a.array.set(D.base[k]);
+      carry(a.array, D.base[k], moved, Array.from({ length: a.count }, (_, i) => i), q, true);
+      a.needsUpdate = true; m.geometry.computeVertexNormals();
+    });
+    return;
+  }
+  pieceGroup.children.forEach((m, k) => {
+    const a = m.geometry.attributes.position, B = D.base[k], W = D.W[k]; let moved = false;
+    for (let i = 0, j = 0; i < B.length; i += 3, j++) {
+      const w = stampWeight(B, i, c, q); if (w <= W[j]) continue;
+      W[j] = w; const d = inward(B[i], B[i + 1], B[i + 2], c[3], c[4], c[5], q.h * w); a.array[i] = B[i] + c[3] * d; a.array[i + 1] = B[i + 1] + c[4] * d; a.array[i + 2] = B[i + 2] + c[5] * d; moved = true;
+    }
+    if (moved) { a.needsUpdate = true; m.geometry.computeVertexNormals(); }
+  });
+}
+stage.addEventListener('pointermove', (e) => {
+  if (pinchDrag && pinchDrag.q.pts) {   // painting: the brush goes with the pointer over the surface
+    if (pinchRaf) return;
+    pinchRaf = requestAnimationFrame(() => {
+      pinchRaf = 0; if (!pinchDrag) return;
+      const h = pinchHit(e, pinchDrag.paint ? null : pinchDrag); if (h) { (pinchDrag.paint ? paintStamp : stamp)(h); showBrush(h); }
+    });
+    return;
+  }
+  if (pinchDrag) {
+    const D = pinchDrag, along = (e.clientX - D.x) * D.dir.x + (e.clientY - D.y) * D.dir.y;
+    D.q.h = Math.max(-1.5 * D.q.r, Math.min(1.5 * D.q.r, along * D.px * PINCH.k));
+    if (pinchRaf) return;
+    pinchRaf = requestAnimationFrame(() => {   // the meshes moved at once; the rebuild comes when the button is let go
+      pinchRaf = 0;
+      pieceGroup.children.forEach((m, k) => {
+        const a = m.geometry.attributes.position; applyPinches(a.array, [D.q], D.base[k]); a.needsUpdate = true; m.geometry.computeVertexNormals();
+      });
+      $('pinchCount').textContent = '{{js:ag.pinch_lift}}'.replace('{0}', (D.q.h / HEIGHT * 100).toFixed(1));
+    });
+    return;
+  }
+  if (!PINCH.on || pinchRaf) return;
+  pinchRaf = requestAnimationFrame(() => {
+    pinchRaf = 0; pinchHover = pinchHit(e);
+    const fill = PINCH.tool === 'paint' && (PAINT.fill === 'part' || PAINT.fill === 'all' || PAINT.fill === 'decal');
+    showBrush(fill ? null : pinchHover);
+    if (PINCH.tool === 'paint' && PAINT.fill === 'decal') { decalGhost = pinchHover ? decalLayers(pinchHover, true) : null; decalSync(); return; }
+    if (fill) hot(pinchHover ? [pinchHover.mesh.userData.role] : [], null);   // a fill: the parts of that kind light up
+  });
+}, true);
+const pinchEnd = () => {
+  if (!pinchDrag) return;
+  const q = pinchDrag.q, painted = pinchDrag.paint; pinchDrag = null;
+  if (painted) {
+    if (!q.pts.length) return;
+    const r5 = (x) => Math.round(x * 1e5) / 1e5;
+    S.p.paints = [...(S.p.paints || []), { ...q, pts: q.pts.map((c) => c.map(r5)), r: r5(q.r) }];
+    changed('paint'); return;
+  }
+  if (q.pts ? !q.pts.length : Math.abs(q.h) < 1e-4 * HEIGHT) { pinchSync(); return; }   // a smoothing stroke has no h
+  const r5 = (x) => Math.round(x * 1e5) / 1e5;
+  const shp = q.sh ? { sh: q.sh, asp: q.asp, ang: q.ang } : {};
+  S.p.pinches = [...(S.p.pinches || []), q.smooth ? { pts: q.pts.map((c) => c.map(r5)), r: r5(q.r), s: q.s, smooth: q.smooth, ...shp }
+    : q.pts ? { pts: q.pts.map((c) => c.map(r5)), r: r5(q.r), h: r5(q.h), s: q.s, ...shp }
+    : { p: q.p.map(r5), n: q.n.map(r5), r: r5(q.r), h: r5(q.h), s: q.s, ...shp }];
+  changed('pinch');
+};
+stage.addEventListener('pointerup', pinchEnd, true);
+cnv.addEventListener('pointerdown', () => window.focus());
+stage.addEventListener('pointercancel', pinchEnd, true);
+cnv.addEventListener('pointerleave', () => { if (!pinchDrag) { showBrush(null); if (PINCH.tool === 'paint') hot([], null); if (decalGhost) { decalGhost = null; decalSync(); } } });
+stage.addEventListener('wheel', (e) => {   // Shift + the wheel over the piece: the brush's radius; Alt + the wheel: its turn
+  if (!PINCH.on || !(e.shiftKey || (e.altKey && PINCH.sh !== 'circle'))) return;
+  e.stopPropagation(); e.preventDefault();
+  if (e.altKey) PINCH.ang = ((PINCH.ang + (e.deltaY < 0 ? 15 : -15)) % 180 + 180) % 180;
+  else PINCH.r = Math.max(1, Math.min(15, PINCH.r + (e.deltaY < 0 ? .5 : -.5)));
+  pinchSync(); if (pinchHover) showBrush(pinchHover);
+}, { capture: true, passive: false });
+window.addEventListener('keydown', (e) => {
+  if (!PINCH.on || e.ctrlKey || e.metaKey || e.target.closest('input, select, textarea')) return;
+  if (e.code === 'BracketLeft' || e.code === 'BracketRight') { const up = e.code === 'BracketRight'; PINCH.r = Math.max(1, Math.min(15, PINCH.r + (up ? .5 : -.5))); pinchSync(); if (pinchHover) showBrush(pinchHover); }
+});
+function pinchSync() {
+  const n = (S.p.pinches || []).length, np = (S.p.paints || []).length, can = !isMade(), painting = PINCH.tool === 'paint';
+  $('pinchBox').hidden = !can;
+  if (!can && PINCH.on) PINCH.on = false;
+  $('pinchOn').classList.toggle('on', PINCH.on && !painting); $('paintOn').classList.toggle('on', PINCH.on && painting);
+  $('pinchTools').hidden = !PINCH.on; $('pinchHint').hidden = !PINCH.on;
+  stage.classList.toggle('pinching', PINCH.on);
+  $('pinchCount').textContent = [n ? '{{js:ag.pinch_count}}'.replace('{0}', n) : '', np ? '{{js:ag.paint_count}}'.replace('{0}', np) : ''].filter(Boolean).join(' · ');
+  $('pinchClear').disabled = !n; $('paintClear').disabled = !np;
+  $('pinchOnly').hidden = painting; $('paintOnly').hidden = !painting;
+  const fill = painting && (PAINT.fill === 'part' || PAINT.fill === 'all'), decal = painting && PAINT.fill === 'decal';
+  $('brushRows').hidden = fill; $('pinchKRow').hidden = painting;
+  $('paintDecalRow').hidden = !decal; $('r_pinch_shape').hidden = $('r_pinch_asp').hidden = decal;
+  if (decal) $('pinchShapeTools').hidden = false;
+  for (const b of $('paintDecals').children) b.classList.toggle('on', b.dataset.d === PAINT.decal && !PAINT.num);
+  for (const b of $('paintLook').children) if (b.dataset.l === 'image') b.hidden = !decal;
+  if (!decal && PAINT.look === 'image') PAINT.look = 'paint';
+  for (const b of $('paintFill').children) b.classList.toggle('on', b.dataset.f === PAINT.fill);
+  for (const b of $('paintLook').children) b.classList.toggle('on', b.dataset.l === PAINT.look);
+  $('paintLookRow').hidden = $('paintOpRow').hidden = PAINT.fill === 'erase'; $('paintColRow').hidden = PAINT.fill === 'erase' || PAINT.look !== 'paint';
+  $('i_paint_c').value = PAINT.c; $('i_paint_a').value = PAINT.a; $('v_paint_a').textContent = Math.round(PAINT.a * 100) + '%';
+  for (const b of $('pinchMode').children) b.classList.toggle('on', b.dataset.m === PINCH.mode);
+  const paint = PINCH.mode === 'paint', sm = paint && PINCH.kind === 'smooth';
+  $('pinchKindRow').hidden = !paint;
+  for (const b of $('pinchKind').children) b.classList.toggle('on', b.dataset.k === PINCH.kind);
+  $('pinchModeNote').textContent = painting ? { brush: '{{js:ag.paint_brush_note}}', part: '{{js:ag.paint_part_note}}', all: '{{js:ag.paint_all_note}}', erase: '{{js:ag.paint_erase_note}}', decal: '{{js:ag.paint_decal_note}}' }[PAINT.fill]
+    : !paint ? '{{js:ag.pinch_pull_note}}' : sm ? '{{js:ag.pinch_smooth_note}}' : '{{js:ag.pinch_paint_note}}';
+  $('l_pinch_k').textContent = !paint ? '{{js:ag.pinch_strength}}' : sm ? '{{js:ag.pinch_smooth_k}}' : '{{js:ag.pinch_height}}';
+  $('n_pinch_k').textContent = !paint ? '{{js:ag.pinch_strength_info}}' : sm ? '{{js:ag.pinch_smooth_k_info}}' : '{{js:ag.pinch_height_info}}';
+  for (const b of $('pinchShape').children) b.classList.toggle('on', b.dataset.sh === PINCH.sh);
+  $('pinchShapeTools').hidden = PINCH.sh === 'circle' && !(PINCH.tool === 'paint' && PAINT.fill === 'decal');
+  for (const [k, id, f] of [['r', 'pinch_r', (x) => x + '%'], ['k', 'pinch_k', (x) => '×' + x], ['s', 'pinch_s', (x) => x], ['asp', 'pinch_asp', (x) => x], ['ang', 'pinch_ang', (x) => x + '°']]) {
+    $('i_' + id).value = PINCH[k]; $('v_' + id).textContent = f(PINCH[k]);
+  }
+  if (!PINCH.on) showBrush(null);
+}
+const toolButton = (tool) => () => { PINCH.on = !(PINCH.on && PINCH.tool === tool); PINCH.tool = tool; if (!PINCH.on) hot([], null); pinchSync(); };
+$('pinchOn').addEventListener('click', toolButton('pinch')); $('paintOn').addEventListener('click', toolButton('paint'));
+$('paintFill').addEventListener('click', (e) => { if (e.target.dataset.f) { PAINT.fill = e.target.dataset.f; hot([], null); pinchSync(); } });
+$('paintLook').addEventListener('click', (e) => { if (e.target.dataset.l) { PAINT.look = e.target.dataset.l; pinchSync(); } });
+$('i_paint_c').addEventListener('input', (e) => { PAINT.c = e.target.value; });
+$('i_paint_a').addEventListener('input', (e) => { PAINT.a = +e.target.value; pinchSync(); });
+$('paintDecals').innerHTML = (DATA.decals || []).map((d) => `<button data-d="${d.name}" title="${d.label}"><img src="${fileUrl(d.path)}" alt="${d.label}"></button>`).join('');
+$('paintDecals').addEventListener('click', (e) => { const d = e.target.dataset.d; if (d) { PAINT.decal = d; PAINT.num = ''; $('i_paint_num').value = ''; pinchSync(); } });
+$('i_paint_num').addEventListener('input', (e) => { PAINT.num = e.target.value.replace(/\D/g, ''); e.target.value = PAINT.num; pinchSync(); });
+$('i_paint_flip').addEventListener('change', (e) => { PAINT.flip = e.target.checked; });
+$('paintClear').addEventListener('click', () => { if ((S.p.paints || []).length) { S.p.paints = []; changed('paint'); } });
+$('pinchShape').addEventListener('click', (e) => {   // each shape starts from its own proportions
+  const sh = e.target.dataset.sh; if (!sh) return;
+  PINCH.sh = sh; PINCH.asp = { circle: 1, oval: .5, square: 1, strip: .2 }[sh]; pinchSync();
+});
+for (const [k, id] of [['r', 'pinch_r'], ['k', 'pinch_k'], ['s', 'pinch_s'], ['asp', 'pinch_asp'], ['ang', 'pinch_ang']])
+  $('i_' + id).addEventListener('input', (e) => { PINCH[k] = +e.target.value; pinchSync(); });
+$('pinchMode').addEventListener('click', (e) => { if (e.target.dataset.m) { PINCH.mode = e.target.dataset.m; pinchSync(); } });
+$('pinchKind').addEventListener('click', (e) => { if (e.target.dataset.k) { PINCH.kind = e.target.dataset.k; pinchSync(); } });
+$('pinchClear').addEventListener('click', () => { if ((S.p.pinches || []).length) { S.p.pinches = []; changed('pinch'); } });
+
+// ------------------------------------------------------------------ undo / redo (Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y, the ↶ ↷ buttons):
+// the piece, its sides, style and parameters (pinches too). A slider's moves in a row are one step
+const HIST = { undo: [], redo: [], at: null, timer: 0, restoring: false };
+const snapS = () => JSON.stringify({ piece: S.piece, sides: S.sides, style: S.style, p: S.p });
+function histNote(what) {
+  if (HIST.restoring) return;
+  clearTimeout(HIST.timer);
+  if (ALL.some((sp) => sp[0] === what) || what === 'look') HIST.timer = setTimeout(histCommit, 600); else histCommit();
+}
+function histCommit() {
+  clearTimeout(HIST.timer); HIST.timer = 0;
+  const now = snapS();
+  if (HIST.at !== null && now !== HIST.at) { HIST.undo.push(HIST.at); if (HIST.undo.length > 200) HIST.undo.shift(); HIST.redo.length = 0; }
+  HIST.at = now; histSync();
+}
+function histStep(from, to) {
+  if (pinchDrag || busy) return;
+  histCommit();   // a slider's last moves first
+  if (!from.length) return;
+  to.push(HIST.at); HIST.at = from.pop();
+  const x = JSON.parse(HIST.at);
+  HIST.restoring = true;
+  try { S.p = x.p; S.sides = x.sides; S.style = x.style; if (x.piece !== S.piece) setPiece(x.piece, true); else changed('history'); }
+  finally { HIST.restoring = false; }
+  histSync();
+}
+function histSync() { $('undoBtn').disabled = !HIST.undo.length; $('redoBtn').disabled = !HIST.redo.length; }
+const undo = () => histStep(HIST.undo, HIST.redo), redo = () => histStep(HIST.redo, HIST.undo);
+$('undoBtn').addEventListener('click', undo); $('redoBtn').addEventListener('click', redo);
+// Ctrl+A outside a field selects nothing; any click takes a selection away (the 3D view's clicks do not on their own)
+const inField = (t) => !!(t && t.closest && t.closest('input[type=text], input[type=number], textarea, select'));
+window.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.code === 'KeyA' && !inField(e.target)) { e.preventDefault(); getSelection().removeAllRanges(); }
+});
+window.addEventListener('pointerdown', (e) => {   // the app's page too: a Ctrl+A there stays otherwise
+  if (!inField(e.target)) { getSelection().removeAllRanges(); try { if (window.parent !== window) window.parent.getSelection().removeAllRanges(); } catch (er) { /* another origin */ } }
+}, true);
+window.addEventListener('keydown', (e) => {   // by the key's place, so the Russian layout works too
+  if (!(e.ctrlKey || e.metaKey) || (e.code !== 'KeyZ' && e.code !== 'KeyY')) return;
+  if (e.target.closest('input[type=text], input[type=number], textarea, select')) return;
+  e.preventDefault(); (e.shiftKey || e.code === 'KeyY' ? redo : undo)();
+});
+window.sf3dPinchTest = { hit: (x, y) => { const h = pinchHit({ clientX: x, clientY: y }); return h && { point: h.point.toArray(), n: h.n.toArray() }; },
+  list: () => S.p.pinches, paints: () => S.p.paints, paintState: PAINT, state: PINCH, lens: () => BRUSH.uBrushOn.value > .5 && BRUSH.uLens.value > .5,
+  hidden: (x, y) => { const h = pinchHit({ clientX: x, clientY: y }); return h && hiddenByBody(h.point); }, hist: () => ({ undo: HIST.undo.length, redo: HIST.redo.length }) };
+
 // ------------------------------------------------------------------ to SF3D: the geometry, weights and materials, answered by a status file
 function listWorn() {   // the pieces already on the character, a tick each
   $('wornRow').hidden = !DATA.worn.length;
@@ -2454,7 +3177,7 @@ function payload() {   // every part in one mesh: positions (glTF axes), faces (
   return { v: b64(Float32Array.from(v)), uv: b64(Float32Array.from(uv)), n: b64(Uint8Array.from(sizes)), f: b64(Uint32Array.from(f)),
     m: b64(Uint8Array.from(m)), bi: b64(Uint16Array.from(bi)), bw: b64(Float32Array.from(bw)), bones: boneNames,
     mats: LOOK.specs, patterns: { mail: patternTile('mail').png, quilt: patternTile(quiltTile(S.p)).png }, pattern_unit: LOOK.U,
-    radius: parts.reduce((s, x) => s + x.R, 0) / parts.length, over_clothes: parts.some((x) => x.loose) };
+    radius: parts.reduce((s, x) => s + x.R, 0) / parts.length, over_clothes: parts.some((x) => x.loose), paint: paintPayload() };
 }
 let busy = false;
 async function send(action, extra, wait, statusName) {
@@ -2479,8 +3202,13 @@ async function send(action, extra, wait, statusName) {
   return null;
 }
 const itemName = () => (S.name || 'proc_' + S.piece).trim().replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'proc_' + S.piece;
-$('go').addEventListener('click', async () => {
-  if (!lastBuild || busy) return;
+// what «Generate» last made of this item (DATA.saved): the fitting room shows that, so a piece changed since is made first
+const sorted = (o) => JSON.stringify(o, (k, v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map((x) => [x, v[x]])) : v));
+const madeAsShown = () => { const e = DATA.saved.find((x) => x.item === itemName());
+  return !!e && e.piece === S.piece && sorted(e.params) === sorted(S.p) && [...(e.sides || [])].sort().join() === [...S.sides].sort().join(); };
+$('go').addEventListener('click', () => make());
+async function make() {
+  if (!lastBuild || busy) return null;
   busy = true; $('go').disabled = true;
   const item = itemName();
   if (WORN.get(item) && WORN.get(item).on) { await wearPiece(DATA.worn.find((w) => w.item === item), false); listWorn(); }   // not over itself
@@ -2503,8 +3231,16 @@ $('go').addEventListener('click', async () => {
     const wi = DATA.worn.find((w) => w.item === item); if (wi) wi.mask = js.mask;
     await loadResult(js.glb);
   }
+  return js;
+}
+$('room').addEventListener('click', async () => {
+  if (busy) return;
+  if (lastBuild && !madeAsShown()) {   // the piece on screen is not the one made last: made first, then shown
+    const js = await make();
+    if (!js || !js.ok) return;
+  }
+  send('wardrobe', {}, '{{js:ag.opening_room}}', '_wardrobe');
 });
-$('room').addEventListener('click', () => send('wardrobe', {}, '{{js:ag.opening_room}}', '_wardrobe'));
 async function loadResult(glb) {   // the baked piece, on the character's own bones (it follows the poses)
   if (resultRoot) { scene.remove(resultRoot); resultRoot = null; }
   try {
@@ -2535,7 +3271,9 @@ $('worn').addEventListener('change', (e) => { const i = e.target.dataset.w; if (
 try {
   await loadCharacter();
   $('msg').hidden = true;
+  for (const m of [...ORIG.values(), plainMat, xrayMat]) lensOn(m);
   rebuild();
+  histCommit();
 } catch (e) { $('msg').textContent = e.message; console.error(e); }
 </script>
 </body>

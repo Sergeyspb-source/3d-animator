@@ -406,6 +406,7 @@ if job.get("preview_glb"):   # the editor's live view: the same layout in 3D, bo
     eyes[1].location = (-0.07, 0, 2.6 * eye_r)
     export([*eyes, tu, tl, gu, gl, tongue], "preview.glb")
     eyes[1].location = keep
+    print("FACE_PARTS_GLB", flush=True)   # the live view can show the 3D before the picture is rendered
 cam = bpy.data.objects.new("cam", bpy.data.cameras.new("cam")); scene.collection.objects.link(cam); scene.camera = cam
 cam.data.type = "ORTHO"; cam.data.ortho_scale = 0.2
 cam.location = (0, -0.3, 0.12); cam.rotation_euler = (math.radians(68), 0, 0)

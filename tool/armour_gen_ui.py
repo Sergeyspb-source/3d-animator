@@ -152,7 +152,24 @@ def worn(rigged: Path) -> list:
             for f in sorted(rigged.parent.glob(f"{stem}_wear_*.glb")) if not f.name.endswith(".src.glb")]
 
 
-def editor_page(rigged: Path) -> str:
+DECALS = ROOT / "decals"   # the shared emblems and digits (decals/make_decals.py draws them)
+
+
+def decals(folder: Path) -> list:
+    """The pictures the «Paint» brush can put on (export/decals): the shared set is copied there the first time, and
+    any PNG put there is offered too. [{name, path, label}]"""
+    if not folder.exists():
+        folder.mkdir(parents=True, exist_ok=True)
+        for f in DECALS.glob("*.png"):
+            shutil.copy2(f, folder / f.name)
+    own = {f.stem for f in DECALS.glob("*.png")}
+    key = lambda f: (f.stem not in own, f.stem.startswith("digit_"), f.stem)   # the set's heads, its digits, then one's own
+    return [{"name": f.stem, "path": f.resolve().as_posix(),
+             "label": f.stem[6:] if f.stem.startswith("digit_") else _t(f"ag.decal_{f.stem}") if f.stem in own else f.stem}
+            for f in sorted(folder.glob("*.png"), key=key)]
+
+
+def editor_page(rigged: Path, decals_dir: Path | None = None) -> str:
     page = i18n.fill(EDITOR.read_text(encoding="utf-8"))
     data = {"rigged": rigged.resolve().as_posix(), "rigged_v": int(rigged.stat().st_mtime), "stem": LM._stem(rigged),
             "target": TARGET_ID, "go": GO_ID, "names": {n: LM.bone_names(n) for n in ("mixamo", "godot")},
@@ -161,6 +178,7 @@ def editor_page(rigged: Path) -> str:
                        for k, v in PIECES.items()},
             "presets": PRESETS, "mat_labels": {k: _t(f"ag.mat_{k}") for k in PRESETS},
             "surface_labels": {k: _t(f"ag.surf_{k}") for k in SURFACES}, "saved": saved(rigged), "worn": worn(rigged),
+            "decals": decals(decals_dir) if decals_dir else [],
             **{grp: {k: _t(f"ag.{grp.split('_')[0]}_{k}") for k in keys} for grp, keys in CHOICES.items()}}
     return page.replace("@@DATA@@", json.dumps(data, ensure_ascii=False).replace("</", "<\\/"))
 
@@ -304,7 +322,7 @@ def mount(config_loader, char=None, tab=None, active=None):
     def open_editor(r):
         if not r or not Path(r).exists():
             return _t("ag.choose_a_character")
-        return _frame(editor_page(Path(r)))
+        return _frame(editor_page(Path(r), Path(config_loader()["export_dir"]) / "decals"))
 
     def run(text):
         try:

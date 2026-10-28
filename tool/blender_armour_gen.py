@@ -11,7 +11,10 @@ mesh.json (the editor's, glTF axes, base64 little-endian arrays): {"v": float32 
            (0 the surface, 1 leather: straps, backing, lacing, 2 rivets and buckles, 3 mail, 4 quilting, 5 the rims' trim), "bi": uint16
            x4 bones per vertex (indices into "bones", three.js's names), "bw": float32 x4 their weights, "mats": the
            slots' specs (node_mat), "patterns": {"mail", "quilt": png} (red: height, green: light), "pattern_unit":
-           a pattern tile's size, "radius": the limb radius the noise is scaled by}
+           a pattern tile's size, "radius": the limb radius the noise is scaled by, "paint": the editor's paint layers
+           {"layers": [{t: brush | erase | part | all | decal, pts [[x, y, z, nx, ny, nz]] (a stroke's), r, s, sh, asp,
+           ang (its brush), a (opacity), look (image: the picture's own colours), look_c (sRGB hex), look_r, look_m; a
+           decal's img (a PNG), p, n, flip}], "faces": [base64 uint8 per face: a fill's faces]}}
 
 The shape and the weights are the editor's: the piece is built there out of the skin, live, so what is seen (also in
 its poses) is what is made. Here the three materials are procedural shaders baked into textures (colour, roughness,
@@ -28,6 +31,7 @@ from pathlib import Path
 
 import bmesh
 import bpy
+import numpy as np
 from mathutils import Vector
 sys.path.insert(0, str(Path(__file__).resolve().parent))   # Blender does not put the script's folder on the path
 from i18n import t as _t
@@ -137,8 +141,9 @@ def node_mat(name, spec, R, pattern=None, unit=1.0):
     return m, metal
 
 
-def bake(obj, mats, size, out_dir, item):
-    """Each material's colour, roughness and normal into images, then plain image-based materials."""
+def bake(obj, mats, size, out_dir, item, paint=None):
+    """Each material's colour, roughness and normal into images (the paint laid on them), then plain image-based
+    materials."""
     sc = bpy.context.scene
     try:
         sc.render.engine = "CYCLES"
@@ -175,6 +180,8 @@ def bake(obj, mats, size, out_dir, item):
             else:
                 nt.links.new(bsdf.outputs[0], out.inputs[0])
         bpy.ops.object.bake(type=btype, margin=4)
+    if paint and paint.get("layers"):
+        paint_layers(obj, mats, imgs, size, item, paint)
     for (mn, kind), im in imgs.items():
         im.filepath_raw = str(Path(out_dir) / f"{im.name}.png")
         im.file_format = "PNG"
@@ -190,6 +197,168 @@ def bake(obj, mats, size, out_dir, item):
         nm = N("ShaderNodeTexImage"); nm.image = imgs[(m.name, "normal")]
         nmap = N("ShaderNodeNormalMap"); L(nm.outputs[0], nmap.inputs["Color"]); L(nmap.outputs[0], bsdf.inputs["Normal"])
         bsdf.inputs["Metallic"].default_value = metal
+        if (m.name, "metal") in imgs:   # painted: gold on leather, paint on steel
+            mt = N("ShaderNodeTexImage"); mt.image = imgs[(m.name, "metal")]; L(mt.outputs[0], bsdf.inputs["Metallic"])
+
+
+def _pixels(im, size):
+    a = np.empty(size * size * 4, np.float32)
+    im.pixels.foreach_get(a)
+    return a.reshape(size * size, 4)
+
+
+def bake_aux(obj, mats, size, item, what, socket):
+    """socket(node_tree) -> an output: baked as emission into a float image per material (its pixels as an array)."""
+    ims = {}
+    for m, _ in mats:
+        im = bpy.data.images.new(f"{item}_{m.name}_{what}", size, size, alpha=False, float_buffer=True)
+        im.colorspace_settings.name = "Non-Color"
+        nt = m.node_tree
+        node = nt.nodes["bake"]; node.image = im; nt.nodes.active = node
+        out = next(n for n in nt.nodes if n.type == "OUTPUT_MATERIAL")
+        em = nt.nodes.get("bake_em") or nt.nodes.new("ShaderNodeEmission"); em.name = "bake_em"
+        nt.links.new(socket(nt), em.inputs[0]); nt.links.new(em.outputs[0], out.inputs[0])
+        ims[m.name] = im
+    bpy.ops.object.bake(type="EMIT", margin=4)
+    out = {k: _pixels(im, size)[:, :3].copy() for k, im in ims.items()}
+    for im in ims.values():
+        bpy.data.images.remove(im)
+    return out
+
+
+def _smooth(a, b, x):
+    t = np.clip((x - a) / (b - a), 0, 1)
+    return t * t * (3 - 2 * t)
+
+
+def _hash3(i, j, k):
+    x = np.sin(i * 127.1 + j * 311.7 + k * 74.7) * 43758.5453
+    return x - np.floor(x)
+
+
+def _vnoise3(p):
+    i = np.floor(p); f = p - i; u = f * f * (3 - 2 * f)
+    def c(a, b, d):
+        return _hash3(i[:, 0] + a, i[:, 1] + b, i[:, 2] + d)
+    def lerp(a, b, t):
+        return a + (b - a) * t
+    return lerp(lerp(lerp(c(0, 0, 0), c(1, 0, 0), u[:, 0]), lerp(c(0, 1, 0), c(1, 1, 0), u[:, 0]), u[:, 1]),
+                lerp(lerp(c(0, 0, 1), c(1, 0, 1), u[:, 0]), lerp(c(0, 1, 1), c(1, 1, 1), u[:, 0]), u[:, 1]), u[:, 2])
+
+
+def patchy(P, L):
+    """Rust, soot and blood lie in patches: the editor's value noise (patchy), over glTF's axes as it has them."""
+    if L.get("look") not in ("rust", "soot", "blood"):
+        return 1.0
+    g = np.stack((P[:, 0], P[:, 2], -P[:, 1]), axis=1).astype(np.float64) / (.5 * float(L["r"]))   # Blender -> glTF
+    n = .65 * _vnoise3(g) + .35 * _vnoise3(2.7 * g)
+    return _smooth(.3, .7, n).astype(np.float32)
+
+
+def stroke_weight(P, L):
+    """A stroke's weight at the points P (Blender's axes): the strongest of its brush stamps, as the editor's
+    pinchShapeW measures them (a circle in space; an oval, a rectangle in the surface's plane)."""
+    r, soft, sh, asp, ang = float(L["r"]), float(L.get("s", .7)), L.get("sh"), float(L.get("asp") or 1), float(L.get("ang") or 0)
+    W = np.zeros(len(P), np.float32)
+    for c in L["pts"]:
+        o = np.array((c[0], -c[2], c[1]), np.float32); n = np.array((c[3], -c[5], c[4]), np.float32)   # glTF -> Blender
+        near = np.all(np.abs(P - o) <= r, axis=1)
+        if not near.any():
+            continue
+        rel = P[near] - o
+        along = rel @ n
+        if not sh:
+            d = np.linalg.norm(rel, axis=1)
+            w = np.where(d < r, 1 - _smooth(r * (1 - soft), r, d), 0)
+        else:
+            t1 = np.cross(n, (0, 0, 1) if abs(n[2]) < .9 else (1, 0, 0)); t1 /= np.linalg.norm(t1); t2 = np.cross(n, t1)
+            u = math.cos(ang) * t1 + math.sin(ang) * t2; v = -math.sin(ang) * t1 + math.cos(ang) * t2
+            a, b = rel @ u / r, rel @ v / (r * asp)
+            dn = np.hypot(a, b) if sh == "oval" else np.maximum(np.abs(a), np.abs(b))
+            w = np.where((dn < 1) & (np.abs(along) <= r), 1 - _smooth(1 - soft, 1, dn), 0)
+        w = np.where(along >= -.5 * r, w, 0)
+        W[near] = np.maximum(W[near], w)
+    return W
+
+
+_DECALS = {}
+
+
+def decal_weight(P, L):
+    """A picture's (alpha, rgb) at the points P: projected along the surface's direction where it was put, its right
+    across the up direction then turned, as the editor's decalFrame has it."""
+    im = _DECALS.get(L["img"])
+    if im is None:
+        b = bpy.data.images.load(L["img"])
+        w, h = b.size
+        im = _DECALS[L["img"]] = (_pixels_wh(b, w, h).reshape(h, w, 4), w / h)
+        bpy.data.images.remove(b)
+    px, asp = im
+    o = np.array((L["p"][0], -L["p"][2], L["p"][1]), np.float32); n = np.array((L["n"][0], -L["n"][2], L["n"][1]), np.float32)
+    up = np.array((0, 0, 1) if abs(n[2]) < .9 else (1, 0, 0), np.float32)
+    right = np.cross(up, n); right /= np.linalg.norm(right); upv = np.cross(n, right)
+    a = float(L.get("ang") or 0); R = math.cos(a) * right + math.sin(a) * upv; U = -math.sin(a) * right + math.cos(a) * upv
+    r = float(L["r"]); rel = P - o
+    x = rel @ R / (r * asp) * (-1 if L.get("flip") else 1); y = rel @ U / r
+    inside = (np.abs(x) <= 1) & (np.abs(y) <= 1) & (np.abs(rel @ n) <= r)
+    h, w = px.shape[:2]
+    ix = np.clip(((x * .49 + .5) * (w - 1)).round().astype(int), 0, w - 1); iy = np.clip(((y * .49 + .5) * (h - 1)).round().astype(int), 0, h - 1)
+    s = px[iy, ix]
+    return np.where(inside, s[:, 3], 0).astype(np.float32), s[:, :3]
+
+
+def _pixels_wh(im, w, h):
+    a = np.empty(w * h * 4, np.float32)
+    im.pixels.foreach_get(a)
+    return a
+
+
+def paint_layers(obj, mats, imgs, size, item, paint):
+    """The editor's paint over the baked colour and roughness, per pixel: where each pixel lies on the piece (a baked
+    position map) is weighed against each stroke, a fill's faces come as a baked mask. Layers go over one another in
+    order; a look's metalness makes a metalness image."""
+    layers = paint["layers"]
+    lo = np.array([min(v.co[a] for v in obj.data.vertices) for a in range(3)], np.float32)
+    span = np.array([max(v.co[a] for v in obj.data.vertices) for a in range(3)], np.float32) - lo + 1e-6
+    def pos(nt):   # the position, 0..1 over the piece's box (an emission is not negative)
+        g = nt.nodes.new("ShaderNodeNewGeometry")
+        sub = nt.nodes.new("ShaderNodeVectorMath"); sub.operation = "SUBTRACT"; sub.inputs[1].default_value = tuple(lo)
+        div = nt.nodes.new("ShaderNodeVectorMath"); div.operation = "DIVIDE"; div.inputs[1].default_value = tuple(span)
+        nt.links.new(g.outputs["Position"], sub.inputs[0]); nt.links.new(sub.outputs[0], div.inputs[0])
+        return div.outputs[0]
+    P = {k: v * span + lo for k, v in bake_aux(obj, mats, size, item, "pos", pos).items()}
+    masks = {}
+    for li, L in enumerate(layers):
+        if L.get("pts"):
+            continue
+        def fill(nt, li=li):
+            at = nt.nodes.new("ShaderNodeAttribute"); at.attribute_name = f"paint{li}"
+            return at.outputs["Fac"]
+        masks[li] = {k: v[:, 0] for k, v in bake_aux(obj, mats, size, item, f"fill{li}", fill).items()}
+    for m, metal in mats:
+        col, rough = _pixels(imgs[(m.name, "color")], size), _pixels(imgs[(m.name, "rough")], size)
+        C, R, M, A = np.zeros((size * size, 3), np.float32), np.zeros(size * size, np.float32), np.zeros(size * size, np.float32), np.zeros(size * size, np.float32)
+        for li, L in enumerate(layers):
+            pic = decal_weight(P[m.name], L) if L["t"] == "decal" else None
+            w = (pic[0] if pic else stroke_weight(P[m.name], L) if L.get("pts") else np.clip(masks[li][m.name], 0, 1)) * float(L.get("a", 1))
+            if L["t"] != "erase" and w.any():
+                w = w * patchy(P[m.name], L)
+            if L["t"] == "erase":
+                A *= 1 - w
+                continue
+            h = L["look_c"].lstrip("#"); c = np.array([int(h[i:i + 2], 16) / 255 for i in (0, 2, 4)], np.float32)
+            if pic and L.get("look") == "image":   # the picture's own colours, as painted (sRGB as the colour texture)
+                c = pic[1]
+            A2 = A + w * (1 - A); k = np.where(A2 > 0, w / np.maximum(A2, 1e-6), 0)
+            C += (c - C) * k[:, None]; R += (float(L["look_r"]) - R) * k; M += (float(L["look_m"]) - M) * k; A = A2
+        if not A.any():
+            continue
+        col[:, :3] += (C - col[:, :3]) * A[:, None]; rough[:, :3] += ((R - rough[:, 0]) * A)[:, None]
+        imgs[(m.name, "color")].pixels.foreach_set(col.ravel()); imgs[(m.name, "rough")].pixels.foreach_set(rough.ravel())
+        mt = bpy.data.images.new(f"{item}_{m.name}_metal", size, size, alpha=False); mt.colorspace_settings.name = "Non-Color"
+        mv = metal + (M - metal) * A
+        mt.pixels.foreach_set(np.repeat(mv[:, None], 4, axis=1).astype(np.float32).ravel())
+        imgs[(m.name, "metal")] = mt
 
 
 # ---------------------------------------------------------------- the mesh
@@ -220,6 +389,12 @@ mesh = bpy.data.meshes.new(f"Wear_{item}")
 mesh.from_pydata(co, [], faces)
 for p, m in zip(mesh.polygons, M):
     p.material_index = m
+PAINT = mj.get("paint") or None
+for li, fb in enumerate((PAINT or {}).get("faces") or []):   # a fill's faces, baked as its mask
+    if fb:
+        flags = base64.b64decode(fb)
+        at = mesh.attributes.new(f"paint{li}", "FLOAT", "FACE")
+        at.data.foreach_set("value", [float(x) for x in flags[:len(mesh.polygons)]])
 mesh.uv_layers.new(name="UVMap")   # the bake's own unwrap, made below
 pat_uv = mesh.uv_layers.new(name="pattern")   # the editor's: rows along, the angle round (the mail's rings lie by it)
 for lp in mesh.loops:
@@ -285,7 +460,7 @@ out_dir = Path(job["out"]).parent
 out_dir.mkdir(parents=True, exist_ok=True)
 tex_dir = Path(job.get("work") or out_dir) / f"{Path(job['out']).stem}_tex"   # the GLB embeds them; kept for a look
 tex_dir.mkdir(parents=True, exist_ok=True)
-bake(obj, mats, int(job.get("tex", 1024)), tex_dir, item)
+bake(obj, mats, int(job.get("tex", 1024)), tex_dir, item, PAINT)
 
 mesh.uv_layers.remove(mesh.uv_layers["pattern"])   # baked in: the game gets the one unwrap
 mod = obj.modifiers.new("Armature", "ARMATURE")
@@ -343,7 +518,7 @@ if pv:
 
 if job.get("mask"):   # what of the body the piece hides (the game takes it away while it is on: body_mask.py)
     from body_mask import body_mask, held, where
-    keys = {tuple(x) for x in body_mask(body, [obj])}
+    keys = {tuple(x) for x in body_mask(body, [obj], cover=30, erode=1)}   # only what it really covers: no holes beside a strap or at a rim
     head_b = arm.data.bones.get(names.get("head", ""))
     if job.get("style") == "coif" and head_b:
         # the hair goes under a coif (a bag round the head, the hair may be sculpted on the skin): on the head what it

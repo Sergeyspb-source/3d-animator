@@ -4,6 +4,7 @@
 ## (left drag), pans (right drag) and zooms (wheel).
 ##
 ## A picture, then quit: godot --path <project> -- --shot=out.png [--anim=walk] [--at=0.5] [--yaw=30] [--zoom=2]
+## [--pitch=-0.5] [--rise=0.3] (the look down, the point looked at raised by that share of the height)
 extends Node3D
 
 const Equip = preload("sf3d_equip.gd")
@@ -56,6 +57,8 @@ func _ready() -> void:
 	if args.has("shot"):
 		_yaw = deg_to_rad(float(args.get("yaw", "0")))
 		_dist /= float(args.get("zoom", "1"))
+		_pitch = float(args.get("pitch", str(_pitch)))
+		_target.y += float(args.get("rise", "0")) * box.size.y
 		_place_camera()
 		_shoot(args["shot"], float(args.get("at", "0.5")))
 
