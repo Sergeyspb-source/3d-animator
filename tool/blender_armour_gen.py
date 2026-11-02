@@ -32,7 +32,7 @@ from pathlib import Path
 import bmesh
 import bpy
 import numpy as np
-from mathutils import Vector
+from mathutils import Matrix, Quaternion, Vector
 sys.path.insert(0, str(Path(__file__).resolve().parent))   # Blender does not put the script's folder on the path
 from i18n import t as _t
 
@@ -313,6 +313,67 @@ def _pixels_wh(im, w, h):
     return a
 
 
+def _dh(x):
+    return np.mod(np.sin(x * 127.1) * 43758.5453, 1.0)
+
+
+def damage_effect(P, L, col, rough, metal):
+    """Claw marks, a scratch or a hole on the colour (linear), roughness and metalness, in place: the editor's
+    damages() shader, per pixel."""
+    o = np.array((L["p"][0], -L["p"][2], L["p"][1])); n = np.array((L["n"][0], -L["n"][2], L["n"][1]))
+    up = np.array((0, 0, 1.) if abs(n[2]) < .9 else (1., 0, 0))
+    right = np.cross(up, n); right /= np.linalg.norm(right); upv = np.cross(n, right)
+    ang = float(L.get("ang") or 0); R = math.cos(ang) * right + math.sin(ang) * upv; U = -math.sin(ang) * right + math.cos(ang) * upv
+    r, seed, a = float(L["r"]), float(L["seed"]), float(L.get("a", 1))
+    Lv = np.array((R[2], U[2])); Lv = Lv / np.linalg.norm(Lv) if np.linalg.norm(Lv) > 1e-2 else np.array((0., 1.))   # the world's up in the frame
+    near = np.all(np.abs(P - o) <= 1.5 * r, axis=1)
+    if not near.any():
+        return
+    rel = P[near] - o
+    ok = np.abs(rel @ n) <= .5 * r
+    qx, qy = rel @ R / r, rel @ U / r
+    ok &= (np.abs(qx) <= 1.05) & (np.abs(qy) <= 1.05)
+    idx = np.nonzero(near)[0][ok]; qx, qy = qx[ok], qy[ok]
+    if not len(idx):
+        return
+    c = col[idx]
+    if L["kind"] in ("claws", "scratch"):
+        core, shade = np.zeros(len(idx)), np.zeros(len(idx))
+        for j in range(5 if L["kind"] == "claws" else 1):
+            s = seed + j * 7.13; fj = 0. if L["kind"] == "scratch" else j - 2.
+            a0, b0 = -.92 + _dh(s + 1) * .3, .92 - _dh(s + 2) * .3
+            inr = (qx >= a0) & (qx <= b0)
+            t = np.clip((qx - a0) / (b0 - a0), 0, 1); bend = (_dh(s + 3) - .5) * .3
+            yc = fj * .2 + (_dh(s) - .5) * .05 + bend * (1 - (2 * t - 1) ** 2) + fj * .06 * (t - .5) + .012 * (_dh(np.floor(t * 23) + s) - .5)
+            w = .045 * np.power(np.sin(math.pi * t), .6) * (1.3 if L["kind"] == "scratch" else 1.) + .002
+            d = qy - yc; ad = np.abs(d)
+            core = np.maximum(core, np.where(inr, 1 - _smooth(.35 * w, .8 * w, ad), 0))
+            shade += np.where(inr, np.sign(d) * Lv[1] * _smooth(.35 * w, .8 * w, ad) * (1 - _smooth(w, 2.4 * w, ad)), 0)
+        c = c + ((c * .35 + .62) - c) * (core * a)[:, None]
+        c = c * (1 - .55 * np.maximum(shade, 0) * a)[:, None] + (.3 * np.maximum(-shade, 0) * a)[:, None]
+        rough[idx] += (.3 - rough[idx]) * core * a
+    else:
+        rr = np.hypot(qx, qy); an = np.arctan2(qy, qx)
+        R0 = .3 + .07 * (_dh(np.floor((an + 3.1416) * 5) + seed) - .5)
+        dx, dy = np.where(rr > 1e-4, qx / np.maximum(rr, 1e-4), 0), np.where(rr > 1e-4, qy / np.maximum(rr, 1e-4), 1)
+        hole = 1 - _smooth(R0 - .02, R0 + .02, rr)
+        rim = _smooth(R0 - .02, R0 + .03, rr) * (1 - _smooth(R0 + .07, R0 + .2, rr))
+        soot = (1 - _smooth(R0 + .05, 1, rr)) * .6
+        crack = np.zeros(len(idx))
+        for k in range(6):
+            ca = seed * 3 + k * 1.047 + (_dh(seed + k) - .5) * .8; ln = R0 + .25 + .35 * _dh(seed + k + 9)
+            al = qx * math.cos(ca) + qy * math.sin(ca); pe = np.abs(qx * math.sin(ca) - qy * math.cos(ca))
+            crack = np.maximum(crack, np.where((al > R0) & (al < ln), (1 - _smooth(.006, .016, pe)) * (1 - (al - R0) / np.maximum(ln - R0, 1e-4)), 0))
+        c = c * (1 - .5 * soot * a)[:, None]
+        c = c + ((c * .3 + .6) - c) * (rim * .7 * a)[:, None]
+        c = c * (1 - .45 * rim * np.maximum(dx * Lv[0] + dy * Lv[1], 0) * a)[:, None]
+        c = c * (1 - .65 * crack * a)[:, None]
+        c = c + (.012 - c) * (hole * a)[:, None]
+        rough[idx] += (1 - rough[idx]) * np.maximum(hole, rim * .5) * a
+        metal[idx] += (0 - metal[idx]) * hole * a
+    col[idx] = c
+
+
 def paint_layers(obj, mats, imgs, size, item, paint):
     """The editor's paint over the baked colour and roughness, per pixel: where each pixel lies on the piece (a baked
     position map) is weighed against each stroke, a fill's faces come as a baked mask. Layers go over one another in
@@ -339,6 +400,8 @@ def paint_layers(obj, mats, imgs, size, item, paint):
         col, rough = _pixels(imgs[(m.name, "color")], size), _pixels(imgs[(m.name, "rough")], size)
         C, R, M, A = np.zeros((size * size, 3), np.float32), np.zeros(size * size, np.float32), np.zeros(size * size, np.float32), np.zeros(size * size, np.float32)
         for li, L in enumerate(layers):
+            if L["t"] == "damage":   # after the paint, over it (below)
+                continue
             pic = decal_weight(P[m.name], L) if L["t"] == "decal" else None
             w = (pic[0] if pic else stroke_weight(P[m.name], L) if L.get("pts") else np.clip(masks[li][m.name], 0, 1)) * float(L.get("a", 1))
             if L["t"] != "erase" and w.any():
@@ -351,18 +414,26 @@ def paint_layers(obj, mats, imgs, size, item, paint):
                 c = pic[1]
             A2 = A + w * (1 - A); k = np.where(A2 > 0, w / np.maximum(A2, 1e-6), 0)
             C += (c - C) * k[:, None]; R += (float(L["look_r"]) - R) * k; M += (float(L["look_m"]) - M) * k; A = A2
-        if not A.any():
+        dmg = [L for L in layers if L["t"] == "damage"]
+        if not A.any() and not dmg:
             continue
         col[:, :3] += (C - col[:, :3]) * A[:, None]; rough[:, :3] += ((R - rough[:, 0]) * A)[:, None]
+        mv = metal + (M - metal) * A
+        if dmg:   # in linear colour, as the editor's shader works
+            lin = np.power(np.clip(col[:, :3], 0, 1), 2.2)
+            rg, mt_ = rough[:, 0].copy(), mv.copy()
+            for L in dmg:
+                damage_effect(P[m.name], L, lin, rg, mt_)
+            col[:, :3] = np.power(np.clip(lin, 0, 1), 1 / 2.2); rough[:, :3] = rg[:, None]; mv = mt_
         imgs[(m.name, "color")].pixels.foreach_set(col.ravel()); imgs[(m.name, "rough")].pixels.foreach_set(rough.ravel())
         mt = bpy.data.images.new(f"{item}_{m.name}_metal", size, size, alpha=False); mt.colorspace_settings.name = "Non-Color"
-        mv = metal + (M - metal) * A
         mt.pixels.foreach_set(np.repeat(mv[:, None], 4, axis=1).astype(np.float32).ravel())
         imgs[(m.name, "metal")] = mt
 
 
 # ---------------------------------------------------------------- the mesh
 kind = job.get("piece", "bracer")
+CLOTH_KINDS = ("cloak", "skirt", "tabard")   # cloth on chains of cloth bones, swung by the game (SF3DEquip.Cloth)
 sides = [x for x in job.get("sides") or [] if x in ("L", "R")] or ["C"]
 item = job.get("item", kind)
 mj = json.loads(Path(job["mesh"]).read_text(encoding="utf-8"))
@@ -389,6 +460,9 @@ mesh = bpy.data.meshes.new(f"Wear_{item}")
 mesh.from_pydata(co, [], faces)
 for p, m in zip(mesh.polygons, M):
     p.material_index = m
+GRP = unpack("g", "H") if mj.get("g") else None   # a face's group: 0 the piece, k its k-th separate part (an arrow)
+if GRP and any(GRP):
+    mesh.attributes.new("grp", "INT", "FACE").data.foreach_set("value", list(GRP)[:len(mesh.polygons)])
 PAINT = mj.get("paint") or None
 for li, fb in enumerate((PAINT or {}).get("faces") or []):   # a fill's faces, baked as its mask
     if fb:
@@ -401,7 +475,12 @@ for lp in mesh.loops:
     pat_uv.data[lp.index].uv = (UV[2 * lp.vertex_index], UV[2 * lp.vertex_index + 1])
 mesh.uv_layers.active = mesh.uv_layers["UVMap"]
 mesh.uv_layers["UVMap"].active_render = True
-obj = bpy.data.objects.new(f"Wear_{item}", mesh)
+# a weapon held in a fist: the hands are named in the mesh's name (SF3DEquip closes their fingers round the grip)
+# in both hands: the other hand's grip, in the holding hand's frame (SF3DEquip.Grip reaches it): «__two_L_<9 numbers>»;
+# a spear: its head's way in that frame, kept forward in the game: «__point_<3 numbers>»
+hold = (f"__hold_{''.join(sides)}" + (f"__two_{job['two']}" if job.get("two") else "") + (f"__point_{job['point']}" if job.get("point") else "")
+        if kind == "weapon" and sides != ["C"] else "")
+obj = bpy.data.objects.new(f"Wear_{item}" + hold, mesh)
 bpy.context.scene.collection.objects.link(obj)
 # the editor's weights, by bone: its names are three.js's (whitespace to _, [ ] . : / dropped)
 real = {re.sub(r"[\[\]\.:/]", "", re.sub(r"\s", "_", b.name)): b.name for b in arm.data.bones}
@@ -462,15 +541,236 @@ tex_dir = Path(job.get("work") or out_dir) / f"{Path(job['out']).stem}_tex"   # 
 tex_dir.mkdir(parents=True, exist_ok=True)
 bake(obj, mats, int(job.get("tex", 1024)), tex_dir, item, PAINT)
 
+def arms_down():
+    """The arms hanging, 18° off the body, as the editor's «Arms down»: a cloak is made over them."""
+    arm.data.pose_position = "POSE"
+    W = arm.matrix_world
+    for s in "LR":
+        ua, fa = arm.pose.bones.get(names.get(f"arm_{s}", "")), arm.pose.bones.get(names.get(f"forearm_{s}", ""))
+        if ua is None or fa is None:
+            continue
+        down = (Vector((0, 0, -1)) + Vector((1 if s == "L" else -1, 0, 0)) * math.tan(math.radians(18))).normalized()
+        for pb in (ua, fa):
+            bpy.context.view_layer.update()
+            M = W @ pb.matrix
+            turn = (W.to_3x3() @ (pb.tail - pb.head)).normalized().rotation_difference(down).to_matrix().to_4x4()   # (R: the piece's size)
+            pb.matrix = W.inverted() @ (Matrix.Translation(M.translation) @ turn @ Matrix.Translation(-M.translation) @ M)
+    bpy.context.view_layer.update()
+
+
+# a cloak is cloth from the collar down (the game: SF3DEquip.Cloth, as the editor's «Cloth»): NC chains of cloth bones
+# round it, NS bones each from V0 of the way down (below the collar) to the hem, the first on the chest's bone; a vertex
+# below V0 goes on the two columns beside it and the two bones by its height (blended into its own weights just under
+# the collar), by the editor's pattern coordinates (across, down). The editor sends the cloak un-posed to the rest (the
+# arms out): the chains carry the cloth as it was made (over the arms hanging), so that is its rest; the collar keeps
+# the body's weights. Beside it a hidden grid «__clothhome»: a point per chain joint with the cloak's own weights there
+# (the trunk and the arms), at its rest as sent: where each particle belongs in any pose (the cloth follows it loosely).
+home_obj = None
+if kind in CLOTH_KINDS:
+    NC, NS, V0 = 13, 10, .08   # round it, front edge to front edge; the collar (the editor's CLOTH_V0, pinned)
+    pat = mesh.uv_layers["pattern"].data
+    uvv = [None] * len(mesh.vertices)
+    cloth_mi = used.index(0) if 0 in used else 0   # the cloth itself (slot 0), not the brooch's metal
+    for poly in mesh.polygons:
+        if poly.material_index != cloth_mi:
+            continue
+        for li in poly.loop_indices:
+            uvv[mesh.loops[li].vertex_index] = tuple(pat[li].uv)
+    grid = {}
+    for vi, uv in enumerate(uvv):
+        if uv is not None:
+            grid.setdefault((round(uv[0], 3), round(uv[1], 3)), []).append(vi)
+    gname = {g.index: g.name for g in obj.vertex_groups}
+    arms_down()   # each vertex where it was made: its weights with the arms hanging
+    Wm, Wmi = arm.matrix_world, arm.matrix_world.inverted()
+    D = {pb.name: Wm @ pb.matrix @ pb.bone.matrix_local.inverted() @ Wmi for pb in arm.pose.bones}
+    for pb in arm.pose.bones:
+        pb.matrix_basis.identity()
+    bpy.context.view_layer.update()
+    rest_co = [v.co.copy() for v in mesh.vertices]
+    made = []
+    for v in mesh.vertices:
+        acc, tw = Vector(), 0.0
+        for g in v.groups:
+            d = D.get(gname[g.group])
+            if d is not None and g.weight > 0:
+                acc += (d @ v.co) * g.weight
+                tw += g.weight
+        made.append(acc / tw if tw > 0 else v.co.copy())
+
+    def at(u, v):   # the cloak's middle (between its two sheets) at (u, v): the nearest point of its pattern (the
+        key = min(grid, key=lambda k: (k[0] - u) ** 2 + (k[1] - v) ** 2)   # brooch's coordinates are not on its grid)
+        return grid[key]
+
+    def mean(ids, P):
+        return sum((P[i] for i in ids), Vector()) / len(ids)
+
+    vk = [V0 + (1 - V0) * k / NS for k in range(NS + 1)]
+
+    def bspline2(x, n, ring=False):   # quadratic B-spline weights at x over knots 0 .. n-1: {knot: weight}, the ends clamped
+        m = int(math.floor(x + .5))   # (ring: round, the last knot the first: a seam, sewn, its two sides one)
+        t = x - m
+        w = {}
+        for d, x2 in ((-1, (.5 - t) ** 2 / 2), (0, .75 - t * t), (1, (.5 + t) ** 2 / 2)):
+            kk = (m + d) % (n - 1) if ring else min(max(m + d, 0), n - 1)
+            w[kk] = w.get(kk, 0.0) + x2
+        return w
+    # the editor's cloth: its cuts (a tabard's sides: cells between a line and the next, open from a row down), its
+    # belt's row, its rules (n: not thrown back off a raised arm; l: over a thigh it goes with it). For the game, by the
+    # chains: the cuts between chain c and c + 1 from joint kc down, the belt's joint kb, in the grid's name
+    spec = mj.get("cloth") or {}
+    snu, snv = spec.get("nu", 32), spec.get("nv", 22)
+    cut_u = [(c + .5) / snu for c in spec.get("cuts") or []]
+    cut_v = spec["cutRow"] / snv if spec.get("cutRow", -1) >= 0 else 2.0
+    seam_v = (spec.get("seamRows", 0) - .5) / snv if spec.get("seamRows", 0) > snv else (spec.get("seamRows", 0) - 1) / snv if spec.get("seamRows", 0) else -1.0   # (closed round down to there)
+    kc = max(0, math.ceil((cut_v - V0) / (1 - V0) * NS - 1e-6)) if cut_u else -1
+    kb = round((spec["beltRow"] / snv - V0) / (1 - V0) * NS) if spec.get("beltRow", -1) > 0 else -1
+    opts = "-".join([x for x in spec.get("flags", "")] + [f"c{int(u * (NC - 1))}" for u in cut_u] + ([f"k{kc}"] if cut_u else []) + ([f"b{kb}"] if kb >= 0 else []))
+    hm = bpy.data.meshes.new(f"Wear_{item}__clothhome")   # the particles' places: the grid, its own weights
+    hv, hw = [], []
+    for c in range(NC):
+        for k in range(NS + 1):
+            ids = at(c / (NC - 1), vk[k])
+            hv.append(mean(ids, rest_co))
+            w = {}
+            for i in ids:
+                for g in mesh.vertices[i].groups:
+                    w[gname[g.group]] = w.get(gname[g.group], 0.0) + g.weight / len(ids)
+            hw.append(w)
+    hm.from_pydata(hv, [], [(c * (NS + 1) + k, (c + 1) * (NS + 1) + k, (c + 1) * (NS + 1) + k + 1, c * (NS + 1) + k + 1)
+                           for c in range(NC - 1) for k in range(NS)])
+    huv = hm.uv_layers.new(name="UVMap")   # which particle: (column / (NC - 1), joint / NS)
+    for lp in hm.loops:
+        huv.data[lp.index].uv = ((lp.vertex_index // (NS + 1)) / (NC - 1), (lp.vertex_index % (NS + 1)) / NS)
+    home_obj = bpy.data.objects.new(f"Wear_{item}__clothhome" + (f"__o{opts}" if opts else ""), hm)
+    bpy.context.scene.collection.objects.link(home_obj)
+    home_obj.hide_render = True
+    for vi, w in enumerate(hw):
+        for nm, x in w.items():
+            if x > 1e-4:
+                (home_obj.vertex_groups.get(nm) or home_obj.vertex_groups.new(name=nm)).add([vi], x, "REPLACE")
+    hmod = home_obj.modifiers.new("Armature", "ARMATURE")
+    hmod.object = arm
+    home_obj.parent = arm
+    home_obj.matrix_parent_inverse = arm.matrix_world.inverted()
+
+    spine = names.get("hips") if kind == "skirt" else names.get("spine2") if names.get("spine2") in arm.data.bones else names.get("spine1")   # (the chains' first bones' parent)
+    Wi = arm.matrix_world.inverted()
+    bpy.context.view_layer.objects.active = arm
+    bpy.ops.object.mode_set(mode="EDIT")
+    eb = arm.data.edit_bones
+    for c in range(NC):
+        u = c / (NC - 1)
+        parent = eb[spine]
+        for k in range(NS):
+            b = eb.new(f"Cloth_{c}_{k}")
+            b.head, b.tail = Wi @ mean(at(u, vk[k]), made), Wi @ mean(at(u, vk[k + 1]), made)
+            b.parent = parent
+            parent = b
+    bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.context.view_layer.objects.active = obj
+    cloth = {(c, k): obj.vertex_groups.new(name=f"Cloth_{c}_{k}") for c in range(NC) for k in range(NS)}
+    for vi, uv in enumerate(uvv):
+        if uv is None:
+            continue
+        u, v = uv
+        # on the 3×3 bones round it by a quadratic B-spline (not the 2×2 nearest, linearly): the cloth smooth between
+        # its bones, not creased along their lines (at rest it lies as made whatever the weights). The collar (above
+        # the chains) on their first bones: the game slides it back round the neck with them when an arm is raised (the
+        # editor's clothBack), it is carried by the body's skin through them otherwise
+        wc = bspline2(min(max(u, 0.0), 1.0) * (NC - 1), NC, v <= seam_v)
+        if v >= cut_v - 1e-6:   # (below a cut's top: the chains of its own panel only, the panels apart; round a seam
+            def panel(x):           # the panels between the last cut and the first one: one, through the seam)
+                k = sum(x > uc for uc in cut_u)
+                return k % len(cut_u) if v <= seam_v else k
+            wc = {cc: x for cc, x in wc.items() if panel(cc / (NC - 1)) == panel(u)} or wc
+        wk = {0: 1.0} if v <= V0 else bspline2((v - V0) / (1 - V0) * NS - .5, NS)   # (a bone's middle: between its head and the next one's)
+        mesh.vertices[vi].co = made[vi]
+        for g in list(mesh.vertices[vi].groups):
+            obj.vertex_groups[g.group].remove([vi])
+        ws = sorted(((cc, kk, x * y) for cc, x in wc.items() for kk, y in wk.items()), key=lambda t: -t[2])[:8]
+        tw = sum(t[2] for t in ws)   # (the strongest: glTF gives the game 8 a vertex)
+        for cc, kk, w in ws:
+            if w > 1e-4:
+                cloth[(cc, kk)].add([vi], w / tw, "ADD")
+    bones = sorted(set(bones) | {f"Cloth_{c}_{k}" for c in range(NC) for k in range(NS)})
 mesh.uv_layers.remove(mesh.uv_layers["pattern"])   # baked in: the game gets the one unwrap
 mod = obj.modifiers.new("Armature", "ARMATURE")
 mod.object = arm
 obj.parent = arm
 obj.matrix_parent_inverse = arm.matrix_world.inverted()
 
-# previews: the character with the piece, front and side, framed on it
+
+
+GRIP_DEG = {"finger": (60, 75, 55), "thumb": (25, 35, 35)}   # armour_gen_editor.html, SF3DEquip.Grip
+
+
+def hold_pose(hold, fist):
+    """The hands holding a weapon closed round it for the previews, as the editor's «Fist» and the game: the fist
+    remembered in the markup (landmarks.fist_hand: each finger bone's turn and a knuckle's shift in the hand's frame),
+    else each finger bent in its own plane towards the palm (GRIP_DEG)."""
+    W, bones = arm.matrix_world, arm.data.bones
+
+    def head(jid):
+        n = names.get(jid)
+        return W @ bones[n].head_local if n in bones else None
+
+    arm.data.pose_position = "POSE"
+    for s in hold:
+        H, I, P, T = head(f"hand_{s}"), head(f"index1_{s}"), head(f"pinky1_{s}") or head(f"ring1_{s}"), head(f"thumb1_{s}")
+        if not (H and I and P):
+            continue
+        across = (I - P).normalized()
+        K = (I + P) / 2
+        palm = across.cross((K - H).normalized()).normalized()
+        if T and (T - H).dot(palm) < 0:
+            palm = -palm
+        F = Matrix((across, palm.cross(across).normalized(), palm)).transposed()   # the hand's frame: its columns
+        hl = (K - H).length
+        mine = {k: v for k, v in (fist or {}).items() if k.endswith("_" + s)}
+        for f in ("thumb", "index", "middle", "ring", "pinky"):
+            pbs = [arm.pose.bones.get(names.get(f"{f}{k}_{s}", "")) for k in (1, 2, 3)]
+            if not pbs[0] or not pbs[1]:
+                continue
+            if not mine:   # the closed fingers' own plane: about the finger x the palm (the thumb towards the little finger)
+                to = palm if f != "thumb" else (palm * .6 + (P - I).normalized() * .8).normalized()
+                ax = (head(f"{f}2_{s}") - head(f"{f}1_{s}")).cross(to).normalized()
+                degs = GRIP_DEG["thumb" if f == "thumb" else "finger"]
+            prev_head, prev_rest, prev_R = None, None, None
+            for k, pb in enumerate(pbs, 1):
+                if pb is None:
+                    break
+                rest = W @ pb.bone.matrix_local
+                if mine:
+                    e = mine.get(f"{f}{k}_{s}") or {}
+                    q = e.get("q") or [0, 0, 0, 1]
+                    R = F @ Quaternion((q[3], q[0], q[1], q[2])).to_matrix() @ F.inverted()
+                else:
+                    R = Matrix.Rotation(math.radians(sum(degs[:k])), 3, ax)
+                if k == 1:
+                    loc = rest.translation + (F @ Vector(e["o"]) * hl if mine and e.get("o") else Vector())
+                else:   # where its parent, turned, carries it
+                    loc = prev_head + prev_R @ (rest.translation - prev_rest)
+                target = Matrix.Translation(loc) @ (R @ rest.to_3x3()).to_4x4()
+                pb.matrix = W.inverted() @ target
+                bpy.context.view_layer.update()
+                prev_head, prev_rest, prev_R = loc, rest.translation, R
+
+
+def rest_pose():
+    for pb in arm.pose.bones:
+        pb.matrix_basis.identity()
+    arm.data.pose_position = "REST"
+    bpy.context.view_layer.update()
+
+
+# previews: the character with the piece, front and side, framed on it (the hands holding a weapon closed round it)
 sc = bpy.context.scene
 pv = job.get("preview")
+if pv and kind == "weapon" and sides != ["C"]:
+    hold_pose(sides, job.get("fist"))
+if pv and kind in CLOTH_KINDS:   # a cloak is fitted over the arms hanging (a skirt beside them): so they are shown
+    arms_down()
 if pv:
     try:
         sc.render.engine = "BLENDER_EEVEE_NEXT"
@@ -515,6 +815,7 @@ if pv:
         cam.rotation_euler = (-eye).to_track_quat("-Z", "Y").to_euler()
         sc.render.filepath = f"{pv}_{vn}.png"
         bpy.ops.render.render(write_still=True)
+    rest_pose()   # the mask and the export: at rest
 
 if job.get("mask"):   # what of the body the piece hides (the game takes it away while it is on: body_mask.py)
     from body_mask import body_mask, held, where
@@ -532,14 +833,49 @@ if job.get("mask"):   # what of the body the piece hides (the game takes it away
         keys |= {tuple(x) for x in held(body, hb, [obj], Vector((HJ.x, HJ.y, E.z)))}
     Path(job["mask"]).write_text(json.dumps([list(x) for x in sorted(keys)]), encoding="utf-8")
 
+# the separate parts (a quiver's arrows) their own objects, «Wear_<item>__arrow_<k>»: the game shows as many as are left
+extra = [home_obj] if home_obj else []   # (the cloak's grid of places goes along)
+if "grp" in obj.data.attributes:
+    bpy.context.view_layer.objects.active = obj
+    while True:
+        vals = [0] * len(obj.data.polygons)
+        obj.data.attributes["grp"].data.foreach_get("value", vals)
+        rest = sorted(set(vals) - {0})
+        if not rest:
+            break
+        bpy.ops.object.select_all(action="DESELECT")
+        obj.select_set(True)
+        me_ = obj.data   # only that group's faces (and their corners) selected: no leftovers of the unwrap's selections
+        for x in (*me_.vertices, *me_.edges):
+            x.select = False
+        for p, v in zip(me_.polygons, vals):
+            p.select = v == rest[0]
+            if p.select:
+                for vi in p.vertices:
+                    me_.vertices[vi].select = True
+        for e in me_.edges:
+            e.select = me_.vertices[e.vertices[0]].select and me_.vertices[e.vertices[1]].select
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.ops.mesh.select_mode(type="FACE")
+        bpy.ops.mesh.separate(type="SELECTED")
+        bpy.ops.object.mode_set(mode="OBJECT")
+        new = next((o for o in bpy.context.selected_objects if o is not obj), None)
+        if new is None:
+            break
+        new.name = f"Wear_{item}__arrow_{rest[0]}"
+        new.data.attributes.remove(new.data.attributes["grp"])
+        extra.append(new)
+    obj.data.attributes.remove(obj.data.attributes["grp"])
 for o in list(bpy.data.objects):   # the skeleton and the piece only
-    if o.type == "MESH" and o is not obj:
+    if o.type == "MESH" and o is not obj and o not in extra:
         bpy.data.objects.remove(o, do_unlink=True)
 bpy.ops.object.select_all(action="DESELECT")
 obj.select_set(True)
+for o in extra:
+    o.select_set(True)
 arm.select_set(True)
 bpy.context.view_layer.objects.active = arm
 bpy.ops.export_scene.gltf(filepath=job["out"], export_format="GLB", use_selection=True, export_skins=True,
-                          export_animations=False, export_influence_nb=4)
+                          export_animations=False, export_influence_nb=8)
 print("ARMOUR_GEN_OK " + json.dumps({"vertices": len(mesh.vertices), "bones": bones, "radius": round(R, 4),
                                      "sides": sides, "over_clothes": bool(mj.get("over_clothes"))}), flush=True)

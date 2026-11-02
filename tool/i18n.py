@@ -12,6 +12,7 @@ then to the key itself.
 Works in plain Python and inside Blender (no imports beyond the standard library)."""
 import html
 import json
+import time
 import re
 from pathlib import Path
 
@@ -38,15 +39,34 @@ def _load(code: str) -> dict:
 LANG = _config_lang()
 _TEXT = _load(LANG)
 _BASE = _TEXT if LANG == DEFAULT else _load(DEFAULT)
+_SEEN = [0.0, 0.0]   # the catalogs' times and when they were last looked at: texts added while the app runs show up
+
+
+def _fresh() -> None:
+    global _TEXT, _BASE
+    now = time.monotonic()
+    if now - _SEEN[1] < 1:
+        return
+    _SEEN[1] = now
+    try:
+        m = max((ROOT / "lang" / f"{c}.json").stat().st_mtime for c in {LANG, DEFAULT})
+    except OSError:
+        return
+    if _SEEN[0] and m != _SEEN[0]:
+        _TEXT = _load(LANG)
+        _BASE = _TEXT if LANG == DEFAULT else _load(DEFAULT)
+    _SEEN[0] = m
 
 
 def t(key: str, *args, **kw) -> str:
+    _fresh()
     text = _TEXT.get(key) or _BASE.get(key) or key
     return text.format(*args, **kw) if args or kw else text
 
 
 def catalog() -> dict:
     """Every key in the current language (the fallback filled in): for pages that look texts up themselves."""
+    _fresh()
     return {**_BASE, **_TEXT}
 
 

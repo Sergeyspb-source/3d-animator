@@ -1116,6 +1116,170 @@ def brow_keys():
 
 if FACE_TOPO:
     report["brow_keys"] = brow_keys()
+
+
+# ------------------------------------------------------------------ 6. nothing of the mouth through the skin
+# The teeth, gums and tongue go with the jaw rigidly, the skin of the chin and the cheeks only partly (smoothed so
+# it does not fold): opening the jaw, the lower row and the cavity cup came out through the skin under the lower lip
+# and on the cheeks; the push-back of step 4 only looked from the front at rest. Here every pose is checked (rest and
+# each shape key) and what shows outside is taken in: a row of teeth moved in as a whole (every key alike), the
+# cavity, the gums and the tongue pulled in where they show, with a soft falloff; again until nothing shows, and a
+# pass that does not help is taken back (a torn face mask: the teeth would only sink).
+def _posed(o, key):
+    kb = o.data.shape_keys.key_blocks if o.data.shape_keys else None
+    k = kb.get(key) if kb is not None and key != "Basis" else None
+    src = k.data if k is not None else (kb[0].data if kb is not None else o.data.vertices)
+    return [o.matrix_world @ d.co for d in src]
+
+
+face.data.calc_loop_triangles()
+_tris = [tuple(t.vertices) for t in face.data.loop_triangles]
+_fv0 = _posed(face, "Basis")
+_bvh0 = BVHTree.FromPolygons(_fv0, _tris)
+_outer = set()   # the outer skin: a ray along its normal leaves the head (never the lip roll or a mouth the source has)
+for _ti, _t in enumerate(_tris):
+    _a, _b, _c = (_fv0[v] for v in _t)
+    _n = (_b - _a).cross(_c - _a)
+    if _n.length > 1e-14:
+        _n.normalize()
+        if _bvh0.ray_cast((_a + _b + _c) / 3 + _n * W * 1e-4, _n, 6 * W)[0] is None:
+            _outer.add(_ti)
+_inner = [cav] + list(parts)
+_keys = ["Basis"] + [k.name for k in face.data.shape_keys.key_blocks[1:]]
+
+
+def through_skin():
+    """[(object, vertex, how far out, its place, the way out)]: a vertex of the mouth's insides that is seen from
+    outside (a ray from inside the head on through it meets no skin) with the outer skin right behind it, its outer
+    side towards it. Teeth seen through the open mouth are not: behind them is the inside of the head."""
+    out = []
+    for key in _keys:
+        fv = _posed(face, key)
+        bvh = BVHTree.FromPolygons(fv, _tris)
+        for o in _inner:
+            for i, p in enumerate(_posed(o, key)):
+                # across from behind the mouth (the cheeks, the lips) and from the mouth's middle (also down: the jaw)
+                for A in (Vector((M.x, M.y + 0.8 * W, p.z)), M + Vector((0, 0.5 * W, 0))):
+                    d = p - A
+                    if d.length < 1e-9:
+                        continue
+                    d.normalize()
+                    if bvh.ray_cast(p + d * 1e-6, d, 4 * W)[0] is not None:
+                        continue
+                    b = bvh.ray_cast(p, -d, 0.5 * W)
+                    if b[0] is None or b[2] not in _outer or b[1].dot(d) <= 0:
+                        continue
+                    out.append((o, i, b[3], p, d, key))
+                    break
+    return out
+
+
+def _count(found):
+    c = {}
+    for o, i, depth, p, d, key in found:
+        c.setdefault(key, set()).add((o.name, i))
+    return {k: len(v) for k, v in c.items()}
+
+
+def _shift(o, world_delta_of):   # every key alike: the vertex's place in each pose moved by the same world vector
+    inv = o.matrix_world.inverted().to_3x3()
+    blocks = o.data.shape_keys.key_blocks if o.data.shape_keys else None
+    for i, v in enumerate(o.data.vertices):
+        dv = world_delta_of(i)
+        if dv is None:
+            continue
+        dl_ = inv @ dv
+        if blocks is None:
+            v.co += dl_
+            continue
+        for kb in blocks:
+            kb.data[i].co += dl_
+        v.co = blocks[0].data[i].co.copy()   # the mesh itself follows the basis
+
+
+ROWS = {"upper": ("Teeth_Upper", "Gum_Upper"), "lower": ("Teeth_Lower", "Gum_Lower", "Tongue")}
+_found = through_skin() if job.get("skin_check", True) else []
+check = {"before": _count(_found), "rows_moved": {}, "soft_points_moved": 0, "passes": 0}
+_moved_rows = {}
+
+
+def _snap():   # every coordinate of the insides (all keys), to take a pass back
+    return {o.name: [[d.co.copy() for d in kb.data] for kb in o.data.shape_keys.key_blocks] if o.data.shape_keys
+            else [[v.co.copy() for v in o.data.vertices]] for o in _inner}
+
+
+def _restore(snap):
+    for o in _inner:
+        if o.data.shape_keys:
+            for kb, cos in zip(o.data.shape_keys.key_blocks, snap[o.name]):
+                for d, c in zip(kb.data, cos):
+                    d.co = c
+            for v, c in zip(o.data.vertices, snap[o.name][0]):
+                v.co = c
+        else:
+            for v, c in zip(o.data.vertices, snap[o.name][0]):
+                v.co = c
+
+
+SOFT = ("MouthCavity", "Gum_", "Tongue")   # pulled in where they show; the teeth are rigid: their row moves as a whole
+for _pass in range(6):
+    if not _found:
+        break
+    check["passes"] = _pass + 1
+    _before_pass, _rows_before, _cav_before = _snap(), dict(_moved_rows), check["soft_points_moved"]
+    # a row of teeth (with its gum, so it stays on it) in as a whole, only for the teeth themselves showing: along the
+    # way out averaged, as far as the deepest tooth point is out (+ a little), at most 0.08 W in all (deeper in, the
+    # teeth would hide in the open mouth: then the rest is reported)
+    for row, names in ROWS.items():
+        hits = [(depth, d) for o, i, depth, p, d, key in _found if o.name.startswith(names[0])]
+        if not hits:
+            continue
+        way = sum((d for _, d in hits), Vector())
+        if way.length < 1e-9:
+            continue
+        way.normalize()
+        step = min(max(dep for dep, _ in hits) + 0.02 * W, 0.08 * W - _moved_rows.get(row, 0.0))
+        if step <= 1e-6:
+            continue
+        for o in parts:
+            if o.name.startswith(names[:2]):
+                _shift(o, lambda i, s=-way * step: s)
+        _moved_rows[row] = _moved_rows.get(row, 0.0) + step
+    # the soft insides (the cavity, the gums, the tongue): each point out pulled in by its depth (+ a little), its
+    # neighbours following, fading over 0.12 W
+    for o in [x for x in _inner if x.name.startswith(SOFT)]:
+        pulls = {}
+        for oo, i, depth, p, d, key in _found:
+            if oo is o:
+                mv = -d * (depth + 0.03 * W)
+                if i not in pulls or mv.length > pulls[i].length:
+                    pulls[i] = mv
+        if not pulls:
+            continue
+        base0 = _posed(o, "Basis")
+        src = [(base0[i], mv) for i, mv in pulls.items()]
+
+        def _pull(j, base0=base0, src=src):
+            best = None
+            for q, mv in src:
+                f = math.exp(-((base0[j] - q).length / (0.12 * W)) ** 2)
+                if f > 0.05 and (best is None or (mv * f).length > best.length):
+                    best = mv * f
+            return best
+        _shift(o, _pull)
+        check["soft_points_moved"] += len(pulls)
+    _was = len(_found)
+    _found = through_skin()
+    if len(_found) >= _was:   # no better (a face the mask tore: the teeth would only sink): this pass back, stop
+        _restore(_before_pass)
+        _moved_rows, check["soft_points_moved"] = _rows_before, _cav_before
+        _found = through_skin()
+        check["stopped"] = "no_better"
+        break
+check["after"] = _count(_found)
+check["rows_moved"] = {k: round(v / W, 3) for k, v in _moved_rows.items()}
+report["through_skin"] = check
+
 for o in bpy.data.objects:     # rest = all keys at 0 (Blender 5 adds new keys at 1 -> glTF default weights)
     if o.type == "MESH" and o.data.shape_keys:
         for kb in o.data.shape_keys.key_blocks[1:]:

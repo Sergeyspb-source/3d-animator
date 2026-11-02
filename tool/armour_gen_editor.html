@@ -83,10 +83,12 @@
       </span>
       <span class="sep"></span>
       <span class="seg" id="poses" title="{{ag.pose_title}}">
-        <button data-p="rest" class="on">{{ag.pose_rest}}</button><button data-p="side">{{ag.pose_side}}</button><button data-p="front">{{ag.pose_front}}</button><button data-p="elbows">{{ag.pose_elbows}}</button><button data-p="squat">{{ag.pose_squat}}</button><button data-p="stride">{{ag.pose_stride}}</button><button data-p="fist">{{ag.pose_fist}}</button>
+        <button data-p="rest" class="on">{{ag.pose_rest}}</button><button data-p="side">{{ag.pose_side}}</button><button data-p="front">{{ag.pose_front}}</button><button data-p="elbows">{{ag.pose_elbows}}</button><button data-p="squat">{{ag.pose_squat}}</button><button data-p="stride">{{ag.pose_stride}}</button><button data-p="fist">{{ag.pose_fist}}</button><button data-p="down">{{ag.pose_down}}</button>
       </span>
       <span class="sep"></span>
       <span class="seg"><button id="undoBtn" title="{{ag.undo_title}}">↶</button><button id="redoBtn" title="{{ag.redo_title}}">↷</button></span>
+      <span class="seg" id="clothBar" hidden><button id="clothOn" title="{{ag.cloth_on_title}}">{{ag.cloth_on}}</button></span>
+      <label id="clothWindBox" hidden style="font-size:12px">{{ag.cloth_wind}} <input type="range" id="clothWind" min="0" max="1" step="0.05" value="0" style="width:80px;vertical-align:middle"></label>
       <span class="grow"></span>
       <span class="seg" id="shows" hidden>
         <button data-r="0" class="on">{{ag.show_preview}}</button><button data-r="1">{{ag.show_result}}</button>
@@ -111,7 +113,7 @@
       <div class="row" style="margin-top:8px">
         <span class="note">{{ag.name}}</span><input type="text" id="name" class="grow">
       </div>
-      <div id="wornRow" style="margin-top:8px" hidden><div class="note">{{ag.worn}}</div><div class="row" id="worn"></div></div>
+      <div id="wornRow" style="margin-top:8px" hidden><div class="note" id="wornNote">{{ag.worn}}</div><div class="row" id="worn"></div></div>
       <div class="row" style="margin-top:6px" id="savedRow" hidden>
         <span class="note">{{ag.saved}}</span><select id="saved" class="grow"></select>
       </div>
@@ -127,7 +129,8 @@
           <div class="row" id="pinchKindRow" style="margin:4px 0 2px"><span class="seg" id="pinchKind"><button data-k="raise">{{ag.pinch_raise}}</button><button data-k="press">{{ag.pinch_press}}</button><button data-k="smooth">{{ag.pinch_smooth}}</button></span></div>
         </div>
         <div id="paintOnly">
-          <div class="row" style="margin:6px 0 2px"><span class="seg" id="paintFill"><button data-f="brush">{{ag.paint_brush}}</button><button data-f="part">{{ag.paint_part}}</button><button data-f="all">{{ag.paint_all}}</button><button data-f="erase">{{ag.paint_erase}}</button><button data-f="decal">{{ag.paint_decal}}</button></span></div>
+          <div class="row" style="margin:6px 0 2px"><span class="seg" id="paintFill"><button data-f="brush">{{ag.paint_brush}}</button><button data-f="part">{{ag.paint_part}}</button><button data-f="all">{{ag.paint_all}}</button><button data-f="erase">{{ag.paint_erase}}</button><button data-f="decal">{{ag.paint_decal}}</button><button data-f="damage">{{ag.paint_damage}}</button></span></div>
+          <div class="row" id="paintDmgRow" style="margin:4px 0 2px"><span class="seg" id="paintDmg"><button data-k="claws">{{ag.dmg_claws}}</button><button data-k="scratch">{{ag.dmg_scratch}}</button><button data-k="hole">{{ag.dmg_hole}}</button><button data-k="dent">{{ag.dmg_dent}}</button></span></div>
           <div id="paintDecalRow">
             <div class="decals" id="paintDecals"></div>
             <div class="row"><span class="note">{{ag.paint_number}}</span><input type="text" id="i_paint_num" style="width:70px" maxlength="6" placeholder="10">
@@ -156,12 +159,15 @@
         </div>
       </div>
       <div class="row" style="margin-top:4px"><button id="pinchClear">{{ag.pinch_clear}}</button><button id="paintClear">{{ag.paint_clear}}</button></div>
+      <div class="row" style="margin-top:4px"><button id="battleWear" class="grow" title="{{ag.battle_wear_title}}">{{ag.battle_wear}}</button></div>
       <details class="help"><summary>{{ag.pinch_help_title}}</summary><ul>
         <li>{{ag.pinch_help_1}}</li><li>{{ag.pinch_help_2}}</li><li>{{ag.pinch_help_paint}}</li><li>{{ag.paint_help}}</li><li>{{ag.pinch_help_3}}</li><li>{{ag.pinch_help_4}}</li><li>{{ag.pinch_help_5}}</li>
       </ul></details>
     </div>
     <div class="box foot">
       <div class="row"><button class="primary grow" id="go">{{ag.generate}}</button><button id="room">{{ed.fitting_room_in_godot}}</button></div>
+      <div class="row" style="margin-top:5px"><button id="qa" class="grow" title="{{ag.qa_title}}">{{ag.qa_button}}</button><button id="qaHide" hidden>{{ag.qa_hide}}</button></div>
+      <div class="row" style="margin-top:5px"><button id="qaFix" class="grow" hidden title="{{ag.qa_shield_out_title}}"></button></div>
       <div class="status" id="status">{{ag.preview_note}}</div>
     </div>
   </div>
@@ -222,11 +228,16 @@ function resize() {
 new ResizeObserver(resize).observe(stage); resize();
 // not drawn while its tab is hidden (the page in a hidden tab would keep the GPU and a core busy for nothing)
 const frameHidden = () => { try { return !!window.frameElement && !window.frameElement.offsetParent; } catch (e) { return false; } };
-renderer.setAnimationLoop(() => { if (frameHidden()) return; controls.update(); renderer.render(scene, camera); });
+renderer.setAnimationLoop(() => {
+  if (frameHidden()) return;
+  if (typeof tween !== 'undefined' && tween) tweenStep();
+  if (typeof cloth !== 'undefined' && cloth) clothStep(1 / 60);
+  controls.update(); renderer.render(scene, camera);
+});
 
 // ------------------------------------------------------------------ the character: skin for the rays, bones, poses
 let charRoot = null, bodyGeo = null, vBone = null, vW = null, boneNames = [];
-const PB = {}, REST = new Map(), byName = {}, ORIG = new Map();
+const PB = {}, REST = new Map(), RESTP = new Map(), byName = {}, ORIG = new Map();
 const wordCache = new Map();
 
 const fileUrl = (p) => new URL('/file=' + p, window.parent.location.href).href;
@@ -236,7 +247,7 @@ async function loadCharacter() {
   charRoot = gltf.scene; scene.add(charRoot); charRoot.updateMatrixWorld(true);
   const isPart = (o) => PARTS.some((p) => o.name.startsWith(p) || (o.parent && o.parent.name.startsWith(p)));
   charRoot.traverse((o) => {
-    if (o.isBone) { byName[o.name] = o; REST.set(o, o.quaternion.clone()); boneNames.push(o.name); }   // every bone, an index each
+    if (o.isBone) { byName[o.name] = o; REST.set(o, o.quaternion.clone()); RESTP.set(o, o.position.clone()); boneNames.push(o.name); }   // every bone, an index each
     if (o.isMesh) { ORIG.set(o, o.material); if (o.geometry.index) o.userData.fullIndex = o.geometry.index.array.slice(); }
     if (o.isSkinnedMesh && !isPart(o) && o.geometry.attributes.skinIndex) charMeshes.push(o);
   });
@@ -254,6 +265,9 @@ async function loadCharacter() {
 // the order layers go on in, whichever is made first: trousers, a brayette over them, a skirt, a cuirass over the
 // skirt's top («torso»: a breastplate fitted in «Armour»), pauldrons; a piece of a higher layer is over the new one
 const LAYER = { undercloth: .5, trousers: 1, brayette: 2, tassets: 3, cuirass: 4, torso: 4, pauldron: 5 };
+// a weapon or a shield in the hand is only shown with the rest: nothing is fitted over or under it, and a held piece
+// is fitted over nothing
+const HELD = ['weapon', 'shield', 'sheath'], layerOf = (w) => !HELD.includes(w.piece) && !['weapon', 'shield'].includes(S.piece);   // a belt goes over the armour ticked
 const isOuter = (w) => (S.piece === 'helmet' ? ['helmet', 'head'].includes(w.piece)   // a helmet: not over another
   : w.piece === 'elbow' ? ['bracer', 'rerebrace'].includes(S.piece)   // elbows go over the arm's pieces
     : (LAYER[w.piece] || 0) > (LAYER[S.piece] || 99));
@@ -262,7 +276,7 @@ const isOuter = (w) => (S.piece === 'helmet' ? ['helmet', 'head'].includes(w.pie
 let outerGeo = null, bodyFor = null;
 function buildBody() {
   const pos = [], idx = [], vb = [], vw = [], id = new Map(boneNames.map((n, i) => [n, i])), v = new V3();
-  const on = [...WORN.values()].filter((w) => w.on), meshes = [...charMeshes, ...on.filter((w) => !isOuter(w)).flatMap((w) => w.meshes)];
+  const on = [...WORN.values()].filter((w) => w.on && layerOf(w)), meshes = [...charMeshes, ...on.filter((w) => !isOuter(w)).flatMap((w) => w.meshes)];
   bodyFor = S.piece;
   const op = [];
   for (const o of on.filter(isOuter).flatMap((w) => w.meshes)) {
@@ -530,7 +544,7 @@ function famMask(fam, main) {   // the bones a piece may follow
   }
   const head = new Set(); if (PB.head) PB.head.traverse((b) => { if (b.isBone) head.add(b.name); });   // the head and the face's bones
   const torso = (n) => !LIMB_WORDS.some((w) => n.includes(w)) && !head.has(n);
-  const extra = { torso: () => false, hips: (n) => /UpLeg|UpperLeg/.test(n), legs: (n) => /Leg|Foot/.test(n) }[fam];
+  const extra = { torso: () => false, hips: (n) => /UpLeg|UpperLeg/.test(n), legs: (n) => /Leg|Foot/.test(n), cloak: (n) => /Arm/.test(n) }[fam];
   return Uint8Array.from(boneNames, (n) => (torso(n) || extra(n) ? 1 : 0));
 }
 function weigher(fam, main, rigidity) {   // body triangle -> the 4 strongest bones and weights, drawn to the main bone
@@ -559,13 +573,13 @@ function weigher(fam, main, rigidity) {   // body triangle -> the 4 strongest bo
 // plates' rims (brass, gold...)
 const PLATE = 0, LEATHER = 1, DETAIL = 2, MAIL = 3, CLOTH = 4, TRIM = 5;
 class Acc {
-  constructor() { this.v = []; this.uv = []; this.f = []; this.m = []; this.role = []; this.bi = []; this.bw = []; this.w = null; }
+  constructor() { this.v = []; this.uv = []; this.f = []; this.m = []; this.role = []; this.g = []; this.group = 0; this.bi = []; this.bw = []; this.w = null; }
   vert(p, u = 0, w = 0, face = -1) {
     this.v.push(p.x, p.y, p.z); this.uv.push(u, w);
     const [bi, bw] = this.w(face); this.bi.push(...bi); this.bw.push(...bw);
     return this.v.length / 3 - 1;
   }
-  face(ids, mat, role) { this.f.push(ids); this.m.push(mat); this.role.push(role); }
+  face(ids, mat, role) { this.f.push(ids); this.m.push(mat); this.role.push(role); this.g.push(this.group); }   // group: a separate object in the GLB (an arrow)
 }
 // a thick sheet: rows x angs, point(i, j, side) (side 0 inner, 1 outer), faces wound outwards. closed: a tube whose last
 // column repeats the first (the seam keeps its own texture coordinates; Blender welds it), else with side walls.
@@ -1450,6 +1464,1214 @@ function undercloth(p) {
 }
 
 // one piece into parts {acc, R, ...}; p: the parameters as fractions
+// ------------------------------------------------------------------ held things: a weapon in the fist, a shield on the forearm. Made in
+// the thing's own frame (a: along its grip towards the blade or head, e: towards its edge, s: its flat side), put
+// where the hand holds it: the grip across the palm from the little finger to the index one, under the knuckles, the
+// edge towards them (the hand closed: the «Fist» pose); a shield on the outer side of the forearm. Rigid: all on the
+// hand's (the forearm's) bone. Sizes are shares of the character's height (a goblin's sword is a goblin's)
+function rigidAcc(bone) {
+  const acc = new Acc(), bi = Math.max(0, boneNames.indexOf(bone.name)), w = [[bi, bi, bi, bi], [1, 0, 0, 0]];
+  acc.w = () => w; return acc;
+}
+// the hand closed round a grip, the same here («Fist» pose) and in the game (SF3DEquip.Grip): every finger bends in its
+// own plane towards the palm (about its direction × the palm's normal), each joint by these degrees
+const GRIP_DEG = { finger: [60, 75, 55], thumb: [25, 35, 35] };
+const FINGER_NAMES = ['index', 'middle', 'ring', 'pinky', 'thumb'];
+function palmOf(side) {   // the hand's frame: {H, K, across (little finger to index), along (to the knuckles), palm (towards the palm)}
+  const H = joint('hand_' + side), I1 = joint('index1_' + side), P1 = joint('pinky1_' + side) || joint('ring1_' + side), T1 = joint('thumb1_' + side);
+  if (!H || !I1 || !P1) return null;
+  const K = I1.clone().add(P1).multiplyScalar(.5), across = I1.clone().sub(P1).normalize(), along = K.clone().sub(H).normalize();
+  const palm = new V3().crossVectors(across, along).normalize();
+  if (T1 && T1.clone().sub(H).dot(palm) < 0) palm.negate();   // the thumb's root lies on the palm's side
+  return { H, K, across, along, palm, pw: I1.distanceTo(P1) };
+}
+const fingerAxis = (side, f, palm) => {   // the thumb closes into the fist: towards the palm and across it, to the little finger
+  const a = joint(f + '1_' + side), b = joint(f + '2_' + side); if (!a || !b) return null;
+  let to = palm;
+  const I = joint('index1_' + side), P = joint('pinky1_' + side) || joint('ring1_' + side);
+  if (f === 'thumb' && I && P) to = palm.clone().multiplyScalar(.6).add(P.clone().sub(I).normalize().multiplyScalar(.8)).normalize();
+  return b.clone().sub(a).cross(to).normalize();
+};
+// the fist remembered in the markup («Remember the fist», landmarks.fist_hand): each finger bone's turn and a knuckle's
+// shift in the hand's frame (across, along, palm), so any rig of the character takes it; SF3DEquip.Grip does the same
+const FIST = DATA.fist || {};
+const hasFist = (side) => FINGER_NAMES.some((f) => FIST[`${f}1_${side}`]);
+function fistTurns(side) {   // {id: {q: its turn in the world, o: the knuckle's shift}}, the hand's frame read at rest
+  const P = palmOf(side); if (!P || !hasFist(side)) return null;
+  const al = new V3().crossVectors(P.palm, P.across).normalize(), F = new THREE.Matrix4().makeBasis(P.across, al, P.palm);
+  const Ft = F.clone().transpose(), hl = P.K.distanceTo(P.H), out = {};
+  for (const [id, e] of Object.entries(FIST)) if (id.endsWith('_' + side)) {
+    const R = F.clone().multiply(new THREE.Matrix4().makeRotationFromQuaternion(new Q(...e.q))).multiply(Ft);
+    out[id] = { q: new Q().setFromRotationMatrix(R), o: e.o ? new V3(...e.o).applyMatrix4(F).multiplyScalar(hl) : null };
+  }
+  return out;
+}
+function applyFist(side) {   // the skeleton at rest: the hand closed as remembered
+  const T = fistTurns(side); if (!T) return false;
+  for (const f of FINGER_NAMES) {
+    const ids = [1, 2, 3].map((k) => `${f}${k}_${side}`).filter((id) => PB[id]);
+    const rest = ids.map((id) => ({ q: PB[id].getWorldQuaternion(new Q()), p: PB[id].getWorldPosition(new V3()) }));
+    ids.forEach((id, k) => {
+      const b = PB[id], t = T[id]; if (!t) return;
+      b.quaternion.copy(b.parent.getWorldQuaternion(new Q()).invert().multiply(t.q.clone().multiply(rest[k].q)));
+      if (k === 0 && t.o) b.position.copy(b.parent.worldToLocal(rest[k].p.clone().add(t.o)));
+      b.updateMatrixWorld(true);
+    });
+  }
+  return true;
+}
+function ringFit(J0, u, w, pts, seg) {   // a circle through the points in the finger's plane (least squares): {C, R, seg}
+  const q = pts.map((x) => [x.clone().sub(J0).dot(u), x.clone().sub(J0).dot(w)]);
+  let sxx = 0, sxy = 0, syy = 0, sx = 0, sy = 0, sz = 0, sxz = 0, syz = 0;
+  for (const [x, y] of q) { const z = x * x + y * y; sxx += x * x; sxy += x * y; syy += y * y; sx += x; sy += y; sz += z; sxz += x * z; syz += y * z; }
+  const n = q.length, M = new THREE.Matrix3().set(sxx, sxy, sx, sxy, syy, sy, sx, sy, n), r = new V3(sxz, syz, sz).applyMatrix3(M.invert());
+  const cx = r.x / 2, cy = r.y / 2, R = Math.sqrt(Math.max(0, r.z + cx * cx + cy * cy));
+  return isFinite(R) && R > 0 ? { C: J0.clone().addScaledVector(u, cx).addScaledVector(w, cy), R, seg } : null;
+}
+function gripRing(side, P) {   // where the closed middle finger rings round: its centre and radius (a circle fitted to its joints)
+  const T = fistTurns(side);
+  if (T) for (const f of ['middle', 'index', 'ring']) {   // the remembered fist: its joints where it puts them
+    const J = [1, 2, 3].map((k) => joint(`${f}${k}_${side}`)); if (!J.every(Boolean) || !T[`${f}1_${side}`]) continue;
+    const tip = joint(`${f}4_${side}`) || J[2].clone().add(J[2].clone().sub(J[1]).multiplyScalar(.85));
+    const rest = [...J, tip], pts = [J[0].clone().add(T[`${f}1_${side}`].o || new V3())];
+    for (let k = 0; k < 3; k++) pts.push(pts[k].clone().add(rest[k + 1].clone().sub(rest[k]).applyQuaternion(T[`${f}${k + 1}_${side}`] ? T[`${f}${k + 1}_${side}`].q : new Q())));
+    const u = pts[1].clone().sub(pts[0]).normalize(), ax = u.clone().cross(pts[2].clone().sub(pts[1])); if (ax.lengthSq() < 1e-12) continue;
+    const ring = ringFit(pts[0], u, new V3().crossVectors(ax.normalize(), u), pts, J[1].distanceTo(J[0])); if (ring) return ring;
+  }
+  for (const f of ['middle', 'index', 'ring']) {
+    const J = [1, 2, 3].map((k) => joint(`${f}${k}_${side}`)); if (!J.every(Boolean)) continue;
+    const ax = fingerAxis(side, f, P.palm), segs = [J[1].clone().sub(J[0]), J[2].clone().sub(J[1])];
+    segs.push(segs[1].clone().multiplyScalar(.85));   // the last bone, as long as most of the one before
+    const pts = [J[0].clone()]; let ang = 0;
+    segs.forEach((v, k) => { ang += THREE.MathUtils.degToRad(GRIP_DEG.finger[k]); pts.push(pts[k].clone().add(v.clone().applyAxisAngle(ax, ang))); });
+    const u = segs[0].clone().normalize(), w = new V3().crossVectors(ax, u);   // the finger's plane
+    const ring = ringFit(J[0], u, w, pts, segs[0].length()); if (ring) return ring;
+  }
+  return null;
+}
+function handFrame(side, p) {   // where the grip goes and how it lies: {C, A, E, S, pw, r}
+  const P = palmOf(side); if (!P) return null;
+  const { H, K, across, along, palm, pw } = P, hl = K.distanceTo(H), ring = gripRing(side, P);
+  const D = THREE.MathUtils.degToRad;
+  // inside the ring the closed fingers make (else under the knuckles, towards the palm); the sliders move it from there
+  const C = (ring ? ring.C.clone() : H.clone().addScaledVector(along, hl).addScaledVector(palm, .45 * pw))
+    .addScaledVector(along, p.grip_along / 100 * hl).addScaledVector(palm, p.grip_out / 100 * pw);
+  const t = D(p.grip_tilt), A = across.clone().multiplyScalar(Math.cos(t)).addScaledVector(along, Math.sin(t)).normalize();   // towards the fingers, both hands alike
+  const E = along.clone().addScaledVector(A, -along.dot(A)).normalize().applyAxisAngle(A, D(p.grip_roll));
+  return { C, A, E, S: new V3().crossVectors(A, E).normalize(), pw, r: ring ? Math.max(.06 * pw, ring.R - .3 * ring.seg) : .17 * pw };
+}
+function itemMesh(acc, F) {   // the thing's local (a, e, s) to the world, faces and rings
+  const P = (a, e, s) => F.C.clone().addScaledVector(F.A, a).addScaledVector(F.E, e).addScaledVector(F.S, s);
+  const loft = (rings, mat, role, capA = true, capB = true) => {   // rings of [a, e, s] points, one after another
+    const ids = rings.map((r, i) => r.map(([a, e, s], j) => acc.vert(P(a, e, s), j / r.length, i / rings.length)));
+    for (let i = 0; i < ids.length - 1; i++) for (let j = 0; j < ids[i].length; j++) {
+      const j2 = (j + 1) % ids[i].length; acc.face([ids[i][j], ids[i][j2], ids[i + 1][j2], ids[i + 1][j]], mat, role);
+    }
+    const cap = (r, ring, rev) => {
+      const c = r.reduce((q, x) => [q[0] + x[0] / r.length, q[1] + x[1] / r.length, q[2] + x[2] / r.length], [0, 0, 0]), ci = acc.vert(P(...c), .5, .5);
+      for (let j = 0; j < ring.length; j++) { const f = [ci, ring[j], ring[(j + 1) % ring.length]]; acc.face(rev ? f.reverse() : f, mat, role); }
+    };
+    if (capA) cap(rings[0], ids[0], false);
+    if (capB) cap(rings[rings.length - 1], ids[ids.length - 1], true);
+  };
+  const lathe = (prof, mat, role, n = 16, caps = true) =>   // [a, r] round the grip's axis; caps: its ends closed (not for a ring)
+    loft(prof.map(([a, r]) => Array.from({ length: n }, (_, j) => [a, r * Math.cos(j / n * TAU), r * Math.sin(j / n * TAU)])), mat, role, caps, caps);
+  const box = (a0, a1, e0, e1, s0, s1, mat, role) =>
+    loft([a0, a1].map((a) => [[a, e0, s0], [a, e1, s0], [a, e1, s1], [a, e0, s1]]), mat, role);
+  return { P, loft, lathe, box };
+}
+const ROUND = (r0, r1, a0, a1, n = 7) => Array.from({ length: n }, (_, i) => { const t = i / (n - 1); return [a0 + (a1 - a0) * t, Math.max(1e-4, r0 + (r1 - r0) * t)]; });
+const BALL = (a, r, n = 7) => Array.from({ length: n }, (_, i) => { const t = i / (n - 1) * Math.PI; return [a - r * Math.cos(t), Math.max(1e-4, r * Math.sin(t))]; });
+function weapon(side, p) {
+  const F = handFrame(side, p); if (!F) return null;
+  const acc = rigidAcc(PB['hand_' + side]), { loft, lathe, box } = itemMesh(acc, F);
+  const H = HEIGHT, k = (x) => x / 100, gr = F.r * k(p.w_grip_r), kind = p.weapon || 'sword';   // as thick as the closed fingers ring
+  const blade = (a0, len, w, t, tipAt = .82, curve = 0) => {   // a double edge, a diamond section, coming to a point
+    const n = 14, rings = [];
+    for (let i = 0; i <= n; i++) {
+      const u = i / n, taper = 1 - .3 * u, tip = u > tipAt ? Math.max(.02, (1 - u) / (1 - tipAt)) : 1, hw = w * taper * tip, ht = t * (1 - .4 * u) * Math.max(.3, tip);
+      const off = curve * w * u * u;
+      rings.push([[hw + off, 0], [.4 * hw + off, ht], [-.4 * hw + off, ht], [-hw + off, 0], [-.4 * hw + off, -ht], [.4 * hw + off, -ht]].map(([e, s]) => [a0 + len * u, e, s]));
+    }
+    loft(rings, PLATE, 'plate');
+  };
+  const grip = (a0, a1, r) => lathe(ROUND(r * .95, r, a0, a1, 5), LEATHER, 'strap');
+  const haft = (a0, a1, r) => lathe([[a0, r * .9], [a0 + .01 * H, r], [a1 - .01 * H, r], [a1, r * .85]], CLOTH, 'quilt', 12);
+  if (kind === 'sword' || kind === 'dagger') {
+    const sm = kind === 'dagger' ? .55 : 1, gl = .075 * H * k(p.w_grip) * sm, gw = .055 * H * k(p.w_guard) * sm, gt = .012 * H * sm;
+    grip(-gl / 2, gl / 2, gr);
+    lathe(BALL(-gl / 2 - 1.4 * gr, 1.5 * gr), TRIM, 'trim');   // the pommel
+    loft(Array.from({ length: 7 }, (_, i) => {   // the cross-guard along the edge, thinner at its ends
+      const e = -gw + 2 * gw * i / 6, r = gt * (1 - .3 * Math.abs(e / gw));
+      return [[gl / 2, e, -r], [gl / 2 + 2 * r, e, -r], [gl / 2 + 2 * r, e, r], [gl / 2, e, r]];
+    }), TRIM, 'trim');
+    blade(gl / 2 + 2 * gt, .4 * H * k(p.w_len) * (kind === 'dagger' ? .4 : 1), .024 * H * k(p.w_width) * sm, .006 * H * sm, kind === 'dagger' ? .6 : .82);
+  } else if (kind === 'axe') {
+    const len = .42 * H * k(p.w_len), top = len * .78, r = gr * .95;
+    haft(-.1 * H, top + .02 * H, r);
+    const hl = .1 * H * k(p.w_head), hh = .055 * H * k(p.w_width), n = 9, rings = [];
+    for (let i = 0; i <= n; i++) {   // the head: from the haft out to the edge, growing taller and thinner (bearded)
+      const u = i / n, h = hh * (.35 + .65 * u ** 1.6), t = r * 1.15 * (1 - .85 * u) + .002 * H, bow = .25 * hh * u * u;
+      rings.push([[top - h - bow * .5, -t], [top + h * .7, -t], [top + h * .7, t], [top - h - bow * .5, t]].map(([a, s]) => [a, -r * .6 + hl * u, s]));
+    }
+    loft(rings, PLATE, 'plate');
+    box(top - .3 * hh, top + .25 * hh, -r * 1.9, -r * .5, -r * 1.1, r * 1.1, PLATE, 'plate');   // its back
+    grip(-.05 * H, .05 * H, r * 1.08);
+  } else if (kind === 'mace') {
+    const len = .36 * H * k(p.w_len), top = len * .8, r = gr * .9, rh = .032 * H * k(p.w_head);
+    haft(-.06 * H, top, r * .9);
+    lathe(BALL(top + rh, rh), PLATE, 'plate');
+    for (let j = 0; j < 6; j++) {   // flanges round the head
+      const t = j / 6 * TAU, e = Math.cos(t), sg = Math.sin(t), f = rh * 1.45, w = rh * .09, rings = [];
+      for (const [a, out] of [[top + .1 * rh, .4], [top + .7 * rh, 1], [top + 1.5 * rh, 1], [top + 2 * rh, .4]])
+        rings.push([[-w, 0], [w, 0], [w, out * f], [-w, out * f]].map(([q, o]) => [a, o * e - q * sg, o * sg + q * e]));
+      loft(rings, PLATE, 'plate');
+    }
+    lathe(BALL(-.06 * H - 1.2 * r, 1.3 * r), TRIM, 'trim');
+    grip(-.05 * H, .05 * H, r * 1.05);
+  } else if (kind === 'bow') {   // a short bow, braced: its limbs bending back to the archer from the grip, the string between the tips
+    const half = .3 * H * k(p.w_len), lw = .02 * H * k(p.w_width), lt = .011 * H * k(p.w_width), bend = .1 * half, a0 = .03 * H, n = 10;
+    for (const sg of [1, -1]) {
+      const rings = [];
+      for (let i = 0; i <= n; i++) {
+        const u = i / n, a = sg * (a0 + u * (half - a0)), e = -bend * u * u, w = lw * (1 - .6 * u), t = lt * (1 - .45 * u);
+        const ring = [[a, e + t / 2, -w / 2], [a, e + t / 2, w / 2], [a, e - t / 2, w / 2], [a, e - t / 2, -w / 2]];
+        rings.push(sg > 0 ? ring : ring.reverse());
+      }
+      loft(rings, PLATE, 'plate');
+    }
+    lathe(ROUND(gr * 1.02, gr * 1.08, -.05 * H, .05 * H, 5), LEATHER, 'strap');   // the grip, wrapped
+    const sr = .0018 * H, se = -bend - .3 * lt;   // the string, from tip to tip on the archer's side
+    loft([half * .985, -half * .985].map((a) => Array.from({ length: 5 }, (_, j) => [a, se + sr * Math.cos(j / 5 * TAU), sr * Math.sin(j / 5 * TAU)])), CLOTH, 'quilt');
+  } else if (kind === 'spear' || kind === 'staff') {
+    const len = (kind === 'spear' ? .95 : 1.0) * H * k(p.w_len), r = gr * .85, top = len * .6, bot = -len * .4;
+    haft(bot, top, r);
+    if (kind === 'spear') {
+      lathe(ROUND(r * 1.1, r * .7, top, top + .04 * H, 5), TRIM, 'trim');   // the socket
+      blade(top + .035 * H, .16 * H * k(p.w_head), .022 * H * k(p.w_width), .005 * H, .55);
+      lathe(BALL(bot - .8 * r, r), TRIM, 'trim');
+    } else {
+      lathe(BALL(top + 1.4 * r * k(p.w_head), 1.6 * r * k(p.w_head)), TRIM, 'trim'); lathe(BALL(bot - 1.2 * r, 1.3 * r), TRIM, 'trim');
+    }
+  }
+  return { side, acc, R: F.pw, F };
+}
+// ---- a weapon in both hands: the other hand's grip on the haft, w_two of the arm's length from the holding hand's
+// (minus: towards the butt, the pommel). It is turned as the holding one (the thumb towards the head), its palm to the
+// haft from its shoulder's side, its wrist where the grip lies in it as in the holding hand; the arm bent to bring it
+// there (two bones: the shoulder's swing, the elbow's). The same in the game (SF3DEquip.Grip) from the numbers the
+// piece's name carries: the second grip, the haft's way and the grip's place in the hand, in the holding hand's frame.
+let twoHand = null;   // {side, from, n: the grip's numbers}
+const handBasis = (across, palm) => new THREE.Matrix4().makeBasis(across, new V3().crossVectors(palm, across).normalize(), palm);   // as SF3DEquip.Grip
+function twoHandOf(part, p) {   // at rest: the second grip, the haft's way, the grip in the hand, in the holding hand's frame
+  const F = part.F, v = part.acc.v, M = palmOf(part.side); if (!M) return null;
+  let lo = Infinity, hi = -Infinity;
+  for (let i = 0; i < v.length; i += 3) {
+    const a = (v[i] - F.C.x) * F.A.x + (v[i + 1] - F.C.y) * F.A.y + (v[i + 2] - F.C.z) * F.A.z; lo = Math.min(lo, a); hi = Math.max(hi, a);
+  }
+  const L = hi - lo, sg = Math.sign(p.w_two), s = part.side;   // the hands' spacing: a share of the arm's length (a goblin's are short)
+  const arm = joint('forearm_' + s).distanceTo(joint('arm_' + s)) + joint('hand_' + s).distanceTo(joint('forearm_' + s));
+  const a = Math.max(lo + .04 * L, Math.min(hi - .04 * L, sg * Math.max(Math.abs(p.w_two) / 100 * arm, 1.1 * F.pw)));   // not on the holding hand
+  const Ft = handBasis(M.across, M.palm).transpose(), hl = M.K.distanceTo(M.H);
+  const t = F.C.clone().addScaledVector(F.A, a).sub(M.H).applyMatrix4(Ft).divideScalar(hl), ax = F.A.clone().applyMatrix4(Ft), c = F.C.clone().sub(M.H).applyMatrix4(Ft).divideScalar(hl);
+  return { side: part.side === 'L' ? 'R' : 'L', from: part.side, n: [t, ax, c].flatMap((x) => x.toArray()) };
+}
+// a spear keeps its head forward in the game whatever the clip does with the hand (SF3DEquip.Grip): the head's way in the
+// holding hand's frame, per mille («a1_a2_a3»)
+let spearPoint = '';
+function pointCode(part) {
+  const M = palmOf(part.side); if (!M) return '';
+  return part.F.A.clone().applyMatrix4(handBasis(M.across, M.palm).transpose()).toArray().map((x) => Math.round(x * 1000)).join('_');
+}
+const twoCode = () => (twoHand ? [twoHand.side, ...twoHand.n.map((x) => Math.round(x * 1000))].join('_') : '');   // «L_<9 per mille>»
+function aimWorld(b, from, to, share = 1) {   // a bone turned (about its head) so that a world way of it goes another
+  const q = new Q().slerp(new Q().setFromUnitVectors(from.clone().normalize(), to.clone().normalize()), share);
+  const wq = b.getWorldQuaternion(new Q()), pq = b.parent.getWorldQuaternion(new Q()).invert();
+  b.quaternion.copy(pq.multiply(q.multiply(wq))); b.updateMatrixWorld(true);
+}
+function armTo(s, Wt, R, w = 1) {   // two bones: the wrist to Wt (as near as the arm allows), the hand then turned by the world R
+  const arm = PB['arm_' + s], fore = PB['forearm_' + s], hand = PB['hand_' + s];
+  const Sh = joint('arm_' + s), E = joint('forearm_' + s), Wr = joint('hand_' + s), l1 = E.distanceTo(Sh), l2 = Wr.distanceTo(E);
+  const nd = Wt.clone().sub(Sh), d = Math.max(Math.abs(l1 - l2) * 1.01, Math.min((l1 + l2) * .999, nd.length())); nd.normalize();
+  const x = (l1 * l1 - l2 * l2 + d * d) / (2 * d), h = Math.sqrt(Math.max(0, l1 * l1 - x * x));
+  let pole = E.clone().sub(Sh); pole.addScaledVector(nd, -pole.dot(nd));   // the elbow where it is, else down and out
+  if (pole.length() < .2 * l1) { pole = UP.clone().negate().addScaledVector(new V3(s === 'L' ? 1 : -1, 0, 0), .6).addScaledVector(FRONT, -.3); pole.addScaledVector(nd, -pole.dot(nd)); }
+  pole.normalize();
+  const En = Sh.clone().addScaledVector(nd, x).addScaledVector(pole, h), Wn = Sh.clone().addScaledVector(nd, d);
+  const keep = hand.getWorldQuaternion(new Q());
+  aimWorld(arm, E.clone().sub(Sh), En.clone().sub(Sh), w);
+  aimWorld(fore, joint('hand_' + s).sub(joint('forearm_' + s)), Wn.clone().sub(joint('forearm_' + s)), w);
+  hand.quaternion.copy(hand.parent.getWorldQuaternion(new Q()).invert().multiply(new Q().slerp(R, w).multiply(keep))); hand.updateMatrixWorld(true);
+}
+function twoGrips(t) {   // {T: the second grip, A: the haft's way (to the head), C: the first grip}, as the holding hand is now
+  const M = palmOf(t.from); if (!M) return null;
+  const n = t.n, Fm = handBasis(M.across, M.palm), hm = M.K.distanceTo(M.H);
+  return { T: new V3(n[0], n[1], n[2]).applyMatrix4(Fm).multiplyScalar(hm).add(M.H), A: new V3(n[3], n[4], n[5]).applyMatrix4(Fm).normalize(),
+           C: new V3(n[6], n[7], n[8]).applyMatrix4(Fm).multiplyScalar(hm).add(M.H) };
+}
+// The other hand onto the haft (also SF3DEquip.Grip._reach): the grip's place from the holding hand's frame as it is now,
+// the hand turned to the grip's frame (the thumb towards the head, its palm to the haft from its shoulder's side), its
+// wrist where the grip lies in it, the elbow on the circle the two bones allow (towards down and out). Out of reach (a
+// clip with the weapon held at the side) it lets go, little by little from 1.05 to 1.3 of the arm's length.
+function reach(t) {
+  const s = t.side, P = palmOf(s), G = twoGrips(t); if (!P || !G || !PB['arm_' + s] || !PB['forearm_' + s] || !PB['hand_' + s]) return;
+  const n = t.n, c = new V3(n[6], -n[7], n[8]);   // the other hand is the mirror one: its frame's second way runs the other way along it
+  const Sh = joint('arm_' + s), palm = G.T.clone().sub(Sh); palm.addScaledVector(G.A, -palm.dot(G.A)).normalize();
+  const Ft = handBasis(G.A, palm), W = G.T.clone().sub(c.applyMatrix4(Ft).multiplyScalar(P.K.distanceTo(P.H)));
+  const l = joint('forearm_' + s).distanceTo(Sh) + joint('hand_' + s).distanceTo(joint('forearm_' + s));
+  const w = THREE.MathUtils.smoothstep(1.3 * l - W.distanceTo(Sh), 0, .25 * l); if (w <= 0) return;
+  armTo(s, W, new Q(), w);   // the wrist there, then the hand's turn from where the arm left it onto the grip's frame
+  const Pc = palmOf(s), R = new Q().setFromRotationMatrix(Ft.clone().multiply(handBasis(Pc.across, Pc.palm).transpose()));
+  armTo(s, W, R, w);
+  const off = (sd) => { const q = palmOf(sd), K = q.K.clone().lerp(q.H, .35).addScaledVector(q.palm, .12 * q.K.distanceTo(q.H)), d = K.sub(G.T); d.addScaledVector(G.A, -d.dot(G.A)); return d.length() / q.K.distanceTo(q.H); };
+  reach.last = { gap: joint('hand_' + s).distanceTo(W) / l, w, haft: off(s), haftHolding: off(t.from) };   // for the tests: the palms' middles off the haft
+}
+// the editor's «Fist» for a weapon in both hands: the holding hand turned so the haft points forward and a little up, and
+// brought so that the two grips lie along it in front of the chest (the nearer one well off the body), then the other
+// hand onto the haft
+function readyStance(t) {
+  const s = t.from, G = twoGrips(t), L = joint('arm_L'), Rs = joint('arm_R'), hand = PB['hand_' + s]; if (!G || !L || !Rs || !hand) return;
+  const l = joint('forearm_' + s).distanceTo(joint('arm_' + s)) + joint('hand_' + s).distanceTo(joint('forearm_' + s));
+  const D = FRONT.clone().addScaledVector(UP, .35).normalize(), a = G.T.clone().sub(G.C).dot(G.A);
+  aimWorld(hand, G.A, D);   // the hand (and the weapon on it) turned about the wrist
+  const mid = L.clone().add(Rs).multiplyScalar(.5).addScaledVector(UP, -.4 * l).addScaledVector(FRONT, .4 * l + Math.abs(a) / 2 * D.z);
+  const Cn = mid.clone().addScaledVector(D, -a / 2);
+  for (let k = 0; k < 3; k++) {   // the hand keeps its turn as the arm moves; the grip in it moves with the wrist
+    const g = twoGrips(t);
+    armTo(s, Cn.clone().sub(g.C.clone().sub(joint('hand_' + s))), new Q());
+  }
+}
+function shield(side, p) {   // on the forearm's outer side, its face out, its long axis along the forearm (the point down)
+  const F0 = joint('forearm_' + side), F1 = joint('hand_' + side); if (!F0 || !F1) return null;
+  const u = F1.clone().sub(F0), len = u.length(); u.normalize();
+  const I1 = joint('index1_' + side), P1 = joint('pinky1_' + side) || joint('ring1_' + side), T1 = joint('thumb1_' + side);
+  let out = new V3(side === 'R' ? -1 : 1, 0, 0);   // the back of the hand's side, else out to the side
+  if (I1 && P1) {
+    const K = I1.clone().add(P1).multiplyScalar(.5), palm = new V3().crossVectors(I1.clone().sub(P1), K.clone().sub(F1)).normalize();
+    if (T1 && T1.clone().sub(F1).dot(palm) < 0) palm.negate();
+    out = palm.negate();
+  }
+  out.addScaledVector(u, -out.dot(u)).normalize();
+  const D = THREE.MathUtils.degToRad, mid = F0.clone().addScaledVector(u, (.5 + p.s_along / 100) * len);
+  const hit = cast(mid.clone().addScaledVector(out, .2 * HEIGHT), out.clone().negate(), .2 * HEIGHT), skin = hit ? .2 * HEIGHT - hit.distance : .04 * HEIGHT;
+  const R = .16 * HEIGHT * p.s_size / 100, curve = p.s_curve / 100 * .25 * R, thick = .012 * HEIGHT;
+  const up = u.clone().negate().applyAxisAngle(out, D(p.s_turn));
+  const Fr = { C: mid.clone().addScaledVector(out, skin + .015 * HEIGHT + p.s_out / 100 * R + thick), A: out, E: up, S: new V3().crossVectors(out, up).normalize() };
+  const acc = rigidAcc(PB['forearm_' + side]), { loft, lathe } = itemMesh(acc, Fr);
+  const kind = p.shield || 'round', n = 48;
+  const outline = Array.from({ length: n }, (_, j) => {   // (up, across) round the edge
+    const t = j / n * TAU, c = Math.cos(t), sn = Math.sin(t);
+    if (kind === 'round') return [c * R, sn * R];
+    if (kind === 'kite') return c > 0 ? [c * R * .75, sn * R * .62] : [c * R * 1.35, sn * R * .62 * (1 + c) ** .8];   // round top, long point
+    return c > 0 ? [R * .55 + c * .05 * R, sn * R * .75 * Math.min(1, 1.6 * Math.abs(sn) ** .3)] : [c * R * 1.05, sn * R * .75 * (1 + c) ** .55];   // heater
+  });
+  const dome = (x, y) => curve * (1 - Math.min(1, (x * x + y * y) / (R * R * 1.4)));
+  const ringsAt = (front) => [.05, .3, .55, .78, .92, 1].map((k) => outline.map(([x, y]) => [front ? dome(x * k, y * k) : dome(x * k, y * k) - thick, x * k, y * k]));
+  const fr = ringsAt(true), bk = ringsAt(false);
+  loft(fr, PLATE, 'plate', true, false); loft(bk.reverse(), PLATE, 'plate', false, true);
+  loft([fr[fr.length - 1], bk[0]], PLATE, 'plate', false, false);   // its edge
+  const rimW = .02 * R * p.s_rim / 100 * 3;   // a metal band round the edge
+  if (p.s_rim > 0) loft(Array.from({ length: n + 1 }, (_, j) => {
+    const [x, y] = outline[j % n], d = Math.hypot(x, y) || 1, nx = x / d, ny = y / d, z = dome(x, y);
+    return [[z + .4 * thick, x, y], [z + .4 * thick, x - nx * rimW, y - ny * rimW], [z - thick * 1.4, x - nx * rimW, y - ny * rimW], [z - thick * 1.4, x + nx * .2 * rimW, y + ny * .2 * rimW]];
+  }), TRIM, 'trim', false, false);
+  if (p.s_boss > 0 && kind === 'round') {   // the boss: a half ball from the face, its rim a little sunk into it
+    const rb = .22 * R * p.s_boss / 100, half = BALL(curve, rb, 9).slice(4);   // from its equator (cos 90° is not quite 0: no filter on it)
+    lathe([[curve - .5 * thick, rb], ...half], DETAIL, 'rivet');
+  }
+  // on its back two leather straps round the forearm (by the elbow, by the wrist), each following the arm's own section
+  // (rays in to the skin round the far side) from the back face to the back face
+  const side2 = new V3().crossVectors(u, out).normalize(), loc = (X) => { const d = X.clone().sub(Fr.C); return [d.dot(Fr.A), d.dot(Fr.E), d.dot(Fr.S)]; };
+  const sw = .022 * HEIGHT, st = .004 * HEIGHT, gap = .005 * HEIGHT;
+  for (const tt of [.25, .78]) {
+    const t = tt + p.s_along / 100; if (t < .08 || t > .95) continue;
+    const Q = F0.clone().addScaledVector(u, t * len), path = [];
+    for (let k = 0; k <= 12; k++) {   // round the far side of the arm: from beside it (towards the shield) under it and back
+      const th = Math.PI / 2 + k / 12 * Math.PI, d = out.clone().multiplyScalar(Math.cos(th)).addScaledVector(side2, Math.sin(th));
+      const h = cast(Q, d, 2 * skin), r = h ? h.distance : skin;   // from the arm's axis out to its skin (not the body beside it)
+      path.push(Q.clone().addScaledVector(d, r + gap + st));
+    }
+    const ends = [path[0], path[path.length - 1]];
+    const back = ends.map((X) => { const [, e, s2] = loc(X); return dome(e, s2) - thick; });   // the back face over its ends
+    if (back.some((b, i) => b < loc(ends[i])[0])) continue;   // the arm reaches the shield there: no room for a strap
+    const pts = [Fr.C.clone().addScaledVector(Fr.A, back[0]).addScaledVector(side2, path[0].clone().sub(Fr.C).dot(side2)).addScaledVector(u, path[0].clone().sub(Fr.C).dot(u)),
+      ...path, Fr.C.clone().addScaledVector(Fr.A, back[1]).addScaledVector(side2, path[path.length - 1].clone().sub(Fr.C).dot(side2)).addScaledVector(u, path[path.length - 1].clone().sub(Fr.C).dot(u))];
+    const rings = pts.map((X) => {   // a flat band: across the arm's way, its thickness away from the arm
+      const nrm = X.clone().sub(Q); nrm.addScaledVector(u, -nrm.dot(u)); nrm.normalize();
+      return [[0, -sw / 2], [0, sw / 2], [st, sw / 2], [st, -sw / 2]].map(([o, w]) => loc(X.clone().addScaledVector(nrm, o - st).addScaledVector(u, w)));
+    });
+    loft(rings, LEATHER, 'strap');
+  }
+  return { side, acc, R };
+}
+// ---- worn at the belt: a scabbard for the sword (or a dagger's) on a hip, hanging back and out from a belt round the
+// waist, sized by the weapon's sliders (the sword made before it); a quiver on the back, its arrows over a shoulder, on a
+// strap across the chest. The scabbard is rigid on the hips' bone, the quiver on the chest's; the belt and the strap
+// follow the body (over its clothes: rays out from inside to the outermost surface) and take the weights of the skin
+// under them, as a piece of armour does.
+function skinOut(C, d, far, layer) {   // from inside out: the last surface met, each within «layer» of the one before: {r, face}
+  const h = cast(C, d, far); if (!h) return null;
+  let r = h.distance, face = h.faceIndex;
+  for (let k = 0; k < 4; k++) {
+    const h2 = cast(C.clone().addScaledVector(d, r + 1e-3 * HEIGHT), d, layer); if (!h2) break;
+    r += 1e-3 * HEIGHT + h2.distance; face = h2.faceIndex;
+  }
+  return { r, face };
+}
+function bandAround(C, way, n, w, th, gap, mat, fam, main) {   // a flat band round the body through C, way(φ) its ways out
+  const acc = new Acc(); acc.w = weigher(fam, main, .1);   // as the skin under it moves, little held by the main bone
+  const pts = [];
+  for (let i = 0; i <= n; i++) {
+    const d = way(i / n * TAU), h = skinOut(C, d, .6 * HEIGHT, .02 * HEIGHT);
+    pts.push({ d, r: (h ? h.r : .1 * HEIGHT) + gap, face: h ? h.face : -1 });
+  }
+  for (let i = 1; i < n; i++) pts[i].r = Math.max(pts[i].r, .5 * (pts[i - 1].r + pts[i + 1].r) * .97);   // no notch where a ray slipped in
+  const rings = pts.map(({ d, r, face }, i) => {
+    const up = new V3().crossVectors(pts[Math.max(0, i - 1)].d, pts[Math.min(n, i + 1)].d).normalize(), O = C.clone().addScaledVector(d, r);
+    return [[0, -w / 2], [0, w / 2], [th, w / 2], [th, -w / 2]].map(([o, hh], j) => acc.vert(O.clone().addScaledVector(d, o).addScaledVector(up, hh), j / 4, i / n, face));
+  });
+  for (let i = 0; i < n; i++) for (let j = 0; j < 4; j++) acc.face([rings[i][j], rings[i][(j + 1) % 4], rings[i + 1][(j + 1) % 4], rings[i + 1][j]], mat, 'strap');
+  return { acc, pts };
+}
+// a quiver from its bottom along ax: a leather tube with rims, its arrows' shafts out of the mouth, fletched
+function quiverBody(acc, base, ax, qr, Lq, p) {
+  const H = HEIGHT, e1 = new V3().crossVectors(ax, Math.abs(ax.dot(FRONT)) < .9 ? FRONT : UP).normalize();
+  const Fq = { C: base, A: ax, E: e1, S: new V3().crossVectors(ax, e1).normalize() }, { loft, lathe } = itemMesh(acc, Fq);
+  const wall = .005 * H, fl = .02 * H;   // a tube: out up the outside, over the mouth's lip, down the inside to its floor
+  lathe([[0, qr * .85], [.02 * H, qr], [Lq - .02 * H, qr * 1.05], [Lq, qr * 1.08], [Lq, qr * 1.08 - wall], [Lq - .02 * H, qr * 1.05 - wall], [fl, qr - wall]], PLATE, 'plate', 14);
+  lathe([[-.004 * H, qr * .9], [.012 * H, qr * 1.04]], TRIM, 'trim', 14);   // the bottom's rim
+  lathe([[Lq - .015 * H, qr * 1.1], [Lq + .002 * H, qr * 1.12], [Lq + .002 * H, qr * 1.08 - wall], [Lq - .015 * H, qr * 1.05 - wall]], TRIM, 'trim', 14, false);   // the mouth's: a ring over the lip, open
+  // the arrows: each its own object in the GLB (the game shows as many as are left), standing on the floor in rings,
+  // their shafts out of the mouth, fletched
+  const n = Math.max(0, Math.round(p.arrows ?? 12)), sh = .0028 * H, ri = qr - wall - 2.5 * sh;
+  const spots = [];   // along the wall first, then inner rings: k each as fit round it, spread evenly over the ring
+  for (const rr of [.92, .6, .28, 0].map((x) => x * ri)) {
+    if (spots.length >= n) break;
+    const fit = rr ? Math.max(1, Math.floor(TAU * rr / (2.8 * sh))) : 1, k = Math.min(fit, n - spots.length);
+    for (let j = 0; j < k; j++) spots.push([rr * Math.cos(j / k * TAU + rr), rr * Math.sin(j / k * TAU + rr)]);
+  }
+  for (let i = spots.length; i < n; i++) spots.push([ri * .5 * Math.cos(i * 2.4), ri * .5 * Math.sin(i * 2.4)]);   // more than the rings hold: among them
+  spots.forEach(([e, s2], i) => {
+    acc.group = i + 1;
+    const top = Lq + .06 * H + .012 * H * ((i * 5) % 3);
+    loft([fl + .002 * H, top].map((a) => Array.from({ length: 5 }, (_, j) => [a, e + sh * Math.cos(j / 5 * TAU), s2 + sh * Math.sin(j / 5 * TAU)])), CLOTH, 'quilt');
+    for (const [ce, cs] of [[1, 0], [0, 1]]) {   // two vanes across
+      const fw = .007 * H, ft = .0008 * H, f0 = top - .045 * H, f1 = top - .006 * H;
+      loft([f0, f1].map((a, j) => [[-fw * (j ? .6 : 1), -ft], [fw * (j ? .6 : 1), -ft], [fw * (j ? .6 : 1), ft], [-fw * (j ? .6 : 1), ft]].map(([u, v]) => [a, e + ce * u + cs * v, s2 + cs * u - ce * v])), TRIM, 'trim');
+    }
+  });
+  acc.group = 0;
+}
+function sheath(side, p, band = true) {   // band: the belt (the strap) too — one for both sides
+  const k100 = (x) => (x ?? 100) / 100, H = HEIGHT, X = new V3(side === 'R' ? -1 : 1, 0, 0), kind = p.sheath || 'scabbard';
+  if (kind === 'quiver') {
+    const b2 = PB.spine2 || PB.spine1; if (!b2 || !joint('spine1')) return null;
+    const acc = rigidAcc(b2), S2 = joint(PB.spine2 ? 'spine2' : 'spine1'), S1 = joint('spine1');
+    // the strap: a ring round the chest tilted 35°, high over the arrows' shoulder, low at the other hip
+    const t = Math.tan(THREE.MathUtils.degToRad(35)), nrm = UP.clone().addScaledVector(X, -t).normalize(), m = new V3().crossVectors(nrm, FRONT).normalize();
+    const Ct = S1.clone().lerp(S2, .6);
+    const strap = bandAround(Ct, (f) => FRONT.clone().multiplyScalar(Math.cos(f)).addScaledVector(m, Math.sin(f)), 40, .03 * H, .006 * H, .006 * H, LEATHER, 'torso', b2);
+    // the quiver: behind the back, its mouth by the shoulder
+    const back = FRONT.clone().negate(), rb = (skinOut(S2, back, .5 * H, .02 * H) || { r: .08 * H }).r, qr = .035 * H * k100(p.w_width), Lq = .3 * H * k100(p.w_len);
+    const ax = UP.clone().addScaledVector(X, .5).addScaledVector(back, .1).normalize();
+    const mid = S2.clone().addScaledVector(back, rb + qr + .006 * H).addScaledVector(UP, -.03 * H), base = mid.clone().addScaledVector(ax, -Lq / 2);
+    quiverBody(acc, base, ax, qr, Lq, p);
+    return band ? [{ side, acc, R: qr }, { side, acc: strap.acc, R: qr }] : [{ side, acc, R: qr }];
+  }
+  // a scabbard (a quiver) on the hip: from the belt on the side a little forward, hanging down and back, out of the
+  // thigh's way (the quiver: its mouth by the belt, the arrows up and forward)
+  if (!PB.hips || !joint('spine')) return null;
+  const acc = rigidAcc(PB.hips), Cw = joint('hips').lerp(joint('spine'), .5), Fr = { C: Cw, A: UP, E: FRONT, S: new V3(1, 0, 0) };
+  const belt = bandAround(Cw, (f) => FRONT.clone().multiplyScalar(Math.cos(f)).addScaledVector(new V3(1, 0, 0), Math.sin(f)), 40,
+    .032 * H, .006 * H, .006 * H, LEATHER, 'hips', PB.hips);
+  const sm = kind === 'dagger' ? .55 : 1, D = THREE.MathUtils.degToRad;
+  if (kind === 'quiver_hip') {
+    const ds = X.clone().multiplyScalar(Math.cos(D(15))).addScaledVector(FRONT, Math.sin(D(15))).normalize(), f = Math.atan2(ds.x, ds.z);
+    const rb = belt.pts[Math.round(((f + TAU) % TAU) / TAU * 40)].r, qr = .03 * H * k100(p.w_width), Lq = .24 * H * k100(p.w_len);
+    const ax = UP.clone().addScaledVector(FRONT, Math.tan(D(25))).addScaledVector(X, .12).normalize();
+    const mouth = Cw.clone().addScaledVector(ds, rb + .006 * H + qr).addScaledVector(UP, .02 * H);
+    quiverBody(acc, mouth.clone().addScaledVector(ax, -Lq), ax, qr, Lq, p);
+    return band ? [{ side, acc, R: qr }, { side, acc: belt.acc, R: qr }] : [{ side, acc, R: qr }];
+  }
+  const Lb = .4 * H * k100(p.w_len) * (kind === 'dagger' ? .4 : 1) + .02 * H, W = .03 * H * k100(p.w_width) * sm, T = .011 * H * sm;
+  const ds = X.clone().multiplyScalar(Math.cos(D(28))).addScaledVector(FRONT, Math.sin(D(28))).normalize();   // on the side, a little forward
+  const f = Math.atan2(ds.x, ds.z), rb = belt.pts[Math.round(((f + TAU) % TAU) / TAU * 40)].r;
+  const B = Cw.clone().addScaledVector(ds, rb + .006 * H), ax = UP.clone().negate().addScaledVector(FRONT, -Math.tan(D(30))).addScaledVector(X, .18).normalize();
+  const out = ds.clone().addScaledVector(ax, -ds.dot(ax)).normalize(), wide = new V3().crossVectors(ax, out).normalize();
+  const top = B.clone().addScaledVector(out, T / 2 + .004 * H).addScaledVector(ax, .01 * H);
+  const loc = (P) => { const d = P.clone().sub(Fr.C); return [d.dot(Fr.A), d.dot(Fr.E), d.dot(Fr.S)]; }, { loft } = itemMesh(acc, Fr);
+  const ring = (u, grow = 1) => {   // the scabbard's section along it: a flat lens, narrowing to the chape
+    const c = Math.max(0, u), O = top.clone().addScaledVector(ax, u * Lb), w = W * (1 - .55 * c ** 2.5) * grow, t = T * (1 - .4 * c ** 2) * grow;   // the throat's ring starts above it: no root of a negative
+    return Array.from({ length: 10 }, (_, j) => { const g = j / 10 * TAU; return loc(O.clone().addScaledVector(wide, w / 2 * Math.cos(g)).addScaledVector(out, t / 2 * Math.sin(g))); });
+  };
+  loft([0, .25, .5, .75, .92, 1].map((u) => ring(u)), PLATE, 'plate');
+  loft([-.01, .07].map((u) => ring(u, 1.12)), TRIM, 'trim');   // the throat
+  loft([.86, 1.005].map((u) => ring(u, 1.1)), TRIM, 'trim');   // the chape
+  // the hanger: a strap from the belt down to the throat
+  const hw = .018 * H;
+  loft([B.clone().addScaledVector(UP, .012 * H), top.clone().addScaledVector(ax, .03 * Lb)].map((O) =>
+    [[-hw / 2, 0], [hw / 2, 0], [hw / 2, .004 * H], [-hw / 2, .004 * H]].map(([u, v]) => loc(O.clone().addScaledVector(wide, u).addScaledVector(out, v + T / 2)))), LEATHER, 'strap');
+  return band ? [{ side, acc, R: W }, { side, acc: belt.acc, R: W }] : [{ side, acc, R: W }];
+}
+// ---- the body in another pose, for a piece that is fitted to it (a cloak lies over arms hanging down): its skin moved
+// by its weights (each bone's turn from its rest), with a ray tree of its own; made once per body
+let downGeo = null, downFor = null, downDm = null, downJ = null;   // downDm: each bone's turn from the rest into the arms-down pose; downJ: the arms' joints there
+function armDown(s) {   // an arm hanging down, a little out from the body, its forearm straight on
+  const a = PB['arm_' + s], f = PB['forearm_' + s]; if (!a || !f || !PB['hand_' + s]) return;
+  const to = UP.clone().negate().addScaledVector(new V3(s === 'L' ? 1 : -1, 0, 0), Math.tan(THREE.MathUtils.degToRad(18))).normalize();   // as the clips hold them
+  aimWorld(a, joint('forearm_' + s).sub(joint('arm_' + s)), to);
+  aimWorld(f, joint('hand_' + s).sub(joint('forearm_' + s)), to);
+}
+function armsDownBody() {
+  if (downGeo && downFor === bodyGeo) return downGeo;
+  restPose();
+  const bones = boneNames.map((n) => byName[n]), R = bones.map((b) => (b ? b.matrixWorld.clone() : new THREE.Matrix4()));
+  armDown('L'); armDown('R'); charRoot.updateMatrixWorld(true);
+  downJ = Object.fromEntries(['L', 'R'].flatMap((s) => ['arm_', 'forearm_', 'hand_'].map((k) => [k + s, joint(k + s)])));
+  const Dm = bones.map((b, i) => (b ? b.matrixWorld.clone().multiply(R[i].clone().invert()) : new THREE.Matrix4()));
+  downDm = Dm;
+  const P = bodyGeo.attributes.position, out = new Float32Array(3 * P.count), v = new V3(), t = new V3(), a = new V3();
+  for (let i = 0; i < P.count; i++) {
+    v.fromBufferAttribute(P, i); a.set(0, 0, 0); let ws = 0;
+    for (let k = 0; k < 4; k++) { const w = vW[4 * i + k]; if (w > 0) { a.addScaledVector(t.copy(v).applyMatrix4(Dm[vBone[4 * i + k]]), w); ws += w; } }
+    (ws > 0 ? a.divideScalar(ws) : a.copy(v)).toArray(out, 3 * i);
+  }
+  restPose();
+  downGeo = new THREE.BufferGeometry(); downGeo.setAttribute('position', new THREE.BufferAttribute(out, 3)); downGeo.setIndex(bodyGeo.index); downGeo.computeBoundsTree({ indirect: true });   // (indirect: its index is the body's, which a BVH would sort in place, the body's own BVH then wrong: rays through the skin)
+  downFor = bodyGeo;
+  return downGeo;
+}
+function castOn(geo, o, d, far) {
+  _ray.origin.copy(o); _ray.direction.copy(d);
+  const h = geo.boundsTree.raycastFirst(_ray, THREE.DoubleSide);
+  return h && h.distance <= far ? h : null;
+}
+function clearanceAt(geo, p) {   // how far p is outside the body (minus: inside), the nearest point, its face's way out
+  const c = geo.boundsTree.closestPointToPoint(p); if (!c) return null;
+  const ix = geo.index.array, P = geo.attributes.position, f = c.faceIndex, A = new V3().fromBufferAttribute(P, ix[3 * f]);
+  const n = new V3().fromBufferAttribute(P, ix[3 * f + 1]).sub(A).cross(new V3().fromBufferAttribute(P, ix[3 * f + 2]).sub(A)).normalize();
+  return { d: p.clone().sub(c.point).dot(n) >= 0 ? c.distance : -c.distance, point: c.point, n };
+}
+const clearance = (geo, p) => { const c = clearanceAt(geo, p); return c ? c.d : Infinity; };
+// ---- the cloak as cloth in the editor («Cloth»): its grid (the middle of its two sheets) as particles (Verlet), kept
+// at their rest distances (across, down, diagonal), pulled down, blown back by the wind; its top rows (above V0, where
+// the game's cloth bones start) held where the chest's bone carries them; pushed out of capsules round the body's bones
+// as the pose has them (as the game's colliders). Drawn as a mesh of its own, the cloak's meshes hidden meanwhile: the
+// poses and the wind show how it falls and swings.
+// the collar's rows held (the shoulders' part lies on them: a raised arm lifts it); how much a point goes back to its
+// place in the shape each step: at the hem, at the top
+// the upper arm's capsule (the arm hanging) starts down its bone (a share of it): round the shoulder joint, as thick as
+// the arm, it would stand out over the shoulder (the cloak on it squared, its corners up)
+const CLOTH_ARM0 = .15;
+// the thigh's too, from so far down its bone: round the hip joint, as thick as the thigh, it would stand out of the
+// hips' sides (a skirt on it wide there, «shouldered»)
+const CLOTH_LEG0 = .25;
+// a skirt's place over a thigh goes with the thigh so much (its weight there; the rest is the hips')
+const CLOTH_LEG_RIDE = .7;
+const CLOTH_V0 = .08, CLOTH_KEEP = [.01, .08], CLOTH_SKIN_V = .35;   // (down to there it lies on the skin itself)
+// an arm raised (out to the side and up, or forward): the cloak thrown back off it, as a cloak slides off a raised arm:
+// each line of it from the collar goes round the neck (over the trapezius, inside the shoulder) to an angle round the
+// body nearer the back's middle (shrunk to CLOTH_BACK from the back's middle at the most), then down there: the arms in
+// front of it all, the cloth gathered behind them, the collar still at the clasp. CLOTH_RAISE: an arm's way up (its
+// upper arm's) from which it starts, to which it is all thrown back
+const CLOTH_BACK = THREE.MathUtils.degToRad(80), CLOTH_RAISE = [-.55, .25];
+let cloth = null, clothOn = false, clothWind = 0;
+$('clothOn').addEventListener('click', () => setCloth(!clothOn));
+// the cloth starts as the cloak was made, over the arms hanging, and the body then goes into the pose (an arm put into
+// the cloak at once would be on its far side)
+function setCloth(on) {
+  clothOn = on; $('clothOn').classList.toggle('on', clothOn); $('clothWindBox').hidden = !clothOn;
+  if (!clothOn) { clothStop(); applyPose(); return; }
+  const want = pose; pose = 'down'; clothStart(); pose = want;
+  if (cloth && want !== 'down') poseTween(); else applyPose();
+}
+$('clothWind').addEventListener('input', (e) => { clothWind = +e.target.value; });
+// with the cloth shown a pose is reached in POSE_SEC, not at once: an arm raised lifts the cloth on it (a jump would put
+// the arm through to its far side)
+let POSE_SEC = .7, clothSide = true;
+// a point in a raised arm at the step's start, but no deeper than this share of its radius: still on the side it was
+// (else its side flips step to step: shaking; a limb hanging: out of it when it was, as the cloth starts over it)
+const CLOTH_SIDE_IN = .3, CLOTH_FRICTION = .5;
+window.agPoseSec = (s) => { POSE_SEC = s; };   // for the tests: a pose reached slowly (frame by frame)
+window.agClothSide = (b) => { clothSide = b; };   // for the tests: the old way (no side kept) to compare
+let tween = null;   // {bones, from, to, t0}
+function poseTween() {
+  const bones = [...REST.keys()], from = bones.map((b) => b.quaternion.clone());
+  applyPose();
+  const to = bones.map((b) => b.quaternion.clone());
+  bones.forEach((b, k) => b.quaternion.copy(from[k])); charRoot.updateMatrixWorld(true);
+  tween = { bones, from, to, t0: performance.now() };
+}
+function tweenStep() {
+  const t = Math.min(1, (performance.now() - tween.t0) / 1000 / POSE_SEC), e = t * t * (3 - 2 * t);
+  tween.bones.forEach((b, k) => b.quaternion.slerpQuaternions(tween.from[k], tween.to[k], e)); charRoot.updateMatrixWorld(true);
+  if (t >= 1) tween = null;
+}
+function clothStop() {
+  if (cloth) { scene.remove(cloth.mesh); cloth.mesh.geometry.dispose(); cloth = null; }
+  for (const m of pieceGroup.children) m.visible = true;
+}
+const CLOTH_SUB = 3;
+const clothBasis = new Map();   // n control points, CLOTH_SUB: per point drawn [4 indices, 4 weights]
+function clothSmooth(P, nu, nv, out, seam, cutAt) {   // the drawn surface: (nv·SUB+1)×(nu·SUB+1) points (clothStart); seam: rows closed round; cutAt: {cuts, cutRow} (open there)
+  const basis = (n) => {
+    const key = n * 100 + CLOTH_SUB; if (clothBasis.has(key)) return clothBasis.get(key);
+    const r = [];
+    for (let k = 0; k <= n * CLOTH_SUB; k++) {
+      const i = Math.min(n - 1, Math.floor(k / CLOTH_SUB)), t = k / CLOTH_SUB - i, t2 = t * t, t3 = t2 * t;
+      r.push([[i - 1, i, i + 1, i + 2], [(1 - 3 * t + 3 * t2 - t3) / 6, (4 - 6 * t2 + 3 * t3) / 6, (1 + 3 * t + 3 * t2 - 3 * t3) / 6, t3 / 6]]);
+    }
+    clothBasis.set(key, r); return r;
+  };
+  // a point past an edge: mirrored through it (2·edge − next in), so the curve runs through the edge point itself
+  const at = (i, j, a) => {
+    if (i < 0) return 2 * at(0, j, a) - at(1, j, a); if (i > nv) return 2 * at(nv, j, a) - at(nv - 1, j, a);
+    const ic = Math.max(0, Math.min(nv, i));
+    if (j < 0) return seam && seam[ic] ? at(i, nu + j, a) : 2 * at(i, 0, a) - at(i, 1, a);   // (sewn: on round past the seam)
+    if (j > nu) return seam && seam[ic] ? at(i, j - nu, a) : 2 * at(i, nu, a) - at(i, nu - 1, a);
+    return P[3 * (i * (nu + 1) + j) + a];
+  };
+  const bu = basis(nu), bv = basis(nv), su = nu * CLOTH_SUB, sv = nv * CLOTH_SUB, rowsU = [];
+  const cuts = cutAt ? cutAt.cuts : [], cutRow = cutAt ? cutAt.cutRow : Infinity;
+  for (let i = -1; i <= nv + 1; i++) {   // along each row first, then down
+    const row = new Float32Array(3 * (su + 1));
+    for (let k = 0; k <= su; k++) {
+      const [ix, w] = bu[k], base = Math.min(nu - 1, Math.floor(k / CLOTH_SUB));
+      // a cut beside (a row below its top): the lines past it mirrored through the last before it (each side alone)
+      let lo = -Infinity, hi = Infinity;
+      if (i >= cutRow) for (const c of cuts) { if (c < base && c + 1 > lo) lo = c + 1; if (c >= base && c < hi) hi = c; }
+      const tap = (j, a) => (j > hi ? 2 * at(i, hi, a) - at(i, 2 * hi - j, a) : j < lo ? 2 * at(i, lo, a) - at(i, 2 * lo - j, a) : at(i, j, a));
+      for (let a = 0; a < 3; a++) row[3 * k + a] = w[0] * tap(ix[0], a) + w[1] * tap(ix[1], a) + w[2] * tap(ix[2], a) + w[3] * tap(ix[3], a);
+    }
+    rowsU.push(row);
+  }
+  out = out || new Float32Array(3 * (su + 1) * (sv + 1));
+  for (let m = 0; m <= sv; m++) {
+    const [ix, w] = bv[m], R = ix.map((i) => rowsU[i + 1]);
+    for (let k = 0; k < 3 * (su + 1); k++) out[3 * m * (su + 1) + k] = w[0] * R[0][k] + w[1] * R[1][k] + w[2] * R[2][k] + w[3] * R[3][k];
+  }
+  return out;
+}
+function clothStart() {
+  clothStop();
+  const part = parts.find((x) => x.grid); if (!clothOn || !part || !PB.spine2) return;
+  const G = part.grid, nv = G.length - 1, nu = G[0].length - 1, n = (nu + 1) * (nv + 1), H = HEIGHT;
+  const P = new Float32Array(3 * n), id = (i, j) => i * (nu + 1) + j;
+  G.forEach((row, i) => row.forEach((q, j) => q.toArray(P, 3 * id(i, j))));
+  const links = [], edges = [], len = (a, b) => Math.hypot(P[3 * a] - P[3 * b], P[3 * a + 1] - P[3 * b + 1], P[3 * a + 2] - P[3 * b + 2]);
+  // its cuts (a tabard's sides: open from cutRow down, between a line and the next) and its belt's row (held there)
+  const cl = part.cloth || {}, cuts = cl.cuts || [], cutRow = cl.cutRow >= 0 ? cl.cutRow : nv + 1, beltRow = cl.beltRow > 0 ? cl.beltRow : -1;
+  const across = (i, j, j2) => { for (let c = Math.min(j, j2); c < Math.max(j, j2); c++) if (i >= cutRow && cuts.includes(c)) return true; return false; };
+  for (let i = 0; i <= nv; i++) for (let j = 0; j <= nu; j++) {
+    for (const [di, dj] of [[0, 1], [1, 0], [1, 1], [1, -1], [0, 2], [2, 0]]) {   // across, down, diagonal; two apart: it bends, not folds
+      const i2 = i + di, j2 = j + dj; if (i2 > nv || j2 < 0 || j2 > nu || across(i, j, j2)) continue;   // (not across a cut)
+      links.push([id(i, j), id(i2, j2), len(id(i, j), id(i2, j2))]);
+      if (Math.max(di, Math.abs(dj)) === 1 && dj >= 0) edges.push(id(i, j), id(i2, j2));   // the drawn triangles' sides
+    }
+  }
+  const pinned = new Uint8Array(n); for (let i = 0; i <= nv; i++) if (i / nv <= CLOTH_V0 || i === beltRow) for (let j = 0; j <= nu; j++) pinned[id(i, j)] = 1;   // (the collar; a belt's row)
+  // a seam: the two edges where they are one (a skirt closed round, down to its slit) linked, at no distance apart
+  const seam = new Uint8Array(nv + 1);
+  for (let i = 0; i <= nv; i++) if (len(id(i, 0), id(i, nu)) < .002 * H) {
+    links.push([id(i, 0), id(i, nu), 0]); seam[i] = 1;
+    links.push([id(i, nu - 1), id(i, 1), len(id(i, nu - 1), id(i, nu)) + len(id(i, 0), id(i, 1))]);   // (and across it two apart: it bends there as anywhere, not a hinge)
+  }
+  // drawn smooth: a surface CLOTH_SUB times as fine through the cloth's points (a cubic B-spline over them, its edges
+  // through the edge points): its folds round, not the grid's sharp creases (the cloth itself stays as coarse: as fast)
+  const su = nu * CLOTH_SUB, sv = nv * CLOTH_SUB, sid = (i, j) => i * (su + 1) + j, idx = [];
+  const cutAt = { cuts, cutRow };   // (the drawn surface open at the cuts too)
+  for (let i = 0; i < sv; i++) for (let j = 0; j < su; j++) {
+    if (i >= cutRow * CLOTH_SUB && cuts.includes(Math.floor(j / CLOTH_SUB))) continue;
+    idx.push(sid(i, j), sid(i + 1, j), sid(i + 1, j + 1), sid(i, j), sid(i + 1, j + 1), sid(i, j + 1));
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(clothSmooth(P, nu, nv, null, null, cutAt), 3)); g.setIndex(idx); g.computeVertexNormals();
+  const c = new THREE.Color(S.p.cloth || '#4a3326'), mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: c, roughness: .9, side: THREE.DoubleSide }));
+  scene.add(mesh);
+  for (const m of pieceGroup.children) if (parts[m.userData.part] === part && m.userData.role === 'plate') m.visible = false;   // (the cloth: a belt stays)
+  // the body's capsules: bone segments, each as thick as the body round its middle at rest
+  const segs = [['hips', 'spine'], ['spine', 'spine1'], ['spine1', 'spine2'], ['spine2', 'neck'], ...['L', 'R'].flatMap((s) =>
+    [['upleg_' + s, 'leg_' + s, 1, CLOTH_LEG0], ['leg_' + s, 'foot_' + s], ['shoulder_' + s, 'arm_' + s], ['arm_' + s, 'forearm_' + s, 1, CLOTH_ARM0], ['forearm_' + s, 'hand_' + s],
+     ['hand_' + s, 'middle1_' + s, 2.2]])].filter(([a, b]) => PB[a] && joint(b));   // (the hand on to its fingers' tips: the middle finger's root on as far again and more)
+  // (the shoulder's girdle too: a raised arm lifts the top of the shoulder, which would come up through the cloth)
+  restPose();
+  const caps = segs.map(([a, b, ext = 1, from = 0]) => {   // tapered: as thick as the body at a quarter and three quarters along (a shoulder's
+    const A = joint(a).lerp(joint(b), from), B = joint(a).lerp(joint(b), ext), u = B.clone().sub(A).normalize(), e = new V3().crossVectors(u, Math.abs(u.y) < .9 ? UP : FRONT).normalize();   // bulge, the elbow)
+    const limb = /_[LR]$/.test(a) && !/^shoulder_/.test(a), leg = /^upleg_/.test(a), at = (f, up) => {   // (the shoulder's girdle as the trunk: its rays down go through the chest)
+      const M = A.clone().lerp(B, f), ds = [];   // a limb: three quarters up its rays (a bone off its limb's middle: one far ray must not make it fat), not too thick
+      for (let t = 0; t < 8; t++) { const d = e.clone().applyAxisAngle(u, t / 8 * TAU), h = cast(M, d, .3 * H); if (h) ds.push(h.distance); }
+      ds.sort((x, y) => x - y);
+      // (a thigh's top: three in eight of its rays: under a skirt, over shorts, beside the hips it is thinner than its
+      // fullest side, a capsule so thick would push the skirt out there; its knee end: three in four, the knee raised
+      // under the skirt pushes it)
+      return Math.min(ds.length ? ds[leg && up === 'thin' ? ds.length * 3 >> 3 : limb ? ds.length * 3 >> 2 : 0] : .04 * H, (limb ? .055 : .14) * H);   // (an arm is no round: its fuller side; the trunk: its nearest skin, never out past its back)
+    };
+    const r1 = at(.25, 'thin'), r3 = at(.75), rF = leg ? at(.25) : r1;   // (a thigh raised: as thick as its fullest side at the top too)
+    return { a, b, ext, from, rA: Math.max(.3 * r1, Math.min(r1, 1.5 * r1 - .5 * r3)), rB: Math.max(.3 * r3, Math.min(r3, 1.5 * r3 - .5 * r1)), rAF: Math.max(.3 * rF, Math.min(rF, 1.5 * rF - .5 * r3)) };   // (narrowing to the ends, never fatter than measured: a ball round the shoulder joint would stand over the shoulder)
+  });
+  // As game cloth does it (Unreal's Chaos cloth, Unity's): each point has its «animated» place, where the trunk under it
+  // carries it (the chest, the hips, the neck, the shoulders' girdle: not the limbs, which would drag the cloth with them
+  // into stiff stretched wings and sharp folds), and the way out there; it may go from that place no farther than maxD
+  // (little at the collar, much down to the hem: it hangs, swings, goes round a knee), never back into the body past it
+  // (the backstop); the limbs push it last (the capsules with the cloth's thickness: none slips between its points).
+  // (a skirt: the body without the arms hanging beside it; on the hips)
+  const G2 = part.legs ? armsOffBody() : armsDownBody(), ix = G2.index.array, homeW = [], used = new Set(), v0 = new V3(), n0 = new Float32Array(3 * n), maxD = new Float32Array(n);
+  const main0 = part.legs ? PB.hips : PB.spine2 || PB.spine1, sp = boneNames.indexOf(main0.name), trunk = famMask('torso', main0);
+  for (let i = 0; i < n; i++) {
+    const c = G2.boundsTree.closestPointToPoint(v0.fromArray(P, 3 * i)), acc = new Map();
+    if (c) {
+      for (let k = 0; k < 3; k++) { const vi = ix[3 * c.faceIndex + k]; for (let q = 0; q < 4; q++) { const b = vBone[4 * vi + q], w = vW[4 * vi + q]; if (w > 0 && trunk[b]) acc.set(b, (acc.get(b) || 0) + w); } }
+      v0.clone().sub(c.point).normalize().toArray(n0, 3 * i);
+    } else FRONT.toArray(n0, 3 * i);
+    const sum = [...acc.values()].reduce((x, y) => x + y, 0) || 1;
+    homeW.push(acc.size ? new Map([...acc].map(([b, w]) => [b, w / sum])) : new Map([[sp, 1]]));
+    const v = Math.floor(i / (nu + 1)) / nv; maxD[i] = (.008 + .2 * v) * H;
+    let near = 0, nb = -1;   // over an arm (as made): it rides on it, about half (cloth has friction: a raised arm lifts
+    if (part.ride !== false) for (const s2 of 'LR') for (const [a, b2] of [['arm_', 'forearm_'], ['forearm_', 'hand_']]) {   // it, not slides out under it)
+      const A = downJ && downJ[a + s2], B = downJ && downJ[b2 + s2]; if (!A || !B || !PB[a + s2]) continue;
+      const ab = B.clone().sub(A), t = Math.max(0, Math.min(1, v0.clone().sub(A).dot(ab) / ab.lengthSq()));
+      const w = 1 - smooth(.07 * H, .15 * H, v0.distanceTo(A.clone().addScaledVector(ab, t)));
+      if (w > near) { near = w; nb = boneNames.indexOf(PB[a + s2].name); }
+    }
+    maxD[i] = Math.max(maxD[i], near * .35 * H);
+    const ride = .55 * near * (1 - smooth(.32, .52, v));   // over the shoulders and upper arms, not the hem by the hands (as
+    if (nb >= 0 && ride > 0) { const m = homeW[i]; for (const [b, w] of m) m.set(b, w * (1 - ride)); m.set(nb, (m.get(nb) || 0) + ride); }   // SF3DEquip.Cloth's RIDE_V: ragged wings)
+    if (part.legs) {   // a skirt over a thigh goes with it, more the nearer (a knee raised lifts it, not comes through it):
+      let nl = 0, lb = -1;   // the thigh nearest, by its distance from the thigh's line (between the legs: half each)
+      const lw = [];
+      for (const s2 of 'LR') {
+        const A = joint('upleg_' + s2), B = joint('leg_' + s2); if (!A || !B) continue;
+        const ab = B.clone().sub(A), t = Math.max(0, Math.min(1, v0.clone().sub(A).dot(ab) / ab.lengthSq()));
+        lw.push([boneNames.indexOf(PB['upleg_' + s2].name), 1 - smooth(.06 * H, .14 * H, v0.distanceTo(A.clone().addScaledVector(ab, t)))]);
+      }
+      const tot = lw.reduce((x, y) => x + y[1], 0), m = homeW[i], rideL = CLOTH_LEG_RIDE * Math.min(1, tot) * smooth(.05, .3, v);
+      if (rideL > 0) { for (const [b, w] of m) m.set(b, w * (1 - rideL)); for (const [b, w] of lw) if (w > 0) m.set(b, (m.get(b) || 0) + rideL * w / tot); }
+      maxD[i] = Math.max(maxD[i], rideL * .25 * H);
+    }
+  }
+  for (let pass = 0; pass < 3; pass++) {   // the weights smoothed over the grid: neighbours move together (no tears where the
+    const prev = homeW.map((m) => new Map(m));   // skin under them changes from the hand's to the hip's)
+    for (let i = 0; i <= nv; i++) for (let j = 0; j <= nu; j++) {
+      const m = new Map(); let cnt = 0;
+      for (const [di, dj] of [[0, 0], [0, 1], [0, -1], [1, 0], [-1, 0]]) {
+        const ii = i + di, jj = j + dj; if (ii < 0 || ii > nv || jj < 0 || jj > nu) continue;
+        for (const [b, w] of prev[id(ii, jj)]) m.set(b, (m.get(b) || 0) + w); cnt++;
+      }
+      for (const [b, w] of m) m.set(b, w / cnt);
+      homeW[id(i, j)] = m;
+    }
+  }
+  for (let i = 0; i < n; i++) {   // the strongest four of each
+    const top = [...homeW[i]].sort((a, b) => b[1] - a[1]).slice(0, 4), sum = top.reduce((x, y) => x + y[1], 0) || 1;
+    homeW[i] = top.map(([b, w]) => [b, w / sum]); homeW[i].forEach(([b]) => used.add(b));
+  }
+  // the top of the cloak lies on the skin itself (the trapezius, the shoulders, the collar too): each point there keeps
+  // the skin's spot under it (a face of the body and where on it, as made over the arms hanging) and how high over it it
+  // was; the skin as posed lifts it (a shoulder raised, the shoulder blades drawn forward). Not over a limb: a raised arm
+  // slides out from under it (the capsules see to that)
+  const skinF = new Int32Array(n).fill(-1), skinB = new Float32Array(3 * n), skinD = new Float32Array(n), skinBones = new Set();
+  const tri = new THREE.Triangle(), bary = new V3(), GP = G2.attributes.position;
+  for (let i = 0; i < n; i++) {
+    const vr = Math.floor(i / (nu + 1)) / nv; if (vr > CLOTH_SKIN_V) continue;
+    const c = G2.boundsTree.closestPointToPoint(v0.fromArray(P, 3 * i)); if (!c) continue;
+    const f = c.faceIndex, acc = new Map(); let tw = 0, lw = 0;
+    for (let k = 0; k < 3; k++) { const vi = ix[3 * f + k]; for (let q = 0; q < 4; q++) { const b = vBone[4 * vi + q], w = vW[4 * vi + q]; if (w > 0) { acc.set(b, 1); tw += w; if (!trunk[b]) lw += w; } } }
+    if (lw > .5 * tw) continue;   // (over an arm: it slides off it, the capsules see to that)
+    tri.set(new V3().fromBufferAttribute(GP, ix[3 * f]), new V3().fromBufferAttribute(GP, ix[3 * f + 1]), new V3().fromBufferAttribute(GP, ix[3 * f + 2]));
+    tri.getBarycoord(c.point, bary); bary.toArray(skinB, 3 * i);
+    skinD[i] = Math.min(Math.max(v0.clone().sub(c.point).dot(tri.getNormal(new V3())), .004 * H), .03 * H);
+    skinF[i] = G2.userData.faceMap ? G2.userData.faceMap[f] : f; for (const b of acc.keys()) skinBones.add(b);
+  }
+  // and the skin round the top itself (the trunk, the shoulders' girdle, the neck and the head), skinned each
+  // frame: the top's points are kept out of it wherever it bulges (the shoulder blades drawn forward, a shoulder raised)
+  // (not the arms: a raised one slides out from under the cloth)
+  const offLimb = (b) => /Arm|Hand|Leg|Foot|Toe/.test(boneNames[b]), main = (vi) => { let bb = 0, bw = -1; for (let q = 0; q < 4; q++) if (vW[4 * vi + q] > bw) { bw = vW[4 * vi + q]; bb = vBone[4 * vi + q]; } return bb; };
+  const bix0 = bodyGeo.index.array, keepV = new Map(), sIdx = [];
+  for (let f = 0; f < bix0.length / 3; f++) {
+    if (offLimb(main(bix0[3 * f])) || offLimb(main(bix0[3 * f + 1])) || offLimb(main(bix0[3 * f + 2]))) continue;
+    for (let k = 0; k < 3; k++) { const vi = bix0[3 * f + k]; if (!keepV.has(vi)) keepV.set(vi, keepV.size); sIdx.push(keepV.get(vi)); }
+  }
+  const sVerts = Int32Array.from(keepV.keys());
+  for (const vi of sVerts) for (let q = 0; q < 4; q++) if (vW[4 * vi + q] > 0) skinBones.add(vBone[4 * vi + q]);
+  const skinGeo = new THREE.BufferGeometry(); skinGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(3 * sVerts.length), 3)); skinGeo.setIndex(sIdx);
+  restPose(); charRoot.updateMatrixWorld(true);
+  const skinInv = new Map([...skinBones].map((b) => [b, byName[boneNames[b]].matrixWorld.clone().invert()]));   // (the body's rest)
+  armDown('L'); armDown('R'); charRoot.updateMatrixWorld(true);
+  used.add(sp);   // (a raised arm gives its points back to the chest)
+  const armSide = new Map();   // an arm's bone -> its side: a place riding on it slides off when the arm is raised
+  for (const s2 of 'LR') for (const k of ['arm_', 'forearm_', 'hand_']) if (PB[k + s2]) armSide.set(boneNames.indexOf(PB[k + s2].name), s2);
+  const refInv = new Map([...used].map((b) => [b, byName[boneNames[b]].matrixWorld.clone().invert()]));
+  const pin0 = P.slice();
+  // thrown back (clothBack): the lines' lengths down from the ring round the neck (the first row not held), the ring's
+  // length round, and which arm's raising throws each point back
+  const halves = part.halves || G.map(() => Math.PI), rc = Math.min(nv, pinned.lastIndexOf(1) / (nu + 1) + 1 | 0), colS = new Float32Array(n), sideOf = [];
+  for (let j = 0; j <= nu; j++) for (let i = 1; i <= nv; i++) colS[id(i, j)] = colS[id(i - 1, j)] + len(id(i, j), id(i - 1, j));
+  const rowD = Float32Array.from({ length: nv + 1 }, (_, i) => { let a = 0; for (let j = 1; j <= nu; j++) a += len(id(i, j), id(i, j - 1)); return a / nu; });   // its lines apart in each row
+  const xm = G[0][nu >> 1].x, lPos = downJ && downJ.arm_L ? downJ.arm_L.x > xm : true;
+  for (let i = 0; i <= nv; i++) for (let j = 0; j <= nu; j++) sideOf[id(i, j)] = 2 * j === nu ? '' : (G[i][j].x > xm) === lPos ? 'L' : 'R';
+  applyPose();
+  const keep = Float32Array.from({ length: n }, (_, k) => { const v = Math.floor(k / (nu + 1)) / nv; return CLOTH_KEEP[0] + (CLOTH_KEEP[1] - CLOTH_KEEP[0]) * (1 - v) ** 2; });   // it lies on the shoulders and the chest, hangs free below
+  const onSkinA = Float32Array.from({ length: n }, (_, k) => 1 - smooth(CLOTH_V0, .25, Math.floor(k / (nu + 1)) / nv));
+  const rowV = Float32Array.from({ length: n }, (_, k) => Math.floor(k / (nu + 1)) / nv);
+  // how far down from the ring round the neck the armpits are (below them a raised arm is not: the cloak thrown back
+  // comes out round again)
+  let ringY = 0; for (let j = 0; j <= nu; j++) ringY += P[3 * id(rc, j) + 1] / (nu + 1);
+  const armY = ['arm_L', 'arm_R'].map((k) => downJ && downJ[k]).filter(Boolean).reduce((x, q, _, A) => x + q.y / A.length, 0) || ringY;
+  const dArm = Math.max(.02 * H, ringY - armY) + .07 * H;
+  cloth = { inwardRow: part.back !== false || part.ride ? Infinity : 0, placeRow: cuts.length ? cutRow - 1 : Infinity, cutAt, seam, back: part.back !== false, dArm, P, Q: P.slice(), rowV, links, edges, pinned, pin0, n0, halves, rc, colS, rowD, nu, nv, sideOf, maxD, homeW, refInv, caps, mesh, n, keep, sp, armSide, skinF, skinB, skinD, skinInv, onSkinA, sVerts, skinGeo, home: new Float32Array(3 * n), hn: new Float32Array(3 * n) };
+}
+// a point of the cloak thrown back (rb: how far, 0..1) over the cloak's places G, N0 (P, N: its place and way out): the
+// whole cloak slid back round the neck, its collar too (the clasp's cords drawn out): each line's angle round the body
+// shrunk (to CLOTH_BACK at rb 1, behind the shoulder joint: the raised arm comes out in front of all of it, the collar's
+// corners too); its collar's rows there on the collar as made, the rest straight down from it as far as it was. Below
+// the armpit (the raised arm not there) each line back out round towards its own angle, CLOTH_RELAX of the way: the
+// cloak hanging behind the arms, spread like wings, its front edges falling at the sides. The lines keep their order
+// round (none crosses another), the spare width gathered in soft pleats (one each 8 lines: as deep as the width kept
+// asks). CLOTH_BACK_SMOOTH: passes smoothing the places so over the grid
+const CLOTH_RELAX = .8, CLOTH_BACK_SMOOTH = 6;
+function clothBack(C, i, rb, P, N, G, N0) {
+  const nu = C.nu, nv = C.nv, rc = C.rc, j = i % (nu + 1), r = (i - j) / (nu + 1), H = HEIGHT;
+  const at = (row, ang, P, N) => {   // the place at angle ang round in a row (between its lines)
+    const jf = nu / 2 + ang / (2 * C.halves[row]) * nu, j0 = Math.max(0, Math.min(nu - 1, Math.floor(jf))), t = Math.max(0, Math.min(1, jf - j0)), A = row * (nu + 1) + j0;
+    P.set(G[3 * A] + (G[3 * A + 3] - G[3 * A]) * t, G[3 * A + 1] + (G[3 * A + 4] - G[3 * A + 1]) * t, G[3 * A + 2] + (G[3 * A + 5] - G[3 * A + 2]) * t);
+    N.set(N0[3 * A] + (N0[3 * A + 3] - N0[3 * A]) * t, N0[3 * A + 1] + (N0[3 * A + 4] - N0[3 * A + 1]) * t, N0[3 * A + 2] + (N0[3 * A + 5] - N0[3 * A + 2]) * t);
+  };
+  const half = C.halves[Math.min(r, rc)], a = (j / nu - .5) * 2 * half, k = half > CLOTH_BACK ? 1 - rb * (1 - CLOTH_BACK / half) : 1;
+  if (r <= rc) { at(r, a * k, P, N); N.normalize(); return true; }   // the collar
+  const s = C.colS[i] - C.colS[rc * (nu + 1) + j];
+  const ke = 1 - (1 - k) * (1 - CLOTH_RELAX * smooth(C.dArm, C.dArm + .15 * H, s)), ang = a * ke;
+  const amp = ke < 1 ? 2 * ke * Math.sqrt(1 / ke - 1) * smooth(0, .08 * H, s) * Math.sin(Math.PI * j / 4) : 0;   // the pleat (rows' widths)
+  let left = s; const p0 = new V3(), n0 = new V3(), p1 = new V3(), n1 = new V3();
+  at(rc, ang, p0, n0);
+  for (let row = rc + 1; row <= nv; row++) {
+    at(row, ang, p1, n1);
+    const L = p0.distanceTo(p1);
+    if (L >= left || row === nv) {
+      const t = L > 1e-9 ? Math.min(1.5, left / L) : 0; P.copy(p0).lerp(p1, t); N.copy(n0).lerp(n1, Math.min(1, t)).normalize();
+      P.addScaledVector(N, amp * C.rowD[row]); return true;
+    }
+    left -= L; p0.copy(p1); n0.copy(n1);
+  }
+  return false;
+}
+function clothStep(dt) {
+  const C = cloth, H = HEIGHT, P = C.P, Q = C.Q, n = C.n;
+  const v = new V3(), t = new V3(), Dm = new Map([...C.refInv].map(([b, inv]) => [b, byName[boneNames[b]].matrixWorld.clone().multiply(inv)]));
+  const gy = -4 * H * dt * dt, wz = -3 * H * clothWind * dt * dt, wy = .4 * H * clothWind * dt * dt;
+  // an arm raised above the shoulder: the cloth slides off it, behind it, under its weight (it rides on it no more, and
+  // the arm pushes it back, not up): the arms come out in front, the cloak hangs behind them
+  const raised = {}, Ms = Dm.get(C.sp), u = new V3(), bP = new V3(), bN = new V3();
+  // the skin under the top as posed: each spot and its way out (the body's vertices skinned from the rest, once a frame)
+  const Sk = new Map([...C.skinInv].map(([b, inv]) => [b, byName[boneNames[b]].matrixWorld.clone().multiply(inv)]));
+  const BP = bodyGeo.attributes.position, bix = bodyGeo.index.array, sv = new Map(), sS = new Float32Array(3 * n), sN = new Float32Array(3 * n);
+  const skinned = (vi) => {
+    let r = sv.get(vi); if (r) return r;
+    r = new V3(); const a = new V3(); let ws = 0; t.fromBufferAttribute(BP, vi);
+    for (let q = 0; q < 4; q++) { const w = vW[4 * vi + q], M = Sk.get(vBone[4 * vi + q]); if (w > 0 && M) { r.addScaledVector(a.copy(t).applyMatrix4(M), w); ws += w; } }
+    if (ws > 0) r.divideScalar(ws); else r.copy(t);
+    sv.set(vi, r); return r;
+  };
+  const e1 = new V3(), e2 = new V3();
+  for (let i = 0; i < n; i++) {
+    const f = C.skinF[i]; if (f < 0) continue;
+    const A = skinned(bix[3 * f]), B = skinned(bix[3 * f + 1]), Cc = skinned(bix[3 * f + 2]);
+    u.set(0, 0, 0).addScaledVector(A, C.skinB[3 * i]).addScaledVector(B, C.skinB[3 * i + 1]).addScaledVector(Cc, C.skinB[3 * i + 2]).toArray(sS, 3 * i);
+    e1.subVectors(B, A).cross(e2.subVectors(Cc, A)).normalize().toArray(sN, 3 * i);
+  }
+  const SG = C.skinGeo, SP = SG.attributes.position.array, SI = SG.index.array;
+  for (let k = 0; k < C.sVerts.length; k++) skinned(C.sVerts[k]).toArray(SP, 3 * k);
+  SG.attributes.position.needsUpdate = true; if (SG.boundsTree) SG.boundsTree.refit(); else SG.computeBoundsTree();
+  const kS = new Float32Array(3 * n), kN = new Float32Array(3 * n), kOn = new Uint8Array(n), kA = new V3(), kB = new V3(), kC = new V3();
+  const skinPlane = (i) => {   // the skin nearest the point now: where, and its way out
+    const c = SG.boundsTree.closestPointToPoint(t.fromArray(P, 3 * i)); if (!c || c.distance > .1 * H) return;
+    const f = c.faceIndex; kA.fromArray(SP, 3 * SI[3 * f]); kB.fromArray(SP, 3 * SI[3 * f + 1]); kC.fromArray(SP, 3 * SI[3 * f + 2]);
+    c.point.toArray(kS, 3 * i); kB.sub(kA).cross(kC.sub(kA)).normalize().toArray(kN, 3 * i); kOn[i] = 1;
+  };
+  const SKIN_GAP = .006 * H;
+  const onSkin = (i, v) => {   // not into the skin (nor nearer it than the cloth's thickness)
+    if (!kOn[i]) return;
+    const nx = kN[3 * i], ny = kN[3 * i + 1], nz = kN[3 * i + 2], e = (v.x - kS[3 * i]) * nx + (v.y - kS[3 * i + 1]) * ny + (v.z - kS[3 * i + 2]) * nz;
+    if (e < SKIN_GAP) v.set(v.x + nx * (SKIN_GAP - e), v.y + ny * (SKIN_GAP - e), v.z + nz * (SKIN_GAP - e));
+  };
+  for (const s2 of 'LR') { const A = joint('arm_' + s2), B = joint('forearm_' + s2); raised[s2] = A && B ? smooth(CLOTH_RAISE[0], CLOTH_RAISE[1], B.clone().sub(A).normalize().y) : 0; }
+  const caps = C.caps.map((c) => {   // and the cloth's thickness: its points are apart. A raised arm's (not the shoulder's
+    const up = /^(arm|forearm|hand)_[LR]$/.test(c.a) ? raised[c.a.slice(-1)] : 0;   // girdle: the cloak lies on it)
+    // a thigh raised (forward: a stride, a squat): from its joint, as thick as its fullest side (the cloth lies on it
+    // there now); hanging: from down its bone, thinner at the top (CLOTH_LEG0: no ball out of the hips' sides)
+    const lu = c.rAF !== undefined && /^upleg_/.test(c.a) ? smooth(-.97, -.8, joint(c.b).sub(joint(c.a)).normalize().y) : 0, lift = Math.max(up, lu);
+    const A = joint(c.a).lerp(joint(c.b), c.from * (1 - lift)), B = joint(c.a).lerp(joint(c.b), c.ext), rA = c.rA + (c.rAF - c.rA || 0) * lu + .014 * H, rB = c.rB + .014 * H, M = A.clone().lerp(B, .5);   // (raised: from its joint, the cloak thrown back off it)
+    return { A, B, rA, rB, M, R2: (A.distanceTo(B) / 2 + Math.max(rA, rB)) ** 2, up, side: c.a.slice(-1), arm: /^(arm|forearm|hand)_[LR]$/.test(c.a) };
+  });
+  const H0 = new Float32Array(3 * n), N0 = new Float32Array(3 * n); C.h0 = H0;
+  for (let i = 0; i < n; i++) {
+    v.set(0, 0, 0); const nn = new V3();   // its place, as the skin under it carries it, and the way out there
+    for (const [b, w] of C.homeW[i]) {
+      const M = Dm.get(b), r = C.armSide.has(b) ? raised[C.armSide.get(b)] : 0;
+      t.fromArray(C.pin0, 3 * i).applyMatrix4(M); if (r) t.lerp(u.fromArray(C.pin0, 3 * i).applyMatrix4(Ms), r); v.addScaledVector(t, w);
+      t.fromArray(C.n0, 3 * i).transformDirection(M); if (r) t.lerp(u.fromArray(C.n0, 3 * i).transformDirection(Ms), r).normalize(); nn.addScaledVector(t, w);
+    }
+    if (C.skinF[i] >= 0 && C.onSkinA[i] > 0) {   // the collar and just under it ride on the skin itself (it rests on the
+      const a = C.onSkinA[i];   // trapezius: drawn up with the shoulders, not left below them)
+      v.lerp(u.fromArray(sS, 3 * i).addScaledVector(e1.fromArray(sN, 3 * i), C.skinD[i]), a); nn.normalize().lerp(e1, a);
+    }
+    v.toArray(H0, 3 * i); nn.normalize().toArray(N0, 3 * i);
+  }
+  // an arm raised: thrown back (clothBack), over the cloak's places now (the collar as the skin lifts it: the rows thrown
+  // back go on from it); the places so then smoothed over the grid (round the neck each row a few lines on from the one
+  // above: its cells skewed, sharp between them)
+  const HB = C.HB || (C.HB = new Float32Array(3 * n)), NB = C.NB || (C.NB = new Float32Array(3 * n)), WB = C.WB || (C.WB = new Float32Array(n)), nu1 = C.nu + 1;
+  HB.set(H0); NB.set(N0); WB.fill(0);
+  for (let i = 0; i < n; i++) {
+    const s = C.sideOf[i], rb = s ? raised[s] : (raised.L + raised.R) / 2;
+    if (rb > 0 && C.back && clothBack(C, i, rb, bP, bN, H0, N0)) { const w = Math.min(1, 3 * rb); WB[i] = w; v.fromArray(H0, 3 * i).lerp(bP, w).toArray(HB, 3 * i); t.fromArray(N0, 3 * i).lerp(bN, w).toArray(NB, 3 * i); }
+  }
+  if (WB.some((w) => w > 0)) for (let pass = 0; pass < CLOTH_BACK_SMOOTH; pass++) {
+    const hb = HB.slice(), nb = NB.slice();
+    for (let i = 0; i < n; i++) {
+      const j = i % nu1, r = (i - j) / nu1, w = WB[i] * .5; if (w <= 0 || r <= C.rc) continue;
+      let c = 0; const x = [0, 0, 0, 0, 0, 0];
+      for (const k of [j > 0 ? i - 1 : -1, j < C.nu ? i + 1 : -1, i - nu1, r < C.nv ? i + nu1 : -1]) if (k >= 0) { for (let a = 0; a < 3; a++) { x[a] += hb[3 * k + a]; x[3 + a] += nb[3 * k + a]; } c++; }
+      for (let a = 0; a < 3; a++) { HB[3 * i + a] += (x[a] / c - hb[3 * i + a]) * w; NB[3 * i + a] += (x[3 + a] / c - nb[3 * i + a]) * w; }
+    }
+  }
+  for (let i = 0; i < n; i++) {
+    v.fromArray(HB, 3 * i); const nn = new V3().fromArray(NB, 3 * i);
+    v.toArray(C.home, 3 * i); nn.normalize().toArray(C.hn, 3 * i);
+    if (C.pinned[i]) { v.toArray(P, 3 * i); skinPlane(i); onSkin(i, v); v.toArray(P, 3 * i); Q.set(P.subarray(3 * i, 3 * i + 3), 3 * i); continue; }
+    for (let a = 0; a < 3; a++) {   // swung on, pulled down and by the wind, and a little back to its shape (the game's
+      const x = P[3 * i + a], d = (x - Q[3 * i + a]) * .985, home = (v.getComponent(a) - x) * C.keep[i];   // spring bones)
+      Q[3 * i + a] = x; P[3 * i + a] = x + d + home + (a === 1 ? gy + wy : a === 2 ? wz : 0);
+    }
+  }
+  for (let i = 0; i < n; i++) if (!C.pinned[i] && C.rowV[i] <= CLOTH_SKIN_V) skinPlane(i);
+  // a point in a capsule: out of it, to the side its place is on (a raised arm: the cloak thrown back, behind it, under
+  // it); else out over the limb, never between it and the body (as SF3DEquip.Cloth: the side nearer the body mirrored out)
+  const stat = C.stat || (C.stat = { flips: 0, pushes: 0, blind: 0, flipAt: [] }), pv = new V3();   // (summed till the tests take them)
+  const capOut = (c, v, hx, hy, hz, nx, ny, nz, prev, row = 0) => {   // (row: its row, the arms' rule by it)
+    const ab = c.B.clone().sub(c.A), t = Math.max(0, Math.min(1, v.clone().sub(c.A).dot(ab) / Math.max(1e-12, ab.lengthSq())));
+    const q = c.A.clone().addScaledVector(ab, t), off = v.clone().sub(q), r = c.rA + (c.rB - c.rA) * t;
+    if (off.lengthSq() >= r * r) return null;
+    stat.pushes++;
+    // the side of the limb the cloth was on at the step's start (where it came from): a limb pushes it, never through it
+    let ps = null;
+    if (prev) { const tp = Math.max(0, Math.min(1, prev.clone().sub(c.A).dot(ab) / Math.max(1e-12, ab.lengthSq()))); ps = prev.clone().sub(c.A.clone().addScaledVector(ab, tp)); ps.addScaledVector(ab.clone().normalize(), -ps.dot(ab.clone().normalize())); const rp = c.rA + (c.rB - c.rA) * tp; if (ps.lengthSq() < ((c.up > 0 ? CLOTH_SIDE_IN : .9) * rp) ** 2) ps = null; else ps.normalize(); }   // (it was not deep in it: else its side is no telling)
+    if (!ps) stat.blind++;   // (its side no telling)
+    if (ps && clothSide) {
+      const dn = off.dot(ps); if (dn < 0) off.addScaledVector(ps, -2 * dn);
+    } else if (c.up > .5 || (c.arm && row >= C.placeRow)) {   // (a tabard's panel by an arm at its cut: on its own side, front or back)
+      const an = ab.normalize(), dh = new V3(hx - q.x, hy - q.y, hz - q.z); dh.addScaledVector(an, -dh.dot(an));
+      const L = dh.length(); if (L > 1e-9) { dh.divideScalar(L); const dn = off.dot(dh); if (dn < 0) off.addScaledVector(dh, -2 * dn); }
+    } else {   // (cloth hung below the arms, a skirt, a tabard's sides: an arm hanging beside it is outside it, the cloth in between)
+      const sg = c.arm && row >= C.inwardRow ? -1 : 1, dn = (off.x * nx + off.y * ny + off.z * nz) * sg;
+      if (dn < 0) off.set(off.x - 2 * dn * nx * sg, off.y - 2 * dn * ny * sg, off.z - 2 * dn * nz * sg);
+    }
+    const d = off.length(), nl = Math.hypot(nx, ny, nz) || 1;
+    if (ps && off.dot(ps) < 0) { stat.flips++; if (stat.flipAt.length < 40) stat.flipAt.push(c.a); }   // (through the limb)
+    return q.addScaledVector(d > 1e-9 ? off.divideScalar(d) : (ps || new V3(nx / nl, ny / nl, nz / nl)), r);
+  };
+  // the collar held (on the skin) too: a raised arm pushes it aside (the deltoid up under it would come up through it),
+  // on the side it was on
+  for (let i = 0; i < n; i++) {
+    if (!C.pinned[i]) continue;
+    v.fromArray(P, 3 * i);
+    for (const c of caps) {
+      if (c.up < .3 || !C.back) continue;
+      const q = capOut(c, v, C.home[3 * i], C.home[3 * i + 1], C.home[3 * i + 2], C.hn[3 * i], C.hn[3 * i + 1], C.hn[3 * i + 2], pv.fromArray(C.pinPrev || P, 3 * i)); if (q) v.lerp(q, Math.min(1, (c.up - .3) / .4));
+    }
+    v.toArray(P, 3 * i); Q.set(P.subarray(3 * i, 3 * i + 3), 3 * i);
+  }
+  (C.pinPrev || (C.pinPrev = new Float32Array(3 * n))).set(P);
+  const touch = C.touch || (C.touch = new Float32Array(3 * n)), touched = C.touched || (C.touched = new Uint8Array(n)); touched.fill(0);
+  for (let it = 0; it < 10; it++) {
+    for (const [a, b, L] of C.links) {
+      const dx = P[3 * b] - P[3 * a], dy = P[3 * b + 1] - P[3 * a + 1], dz = P[3 * b + 2] - P[3 * a + 2], d = Math.hypot(dx, dy, dz) || 1e-9;
+      const wa = C.pinned[a] ? 0 : 1, wb = C.pinned[b] ? 0 : 1; if (!wa && !wb) continue;
+      const k = (d - L) / d / (wa + wb);
+      P[3 * a] += dx * k * wa; P[3 * a + 1] += dy * k * wa; P[3 * a + 2] += dz * k * wa;
+      P[3 * b] -= dx * k * wb; P[3 * b + 1] -= dy * k * wb; P[3 * b + 2] -= dz * k * wb;
+    }
+    for (let i = 0; i < n; i++) {
+      if (C.pinned[i]) continue;
+      v.fromArray(P, 3 * i);
+      const hx = C.home[3 * i], hy = C.home[3 * i + 1], hz = C.home[3 * i + 2], nx = C.hn[3 * i], ny = C.hn[3 * i + 1], nz = C.hn[3 * i + 2];
+      const ox = v.x - hx, oy = v.y - hy, oz = v.z - hz, od = Math.hypot(ox, oy, oz);   // no farther from its place than maxD
+      if (od > C.maxD[i]) { const k = C.maxD[i] / od; v.set(hx + ox * k, hy + oy * k, hz + oz * k); }
+      const into = (v.x - hx) * nx + (v.y - hy) * ny + (v.z - hz) * nz, back = -.002 * H;   // the backstop: not into the body past its place
+      if (into < back) v.set(v.x + nx * (back - into), v.y + ny * (back - into), v.z + nz * (back - into));
+      onSkin(i, v);
+      for (const c of caps) {   // the limbs push it last: no limb through, the cloth stretched round it if it must
+        const q = capOut(c, v, hx, hy, hz, nx, ny, nz, pv.fromArray(Q, 3 * i), (i / (C.nu + 1)) | 0); if (q) { if (it === 9) t.subVectors(q, v).normalize().toArray(touch, 3 * i), touched[i] = 1; v.copy(q); }
+      }
+      v.toArray(P, 3 * i);
+    }
+    if (it < 7) continue;
+    // and the middles of the drawn triangles' sides (two points either side of an arm: the side between them through it),
+    // both its ends moved as its middle must be
+    for (let e = 0; e < C.edges.length; e += 2) {
+      const a = C.edges[e], b = C.edges[e + 1], wa = C.pinned[a] ? 0 : 1, wb = C.pinned[b] ? 0 : 1; if (!wa && !wb) continue;
+      v.set((P[3 * a] + P[3 * b]) / 2, (P[3 * a + 1] + P[3 * b + 1]) / 2, (P[3 * a + 2] + P[3 * b + 2]) / 2);
+      for (const c of caps) {
+        if (v.distanceToSquared(c.M) > c.R2) continue;
+        const H3 = C.home, N3 = C.hn, q = capOut(c, v, (H3[3 * a] + H3[3 * b]) / 2, (H3[3 * a + 1] + H3[3 * b + 1]) / 2, (H3[3 * a + 2] + H3[3 * b + 2]) / 2,
+          (N3[3 * a] + N3[3 * b]) / 2, (N3[3 * a + 1] + N3[3 * b + 1]) / 2, (N3[3 * a + 2] + N3[3 * b + 2]) / 2,
+          pv.set((Q[3 * a] + Q[3 * b]) / 2, (Q[3 * a + 1] + Q[3 * b + 1]) / 2, (Q[3 * a + 2] + Q[3 * b + 2]) / 2), (Math.max(a, b) / (C.nu + 1)) | 0); if (!q) continue;
+        q.sub(v); v.add(q);
+        for (const [k, w] of [[a, wa], [b, wb]]) if (w) { P[3 * k] += q.x * 2 / (wa + wb); P[3 * k + 1] += q.y * 2 / (wa + wb); P[3 * k + 2] += q.z * 2 / (wa + wb); }
+      }
+    }
+  }
+  { let m = 0, k = 0; for (let i = 0; i < n; i++) if (!C.pinned[i]) { m += Math.hypot(P[3 * i] - Q[3 * i], P[3 * i + 1] - Q[3 * i + 1], P[3 * i + 2] - Q[3 * i + 2]); k++; } C.motion = (C.motion || 0) * .9 + .1 * m / Math.max(1, k) / H; C.moveAt = Array.from({ length: n }, (_, i) => [i, Math.hypot(P[3 * i] - Q[3 * i], P[3 * i + 1] - Q[3 * i + 1], P[3 * i + 2] - Q[3 * i + 2]) / H]).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([i, d]) => `${(i / (C.nu + 1)) | 0},${i % (C.nu + 1)}:${(d * 1e3).toFixed(1)}`).join(' '); }   // (the tests: how still it is)
+  for (let i = 0; i <= C.nv; i++) if (C.seam[i]) {   // a seam's two sides one point (each pushed its own way by a thigh, it would open)
+    const a = i * (C.nu + 1), b = a + C.nu;
+    for (let k = 0; k < 3; k++) { const m = (P[3 * a + k] + P[3 * b + k]) / 2, q = (Q[3 * a + k] + Q[3 * b + k]) / 2; P[3 * a + k] = P[3 * b + k] = m; Q[3 * a + k] = Q[3 * b + k] = q; }
+  }
+  // a point on a limb rests on it (as cloth with friction, not bouncing off it and back into it each step: shaking): its
+  // speed into the limb gone, along it CLOTH_FRICTION of it gone (Verlet: its step's start moved)
+  for (let i = 0; i < n; i++) {
+    if (!touched[i]) continue;
+    const tx = touch[3 * i], ty = touch[3 * i + 1], tz = touch[3 * i + 2];
+    let vx = P[3 * i] - Q[3 * i], vy = P[3 * i + 1] - Q[3 * i + 1], vz = P[3 * i + 2] - Q[3 * i + 2];
+    const vn = vx * tx + vy * ty + vz * tz, vnk = Math.max(0, vn);   // (out of it it may go)
+    vx -= vn * tx; vy -= vn * ty; vz -= vn * tz;
+    const f = 1 - CLOTH_FRICTION;
+    Q[3 * i] = P[3 * i] - (vx * f + vnk * tx); Q[3 * i + 1] = P[3 * i + 1] - (vy * f + vnk * ty); Q[3 * i + 2] = P[3 * i + 2] - (vz * f + vnk * tz);
+  }
+  const pos = C.mesh.geometry.attributes.position; pos.array.set(clothSmooth(C.show ? C[C.show] : P, C.nu, C.nv, pos.array, C.seam, C.cutAt)); pos.needsUpdate = true; C.mesh.geometry.computeVertexNormals();
+}
+// ---- a cloak: a ring round the neck at its base, the cloth over the shoulders, round the chest to a clasp at the
+// throat, falling free below the shoulders and widening like a bell to its hem; its front edges part below the clasp,
+// wider apart down (cloak_wrap: how far round it comes at the throat). Rows down the body: rays out from the spine's line
+// at each height to the body's outermost surface, the arms left out (no wider than the shoulders); a ray that meets
+// nothing (above the shoulders) takes the neck's; a falling cloth does not follow the body in below its widest place, so
+// a row is no nearer the line than the one above it, plus the flare. Two sheets (outside, lining) and their edges; a
+// brooch at the clasp. Pattern coordinates (round 0..1, down 0..1): Blender hangs it on chains of cloth bones by them,
+// the game swings it (SF3DEquip.Cloth: the same scheme as clothStep).
+const CLOAK_V1 = .42;   // above it (a share of its rows down) the cloak goes with the arms too; below, the chest only. The game's
+// cloth (SF3DEquip.Cloth) is the whole cloak under the collar: these weights are its places («__clothhome»), the arms lift it
+function cloak(p) {
+  if (!PB.neck) return [];
+  const H = HEIGHT, top = joint('neck').y + p.cloak_lift / 100 * H;
+  return hangingCloth(p, { top, len: p.cloak_len / 100 * H, half0: THREE.MathUtils.degToRad(p.cloak_wrap), half1: THREE.MathUtils.degToRad(Math.max(60, p.cloak_wrap - 22)),
+    legs: false, flare: p.cloak_flare, gap: p.cloak_gap, nape: PB.head ? (p.cloak_nape ?? 120) / 100 * Math.max(0, joint('head').y - joint('neck').y) : 0,
+    body: armsDownBody(), arms: true, main: PB.spine2 || PB.spine1, fam: 'cloak', brooch: true, back: true });
+}
+// ---- a skirt: the same cloth from a ring round the waist (skirt_lift above the hips' joint) down over the hips and the
+// legs, a bell to its hem; closed round (its two edges one seam at the front: the cloth links them), but for a slit at
+// the front from the hem up (skirt_slit: a share of its length). The arms hanging beside it are left out of its shape;
+// it goes with the hips (the legs push it: the capsules)
+function skirt(p) {
+  if (!PB.hips || !PB.spine) return [];
+  const H = HEIGHT, top = joint('hips').y + p.skirt_lift / 100 * H, slit = Math.max(0, Math.min(1, p.skirt_slit / 100));
+  return hangingCloth(p, { top, len: p.skirt_len / 100 * H, half0: Math.PI, half1: Math.PI, slit, flare: p.skirt_flare, gap: p.skirt_gap, nape: 0,
+    body: armsOffBody(), arms: false, legs: true, main: PB.hips, fam: 'torso', brooch: false, back: false });
+}
+// ---- a tabard: two panels, before and behind, from a ring round the neck over the shoulders down past the hips; its
+// sides open below the armpits (CUTS: between the lines there); a belt round the waist (tabard_belt above the hips'
+// joint) holding both. Made over the arms hanging: its top over them (the shoulders' edge), below the armpits beside
+// them; it goes with the thighs below the belt (as a skirt), with the arms over the shoulders (as a cloak)
+const TABARD_CUTS = [8, 23];
+function tabard(p) {
+  if (!PB.neck || !PB.hips || !PB.spine) return [];
+  const H = HEIGHT, top = joint('neck').y + p.tabard_lift / 100 * H, down = armsDownBody();
+  const ay = ['arm_L', 'arm_R'].map((k) => downJ && downJ[k]).filter(Boolean), armpit = (ay.length ? ay.reduce((x, q) => x + q.y, 0) / ay.length : joint('spine2').y) - .07 * H;
+  return hangingCloth(p, { top, len: p.tabard_len / 100 * H, half0: Math.PI, half1: Math.PI, flare: p.tabard_flare, gap: p.tabard_gap,
+    nape: PB.head ? .5 * Math.max(0, joint('head').y - joint('neck').y) : 0, body: armsOffBody(), bodyTop: down, bodyTopY: armpit + .07 * H,   // (over the arms down to the shoulders' joints only: below, beside them)
+    arms: true, legs: true, main: PB.spine2 || PB.spine1, fam: 'cloak', brooch: false, back: false,
+    belt: joint('hips').y + p.tabard_belt / 100 * H, cuts: TABARD_CUTS, cutY: armpit });
+}
+// the cloth hanging from a ring round the body (a cloak, a skirt): o = { top, len (heights), half0, half1 (the angle
+// round from the back's middle to each edge at the top and below), slit (0..1: an opening at the front from the hem up:
+// the edges a little apart there), flare, gap (%), nape (the ring higher at the back by so much), body (the geometry its
+// rows lie over), arms (its top goes with the arms too), main (the bone it hangs on), fam (its weights' bones), brooch,
+// back (thrown back off a raised arm: clothBack) }
+function hangingCloth(p, o) {
+  const H = HEIGHT, ids = ['hips', 'spine', 'spine1', 'spine2', 'neck', 'head'].filter((k) => PB[k]), J = ids.map((k) => joint(k));
+  if (J.length < 3) return [];
+  const axis = (y) => {   // the spine's line at height y, on up the neck to the head (a collar up the neck: round the neck itself)
+    for (let i = 0; i < J.length - 1; i++) if (y <= J[i + 1].y || i === J.length - 2) {
+      const t = Math.max(0, Math.min(1, (y - J[i].y) / Math.max(1e-6, J[i + 1].y - J[i].y)));
+      return J[i].clone().lerp(J[i + 1], t).setY(y);
+    }
+    return J[J.length - 1].clone().setY(y);
+  };
+  const o_ = o, top = o.top, hem = top - o.len, len = top - hem;
+  // a belt (o.belt: its height): its row hugs the waist; above it the cloth goes taut from the collar to it (over the
+  // chest), below it falls and flares from it. Cuts (o.cuts: cells round, between a line and the next; o.cutY: below
+  // that height): the cloth open there (a tabard's sides)
+  const G = o.body, far = .5 * H, collar = .07 * (top - hem);   // the body as it is made over; the collar's rows hug the neck (the waist)
+  const half0 = o.half0, half1 = o.half1, slope = o.flare / 100 * .6;
+  const nu = 32, nv = 22, gap = o.gap / 100 * H + .002 * H, th = .004 * H, rows = [], halves = [];
+  const rowAt = (y) => Math.max(1, Math.min(nv - 1, Math.round(nv * Math.max(0, (top - y) / Math.max(1e-9, top - hem)) ** (1 / 1.4))));
+  const ib = o.belt !== undefined ? rowAt(o.belt) : 0, cutRow = o.cuts ? rowAt(o.cutY) : nv + 1;
+  // the neckline goes up behind (a cloak lies on the trapezius up to the nape, not across the neck's foot as at the
+  // clasp in front): the collar higher at the back's middle, by the neck's length up to the head, less round to the front
+  const nape = o.nape, slitA = THREE.MathUtils.degToRad(CLOTH_SLIT_DEG), slitV = 1 - (o.slit || 0);
+  for (let i = 0; i <= nv; i++) {   // rows closer at the shoulders; closed over the chest, parting below (a slit: its edges a little apart)
+    const v = i / nv, half = half0 + (half1 - half0) * smooth(.22, .85, v) - (o.slit ? slitA * smooth(slitV, Math.min(1, slitV + .12), v) : 0), row = [];
+    halves.push(half);
+    const hits = [];
+    for (let j = 0; j <= nu; j++) {
+      const a = (j / nu - .5) * 2 * half, f = Math.PI + a, d = new V3(Math.sin(f), 0, Math.cos(f));   // j = nu/2: the back's middle
+      const topj = top + nape * Math.max(0, Math.cos(a)) ** 2, y = topj + (hem - topj) * v ** 1.4;
+      const ys = i ? [0, .33, .66].map((t) => y + (rows[i - 1][j].y - y) * t) : [y];   // and between this row and the one above: a shoulder's top between them is covered
+      let best = null;
+      for (const yy of ys) {   // by the collar from the inside out (not the chin), below from the outside in: over the arms
+        const o = axis(yy), Gy = o_.bodyTop && yy > o_.bodyTopY ? o_.bodyTop : G;   // (above the armpits over the arms too: the shoulders' edge)
+        const h = topj - yy < collar ? skinOut(o, d, far, .01 * H) : (() => { const q = castOn(Gy, o.clone().addScaledVector(d, far), d.clone().negate(), far); return q && { r: far - q.distance, face: Gy.userData.faceMap ? Gy.userData.faceMap[q.faceIndex] : q.faceIndex }; })();
+        if (h && (!best || h.r > best.r)) best = h;
+      }
+      hits.push({ d, h: best, y });
+    }
+    const near = Math.min(...hits.filter((x) => x.h).map((x) => x.h.r), .05 * H);   // the neck's, where a ray meets nothing
+    hits.forEach(({ d, h, y }, j) => {
+      const r = (h ? h.r : near) + gap, prev = i > ib ? rows[i - 1][j] : null;   // (to the belt: as the body is, the hull below)
+      row.push({ r: prev ? Math.max(r, prev.r + slope * (prev.y - y)) : r, y, d, C: axis(y), face: h ? h.face : -1 });
+    });
+    rows.push(row);
+  }
+  // down each line a cloth from the collar goes straight to what holds it out (the shoulder's edge, the chest), not a
+  // shelf round the neck: the upper hull of its rows (r against y) from the collar down, then the fall and the flare
+  for (let j = 0; j <= nu && ib; j++) {   // a belt: from the collar to it taut, the upper hull of the rows between (both ends kept)
+    const hull = [0];
+    for (let k = 1; k <= ib; k++) {
+      const P = (i) => [rows[i][j].y, rows[i][j].r], c = P(k);
+      while (hull.length > 1) { const a = P(hull[hull.length - 2]), b = P(hull[hull.length - 1]); if ((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]) >= 0) hull.pop(); else break; }
+      hull.push(k);
+    }
+    for (let h = 0; h < hull.length - 1; h++) {
+      const a = rows[hull[h]][j], b = rows[hull[h + 1]][j];
+      for (let k = hull[h] + 1; k < hull[h + 1]; k++) rows[k][j].r = Math.max(rows[k][j].r, a.r + (b.r - a.r) * (a.y - rows[k][j].y) / Math.max(1e-9, a.y - b.y));
+    }
+  }
+  for (let j = 0; j <= nu; j++) {
+    let i = ib;   // (below a belt: from it)
+    while (i < nv) {
+      let best = -1, bs = -Infinity;
+      for (let k = i + 1; k <= nv; k++) { const sl = (rows[k][j].r - rows[i][j].r) / Math.max(1e-9, rows[i][j].y - rows[k][j].y); if (sl > bs) { bs = sl; best = k; } }
+      if (bs <= slope + 1e-6) break;
+      for (let k = i + 1; k < best; k++) rows[k][j].r = rows[i][j].r + bs * (rows[i][j].y - rows[k][j].y);
+      i = best;
+    }
+  }
+  // a cloth over something sticking out (a thumb, a shoulder's top) makes a tent over it, not a spike: each point as far
+  // out as the farthest near it (two either way round, one up and down), then smoothed
+  const r0 = rows.map((row) => row.map((q) => q.r));
+  for (let i = 0; i <= nv; i++) for (let j = 0; j <= nu; j++) {
+    let m = r0[i][j];
+    for (let di = -1; di <= 1; di++) for (let dj = -2; dj <= 2; dj++) {
+      const ii = i + di, jj = j + dj; if (ii < 1 || ii > nv || jj < 0 || jj > nu || (ib && i === ib)) continue;   // (not the collar's row; the belt's as it is)
+      m = Math.max(m, r0[ii][jj] - (Math.abs(dj) + Math.abs(di)) * .002 * H);
+    }
+    rows[i][j].r = m;
+  }
+  for (let k = 0; k < 3; k++) for (const row of rows) for (let j = 1; j < nu; j++) row[j].r = .25 * row[j - 1].r + .5 * row[j].r + .25 * row[j + 1].r;   // smoothed round
+  // never nearer the body than the gap: at the points and at the middles of the cells between them (the body between
+  // two rays: a shoulder's top, a knuckle), a cell too near pushing its four corners out
+  // (made beside the arms, the body without them has holes where they were, at the armpits: there the whole body, an
+  // arm's skin nearest not counted)
+  const DB = G.userData.faceMap ? armsDownBody() : null, armB = DB && boneNames.map((n) => /Arm|Hand/.test(n) && !/Shoulder/.test(n));
+  const clr = (p) => {
+    if (!DB) return clearance(G, p);
+    const c = clearanceAt(DB, p); if (!c) return Infinity;
+    const f = DB.boundsTree.closestPointToPoint(p).faceIndex, vi = DB.index.array[3 * f]; let bb = 0, bw = -1;
+    for (let k = 0; k < 4; k++) if (vW[4 * vi + k] > bw) { bw = vW[4 * vi + k]; bb = vBone[4 * vi + k]; }
+    return armB[bb] ? Infinity : c.d;
+  };
+  const at = (i, j, a, b) => { const q = rows[i][j]; return q.C.clone().addScaledVector(q.d, q.r).multiplyScalar(1 - a).add(rows[i][j + b].C.clone().addScaledVector(rows[i][j + b].d, rows[i][j + b].r).multiplyScalar(a)); };
+  for (let k = 0; k < 3; k++) {
+    for (const row of rows) for (const q of row) { const c = clr(q.C.clone().addScaledVector(q.d, q.r)); if (c < gap) q.r += gap - c; }
+    for (let i = 1; i < nv; i++) for (let j = 0; j < nu; j++) {
+      const m = at(i, j, .5, 1).lerp(at(i + 1, j, .5, 1), .5), c = clr(m);
+      if (c < gap) for (const [ii, jj] of [[i, j], [i, j + 1], [i + 1, j], [i + 1, j + 1]]) rows[ii][jj].r += gap - c;
+    }
+  }
+  // weights: at the top the body's under it, the arms too (a raised arm lifts the cloak's shoulder), a quarter on the chest;
+  // going down to CLOAK_V1 the chest's only (the game's cloth bones carry it from there: blender_armour_gen.py). It is
+  // made over the arms hanging: each point is put back where the rest pose has it (its weights' turn undone), so in that
+  // pose it lies as made
+  const acc = new Acc(), sp = boneNames.indexOf(o.main.name), wA = weigher(o.fam, o.main, .25);
+  acc.w = (q) => (q && q.direct ? q.direct : [[sp, sp, sp, sp], [1, 0, 0, 0]]);
+  const vid = (off, i, j, dy = 0) => {   // (dy: up from the row, a belt's band)
+    const q = rows[i][j], X = q.C.clone().addScaledVector(q.d, q.r + off), b = smooth(CLOAK_V1 - .12, CLOAK_V1, i / nv);
+    X.y += dy;
+    // the arms by nearness (the skin over a shoulder is mostly the shoulder's): a point near an upper arm or a forearm
+    // goes with that bone, more the nearer
+    const arms = [];
+    if (o.arms) for (const s2 of 'LR') for (const [a, c, bone] of [['arm_', 'forearm_', 'arm_'], ['forearm_', 'hand_', 'forearm_']]) {
+      const A = downJ && downJ[a + s2], B = downJ && downJ[c + s2], bx = PB[bone + s2] ? boneNames.indexOf(PB[bone + s2].name) : -1; if (!A || !B || bx < 0) continue;
+      const ab = B.clone().sub(A), t = Math.max(0, Math.min(1, X.clone().sub(A).dot(ab) / ab.lengthSq())), dist = X.distanceTo(A.clone().addScaledVector(ab, t));
+      const w = 1 - smooth(.06 * H, .12 * H, dist); if (w > 0) arms.push([bx, w]);
+    }
+    const wArm = Math.min(1, arms.reduce((x, y) => x + y[1], 0)), sc = arms.length ? wArm / arms.reduce((x, y) => x + y[1], 0) : 0;
+    const m = new Map(); const [bi, bw] = wA(q.face); bi.forEach((x, k) => m.set(x, (m.get(x) || 0) + bw[k] * (1 - wArm) * (1 - b)));
+    for (const [bx, w] of arms) m.set(bx, (m.get(bx) || 0) + w * sc * (1 - b));
+    m.set(sp, (m.get(sp) || 0) + b);
+    const top = [...m.entries()].sort((a, c) => c[1] - a[1]).slice(0, 4), sum = top.reduce((x, y) => x + y[1], 0) || 1;
+    while (top.length < 4) top.push([sp, 0]);
+    const direct = [top.map((x) => x[0]), top.map((x) => x[1] / sum)];
+    const M = new THREE.Matrix4().set(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    direct[0].forEach((bx, k) => { const e = downDm[bx].elements; for (let z = 0; z < 16; z++) M.elements[z] += e[z] * direct[1][k]; });
+    return acc.vert(X.applyMatrix4(M.invert()), j / nu, i / nv, { direct });
+  };
+  const out = rows.map((row, i) => row.map((_, j) => vid(th, i, j))), inn = rows.map((row, i) => row.map((_, j) => vid(0, i, j)));
+  // closed round (a skirt, a tabard: its two edges one): exactly one, so the cloth sews them (each side's own tent and
+  // smoothing leave them a little apart: the seam would open)
+  rows.forEach((row, i) => { if (Math.abs(halves[i] - Math.PI) < 1e-6) row[0].r = row[nu].r = (row[0].r + row[nu].r) / 2; });
+  const cuts = o.cuts || [], isCut = (i, j) => i >= cutRow && cuts.includes(j);
+  for (let i = 0; i < nv; i++) for (let j = 0; j < nu; j++) {
+    if (isCut(i, j)) continue;
+    acc.face([out[i][j], out[i + 1][j], out[i + 1][j + 1], out[i][j + 1]], PLATE, 'plate');
+    acc.face([inn[i][j], inn[i][j + 1], inn[i + 1][j + 1], inn[i + 1][j]], PLATE, 'plate');
+  }
+  const edge = (a, b) => { for (let k = 0; k < a.length - 1; k++) acc.face([a[k], a[k + 1], b[k + 1], b[k]], PLATE, 'plate'); };
+  edge(out[0], inn[0]); edge(inn[nv], out[nv]);   // the collar, the hem
+  edge(out.map((r) => r[0]), inn.map((r) => r[0])); edge(inn.map((r) => r[nu]), out.map((r) => r[nu]));   // the two front edges
+  for (const c of cuts) {   // a cut's two edges
+    edge(inn.slice(cutRow).map((r) => r[c]), out.slice(cutRow).map((r) => r[c])); edge(out.slice(cutRow).map((r) => r[c + 1]), inn.slice(cutRow).map((r) => r[c + 1]));
+  }
+  if (ib) {   // the belt: a leather band round the waist over the cloth's row there, as wide as BELT_W of the height
+    const bw = BELT_W * H / 2, bt = .008 * H, ring = (off, dy) => rows[ib].map((_, j) => vid(th + off, ib, j, dy));
+    const A = ring(bt, bw), B = ring(bt, -bw), A0 = ring(0, bw), B0 = ring(0, -bw);
+    for (let j = 0; j < nu; j++) {
+      acc.face([A[j], B[j], B[j + 1], A[j + 1]], LEATHER, 'strap');
+      acc.face([A0[j], A[j], A[j + 1], A0[j + 1]], LEATHER, 'strap'); acc.face([B[j], B0[j], B0[j + 1], B[j + 1]], LEATHER, 'strap');
+    }
+  }
+  const grid = rows.map((row) => row.map((q) => q.C.clone().addScaledVector(q.d, q.r + th / 2)));   // for the cloth preview (clothStart)
+  // (and for Blender and the game: the cuts, the belt's row, the rules: n not thrown back off a raised arm, l over the
+  // thighs it goes with them)
+  let seamRows = 0; while (seamRows <= nv && Math.abs(halves[seamRows] - Math.PI) < 1e-6) seamRows++;   // (closed round from the top down to it)
+  const cloth = { nu, nv, cuts, cutRow: o.cuts ? cutRow : -1, beltRow: ib || -1, seamRows, flags: (o.back ? '' : 'n') + (o.legs ? 'l' : '') };
+  if (!o.brooch) return [{ side: 'C', acc, R: .1 * H, grid, halves, back: o.back, ride: o.arms, legs: o.legs, cloth }];
+  // the brooch at the clasp, its face forward: a button in front of the throat, never in it (the front edges apart, a
+  // narrower cloak: half-way between them is inside the neck), on a cord to each edge
+  const a = rows[1][0], b = rows[1][nu], Pa = a.C.clone().addScaledVector(a.d, a.r + th), Pb = b.C.clone().addScaledVector(b.d, b.r + th);
+  const P = Pa.clone().lerp(Pb, .5), O = axis(P.y), fwd = P.clone().sub(O).setY(0);
+  if (fwd.lengthSq() < 1e-12) fwd.copy(FRONT); fwd.normalize();
+  const e1 = new V3().crossVectors(fwd, UP).normalize(), br = .018 * H;
+  const hit = castOn(G, O.clone().addScaledVector(fwd, far), fwd.clone().negate(), far);   // the throat's front
+  if (hit) { const out = (far - hit.distance) + gap + th + .002 * H; if (P.clone().sub(O).dot(fwd) < out) P.copy(O).addScaledVector(fwd, out).setY(P.y); }
+  const { lathe } = itemMesh(acc, { C: P, A: fwd, E: e1, S: new V3().crossVectors(fwd, e1).normalize() });
+  lathe([[-.002 * H, br * .6], [0, br], [.004 * H, br], [.007 * H, br * .55], [.008 * H, 1e-4]], TRIM, 'trim', 16);
+  for (const E of [Pa, Pb]) {   // the cords: from each edge to the button
+    const to = P.clone().sub(E), L = to.length(); if (L < br) continue;
+    const A = to.normalize(), S2 = new V3().crossVectors(A, Math.abs(A.y) < .9 ? UP : FRONT).normalize();
+    itemMesh(acc, { C: E, A, E: S2, S: new V3().crossVectors(A, S2).normalize() }).lathe([[0, .0035 * H], [L, .0035 * H]], TRIM, 'trim', 6);
+  }
+  return [{ side: 'C', acc, R: .1 * H, grid, halves, back: o.back, ride: o.arms, legs: o.legs, cloth }];
+}
+const CLOTH_SLIT_DEG = 6, BELT_W = .025;   // a slit's edges apart at the hem, each so far round from the front's middle; a belt's width   // a slit's edges apart at the hem, each so far round from the front's middle
+// the body with the arms hanging, the arms left out (a skirt is made beside them, not over them)
+let offGeo = null, offFor = null;
+function armsOffBody() {
+  const G = armsDownBody(); if (offGeo && offFor === G) return offGeo;
+  const ix = G.index.array, keep = [], armB = boneNames.map((n) => /Arm|Hand/.test(n) && !/Shoulder/.test(n));
+  const main = (vi) => { let bb = 0, bw = -1; for (let q = 0; q < 4; q++) if (vW[4 * vi + q] > bw) { bw = vW[4 * vi + q]; bb = vBone[4 * vi + q]; } return bb; };
+  const faceMap = [];   // (its faces' numbers in the body: the weights are the body's)
+  for (let f = 0; f < ix.length / 3; f++) if (!armB[main(ix[3 * f])] && !armB[main(ix[3 * f + 1])] && !armB[main(ix[3 * f + 2])]) { keep.push(ix[3 * f], ix[3 * f + 1], ix[3 * f + 2]); faceMap.push(f); }
+  offGeo = new THREE.BufferGeometry(); offGeo.setAttribute('position', G.attributes.position); offGeo.setIndex(keep); offGeo.computeBoundsTree({ indirect: true });
+  offGeo.userData.faceMap = faceMap;
+  offFor = G; return offGeo;
+}
 function buildPiece(kind, sides, p) {
   const P0 = PIECES[kind], fam = P0.family, parts = [];
   const look = (limb, side) => {   // the middle of an open plate: front, a cuisse's turned outwards, an arm's outer side
@@ -1459,7 +2681,15 @@ function buildPiece(kind, sides, p) {
     return limb.angOf(front.normalize());
   };
   if (kind === 'glove') for (const side of sides) { const g = glove(side, p); if (g) parts.push(g); }
+  if (kind === 'weapon') for (const side of sides) { const w = weapon(side, p); if (w) parts.push(w); }
+  twoHand = kind === 'weapon' && sides.length === 1 && p.w_two && p.weapon !== 'dagger' && parts[0] ? twoHandOf(parts[0], p) : null;
+  spearPoint = kind === 'weapon' && sides.length === 1 && p.weapon === 'spear' && parts[0] ? pointCode(parts[0]) : '';
+  if (kind === 'shield') for (const side of sides) { const w = shield(side, p); if (w) parts.push(w); }
+  if (kind === 'sheath') sides.forEach((side, i) => { const w = sheath(side, p, i === 0); if (w) parts.push(...w); });
   if (kind === 'undercloth') parts.push(...undercloth(p));
+  if (kind === 'cloak') parts.push(...cloak(p));
+  if (kind === 'skirt') parts.push(...skirt(p));
+  if (kind === 'tabard') parts.push(...tabard(p));
   if (kind === 'pauldron') for (const side of sides) {   // a pauldron alone (the cuirass has its own spaulders)
     const acc = new Acc(), sh = pauldron(acc, p, side, { t0: p.t0, t1: p.t1, span: p.sector, n: p.plates, cap: p.cap, under: 0,
       share: p.arm_share, surface: p.surface });
@@ -1472,7 +2702,7 @@ function buildPiece(kind, sides, p) {
     // at the far end the outer (front) side comes down further (a greave over the instep, «bottom_cut»)
     const tA = p.t0 - .65 * p.top_cut, tB = p.t1 + .65 * p.bottom_cut;
     // over pieces worn under it (a sleeve): the outermost of the surfaces round the limb, not the skin under them
-    const under = [...WORN.values()].some((w) => w.on && !isOuter(w));
+    const under = [...WORN.values()].some((w) => w.on && layerOf(w) && !isOuter(w));
     const { limb } = limbOf(kind, side), P = profile(kind + side, limb, tA, tB, { foreign: P0.foreign, limbOnly: true, ...(under ? { over: 1.6 } : {}) });
     P.shell(p.gap, p.relief);
     const acc = new Acc(); acc.w = weigher(fam, PB[P0.joints[2] + '_' + side], p.rigidity);
@@ -1501,7 +2731,7 @@ function buildPiece(kind, sides, p) {
     const tPit = Math.min(...['L', 'R'].map((s) => joint('arm_' + s)).filter(Boolean).map((J) => J.clone().sub(limb.a).dot(limb.u) / limb.len)) - .12;
     const tLow = p.t0 - p.point - (p.mail_under ? p.hem : 0);
     // over pieces worn under it (a skirt's top, its belt): the outermost of the layers lying on one another
-    const layered = [...WORN.values()].some((w) => w.on && !isOuter(w));
+    const layered = [...WORN.values()].some((w) => w.on && layerOf(w) && !isOuter(w));
     const hip = Math.max(...[1, -1].map((x) => { const h = cast(limb.a, new V3(x, 0, 0), limb.len); return h ? h.distance : .3 * limb.len; }));
     const P = profile('cuirass', limb, tLow, tPit, { foreign: P0.foreign, arms, over: 1.15, ...(layered ? { reach: 2 * hip, gapMax: .2 * hip } : {}) });
     P.shell(p.gap, p.relief);
@@ -2009,6 +3239,61 @@ vec3 decals(inout vec3 col) {   // over the colour; returns (roughness, metalnes
   return rm;
 }
 `;
+// the damage: claw marks (five grooves), one scratch, a hole, in a frame as a picture's (q in -1..1 across its size),
+// lit from the world's up (L: up in that frame): a groove's bottom is the bare metal, its upper wall in shadow, the
+// lower one lit. Blender's paint_layers has the same formulas (damage_effect), so the result is what is seen here
+const DMG_N = 16;
+const DMG = { uDmgN: { value: 0 }, uDmgP: { value: Array.from({ length: DMG_N }, () => new V3()) }, uDmgU: { value: Array.from({ length: DMG_N }, () => new V3()) },
+  uDmgV: { value: Array.from({ length: DMG_N }, () => new V3()) }, uDmgNr: { value: Array.from({ length: DMG_N }, () => new V3()) },
+  uDmgK: { value: Array.from({ length: DMG_N }, () => new THREE.Vector4()) }, uDmgL: { value: Array.from({ length: DMG_N }, () => new THREE.Vector2()) } };
+const DMG_GLSL = `uniform int uDmgN; uniform vec3 uDmgP[${DMG_N}], uDmgU[${DMG_N}], uDmgV[${DMG_N}], uDmgNr[${DMG_N}]; uniform vec4 uDmgK[${DMG_N}]; uniform vec2 uDmgL[${DMG_N}];
+float dh(float x) { return fract(sin(x * 127.1) * 43758.5453); }
+vec4 damages(inout vec3 col) {   // -> (roughness, its weight, metalness, its weight)
+  vec4 o = vec4(0.);
+  for (int i = 0; i < ${DMG_N}; i++) {
+    if (i >= uDmgN) break;
+    vec3 rel = vRest - uDmgP[i];
+    float kind = uDmgK[i].x, seed = uDmgK[i].y, a = uDmgK[i].z, r = uDmgK[i].w;
+    if (abs(dot(rel, uDmgNr[i])) > .5 * r) continue;
+    vec2 q = vec2(dot(rel, uDmgU[i]), dot(rel, uDmgV[i])), L = uDmgL[i];
+    if (abs(q.x) > 1.05 || abs(q.y) > 1.05) continue;
+    float core = 0., shade = 0.;
+    if (kind < 1.5) {   // claws (0): five grooves fanning a little; a scratch (1): one
+      for (int j = 0; j < 5; j++) {
+        if (kind > .5 && j > 0) break;
+        float s = seed + float(j) * 7.13, fj = kind > .5 ? 0. : float(j) - 2.;
+        float a0 = -.92 + dh(s + 1.) * .3, b0 = .92 - dh(s + 2.) * .3;
+        if (q.x < a0 || q.x > b0) continue;
+        float t = (q.x - a0) / (b0 - a0), bend = (dh(s + 3.) - .5) * .3;
+        float yc = fj * .2 + (dh(s) - .5) * .05 + bend * (1. - (2. * t - 1.) * (2. * t - 1.)) + fj * .06 * (t - .5) + .012 * (dh(floor(t * 23.) + s) - .5);
+        float w = .045 * pow(sin(3.14159 * t), .6) * (kind > .5 ? 1.3 : 1.) + .002, d = q.y - yc, ad = abs(d);
+        core = max(core, 1. - smoothstep(.35 * w, .8 * w, ad));
+        shade += sign(d) * L.y * smoothstep(.35 * w, .8 * w, ad) * (1. - smoothstep(w, 2.4 * w, ad));
+      }
+      col = mix(col, col * .35 + .62, core * a);
+      col *= 1. - .55 * max(shade, 0.) * a; col += .3 * max(-shade, 0.) * a;
+      o = vec4(mix(o.x, .3, core * a), max(o.y, core * a), o.z, o.w);
+    } else {   // a hole: a dark middle with a torn rim, the metal turned out round it, soot and cracks
+      float rr = length(q), an = atan(q.y, q.x), R0 = .3 + .07 * (dh(floor((an + 3.1416) * 5.) + seed) - .5);
+      vec2 dir = rr > 1e-4 ? q / rr : vec2(0., 1.);
+      float hole = 1. - smoothstep(R0 - .02, R0 + .02, rr);
+      float rim = smoothstep(R0 - .02, R0 + .03, rr) * (1. - smoothstep(R0 + .07, R0 + .2, rr));
+      float soot = (1. - smoothstep(R0 + .05, 1., rr)) * .6, crack = 0.;
+      for (int k = 0; k < 6; k++) {
+        float ca = seed * 3. + float(k) * 1.047 + (dh(seed + float(k)) - .5) * .8, len = R0 + .25 + .35 * dh(seed + float(k) + 9.);
+        vec2 cd = vec2(cos(ca), sin(ca)); float al = dot(q, cd), pe = abs(q.x * cd.y - q.y * cd.x);
+        if (al > R0 && al < len) crack = max(crack, (1. - smoothstep(.006, .016, pe)) * (1. - (al - R0) / (len - R0)));
+      }
+      col *= 1. - .5 * soot * a;
+      col = mix(col, col * .3 + .6, rim * .7 * a); col *= 1. - .45 * rim * max(dot(dir, L), 0.) * a;
+      col *= 1. - .65 * crack * a;
+      col = mix(col, vec3(.012), hole * a);
+      o = vec4(mix(o.x, 1., hole * a), max(o.y, max(hole, rim * .5) * a), 0., max(o.w, hole * a));
+    }
+  }
+  return o;
+}
+`;
 // the brush's shape, as pinchShapeW measures it: the distance from its centre, 1 at its edge (a circle in space; an
 // oval, a rectangle in the surface's plane, turned by the angle, within the radius off the plane)
 const BRUSH_GLSL = `varying vec3 vBW; uniform float uBrushOn, uBrushR, uBrushSoft, uBrushShape, uBrushAsp, uBrushAng, uLens; uniform vec3 uBrushC, uBrushN, uBrushCol;
@@ -2030,10 +3315,11 @@ for (const m of Object.values(mats)) m.onBeforeCompile = (sh) => {
   Object.assign(sh.uniforms, DECAL);
   sh.vertexShader = 'attribute vec4 aPaint; attribute vec2 aPaintRM; varying vec4 vPaint; varying vec2 vPaintRM; varying vec3 vRest;\n' +
     withBW(sh.vertexShader).replace('#include <begin_vertex>', '#include <begin_vertex>\n  vPaint = aPaint; vPaintRM = aPaintRM; vRest = position;');
-  sh.fragmentShader = 'varying vec4 vPaint; varying vec2 vPaintRM; varying vec3 vRest;\n' + DECAL_GLSL + BRUSH_GLSL + sh.fragmentShader
-    .replace('#include <color_fragment>', '#include <color_fragment>\n  diffuseColor.rgb = mix(diffuseColor.rgb, vPaint.rgb, vPaint.a);\n  vec3 dRM = decals(diffuseColor.rgb);')
-    .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n  roughnessFactor = mix(roughnessFactor, vPaintRM.x, vPaint.a);\n  roughnessFactor = mix(roughnessFactor, dRM.x, dRM.z);')
-    .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\n  metalnessFactor = mix(metalnessFactor, vPaintRM.y, vPaint.a);\n  metalnessFactor = mix(metalnessFactor, dRM.y, dRM.z);')
+  Object.assign(sh.uniforms, DMG);
+  sh.fragmentShader = 'varying vec4 vPaint; varying vec2 vPaintRM; varying vec3 vRest;\n' + DECAL_GLSL + DMG_GLSL + BRUSH_GLSL + sh.fragmentShader
+    .replace('#include <color_fragment>', '#include <color_fragment>\n  diffuseColor.rgb = mix(diffuseColor.rgb, vPaint.rgb, vPaint.a);\n  vec3 dRM = decals(diffuseColor.rgb);\n  vec4 dmg = damages(diffuseColor.rgb);')
+    .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n  roughnessFactor = mix(roughnessFactor, vPaintRM.x, vPaint.a);\n  roughnessFactor = mix(roughnessFactor, dRM.x, dRM.z);\n  roughnessFactor = mix(roughnessFactor, dmg.x, dmg.y);')
+    .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\n  metalnessFactor = mix(metalnessFactor, vPaintRM.y, vPaint.a);\n  metalnessFactor = mix(metalnessFactor, dRM.y, dRM.z);\n  metalnessFactor = mix(metalnessFactor, dmg.z, dmg.w);')
     .replace('#include <dithering_fragment>', `#include <dithering_fragment>
   if (uBrushOn > .5) {
     vec2 g; float dn = brushD(vBW, g);
@@ -2077,8 +3363,9 @@ function lookSpecs(p) {   // the six materials as Blender bakes them (blender_ar
   const metalSpec = { kind: 'metal', col: mc, spot: spotOf(metal, mc), rough: mr, metal: mm, bump: p.hammer };
   const tm = p.trim && PRESETS[p.trim] && PRESETS[p.trim][2] > 0 ? p.trim : 'brass', [tc, tr, tmm] = PRESETS[tm];
   const clothSpec = { kind: 'leather', col: cloth, spot: scuff(cloth), rough: .9, metal: 0 };
+  const wood = PRESETS.wood ? [...PRESETS.wood[0]] : [.24, .14, .07];
   const plate = p.material === 'leather' ? { kind: 'leather', col: leather, spot: scuff(leather), rough: .72, metal: 0 }
-    : p.material === 'cloth' ? { ...clothSpec } : { ...metalSpec };
+    : p.material === 'cloth' ? { ...clothSpec } : p.material === 'wood' ? { kind: 'leather', col: wood, spot: scuff(wood), rough: .78, metal: 0 } : { ...metalSpec };
   const strap = leather.map((c) => c * .7);
   return [plate, { kind: 'leather', col: strap, spot: scuff(strap), rough: .75, metal: 0 }, metalSpec,
     { ...metalSpec, pattern: 'mail' }, { ...clothSpec, pattern: 'quilt' }, p.trim === 'leather' ? { kind: 'leather', col: leather.map((x) => x * .6), spot: scuff(leather), rough: .75, metal: 0 }
@@ -2176,6 +3463,26 @@ Object.assign(STYLES, {
     glove_hybrid: { glove: 'hybrid', material: 'steel', hammer: .12, cuff: 22, flare: .5, gap: 3, thickness: 7, straps: 1, strap_width: 18, buckle: true },
   },
   footwear: Object.fromEntries(['leather_shoe', 'ankle_boot', 'mail_foot', 'round_sabaton', 'pointed_sabaton', 'hybrid_boot'].map((k) => ['foot_' + k, { footwear: 'foot_' + k }])),
+  weapon: {
+    weapon_sword: { weapon: 'sword', material: 'steel', trim: 'steel', w_len: 100, w_width: 100, w_head: 100, grip_tilt: 15 },
+    weapon_dagger: { weapon: 'dagger', material: 'steel', trim: 'brass', w_len: 100, w_width: 100, grip_tilt: 15 },
+    weapon_axe: { weapon: 'axe', material: 'iron', trim: 'steel', w_len: 100, w_width: 100, w_head: 100, grip_tilt: 10 },
+    weapon_mace: { weapon: 'mace', material: 'iron', trim: 'steel', w_len: 100, w_head: 100, grip_tilt: 10 },
+    weapon_spear: { weapon: 'spear', material: 'steel', trim: 'steel', w_len: 100, w_width: 100, w_head: 100, grip_tilt: 5 },
+    weapon_staff: { weapon: 'staff', material: 'steel', trim: 'bronze', w_len: 100, w_head: 100, grip_tilt: 5 },
+    weapon_bow: { weapon: 'bow', material: 'wood', trim: 'leather', cloth: '#d8cfae', w_len: 100, w_width: 100, grip_tilt: 0, grip_roll: 0 },
+  },
+  shield: {
+    shield_round: { shield: 'round', material: 'wood', trim: 'steel', s_size: 100, s_curve: 30, s_boss: 100 },
+    shield_kite: { shield: 'kite', material: 'wood', trim: 'steel', s_size: 110, s_curve: 35 },
+    shield_heater: { shield: 'heater', material: 'wood', trim: 'steel', s_size: 95, s_curve: 25 },
+  },
+  sheath: {   // its length and width are the weapon's sliders: a scabbard made after the sword fits it
+    sheath_scabbard: { sheath: 'scabbard', material: 'leather', trim: 'steel' },
+    sheath_dagger: { sheath: 'dagger', material: 'leather', trim: 'brass' },
+    sheath_quiver: { sheath: 'quiver', material: 'leather', trim: 'leather', cloth: '#8a6a40' },
+    sheath_quiver_hip: { sheath: 'quiver_hip', material: 'leather', trim: 'leather', cloth: '#8a6a40' },
+  },
 });
 const styleSet = () => (S.piece === 'cuirass' ? STYLES.cuirass : isLimb() ? STYLES.limb : STYLES[S.piece] || null);
 function applyStyle(k) {
@@ -2253,6 +3560,50 @@ SPEC.push(['{{js:ag.made_group}}', [], [
   ['brim', 40, 170, 5, '{{js:ag.helmet_brim}}', '', 'pc', hs('kettle_hat')],
   ['strap', -50, 50, 1, '{{js:ag.helmet_strap}}', '{{js:ag.helmet_strap_info}}', 'pc', hs('barbute', 'open_bascinet', 'sallet', 'kettle_hat')],
   ['strap_fwd', -50, 50, 1, '{{js:ag.helmet_strap_fwd}}', '', 'pc', hs('barbute', 'open_bascinet', 'sallet', 'kettle_hat')]], isMade]);
+// held things: a weapon's sizes and its grip in the fist, a shield's; the rest of the groups is not theirs
+const isHeld = () => HELD.includes(S.piece), isW = (...k) => () => S.piece === 'weapon' && k.includes(S.p.weapon);
+SPEC.push(['{{js:ag.held_group}}', ['plate', 'strap', 'trim', 'quilt'], [
+  ['w_len', 40, 180, 5, '{{js:ag.w_len}}', '', 'pc', () => isP('weapon')() || isP('sheath')()],
+  ['w_width', 40, 200, 5, '{{js:ag.w_width}}', '', 'pc', () => isW('sword', 'dagger', 'axe', 'spear', 'bow')() || isP('sheath')()],
+  ['arrows', 0, 30, 1, '{{js:ag.arrows}}', '{{js:ag.arrows_info}}', '', () => S.piece === 'sheath' && /quiver/.test(S.p.sheath || '')],
+  ['w_guard', 0, 200, 5, '{{js:ag.w_guard}}', '', 'pc', isW('sword', 'dagger')],
+  ['w_grip', 60, 200, 5, '{{js:ag.w_grip}}', '', 'pc', isW('sword', 'dagger')],
+  ['w_grip_r', 50, 200, 5, '{{js:ag.w_grip_r}}', '{{js:ag.w_grip_r_info}}', 'pc', isP('weapon')],
+  ['w_head', 40, 200, 5, '{{js:ag.w_head}}', '', 'pc', isW('axe', 'mace', 'spear', 'staff')],
+  ['grip_along', -60, 60, 2, '{{js:ag.grip_along}}', '{{js:ag.grip_along_info}}', 'pc', isP('weapon')],
+  ['grip_out', -40, 40, 2, '{{js:ag.grip_out}}', '{{js:ag.grip_out_info}}', 'pc', isP('weapon')],
+  ['grip_tilt', -60, 60, 5, '{{js:ag.grip_tilt}}', '{{js:ag.grip_tilt_info}}', 'deg', isP('weapon')],
+  ['grip_roll', -180, 180, 5, '{{js:ag.grip_roll}}', '{{js:ag.grip_roll_info}}', 'deg', isP('weapon')],
+  ['w_two', -120, 120, 5, '{{js:ag.w_two}}', '{{js:ag.w_two_info}}', 'pc', isW('sword', 'axe', 'mace', 'spear', 'staff')],
+  ['s_size', 40, 200, 5, '{{js:ag.s_size}}', '', 'pc', isP('shield')],
+  ['s_curve', 0, 100, 5, '{{js:ag.s_curve}}', '', 'pc', isP('shield')],
+  ['s_rim', 0, 200, 10, '{{js:ag.s_rim}}', '', 'pc', isP('shield')],
+  ['s_boss', 0, 200, 10, '{{js:ag.s_boss}}', '', 'pc', () => S.piece === 'shield' && (S.p.shield || 'round') === 'round'],
+  ['s_along', -50, 50, 2, '{{js:ag.s_along}}', '', 'pc', isP('shield')],
+  ['s_out', -50, 100, 2, '{{js:ag.s_out}}', '{{js:ag.s_out_info}}', 'pc', isP('shield')],
+  ['s_turn', -90, 90, 5, '{{js:ag.s_turn}}', '', 'deg', isP('shield')]], isHeld]);
+const isCloth = (k = S.piece) => PIECES[k] && PIECES[k].family === 'cloak';   // cloth that swings (a cloak, a skirt)
+for (const gi of [0, 1, 3, 5]) { const was = SPEC[gi][3]; SPEC[gi][3] = () => was() && !isHeld() && !isCloth(); }
+{ const was = SPEC[2][3]; SPEC[2][3] = () => was() && !isCloth(); }
+SPEC.push(['{{js:ag.cloak_group}}', ['plate'], [
+  ['cloak_len', 20, 95, 1, '{{js:ag.cloak_len}}', '{{js:ag.cloak_len_info}}', 'pc', isP('cloak')],
+  ['cloak_wrap', 90, 179, 1, '{{js:ag.cloak_wrap}}', '{{js:ag.cloak_wrap_info}}', 'deg', isP('cloak')],
+  ['cloak_flare', 0, 100, 5, '{{js:ag.cloak_flare}}', '', 'pc', isP('cloak')],
+  ['cloak_lift', -10, 10, .5, '{{js:ag.cloak_lift}}', '{{js:ag.cloak_lift_info}}', 'pc', isP('cloak')],
+  ['cloak_nape', 0, 200, 5, '{{js:ag.cloak_nape}}', '{{js:ag.cloak_nape_info}}', 'pc', isP('cloak')],
+  ['cloak_gap', 0, 5, .25, '{{js:ag.cloak_gap}}', '{{js:ag.cloak_gap_info}}', 'pc', isP('cloak')]], isP('cloak')]);
+SPEC.push(['{{js:ag.skirt_group}}', ['plate'], [
+  ['skirt_len', 8, 70, 1, '{{js:ag.skirt_len}}', '{{js:ag.skirt_len_info}}', 'pc', isP('skirt')],
+  ['skirt_flare', 0, 100, 5, '{{js:ag.cloak_flare}}', '', 'pc', isP('skirt')],
+  ['skirt_lift', -5, 15, .5, '{{js:ag.skirt_lift}}', '{{js:ag.skirt_lift_info}}', 'pc', isP('skirt')],
+  ['skirt_slit', 0, 100, 5, '{{js:ag.skirt_slit}}', '{{js:ag.skirt_slit_info}}', 'pc', isP('skirt')],
+  ['skirt_gap', 0, 5, .25, '{{js:ag.cloak_gap}}', '{{js:ag.cloak_gap_info}}', 'pc', isP('skirt')]], isP('skirt')]);
+SPEC.push(['{{js:ag.tabard_group}}', ['plate'], [
+  ['tabard_len', 20, 90, 1, '{{js:ag.cloak_len}}', '{{js:ag.cloak_len_info}}', 'pc', isP('tabard')],
+  ['tabard_belt', -5, 25, .5, '{{js:ag.tabard_belt}}', '{{js:ag.tabard_belt_info}}', 'pc', isP('tabard')],
+  ['tabard_flare', 0, 100, 5, '{{js:ag.cloak_flare}}', '', 'pc', isP('tabard')],
+  ['tabard_lift', -10, 10, .5, '{{js:ag.cloak_lift}}', '{{js:ag.cloak_lift_info}}', 'pc', isP('tabard')],
+  ['tabard_gap', 0, 5, .25, '{{js:ag.cloak_gap}}', '{{js:ag.cloak_gap_info}}', 'pc', isP('tabard')]], isP('tabard')]);
 const ALL = SPEC.flatMap((g) => g[2]);
 const DEFAULTS = Object.assign({ gap: 8, thickness: 12, relief: .35, step: 5, rim: 6, rivets: 60, rivet_size: 6, strap_width: 35,
   buckle: true, material: 'iron', wear: .35, tint: '#6b4128', cloth: '#56606e', tex: 1024, seed: 1, surface: 'plates', scale_size: 25,
@@ -2261,7 +3612,9 @@ const DEFAULTS = Object.assign({ gap: 8, thickness: 12, relief: .35, step: 5, ri
   closure: 'across', hinges: false, opening: 'none', shoulders: 'straps', yoke: 70, thigh: 'none', knee: 'none', fly: false, wrap: false,
   front_panel: false, hem_band: false, helmet: 'barbute', head_gap: 7, visor_angle: 0, cheek_angle: 0, tail: 100, brim: 100,
   strap: 0, strap_fwd: 0, elbow: 'elbow_winged_plate', limb_gap: 8, wing: 100, footwear: 'foot_ankle_boot', foot_gap: 6, glove: 'plain_leather', cuff: 14,
-  cloth_style: 'shirt', cloth_quilt: false, quilt_lines: false, pinches: [], paints: [] }, PIECES.bracer.defaults);
+  cloth_style: 'shirt', cloth_quilt: false, quilt_lines: false, pinches: [], paints: [],
+  weapon: 'sword', shield: 'round', w_len: 100, w_width: 100, w_guard: 100, w_grip: 100, w_grip_r: 100, w_head: 100, grip_along: 0, grip_out: 0,
+  grip_tilt: 15, grip_roll: 0, w_two: 0, arrows: 12, cloak_len: 60, cloak_wrap: 172, cloak_flare: 25, cloak_lift: 5, cloak_nape: 120, cloak_gap: .5, skirt_len: 30, skirt_flare: 30, skirt_lift: 6, skirt_slit: 0, skirt_gap: .5, tabard_len: 50, tabard_belt: 8, tabard_flare: 15, tabard_lift: 2, tabard_gap: 1, s_size: 100, s_curve: 30, s_rim: 100, s_boss: 100, s_along: 0, s_out: 0, s_turn: 0 }, PIECES.bracer.defaults);
 const S = { piece: 'bracer', sides: ['L', 'R'], name: 'proc_bracer', nameTouched: false, p: { ...DEFAULTS }, armour: null };
 let clampTo = 0, curView = 'front';   // clampTo: a cuirass's top, held under the armpits (%)
 
@@ -2328,7 +3681,7 @@ function buildPanel() {
     const s = e.target.dataset.side; if (!s) return;
     S.sides = S.sides.includes(s) ? S.sides.filter((x) => x !== s) : [...S.sides, s].sort(); changed('sides');
   });
-  $('name').addEventListener('input', (e) => { S.name = e.target.value; S.nameTouched = true; });
+  $('name').addEventListener('input', (e) => { S.name = e.target.value; S.nameTouched = true; listWorn(); });
   // the group under the pointer lights its part of the piece up
   for (const bx of document.querySelectorAll('#groups .box')) {
     bx.addEventListener('pointerenter', () => hot(bx.dataset.roles.split(' ').filter(Boolean), bx));
@@ -2341,6 +3694,7 @@ function hot(roles, bx) {
   for (const [r, m] of Object.entries(mats)) m.emissive.setHex(!all && roles.includes(r) ? 0xd2691e : 0x000000);
 }
 function syncPanel() {
+  $('clothBar').hidden = !isCloth(); $('clothWindBox').hidden = !isCloth() || !clothOn;
   const pc = PIECES[S.piece], [a0, b0, a1, b1] = pc.range;
   $('i_t0').min = a0; $('i_t0').max = b0; $('i_t1').min = a1; $('i_t1').max = b1;
   $('l_t0').textContent = pc.tlabels[0]; $('l_t1').textContent = pc.tlabels[1]; $('n_t0').textContent = pc.tinfo;
@@ -2369,7 +3723,7 @@ function syncPanel() {
       $('styleSeg').dataset.kind = kind;
       $('styleSeg').innerHTML = Object.keys(set).map((k) => `<button data-style="${k}">${DATA.style_labels[k]}</button>`).join('');
     }
-    for (const b of $('styleSeg').children) b.classList.toggle('on', b.dataset.style === (isMade() ? S.p[S.piece] : S.style));
+    for (const b of $('styleSeg').children) b.classList.toggle('on', b.dataset.style === (isMade() ? S.p[S.piece] : isHeld() ? S.piece + '_' + S.p[S.piece] : S.style));
   }
   for (const b of $('lowSeg').children) b.classList.toggle('on', b.dataset.low === S.p.low_surface);
   for (const b of $('trimSeg').children) b.classList.toggle('on', b.dataset.trim === (S.p.trim || ''));
@@ -2378,7 +3732,7 @@ function syncPanel() {
   for (const b of $('surfSeg').children) b.classList.toggle('on', b.dataset.surf === S.p.surface);
   for (const b of $('pieces').children) b.classList.toggle('on', b.dataset.piece === S.piece);
   for (const b of $('sidesRow').querySelectorAll('button')) b.classList.toggle('on', S.sides.includes(b.dataset.side));
-  $('sidesRow').hidden = !['limb', 'joint', 'glove'].includes(PIECES[S.piece].family);
+  $('sidesRow').hidden = !['limb', 'joint', 'glove', 'held'].includes(PIECES[S.piece].family);
   $('name').value = S.name;
   pinchSync();
 }
@@ -2391,11 +3745,21 @@ function setPiece(k, keep) {
     Object.assign(S.p, PIECES[k].defaults);
     S.p.pinches = []; S.p.paints = [];
   }
-  if (!S.nameTouched) S.name = 'proc_' + k;
+  // a name that is another kind's piece (a cuirass opened, then «Weapon» chosen) is not kept: it would be made over it
+  const other = DATA.saved.find((x) => x.item === S.name && x.piece !== k);
+  if (!S.nameTouched || (!keep && other)) { S.name = 'proc_' + k; S.nameTouched = false; }
+  if (k === 'weapon' && pose === 'rest') {   // a weapon is seen in the fist that holds it
+    pose = 'fist'; for (const b of $('poses').children) b.classList.toggle('on', b.dataset.p === 'fist');
+  }
+  if (isCloth(k) && pose === 'rest') {   // a cloak over the arms hanging (a skirt beside them)
+    pose = 'down'; for (const b of $('poses').children) b.classList.toggle('on', b.dataset.p === 'down');
+  }
   if (!keep) S.style = null;
   framed = false;
   changed('piece');
+  if (wornListed) listWorn();   // the item's own name is not offered under it
 }
+var wornListed = false;   // var: setPiece may run before this line
 
 // ------------------------------------------------------------------ rebuilding on every change (once per frame)
 const pieceGroup = new THREE.Group(); scene.add(pieceGroup);
@@ -2423,7 +3787,7 @@ function rebuild() {
   if (helmetObj) { helmetObj.removeFromParent(); helmetObj = null; }
   if (isMade()) { rebuildMade(); return; }
   if (previewMask) { previewMask = null; hideBody(); }
-  const sides = ['limb', 'glove'].includes(PIECES[S.piece].family) ? S.sides : ['C'];
+  const sides = ['limb', 'glove', 'held'].includes(PIECES[S.piece].family) ? S.sides : ['C'];
   const warn = [];
   let info = null;
   try {
@@ -2445,6 +3809,7 @@ function rebuild() {
     } else warn.push('{{js:ag.choose_a_side}}');
   } catch (e) { warn.push(e.message); console.error(e); }
   lastBuild = parts.length ? { piece: S.piece, sides } : null;
+  if (isCloth() && clothOn) setCloth(true); else clothStop();   // (from the arms hanging into the pose again)
   $('info').textContent = info || '';
   $('warn').textContent = warn.join(' '); $('warn').hidden = !warn.length;
   $('go').disabled = !lastBuild || busy;
@@ -2533,6 +3898,7 @@ function turn(b, axis, deg) {   // a bone turned about a world axis through its 
 }
 function restPose() {
   for (const [b, q] of REST) b.quaternion.copy(q);
+  for (const [b, p] of RESTP) b.position.copy(p);   // a remembered fist moves the knuckles
   charRoot.updateMatrixWorld(true);
 }
 function applyPose() {
@@ -2552,17 +3918,16 @@ function applyPose() {
       const d = dir('upleg_' + s, 'leg_' + s); if (!d || !dir('leg_' + s, 'foot_' + s)) continue;
       turn(PB['upleg_' + s], d.clone().cross(FRONT).normalize(), 75);
       turn(PB['leg_' + s], dir('leg_' + s, 'foot_' + s).cross(FRONT.clone().negate()).normalize(), 100);
-    } else if (pose === 'fist') {   // the fingers closed into the palm: each joint 65° (the thumb's 30°)
-      const I1 = joint('index1_' + s), P1 = joint('pinky1_' + s) || joint('ring1_' + s), H0 = joint('hand_' + s), T1 = joint('thumb1_' + s);
-      if (!I1 || !P1 || !H0) continue;
-      const across = I1.clone().sub(P1).normalize(), along = I1.clone().add(P1).multiplyScalar(.5).sub(H0).normalize();
-      const palm = new V3().crossVectors(across, along).normalize();
-      if (T1 && T1.clone().sub(H0).dot(palm) < 0) palm.negate();   // toward the palm: the thumb's root lies on its side
-      const sign = new V3().crossVectors(across, along).dot(palm) > 0 ? 1 : -1;   // turning about «across» moves a finger that way
-      for (const f of ['index', 'middle', 'ring', 'pinky', 'thumb']) for (let k = 1; k <= 3; k++) {
-        const b = PB[`${f}${k}_${s}`]; if (!b) continue;
-        turn(b, across, sign * (f === 'thumb' ? 30 : 65));
+    } else if (pose === 'fist') {   // the hand closed as round a grip: as remembered in the markup, else each finger in its own plane (GRIP_DEG)
+      if (s === 'L' && twoHand && S.piece === 'weapon') { readyStance(twoHand); reach(twoHand); }   // in both hands: held in front, the other hand onto the haft
+      if (applyFist(s)) continue;
+      const P = palmOf(s); if (!P) continue;
+      for (const f of FINGER_NAMES) {
+        const ax = fingerAxis(s, f, P.palm); if (!ax) continue;   // the rest pose's: the turns below keep it
+        for (let k = 1; k <= 3; k++) { const b = PB[`${f}${k}_${s}`]; if (b) turn(b, ax, GRIP_DEG[f === 'thumb' ? 'thumb' : 'finger'][k - 1]); }
       }
+    } else if (pose === 'down') {   // the arms hanging (a cloak is fitted over them so)
+      armDown(s);
     } else if (pose === 'stride') {   // a long step: the left thigh 40° forward, the right 25° back, the knees bent
       const d = dir('upleg_' + s, 'leg_' + s); if (!d || !dir('leg_' + s, 'foot_' + s)) continue;
       turn(PB['upleg_' + s], d.clone().cross(FRONT).normalize(), s === 'L' ? 40 : -25);
@@ -2586,6 +3951,15 @@ function view(v, eyeOver, whole) {   // eyeOver: a direction of its own (the tes
     const J = joint('head'), r = .12 * HEIGHT;
     box.set(new V3(J.x - r, J.y - .3 * r, J.z - r), new V3(J.x + r, J.y + 1.5 * r, J.z + r));
   }
+  if (whole === 'top' && joint('neck')) {   // the shoulders and the upper back (the tests look at a cloak's top)
+    const J = joint('neck'), r = .2 * HEIGHT;
+    box.set(new V3(J.x - r, J.y - 1.2 * r, J.z - r), new V3(J.x + r, J.y + .5 * r, J.z + r));
+  }
+  if (/^hand_[LR]$/.test(whole) && joint(whole)) {   // a hand (the tests look at a grip)
+    const J = joint(whole), K = joint(whole.replace('hand', 'middle1')) || J, r = .06 * HEIGHT, M = J.clone().lerp(K, .8);
+    box.set(M.clone().subScalar(r), M.clone().addScalar(r));
+  }
+  if (!['x', 'y', 'z'].every((a) => Number.isFinite(box.min[a]) && Number.isFinite(box.max[a]))) box.makeEmpty();   // a bad point: not the camera's way
   if (box.isEmpty()) box.setFromObject(charRoot || scene);
   const c = box.getCenter(new V3()), size = Math.max(box.getSize(new V3()).length(), 1e-3);
   const eye = (eyeOver ? new V3(...eyeOver) : { front: new V3(0, .12, 1), side: new V3(1, .12, .35), back: new V3(0, .12, -1), close: new V3(.55, .25, 1) }[v]).normalize();
@@ -2603,10 +3977,56 @@ function skin(s) {
 }
 $('views').addEventListener('click', (e) => e.target.dataset.v && view(e.target.dataset.v));
 window.agView = (v, eye, whole) => view(v, eye, whole);
+window.agReach = () => reach.last || null;
+window.agBones = (re) => { const out = {}; for (const part of parts) { const a = part.acc; for (let i = 0; i < a.bi.length; i++) if (a.bw[i] > .05) { const n = boneNames[a.bi[i]]; if (!re || new RegExp(re).test(n)) out[n] = (out[n] || 0) + 1; } } return out; };   // for the tests: vertices per bone
+window.agNaN = () => ({ parts: parts.map((x) => [x.acc.v.length / 3, x.acc.v.filter((v) => !Number.isFinite(v)).length, Math.max(...x.acc.f.flat())]), meshes: pieceGroup.children.map((m) => [m.userData.part, m.geometry.attributes.position.count, [...m.geometry.attributes.position.array].filter((v) => !Number.isFinite(v)).length]) });   // for the tests
+window.agClothPierce = () => {   // for the tests: the arms' skin with the cloth between it and the bone (an arm through the cloth)
+  if (!cloth) return null;
+  const g = cloth.mesh.geometry; g.computeBoundingSphere(); const out = {}, rc = new THREE.Raycaster(), p = new V3();
+  for (const s2 of 'LR') for (const [a, b] of [['arm_', 'forearm_'], ['forearm_', 'hand_']]) {
+    const A = joint(a + s2), B = joint(b + s2); if (!A || !B) continue;
+    const bi = boneNames.indexOf(PB[a + s2].name), ab = B.clone().sub(A); let n = 0, hit = 0; const at = [0, 0, 0, 0];
+    for (const m of charMeshes) {
+      const si = m.geometry.attributes.skinIndex, sw = m.geometry.attributes.skinWeight;
+      for (let i = 0; i < si.count; i += 2) {
+        let bb = -1, bw = -1; for (let q = 0; q < 4; q++) if (sw.getComponent(i, q) > bw) { bw = sw.getComponent(i, q); bb = boneNames.indexOf(m.skeleton.bones[si.getComponent(i, q)].name); }
+        if (bb !== bi) continue;
+        m.getVertexPosition(i, p).applyMatrix4(m.matrixWorld);
+        const t = Math.max(0, Math.min(1, p.clone().sub(A).dot(ab) / ab.lengthSq())), q0 = A.clone().addScaledVector(ab, t), d = p.clone().sub(q0), L = d.length(); if (L < 1e-9) continue;
+        rc.set(q0, d.divideScalar(L)); rc.far = L; rc.firstHitOnly = true; n++;
+        if (rc.intersectObject(cloth.mesh, false).length) { hit++; at[Math.min(3, Math.floor(t * 4))]++; }
+      }
+    }
+    out[a + s2] = [hit, n, at.join('/')];   // (and where along the bone: by its quarters)
+  }
+  return out;
+};
+window.agClothMotion = () => cloth && [cloth.motion, cloth.moveAt];   // for the tests: the cloth's mean move a step (heights), smoothed
+window.agClothStat = () => { const s = cloth && cloth.stat; if (cloth) cloth.stat = null; return s; };   // for the tests: the pushes out of the limbs since asked last, and those through them
+window.agClothShow = (what) => { if (cloth) cloth.show = what; };   // for the tests: the cloth's places drawn ('home', 'h0'), not the cloth
+window.agClothKinks = (homes) => {   // for the tests: the cloth's sharp folds (two triangles side by side bent over: their normals
+  if (!cloth) return null;   // more than 90° / 135° apart), the collar's rows left out; and the worst
+  const C = cloth, P = homes === 'h0' ? C.h0 : homes ? C.home : C.P, nu = C.nu, nv = C.nv, id = (i, j) => i * (nu + 1) + j, a = new V3(), b = new V3(), c = new V3();
+  const nrm = (i0, i1, i2) => { a.fromArray(P, 3 * i0); b.fromArray(P, 3 * i1).sub(a); c.fromArray(P, 3 * i2).sub(a); return b.clone().cross(c).normalize(); };
+  const T = []; for (let i = 0; i < nv; i++) for (let j = 0; j < nu; j++) T.push([nrm(id(i, j), id(i + 1, j), id(i + 1, j + 1)), nrm(id(i, j), id(i + 1, j + 1), id(i, j + 1))]);
+  let k90 = 0, k135 = 0, worst = 0, at = null; const all = [];
+  const pair = (x, y, i, j) => { const d = Math.acos(Math.max(-1, Math.min(1, x.dot(y)))) * 180 / Math.PI; if (d > 90) { k90++; all.push([i, j, Math.round(d)]); } if (d > 135) k135++; if (d > worst) { worst = d; at = [i, j]; } };
+  for (let i = C.rc; i < nv; i++) for (let j = 0; j < nu; j++) {
+    const t = T[i * nu + j]; pair(t[0], t[1], i, j);
+    if (j < nu - 1) pair(t[1], T[i * nu + j + 1][0], i, j);
+    if (i < nv - 1) pair(t[0], T[(i + 1) * nu + j][1], i, j);
+  }
+  return { k90, k135, worst: Math.round(worst), at, all: all.slice(0, 80).map((x) => x.join(',')).join(' ') };
+};
+window.agJoints = (ids) => ids.map((id) => (joint(id) ? joint(id).toArray() : null));   // for the tests
 $('skins').addEventListener('click', (e) => e.target.dataset.s && skin(e.target.dataset.s));
 $('poses').addEventListener('click', (e) => {
   if (!e.target.dataset.p) return;
-  pose = e.target.dataset.p; for (const b of $('poses').children) b.classList.toggle('on', b === e.target); applyPose();
+  pose = e.target.dataset.p; for (const b of $('poses').children) b.classList.toggle('on', b === e.target);
+  // a cloak in a pose other than the one it is made in is shown as cloth (as the game has it: skinned, it would go
+  // through the body); the cloth shown: the body moves into the pose, the cloth goes with it
+  if (!cloth && isCloth() && pose !== 'down') setCloth(true);
+  else if (cloth) poseTween(); else applyPose();
 });
 $('shows').addEventListener('click', (e) => e.target.dataset.r && setShow(e.target.dataset.r === '1'));
 function setShow(r) {
@@ -2663,12 +4083,26 @@ function applyPinches(v, list, base, faces) {   // v: flat positions (rest), mov
       continue;
     }
     if (q.pts) { applyStroke(v, q); continue; }
+    if (q.dent) { applyDent(v, q); continue; }
     const [px, py, pz] = q.p, [nx, ny, nz] = q.n;
     for (let i = 0; i < v.length; i += 3) {
       const wt = pinchShapeW(v[i] - px, v[i + 1] - py, v[i + 2] - pz, nx, ny, nz, q, q); if (!wt) continue;
       const w = inward(v[i], v[i + 1], v[i + 2], nx, ny, nz, q.h * wt);
       v[i] += nx * w; v[i + 1] += ny * w; v[i + 2] += nz * w;
     }
+  }
+}
+// a dent: a round crater pressed in along the surface's normal, its rim pushed up a little (the metal goes somewhere),
+// never into the body (inward)
+function applyDent(v, q) {
+  const [px, py, pz] = q.p, [nx, ny, nz] = q.n, r = q.r;
+  for (let i = 0; i < v.length; i += 3) {
+    const x = v[i] - px, y = v[i + 1] - py, z = v[i + 2] - pz, along = x * nx + y * ny + z * nz;
+    if (along < -.5 * r || along > .5 * r) continue;   // the far side of the piece: not this one
+    const d = Math.sqrt(Math.max(0, x * x + y * y + z * z - along * along)) / r; if (d >= 1.25) continue;
+    const prof = -(Math.max(0, 1 - d * d) ** 2) + .22 * Math.exp(-(((d - .95) / .14) ** 2));
+    const w = inward(v[i], v[i + 1], v[i + 2], nx, ny, nz, q.h * prof);
+    v[i] += nx * w; v[i + 1] += ny * w; v[i + 2] += nz * w;
   }
 }
 // a painted stroke: the points the brush went over, each with the surface's direction there; every vertex goes up by
@@ -2748,7 +4182,7 @@ const trisOf = (g) => { const I = g.index.array, out = []; for (let i = 0; i < I
 // one another in order (S.p.paints): a brush stroke (its points, as a pinch's), a fill of one part (the welded piece of
 // one role under a point) or of all parts of that role, an eraser stroke. Shown here per vertex; Blender lays them on
 // the baked textures per pixel (blender_armour_gen.paint_layers), so the result is as sharp as the texture
-const PAINT = { fill: 'brush', look: 'paint', c: '#8a1c1c', a: 1, decal: ((DATA.decals || [])[0] || {}).name || '', num: '', flip: false };
+const PAINT = { fill: 'brush', look: 'paint', c: '#8a1c1c', a: 1, dmg: 'claws', decal: ((DATA.decals || [])[0] || {}).name || '', num: '', flip: false };
 // a look: its colour (sRGB; paint's is chosen), roughness and metalness — the same table goes to Blender with the mesh
 const LOOKS = { paint: [null, .5, 0], gold: ['#d9a441', .28, 1], silver: ['#d8d8d4', .22, 1], rust: ['#7a3f1d', .9, 0], soot: ['#1c1916', .95, 0], blood: ['#5a0a08', .35, 0] };
 const lookOf = (L) => { const [c, r, m] = LOOKS[L.look] || LOOKS.paint; return { c: c || L.c || '#8a1c1c', r, m }; };
@@ -2804,7 +4238,7 @@ function paintMesh(m) {   // every layer at every vertex of a mesh, into its pai
   const C = g.attributes.aPaint.array, RM = g.attributes.aPaintRM.array, mem = paintMembers[m.userData.part] || new Map();
   C.fill(0); RM.fill(0);
   layers.forEach((L, li) => {
-    if (L.t === 'decal') return;   // the shader draws the pictures
+    if (L.t === 'decal' || L.t === 'damage') return;   // the shader draws the pictures and the damage
     if (L.pts) {
       const [lo, hi] = strokeBox(L);
       for (let i = 0; i < n; i++) {
@@ -2815,7 +4249,7 @@ function paintMesh(m) {   // every layer at every vertex of a mesh, into its pai
   });
   g.attributes.aPaint.needsUpdate = true; g.attributes.aPaintRM.needsUpdate = true;
 }
-function paintAll() { fillMembers(); for (const m of pieceGroup.children) paintMesh(m); decalSync(); }
+function paintAll() { fillMembers(); for (const m of pieceGroup.children) paintMesh(m); decalSync(); damageSync(); }
 // ---- pictures: an atlas of the ones in use, the layers' frames into the shader's uniforms
 const DECAL_IMG = new Map();   // path -> a loaded image
 const decalImg = (path) => {
@@ -2846,6 +4280,25 @@ function decalSync() {
   DECAL.uDecalN.value = list.length; atlasTex.needsUpdate = true;
 }
 const decalOf = (name) => (DATA.decals || []).find((d) => d.name === name);
+let dmgGhost = null;
+const DMG_KIND = { claws: 0, scratch: 1, hole: 2 };
+function damageSync() {
+  const list = [...(S.p.paints || []).filter((L) => L.t === 'damage'), ...(dmgGhost ? [dmgGhost] : [])].slice(-DMG_N);
+  list.forEach((L, i) => {
+    const [R, U, N] = decalFrame(L.n, L.ang || 0), l = new THREE.Vector2(UP.dot(R), UP.dot(U));
+    DMG.uDmgP.value[i].fromArray(L.p); DMG.uDmgNr.value[i].copy(N);
+    DMG.uDmgU.value[i].copy(R).multiplyScalar(1 / L.r); DMG.uDmgV.value[i].copy(U).multiplyScalar(1 / L.r);
+    DMG.uDmgK.value[i].set(DMG_KIND[L.kind], L.seed, L.ghost ? .7 * L.a : L.a, L.r);
+    DMG.uDmgL.value[i].copy(l.lengthSq() > 1e-4 ? l.normalize() : l.set(0, 1));
+  });
+  DMG.uDmgN.value = list.length;
+}
+let nextSeed = Math.round(Math.random() * 1000) / 10;
+function damageLayer(hit, ghost) {
+  const r5 = (x) => Math.round(x * 1e5) / 1e5;
+  return { t: 'damage', kind: PAINT.dmg, p: hit.rest.toArray().map(r5), n: hit.nRest.toArray().map(r5), r: r5(pinchR()),
+    ang: Math.round(PINCH.ang * Math.PI / 180 * 1e5) / 1e5, seed: nextSeed, a: PAINT.a, ...(ghost ? { ghost: true } : {}) };
+}
 function decalLayers(hit, ghost) {   // the picture chosen, or each digit of the number side by side
   const r5 = (x) => Math.round(x * 1e5) / 1e5, ang = Math.round(PINCH.ang * Math.PI / 180 * 1e5) / 1e5, r = pinchR();
   const num = (PAINT.num || '').replace(/\D/g, ''), names = num ? [...num].map((d) => 'digit_' + d) : [PAINT.decal];
@@ -2869,6 +4322,17 @@ function paintPayload() {   // the layers with their looks, and each fill's face
 function paintDown(hit, m) {   // a fill at once; a stroke goes on with the pointer
   const r5 = (x) => Math.round(x * 1e5) / 1e5;
   const look = PAINT.fill === 'erase' ? {} : { look: PAINT.look, ...(PAINT.look === 'paint' ? { c: PAINT.c } : {}) };
+  if (PAINT.fill === 'damage' && PAINT.dmg === 'dent') {   // a dent moves the surface: one more pinch
+    const r = pinchR();
+    S.p.pinches = [...(S.p.pinches || []), { dent: 1, p: hit.rest.toArray().map(r5), n: hit.nRest.toArray().map(r5), r: r5(r), h: r5(.3 * r * PAINT.a) }];
+    changed('pinch'); return;
+  }
+  if (PAINT.fill === 'damage') {   // each one a little different: the next seed
+    dmgGhost = null;
+    S.p.paints = [...(S.p.paints || []), damageLayer(hit, false)];
+    nextSeed = Math.round(Math.random() * 1000) / 10;
+    changed('paint'); return;
+  }
   if (PAINT.fill === 'decal') {
     decalGhost = null;
     const add = decalLayers(hit, false);
@@ -3020,9 +4484,10 @@ stage.addEventListener('pointermove', (e) => {
   if (!PINCH.on || pinchRaf) return;
   pinchRaf = requestAnimationFrame(() => {
     pinchRaf = 0; pinchHover = pinchHit(e);
-    const fill = PINCH.tool === 'paint' && (PAINT.fill === 'part' || PAINT.fill === 'all' || PAINT.fill === 'decal');
+    const fill = PINCH.tool === 'paint' && ['part', 'all', 'decal', 'damage'].includes(PAINT.fill);
     showBrush(fill ? null : pinchHover);
     if (PINCH.tool === 'paint' && PAINT.fill === 'decal') { decalGhost = pinchHover ? decalLayers(pinchHover, true) : null; decalSync(); return; }
+    if (PINCH.tool === 'paint' && PAINT.fill === 'damage' && PAINT.dmg !== 'dent') { dmgGhost = pinchHover ? damageLayer(pinchHover, true) : null; damageSync(); return; }
     if (fill) hot(pinchHover ? [pinchHover.mesh.userData.role] : [], null);   // a fill: the parts of that kind light up
   });
 }, true);
@@ -3046,17 +4511,26 @@ const pinchEnd = () => {
 stage.addEventListener('pointerup', pinchEnd, true);
 cnv.addEventListener('pointerdown', () => window.focus());
 stage.addEventListener('pointercancel', pinchEnd, true);
-cnv.addEventListener('pointerleave', () => { if (!pinchDrag) { showBrush(null); if (PINCH.tool === 'paint') hot([], null); if (decalGhost) { decalGhost = null; decalSync(); } } });
+cnv.addEventListener('pointerleave', () => { if (!pinchDrag) { showBrush(null); if (PINCH.tool === 'paint') hot([], null); if (decalGhost) { decalGhost = null; decalSync(); } if (dmgGhost) { dmgGhost = null; damageSync(); } } });
+// a picture or damage under the pointer: its ghost again (turned, resized) without moving the mouse
+function ghostAgain() {
+  if (!pinchHover || PINCH.tool !== 'paint') return;
+  if (PAINT.fill === 'decal') { decalGhost = decalLayers(pinchHover, true); decalSync(); }
+  if (PAINT.fill === 'damage') { dmgGhost = damageLayer(pinchHover, true); damageSync(); }
+}
 stage.addEventListener('wheel', (e) => {   // Shift + the wheel over the piece: the brush's radius; Alt + the wheel: its turn
-  if (!PINCH.on || !(e.shiftKey || (e.altKey && PINCH.sh !== 'circle'))) return;
+  const turns = PINCH.sh !== 'circle' || (PINCH.tool === 'paint' && (PAINT.fill === 'decal' || PAINT.fill === 'damage'));
+  if (!PINCH.on || !(e.shiftKey || (e.altKey && turns))) return;
   e.stopPropagation(); e.preventDefault();
   if (e.altKey) PINCH.ang = ((PINCH.ang + (e.deltaY < 0 ? 15 : -15)) % 180 + 180) % 180;
   else PINCH.r = Math.max(1, Math.min(15, PINCH.r + (e.deltaY < 0 ? .5 : -.5)));
-  pinchSync(); if (pinchHover) showBrush(pinchHover);
+  pinchSync(); if (pinchHover) showBrush(PINCH.tool === 'paint' && ['part', 'all', 'decal', 'damage'].includes(PAINT.fill) ? null : pinchHover); ghostAgain();
 }, { capture: true, passive: false });
+// Alt alone in a browser takes the focus to its menu (the next key goes there): kept here while a brush is on
+window.addEventListener('keyup', (e) => { if (PINCH.on && e.key === 'Alt') e.preventDefault(); });
 window.addEventListener('keydown', (e) => {
   if (!PINCH.on || e.ctrlKey || e.metaKey || e.target.closest('input, select, textarea')) return;
-  if (e.code === 'BracketLeft' || e.code === 'BracketRight') { const up = e.code === 'BracketRight'; PINCH.r = Math.max(1, Math.min(15, PINCH.r + (up ? .5 : -.5))); pinchSync(); if (pinchHover) showBrush(pinchHover); }
+  if (e.code === 'BracketLeft' || e.code === 'BracketRight') { const up = e.code === 'BracketRight'; PINCH.r = Math.max(1, Math.min(15, PINCH.r + (up ? .5 : -.5))); pinchSync(); if (pinchHover) showBrush(pinchHover); ghostAgain(); }
 });
 function pinchSync() {
   const n = (S.p.pinches || []).length, np = (S.p.paints || []).length, can = !isMade(), painting = PINCH.tool === 'paint';
@@ -3068,27 +4542,30 @@ function pinchSync() {
   $('pinchCount').textContent = [n ? '{{js:ag.pinch_count}}'.replace('{0}', n) : '', np ? '{{js:ag.paint_count}}'.replace('{0}', np) : ''].filter(Boolean).join(' · ');
   $('pinchClear').disabled = !n; $('paintClear').disabled = !np;
   $('pinchOnly').hidden = painting; $('paintOnly').hidden = !painting;
-  const fill = painting && (PAINT.fill === 'part' || PAINT.fill === 'all'), decal = painting && PAINT.fill === 'decal';
+  const fill = painting && (PAINT.fill === 'part' || PAINT.fill === 'all'), dmg = painting && PAINT.fill === 'damage', decal = painting && (PAINT.fill === 'decal' || dmg);
   $('brushRows').hidden = fill; $('pinchKRow').hidden = painting;
-  $('paintDecalRow').hidden = !decal; $('r_pinch_shape').hidden = $('r_pinch_asp').hidden = decal;
+  $('paintDecalRow').hidden = !decal || dmg; $('paintDmgRow').hidden = !dmg; $('r_pinch_shape').hidden = $('r_pinch_asp').hidden = decal;
+  for (const b of $('paintDmg').children) b.classList.toggle('on', b.dataset.k === PAINT.dmg);
   if (decal) $('pinchShapeTools').hidden = false;
   for (const b of $('paintDecals').children) b.classList.toggle('on', b.dataset.d === PAINT.decal && !PAINT.num);
-  for (const b of $('paintLook').children) if (b.dataset.l === 'image') b.hidden = !decal;
+  for (const b of $('paintLook').children) if (b.dataset.l === 'image') b.hidden = !decal || dmg;
   if (!decal && PAINT.look === 'image') PAINT.look = 'paint';
   for (const b of $('paintFill').children) b.classList.toggle('on', b.dataset.f === PAINT.fill);
   for (const b of $('paintLook').children) b.classList.toggle('on', b.dataset.l === PAINT.look);
-  $('paintLookRow').hidden = $('paintOpRow').hidden = PAINT.fill === 'erase'; $('paintColRow').hidden = PAINT.fill === 'erase' || PAINT.look !== 'paint';
+  const dmgOn = painting && PAINT.fill === 'damage';
+  $('paintOpRow').hidden = PAINT.fill === 'erase'; $('paintLookRow').hidden = PAINT.fill === 'erase' || dmgOn;
+  $('paintColRow').hidden = PAINT.fill === 'erase' || dmgOn || PAINT.look !== 'paint';
   $('i_paint_c').value = PAINT.c; $('i_paint_a').value = PAINT.a; $('v_paint_a').textContent = Math.round(PAINT.a * 100) + '%';
   for (const b of $('pinchMode').children) b.classList.toggle('on', b.dataset.m === PINCH.mode);
   const paint = PINCH.mode === 'paint', sm = paint && PINCH.kind === 'smooth';
   $('pinchKindRow').hidden = !paint;
   for (const b of $('pinchKind').children) b.classList.toggle('on', b.dataset.k === PINCH.kind);
-  $('pinchModeNote').textContent = painting ? { brush: '{{js:ag.paint_brush_note}}', part: '{{js:ag.paint_part_note}}', all: '{{js:ag.paint_all_note}}', erase: '{{js:ag.paint_erase_note}}', decal: '{{js:ag.paint_decal_note}}' }[PAINT.fill]
+  $('pinchModeNote').textContent = painting ? { brush: '{{js:ag.paint_brush_note}}', part: '{{js:ag.paint_part_note}}', all: '{{js:ag.paint_all_note}}', erase: '{{js:ag.paint_erase_note}}', decal: '{{js:ag.paint_decal_note}}', damage: '{{js:ag.paint_damage_note}}' }[PAINT.fill]
     : !paint ? '{{js:ag.pinch_pull_note}}' : sm ? '{{js:ag.pinch_smooth_note}}' : '{{js:ag.pinch_paint_note}}';
   $('l_pinch_k').textContent = !paint ? '{{js:ag.pinch_strength}}' : sm ? '{{js:ag.pinch_smooth_k}}' : '{{js:ag.pinch_height}}';
   $('n_pinch_k').textContent = !paint ? '{{js:ag.pinch_strength_info}}' : sm ? '{{js:ag.pinch_smooth_k_info}}' : '{{js:ag.pinch_height_info}}';
   for (const b of $('pinchShape').children) b.classList.toggle('on', b.dataset.sh === PINCH.sh);
-  $('pinchShapeTools').hidden = PINCH.sh === 'circle' && !(PINCH.tool === 'paint' && PAINT.fill === 'decal');
+  $('pinchShapeTools').hidden = PINCH.sh === 'circle' && !(PINCH.tool === 'paint' && (PAINT.fill === 'decal' || PAINT.fill === 'damage'));
   for (const [k, id, f] of [['r', 'pinch_r', (x) => x + '%'], ['k', 'pinch_k', (x) => '×' + x], ['s', 'pinch_s', (x) => x], ['asp', 'pinch_asp', (x) => x], ['ang', 'pinch_ang', (x) => x + '°']]) {
     $('i_' + id).value = PINCH[k]; $('v_' + id).textContent = f(PINCH[k]);
   }
@@ -3100,17 +4577,77 @@ $('paintFill').addEventListener('click', (e) => { if (e.target.dataset.f) { PAIN
 $('paintLook').addEventListener('click', (e) => { if (e.target.dataset.l) { PAINT.look = e.target.dataset.l; pinchSync(); } });
 $('i_paint_c').addEventListener('input', (e) => { PAINT.c = e.target.value; });
 $('i_paint_a').addEventListener('input', (e) => { PAINT.a = +e.target.value; pinchSync(); });
+$('paintDmg').addEventListener('click', (e) => { if (e.target.dataset.k) { PAINT.dmg = e.target.dataset.k; pinchSync(); } });
 $('paintDecals').innerHTML = (DATA.decals || []).map((d) => `<button data-d="${d.name}" title="${d.label}"><img src="${fileUrl(d.path)}" alt="${d.label}"></button>`).join('');
 $('paintDecals').addEventListener('click', (e) => { const d = e.target.dataset.d; if (d) { PAINT.decal = d; PAINT.num = ''; $('i_paint_num').value = ''; pinchSync(); } });
 $('i_paint_num').addEventListener('input', (e) => { PAINT.num = e.target.value.replace(/\D/g, ''); e.target.value = PAINT.num; pinchSync(); });
 $('i_paint_flip').addEventListener('change', (e) => { PAINT.flip = e.target.checked; });
+// «Battle wear»: by a seed, dents, scratches, now and then claw marks, and soot patches where blows land (the piece's
+// bulges, facing forward and up more than back and down), each kept apart from the others; pressed again, another set
+// (the last one goes: those are marked auto). Its size and number go by the piece's size; what was put by hand stays.
+function battleWear(seed) {
+  let st = seed >>> 0;
+  const rnd = () => { st = (st + 0x6D2B79F5) >>> 0; let t = st; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const r5 = (x) => Math.round(x * 1e5) / 1e5, H = HEIGHT, cands = [];
+  for (const part of parts) {   // the plates' vertices with their normals (from the faces round them) and how they bulge
+    const a = part.acc, n = new Float32Array(a.v.length), c = new V3();
+    for (let i = 0; i < a.v.length; i += 3) c.x += a.v[i], c.y += a.v[i + 1], c.z += a.v[i + 2];
+    c.multiplyScalar(3 / Math.max(3, a.v.length));
+    const P = (i) => new V3(a.v[3 * i], a.v[3 * i + 1], a.v[3 * i + 2]);
+    a.f.forEach((f, k) => {
+      if (a.role[k] !== 'plate' || f.length < 3) return;
+      const fn = P(f[1]).sub(P(f[0])).cross(P(f[2]).sub(P(f[0])));
+      for (const i of f) { n[3 * i] += fn.x; n[3 * i + 1] += fn.y; n[3 * i + 2] += fn.z; }
+    });
+    for (let i = 0; i < a.v.length / 3; i++) {
+      const nv = new V3(n[3 * i], n[3 * i + 1], n[3 * i + 2]); if (nv.lengthSq() < 1e-20) continue; nv.normalize();
+      const p = P(i), out = p.clone().sub(c); if (out.lengthSq() < 1e-12) continue;
+      const bulge = Math.max(0, nv.dot(out.normalize()));
+      const w = bulge * (1 + .6 * Math.max(0, nv.dot(FRONT)) + .3 * Math.max(0, nv.dot(UP)));
+      if (w > .05) cands.push({ p, n: nv, w });
+    }
+  }
+  if (!cands.length) return null;
+  const size = parts.reduce((s, x) => s + x.R, 0) / parts.length, tot = cands.reduce((s, x) => s + x.w, 0), picked = [];
+  const pick = (r) => {   // a place by its weight, not too near one taken
+    for (let t = 0; t < 40; t++) {
+      let u = rnd() * tot, k = 0; while (k < cands.length - 1 && (u -= cands[k].w) > 0) k++;
+      const c = cands[k]; if (picked.some((q) => q.p.distanceTo(c.p) < q.r + r)) continue;
+      picked.push({ p: c.p, r }); return c;
+    }
+    return null;
+  };
+  const k = Math.max(1, Math.min(3, size / (.06 * H))), dents = [], paints = [];
+  for (let i = 0; i < Math.round((2 + 3 * rnd()) * k); i++) {
+    const r = (.022 + .022 * rnd()) * H, c = pick(r); if (!c) continue;
+    dents.push({ dent: 1, auto: 1, p: c.p.toArray().map(r5), n: c.n.toArray().map(r5), r: r5(r), h: r5((.3 + .25 * rnd()) * r) });
+  }
+  const dmg = (kind, r, a) => { const c = pick(r); if (c) paints.push({ t: 'damage', kind, auto: 1, p: c.p.toArray().map(r5), n: c.n.toArray().map(r5), r: r5(r), ang: r5(rnd() * Math.PI), seed: Math.round(rnd() * 1000) / 10, a }); };
+  const room = DMG_N - (S.p.paints || []).filter((q) => q.t === 'damage' && !q.auto).length - 1;   // the shader shows DMG_N of them
+  for (let i = 0; i < Math.min(room, Math.round((3 + 3 * rnd()) * k)); i++) dmg('scratch', (.035 + .045 * rnd()) * H, 1);
+  if (rnd() < .45) dmg('claws', (.05 + .03 * rnd()) * H, .9);
+  for (let i = 0; i < Math.round((2 + 2 * rnd()) * k); i++) {   // soot: a short smudge
+    const r = (.02 + .03 * rnd()) * H, c = pick(r * .6); if (!c) continue;
+    const side = new V3().crossVectors(c.n, Math.abs(c.n.y) < .9 ? UP : FRONT).normalize(), pts = [];
+    for (let j = 0; j < 3; j++) pts.push([...c.p.clone().addScaledVector(side, (j - 1) * .5 * r).toArray(), ...c.n.toArray()].map(r5));
+    paints.push({ t: 'brush', auto: 1, pts, r: r5(r), s: .8, a: r5(.55 + .3 * rnd()), look: 'soot' });
+  }
+  return { dents, paints };
+}
+$('battleWear').addEventListener('click', () => {
+  if (!parts.length) return;
+  const got = battleWear(Math.floor(Math.random() * 1e9)); if (!got) return;
+  S.p.pinches = [...(S.p.pinches || []).filter((q) => !q.auto), ...got.dents];
+  S.p.paints = [...(S.p.paints || []).filter((q) => !q.auto), ...got.paints];
+  changed('pinch');
+});
 $('paintClear').addEventListener('click', () => { if ((S.p.paints || []).length) { S.p.paints = []; changed('paint'); } });
 $('pinchShape').addEventListener('click', (e) => {   // each shape starts from its own proportions
   const sh = e.target.dataset.sh; if (!sh) return;
   PINCH.sh = sh; PINCH.asp = { circle: 1, oval: .5, square: 1, strip: .2 }[sh]; pinchSync();
 });
 for (const [k, id] of [['r', 'pinch_r'], ['k', 'pinch_k'], ['s', 'pinch_s'], ['asp', 'pinch_asp'], ['ang', 'pinch_ang']])
-  $('i_' + id).addEventListener('input', (e) => { PINCH[k] = +e.target.value; pinchSync(); });
+  $('i_' + id).addEventListener('input', (e) => { PINCH[k] = +e.target.value; pinchSync(); ghostAgain(); });
 $('pinchMode').addEventListener('click', (e) => { if (e.target.dataset.m) { PINCH.mode = e.target.dataset.m; pinchSync(); } });
 $('pinchKind').addEventListener('click', (e) => { if (e.target.dataset.k) { PINCH.kind = e.target.dataset.k; pinchSync(); } });
 $('pinchClear').addEventListener('click', () => { if ((S.p.pinches || []).length) { S.p.pinches = []; changed('pinch'); } });
@@ -3162,22 +4699,27 @@ window.sf3dPinchTest = { hit: (x, y) => { const h = pinchHit({ clientX: x, clien
   hidden: (x, y) => { const h = pinchHit({ clientX: x, clientY: y }); return h && hiddenByBody(h.point); }, hist: () => ({ undo: HIST.undo.length, redo: HIST.redo.length }) };
 
 // ------------------------------------------------------------------ to SF3D: the geometry, weights and materials, answered by a status file
-function listWorn() {   // the pieces already on the character, a tick each
-  $('wornRow').hidden = !DATA.worn.length;
-  $('worn').innerHTML = DATA.worn.map((w, i) => `<label class="chk" style="margin:2px 8px 2px 0"><input type="checkbox" data-w="${i}" ${WORN.get(w.item) && WORN.get(w.item).on ? 'checked' : ''}> ${w.item}</label>`).join('');
+function listWorn() {   // the pieces already on the character, a tick each — not the one being made (it would show twice)
+  const me = itemName(), mine = WORN.get(me);
+  if (mine && mine.on) wearPiece(DATA.worn.find((w) => w.item === me), false).catch((er) => console.error(er));
+  const rows = DATA.worn.map((w, i) => [w, i]).filter(([w]) => w.item !== me);
+  $('wornRow').hidden = !rows.length;
+  $('wornNote').textContent = ['weapon', 'shield'].includes(S.piece) ? '{{js:ag.worn_held}}' : '{{js:ag.worn}}';
+  $('worn').innerHTML = rows.map(([w, i]) => `<label class="chk" style="margin:2px 8px 2px 0" title="${LABEL[w.piece] || ''}"><input type="checkbox" data-w="${i}" ${WORN.get(w.item) && WORN.get(w.item).on ? 'checked' : ''}> ${w.item}${!isHeld() && HELD.includes(w.piece) ? '{{js:ag.worn_shown}}' : ''}</label>`).join('');
 }
 const b64 = (ta) => { const u = new Uint8Array(ta.buffer, ta.byteOffset, ta.byteLength); let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
 function payload() {   // every part in one mesh: positions (glTF axes), faces (sizes, vertices, material slots), texture
-  const v = [], uv = [], bi = [], bw = [], sizes = [], f = [], m = [];   // coordinates of the pattern, the weights by bone
+  const v = [], uv = [], bi = [], bw = [], sizes = [], f = [], m = [], g = [];   // coordinates of the pattern, the weights by bone
   for (const part of parts) {
     const a = part.acc, base = v.length / 3;
     for (const [to, from] of [[v, a.v], [uv, a.uv], [bi, a.bi], [bw, a.bw]]) for (const x of from) to.push(x);   // no spread: too many
-    a.f.forEach((q, k) => { sizes.push(q.length); for (const i of q) f.push(base + i); m.push(a.m[k]); });
+    a.f.forEach((q, k) => { sizes.push(q.length); for (const i of q) f.push(base + i); m.push(a.m[k]); g.push(a.g[k] || 0); });
   }
   return { v: b64(Float32Array.from(v)), uv: b64(Float32Array.from(uv)), n: b64(Uint8Array.from(sizes)), f: b64(Uint32Array.from(f)),
-    m: b64(Uint8Array.from(m)), bi: b64(Uint16Array.from(bi)), bw: b64(Float32Array.from(bw)), bones: boneNames,
+    m: b64(Uint8Array.from(m)), g: b64(Uint16Array.from(g)), bi: b64(Uint16Array.from(bi)), bw: b64(Float32Array.from(bw)), bones: boneNames,
     mats: LOOK.specs, patterns: { mail: patternTile('mail').png, quilt: patternTile(quiltTile(S.p)).png }, pattern_unit: LOOK.U,
-    radius: parts.reduce((s, x) => s + x.R, 0) / parts.length, over_clothes: parts.some((x) => x.loose), paint: paintPayload() };
+    radius: parts.reduce((s, x) => s + x.R, 0) / parts.length, over_clothes: parts.some((x) => x.loose), paint: paintPayload(),
+    cloth: (parts.find((x) => x.cloth) || {}).cloth || null };   // (cloth on chains: its cuts, belt, rules)
 }
 let busy = false;
 async function send(action, extra, wait, statusName) {
@@ -3207,15 +4749,23 @@ const sorted = (o) => JSON.stringify(o, (k, v) => (v && typeof v === 'object' &&
 const madeAsShown = () => { const e = DATA.saved.find((x) => x.item === itemName());
   return !!e && e.piece === S.piece && sorted(e.params) === sorted(S.p) && [...(e.sides || [])].sort().join() === [...S.sides].sort().join(); };
 $('go').addEventListener('click', () => make());
+let overwriteOk = '';   // the item a second «Generate» may make over (another kind's piece of that name)
 async function make() {
   if (!lastBuild || busy) return null;
+  const was = DATA.saved.find((x) => x.item === itemName() && x.piece !== S.piece);
+  if (was && overwriteOk !== itemName() + '/' + S.piece) {   // asked first: the first press only warns
+    overwriteOk = itemName() + '/' + S.piece;
+    $('status').textContent = '{{js:ag.overwrite_other}}'.replace('{0}', itemName()).replace('{1}', LABEL[was.piece] || was.piece).replace('{2}', LABEL[S.piece] || S.piece);
+    return null;
+  }
+  overwriteOk = '';
   busy = true; $('go').disabled = true;
   const item = itemName();
   if (WORN.get(item) && WORN.get(item).on) { await wearPiece(DATA.worn.find((w) => w.item === item), false); listWorn(); }   // not over itself
   let js = null;
   try {
     js = await send('generate', { item, piece: S.piece, sides: lastBuild.sides.filter((s) => s !== 'C'),
-      params: { ...S.p }, mesh: isMade() ? null : payload(), under: [...WORN.entries()].filter(([, w]) => w.on).map(([k]) => k) }, '{{js:ag.working}}', '_wear_' + item);
+      params: { ...S.p }, two: S.piece === 'weapon' ? twoCode() : '', point: S.piece === 'weapon' ? spearPoint : '', mesh: isMade() ? null : payload(), under: [...WORN.entries()].filter(([, w]) => w.on && layerOf(w)).map(([k]) => k) }, '{{js:ag.working}}', '_wear_' + item);
   } catch (e) { $('status').textContent = '{{js:ed.could_not_send_to_sf3d}}' + e.message; console.error(e); }
   busy = false; $('go').disabled = !lastBuild;
   if (js && js.ok) {
@@ -3233,6 +4783,44 @@ async function make() {
   }
   return js;
 }
+// the check in motion: the piece made (first, if it changed), then Blender plays the character's clips with it on;
+// where the skin came out through it is marked here (red, on the rest pose)
+let qaPoints = null;
+function showQa(points) {
+  if (qaPoints) { scene.remove(qaPoints); qaPoints.geometry.dispose(); qaPoints = null; }
+  $('qaHide').hidden = !points || !points.length;
+  if (!points || !points.length) return;
+  const m = charMeshes[0] ? charMeshes[0].matrixWorld : new THREE.Matrix4(), pos = [];
+  for (const q of points) { const v = new V3(...q).applyMatrix4(m); pos.push(v.x, v.y, v.z); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  qaPoints = new THREE.Points(g, new THREE.PointsMaterial({ color: 0xff2020, size: .006 * HEIGHT, depthTest: false }));
+  qaPoints.renderOrder = 10; scene.add(qaPoints);
+}
+$('qaHide').addEventListener('click', () => showQa(null));
+let qaOut = null;   // the shield's «off the arm» the check found keeps the body out of it
+$('qaFix').addEventListener('click', () => {
+  if (qaOut === null) return;
+  const el = $('i_s_out'); el.value = qaOut; el.dispatchEvent(new Event('input'));
+  $('qaFix').hidden = true; qaOut = null;
+});
+$('qa').addEventListener('click', async () => {
+  if (busy) return;
+  $('qaFix').hidden = true; qaOut = null;
+  if (lastBuild && !madeAsShown()) { const js = await make(); if (!js || !js.ok) return; }
+  busy = true; $('qa').disabled = true;
+  let js = null;
+  try { js = await send('qa', { item: itemName(), piece: S.piece, sides: twoHand ? ['L', 'R'] : S.sides.filter((x) => x !== 'C') }, '{{js:ag.qa_running}}', '_qa_' + itemName()); } finally { busy = false; $('qa').disabled = false; }
+  if (js && js.ok && S.piece === 'shield' && js.need > 0) {   // the shift out that keeps the body out of it, as the slider's share of its size
+    const R = .16 * HEIGHT * S.p.s_size / 100, want = S.p.s_out + Math.ceil(js.need / R * 100) + 2;
+    qaOut = Math.min(100, want);
+    $('qaFix').textContent = '{{js:ag.qa_shield_out}}'.replace('{0}', qaOut - S.p.s_out); $('qaFix').hidden = qaOut <= S.p.s_out;
+    if (want > 100) $('status').textContent += '\n{{js:ag.qa_shield_more}}';
+  }
+  if (js && js.ok && js.report) {
+    try { const rep = await (await fetch(fileUrl(js.report) + '?t=' + Date.now())).json(); showQa(rep.points); } catch (e) { console.error(e); }
+    if (pose !== 'rest') { pose = 'rest'; for (const b of $('poses').children) b.classList.toggle('on', b.dataset.p === 'rest'); applyPose(); }
+  }
+});
 $('room').addEventListener('click', async () => {
   if (busy) return;
   if (lastBuild && !madeAsShown()) {   // the piece on screen is not the one made last: made first, then shown
@@ -3266,7 +4854,7 @@ $('saved').addEventListener('change', (e) => {
 });
 
 // ------------------------------------------------------------------ start
-buildPanel(); syncPanel(); listSaved(); listWorn();
+buildPanel(); syncPanel(); listSaved(); listWorn(); wornListed = true;
 $('worn').addEventListener('change', (e) => { const i = e.target.dataset.w; if (i !== undefined) wearPiece(DATA.worn[+i], e.target.checked).catch((er) => console.error(er)); });
 try {
   await loadCharacter();

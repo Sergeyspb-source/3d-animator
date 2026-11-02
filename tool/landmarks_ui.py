@@ -113,7 +113,17 @@ def mount(config_loader, asset, upload, accordion=True):
                 return _t("lm.error_2") + str(e)
 
         wear_btn.click(do_wear, wear_req, wear_log, concurrency_id="landmark_rig", concurrency_limit=1, show_progress="minimal")
+        def keep_fist(up, name, text):   # «Remember the fist» reaches the built rig at once: no rebuild for it
+            try:
+                cfg = config_loader()
+                src = LM.source_path(up, name, cfg["export_dir"])
+                if src and src.exists():
+                    LM.keep_fist(src, cfg["export_dir"], text)
+            except Exception:   # noqa: BLE001 — the markup's own textbox: never in the way of editing
+                pass
+
         open_btn.click(open_editor, [upload, asset, data], editor)
+        data.change(keep_fist, [upload, asset, data], None, show_progress="hidden")
         open_btn.click(kits, None, kit)
         ref_btn.click(open_view, ref_file, editor)
         # retopology needs the cut mouth: keep the two consistent
@@ -137,15 +147,17 @@ def mount_wear(config_loader, char, tab, active):
     gr.HTML("<style>.sf3d-hidden{display:none!important}</style>")
     req = gr.Textbox(elem_id=ids[0], elem_classes=["sf3d-hidden"], show_label=False)
     btn = gr.Button("wear", elem_id=ids[1], elem_classes=["sf3d-hidden"])
+    # the page's own state goes here, not into the markup's textbox of the «Skeleton» tab (nothing reads it)
+    gr.Textbox(elem_id=LM.TARGET_ID + "_wear", elem_classes=["sf3d-hidden"], show_label=False)
     log = gr.Textbox(label=_t("lm.armour"), lines=2, interactive=False)
 
     def open_editor(rigged):
-        cfg = config_loader()
         rigged = Path(rigged) if rigged else None
-        if not rigged or not rigged.name.endswith("_landmarks_rigged.glb") or not rigged.exists():
+        if not LM.is_rig(rigged):
             return _t("lm.wear_needs_landmarks")
-        src = rigged   # the built model stands for the source here: only the armour mode is used
-        return _frame(LM.editor_page(src, LM.initial_state(src, cfg["export_dir"], ""), rigged, mode="wear", wear_ids=ids))
+        # the built model stands for the source here: only the armour mode is used; the joints a piece is placed
+        # between are the markup's, or read off the bones of an auto-rig
+        return _frame(LM.editor_page(rigged, LM.rig_state(rigged), rigged, mode="wear", wear_ids=ids, target=LM.TARGET_ID + "_wear"))
 
     def do_wear(text):
         try:
@@ -159,6 +171,36 @@ def mount_wear(config_loader, char, tab, active):
     tab.select(lambda r, op: (open_editor(r), r) if r != op else (gr.update(), op), [char, opened], [editor, opened], show_progress="hidden")
     reopen.click(open_editor, char, editor)
     btn.click(do_wear, req, log, concurrency_id="landmark_rig", concurrency_limit=1, show_progress="minimal")
+
+
+def mount_rig_pose(config_loader, char):
+    """The pose check of the current character's skeleton, whichever made it (the auto-rigger too): bend the joints,
+    play its clips, and the fist: close the fingers («Free», «Fist») and «Remember the fist» — kept with the skeleton
+    (an auto-rig's <name>_rig.json, the markup of a landmark one) for the procedural editor, «Броня» and Godot."""
+    open_btn = gr.Button(_t("lm.rig_pose_open"))
+    gr.Markdown(_t("lm.rig_pose_info"))
+    editor = gr.HTML()
+    data = gr.Textbox(elem_id=LM.TARGET_ID + "_pose", elem_classes=["sf3d-hidden"], show_label=False)
+    note = gr.Markdown()
+
+    def open_editor(rigged):
+        rigged = Path(rigged) if rigged else None
+        if not LM.is_rig(rigged):
+            return _t("lm.rig_pose_needs_a_skeleton"), ""
+        return (_frame(LM.editor_page(rigged, LM.rig_state(rigged), rigged, mode="view", target=LM.TARGET_ID + "_pose")),
+                "" if LM.is_landmark_rig(rigged) else _t("lm.rig_pose_no_face"))
+
+    def keep(rigged, text):
+        try:
+            if rigged and LM.keep_rig_fist(Path(rigged), text):
+                return _t("lm.rig_pose_fist_kept", LM.rig_meta(Path(rigged)).name)
+        except Exception:   # noqa: BLE001 — never in the way of posing
+            pass
+        return gr.update()
+
+    open_btn.click(open_editor, char, [editor, note])
+    char.change(lambda r: ("", ""), char, [editor, note], show_progress="hidden")   # another character: open it anew
+    data.change(keep, [char, data], note, show_progress="hidden")
 
 
 def _say_frame(page):   # the lipsync viewer: it may play the line's sound at once (the click was on this page)

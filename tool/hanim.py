@@ -25,11 +25,20 @@ CLIPS = {
     "block_loop": _t("hanim.block_loop"),
     "hit": _t("hanim.taking_a_hit"),
     "death": _t("hanim.death_falls_on_the_back_and_stays"),
+    "spear_ready_loop": _t("hanim.spear_ready_loop"),
+    "spear_thrust": _t("hanim.spear_thrust"),
+    "spear_throw": _t("hanim.spear_throw"),
+    "bow_shoot": _t("hanim.bow_shoot"),
 }
 
 
+MANNERS = ("normal", "heavy", "armored", "robed", "light", "swagger", "limp", "undead", "seed")
+DEATHS = ("back", "forward", "left", "right", "knees")
+
+
 def animate(blender, src, dst, clips=None, preview_dir=None, fps=30, shield=False, twohand=False, aim=False, tilt=None,
-            blade=None):
+            blade=None, style=None, seed=None, death=None):
+    """style: a manner of MANNERS ("seed": one chosen by seed within plausible bands); death: one of DEATHS."""
     src, dst = Path(src), Path(dst)
     dst.unlink(missing_ok=True)       # a failed run must not leave an old result looking like a new one
     args = [str(src), str(dst), f"fps={fps}"]
@@ -43,6 +52,12 @@ def animate(blender, src, dst, clips=None, preview_dir=None, fps=30, shield=Fals
         args.append(f"sword_tilt={tilt}")
     if blade:   # "fingers": the sword across the palm by the finger bones (see blender_humanoid_anim.py)
         args.append(f"blade={blade}")
+    if style and style != "seed":
+        args.append(f"style={style}")
+    if seed not in (None, "") and (style == "seed" or not style):
+        args.append(f"seed={seed}")
+    if death:
+        args.append(f"death={death}")
     if clips:
         args.append("clips=" + ",".join(clips))
     if preview_dir:

@@ -218,7 +218,8 @@
     <div class="msg" id="msg">{{ed.loading_the_model}}</div>
     <button class="saybig" id="sayBig" hidden>{{ed.line}}</button>
     <div class="posebar" id="poseBar" hidden>
-      <button id="pReset">{{ed.reset_the_pose}}</button><button id="pCheck">{{ed.check_pose}}</button><button id="pSquat">{{ed.crouch}}</button><button id="pFist">{{ed.fist}}</button><button id="pJaw">{{ed.open_the_mouth}}</button>
+      <button id="pReset">{{ed.reset_the_pose}}</button><button id="pCheck">{{ed.check_pose}}</button><button id="pSquat">{{ed.crouch}}</button><button id="pFist">{{ed.fist}}</button><button id="pFistFit" title="{{ed.fist_fit_title}}">{{ed.fist_fit}}</button><button id="pFree" title="{{ed.free_title}}">{{ed.free}}</button><button id="pFistSave" title="{{ed.fist_save_title}}">{{ed.fist_save}}</button><button id="pFistMirror" title="{{ed.fist_mirror_title}}">{{ed.fist_mirror}}</button><button id="pJaw">{{ed.open_the_mouth}}</button>
+      <select id="pTest" title="{{ed.test_title}}"><option value="all">{{ed.test_all}}</option><option value="fist">{{ed.test_fist}}</option><option value="wrist">{{ed.test_wrist}}</option><option value="elbow">{{ed.test_elbow}}</option><option value="shoulder">{{ed.test_shoulder}}</option><option value="knee">{{ed.test_knee}}</option><option value="ankle">{{ed.test_ankle}}</option><option value="head">{{ed.test_head}}</option><option value="jaw">{{ed.test_jaw}}</option></select><button id="pTestGo" title="{{ed.test_title}}">{{ed.test_go}}</button>
       <select id="pClipFace" hidden title="{{ed.lipsync_lines_next_to_the_model}}"></select><button id="pSay" hidden>{{ed.line}}</button>
       <select id="pEmo" hidden title="{{ed.emotion_the_same_brow_eyelid_and}}"></select><input type="range" id="pEmoV" min="0" max="2" step="0.05" value="1" hidden style="width:80px" title="{{ed.emotion_strength_1_as_in_the_game}}">
       <select id="pMorph" hidden title="{{ed.the_model_s_shape_keys_speech_mouth}}"></select><input type="range" id="pMorphV" min="0" max="1" step="0.01" value="0" hidden style="width:110px">
@@ -284,6 +285,9 @@
       <div class="row" id="bendRow" style="margin-top:6px" hidden>
         <span class="small">{{ed.bend}}</span><input type="number" step="1" id="bendVal" style="width:72px">
         <button id="flip" title="{{ed.for_reversed_knees_harpies}}">{{ed.reverse_the_bend}}</button>
+      </div>
+      <div class="row" id="twistRow" style="margin-top:4px" hidden title="{{ed.bend_turn_title}}">
+        <span class="small">{{ed.bend_turn}}</span><button id="twM">−15°</button><input type="number" step="5" id="twistVal" style="width:56px"><button id="twP">+15°</button>
       </div>
       <div class="small" id="bendInfo"></div>
       <details class="note"><summary>{{ed.about_the_axes}}</summary>
@@ -408,7 +412,7 @@ let bbox = new THREE.Box3(), H = 1, cx = 0;
 let worldVerts = new Float32Array(0);
 
 const S = {   // editor state (serialised)
-  phase: 'place', yaw: 0, sym: true, marks: {}, pos: {}, rot: {}, bend: {}, fmarks: {}, face: {},
+  phase: 'place', yaw: 0, sym: true, marks: {}, pos: {}, rot: {}, bend: {}, twist: {}, fist: {}, fistPose: {}, fmarks: {}, face: {},
 };
 let current = null;       // landmark being placed
 let selected = null;      // joint selected in edit phase
@@ -547,7 +551,7 @@ const LIMITS = {
   foot: { child: 'toe', zero: 'foot', flex: 'up', min: -45, max: 25, what: '{{js:ed.foot_toe_up_to_25_down_to_45}}' },
   toe: { child: 'toe_end', zero: 'parent', flex: 'up', min: -30, max: 80, what: '{{js:ed.the_toes_bend_up}}' },
 };
-const FLIM = { thumb: [[-45, 60], [-10, 60], [-10, 80]], other: [[-25, 90], [-5, 110], [-5, 80]] };
+const FLIM = { thumb: [[-60, 90], [-10, 70], [-10, 85]], other: [[-25, 90], [-5, 110], [-5, 80]] };   // the thumb's root swings far across the palm in a fist
 function limitOf(id) {
   if (id === 'jaw') return { child: 'jaw_end', zero: 'self', flex: 'down', min: -3, max: 35, s: '', what: '{{js:ed.the_jaw_opens_downward}}' };
   let m = /^(forearm|leg|hand|foot|toe)_([LR])$/.exec(id || '');
@@ -569,8 +573,21 @@ function palmNormal(s) {
   return new THREE.Vector3(s === 'L' ? -1 : 1, 0, 0);
 }
 function flexVec(L, id) {
-  const f = L.flex === 'palm' ? palmNormal(L.s) : { fwd: new THREE.Vector3(0, 0, 1), back: new THREE.Vector3(0, 0, -1), up: new THREE.Vector3(0, 1, 0), down: new THREE.Vector3(0, -1, 0) }[L.flex];
+  let f = L.flex === 'palm' ? palmNormal(L.s) : { fwd: new THREE.Vector3(0, 0, 1), back: new THREE.Vector3(0, 0, -1), up: new THREE.Vector3(0, 1, 0), down: new THREE.Vector3(0, -1, 0) }[L.flex];
+  if (L.flex === 'palm' && /^thumb/.test(id)) {   // the thumb closes into the fist: towards the palm and across it, to the little finger
+    const g = posGetter, I = g('index1_' + L.s), P = g('pinky1_' + L.s) || g('ring1_' + L.s);
+    if (I && P) f = f.clone().multiplyScalar(.6).add(P.clone().sub(I).normalize().multiplyScalar(.8)).normalize();
+  }
   return f.multiplyScalar(S.bend[id] || 1);
+}
+// the bend's direction across the bone's zero direction z, its plane turned about the bone by S.twist[id] degrees
+// (a finger set by hand: the bend goes where it really closes)
+function bendPlane(L, id, z) {
+  const f = flexVec(L, id), p = f.clone().sub(z.clone().multiplyScalar(f.dot(z)));
+  if (p.lengthSq() < 1e-8) return null;
+  p.normalize();
+  const tw = (S.twist && S.twist[id]) || 0;
+  return tw ? p.applyAxisAngle(z, THREE.MathUtils.degToRad(tw)) : p;
 }
 const FOOT_ZERO = () => new THREE.Vector3(0, -Math.sin(.7), Math.cos(.7));
 function hingeFrame(id) {   // z: zero direction, p: bend direction perpendicular to z, angle: current bend in degrees
@@ -578,9 +595,8 @@ function hingeFrame(id) {   // z: zero direction, p: bend direction perpendicula
   if (!L || !S.pos[id] || !S.pos[cid]) return null;
   const j = V(S.pos[id]), par = V(S.pos[JMAP[id].parent]), ch = V(S.pos[cid]);
   const z = L.zero === 'parent' ? j.clone().sub(par).normalize() : L.zero === 'self' ? ch.clone().sub(j).normalize() : FOOT_ZERO();
-  const f = flexVec(L, id);
-  const p = f.clone().sub(z.clone().multiplyScalar(f.dot(z)));
-  if (p.lengthSq() < 1e-8) return null; p.normalize();
+  const p = bendPlane(L, id, z);
+  if (!p) return null;
   const c = ch.clone().sub(j); const len = c.length(); c.normalize();
   return { L, j, z, p, len, angle: THREE.MathUtils.radToDeg(Math.atan2(c.dot(p), c.dot(z))) };
 }
@@ -790,7 +806,8 @@ function refreshFields() {
     (S.phase === 'place' ? '{{js:ed.place_the_landmarks_first}}' : '{{js:ed.nothing_selected_click_a_joint}}');
   $('mMove').classList.toggle('on', tc.getMode() === 'translate'); $('mRot').classList.toggle('on', tc.getMode() === 'rotate');
   const hf = on ? hingeFrame(selected) : null;
-  $('bendRow').hidden = !hf;
+  $('bendRow').hidden = !hf; $('twistRow').hidden = !hf;
+  if (hf) $('twistVal').value = (S.twist && S.twist[selected]) || 0;
   $('bendInfo').textContent = hf ? `{{raw:ed.normal_green_sector_where_the_joint}}` : '';
   if (hf) $('bendVal').value = hf.angle.toFixed(0);
   if (!on) { for (const k of ids) $(k).value = ''; return; }
@@ -818,7 +835,7 @@ function refreshAll() {
   $('warn').innerHTML = w.length ? w.map((x) => '⚠ ' + x.text).join('<br>') : (S.phase === 'edit' ? '{{js:ed.joint_bends_are_normal}}' : '');
   $('sym').checked = S.sym; $('xray').classList.toggle('on', xray);
   $('yawTxt').textContent = S.yaw ? `{{raw:ed.model_turned_by}}` : '';
-  $('rebuild').disabled = S.phase !== 'edit'; $('undo').disabled = !undoStack.length; $('redo').disabled = !redoStack.length;
+  $('rebuild').disabled = S.phase !== 'edit'; $('undo').disabled = poseOn && poseRoot ? !poseUndo.length : !undoStack.length; $('redo').disabled = poseOn && poseRoot ? !poseRedo.length : !redoStack.length;
   for (const [id, v] of [['vFront', 'front'], ['vSide', 'side'], ['vFree', 'free']]) $(id).classList.toggle('on', view === v);
   $('badge').textContent = { front: '{{js:ed.front_view}}', side: '{{js:ed.side_view_from_the_character_s_left}}', free: '{{js:ed.free_view}}' }[view];
 }
@@ -906,7 +923,7 @@ function sync() {
     const el = $('sync');
     if (S.phase !== 'edit') { el.textContent = '{{js:ed.the_markup_is_not_finished_yet}}'; el.className = 'sync'; return; }
     const out = { version: 1, source: DATA.source, yaw: S.yaw, sym: S.sym, height: +H.toFixed(4), center_x: +cx.toFixed(5),
-                  marks: S.marks, joints: S.pos, rot: S.rot, bend: S.bend, parents: Object.fromEntries(live().map((j) => [j.id, j.parent])),
+                  marks: S.marks, joints: S.pos, rot: S.rot, bend: S.bend, twist: S.twist, fist: S.fist, fistPose: S.fistPose, parents: Object.fromEntries(live().map((j) => [j.id, j.parent])),
                   ends: live().filter((j) => j.end).map((j) => j.id), fmarks: S.fmarks, face: S.face };
     const text = JSON.stringify(out);
     try {
@@ -1607,7 +1624,12 @@ addEventListener('pointerdown', (e) => {   // the app's page too: a Ctrl+A there
 addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT') return;
   const k = e.key.toLowerCase();
-  if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyZ' || e.code === 'KeyY')) { e.preventDefault(); (e.shiftKey || e.code === 'KeyY' ? redo : undo)(); }
+  if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyZ' || e.code === 'KeyY')) {
+    e.preventDefault();
+    const back = !(e.shiftKey || e.code === 'KeyY');
+    if (poseOn && poseRoot) { poseStep(back ? poseUndo : poseRedo, back ? poseRedo : poseUndo); return; }   // posing: the pose's history
+    (back ? undo : redo)();
+  }
   else if (k === 'g' || k === 'п') { tc.setMode('translate'); refreshFields(); }
   else if (k === 'r' || k === 'к') { tc.setMode('rotate'); refreshFields(); }
   else if (e.key === 'Escape') { if (ovalMode) $('ovalBtn').onclick(); else select(null); }
@@ -1620,7 +1642,8 @@ $('vFront').onclick = () => setView('front'); $('vSide').onclick = () => setView
 $('xray').onclick = () => setXray(!xray);
 $('mMove').onclick = () => { tc.setMode('translate'); refreshFields(); };
 $('mRot').onclick = () => { tc.setMode('rotate'); refreshFields(); };
-$('undo').onclick = undo; $('redo').onclick = redo;
+$('undo').onclick = () => { if (poseOn && poseRoot) poseStep(poseUndo, poseRedo); else undo(); };
+$('redo').onclick = () => { if (poseOn && poseRoot) poseStep(poseRedo, poseUndo); else redo(); };
 $('sym').onchange = () => {
   pushUndo(); S.sym = $('sym').checked;
   if (S.sym) { rightMarks(); if (S.phase === 'edit') for (const j of live()) if (j.id.endsWith('_L')) setPos(j.id, V(S.pos[j.id])); }
@@ -1657,8 +1680,17 @@ $('bendVal').addEventListener('change', () => {
 $('flip').onclick = () => {
   if (!selected) return; pushUndo();
   for (const id of [selected, S.sym ? partner(selected) : null]) if (id) S.bend[id] = -(S.bend[id] || 1);
-  refreshAll(); sync();
+  refreshAll(); sync(); refreshPinfo();
 };
+function setTwist(v) {   // the bend's plane turned about the bone (the pair too, with symmetry)
+  if (!selected) return; pushUndo();
+  S.twist = S.twist || {};
+  for (const id of [selected, S.sym ? partner(selected) : null]) if (id) S.twist[id] = ((v % 360) + 540) % 360 - 180;
+  refreshAll(); sync(); refreshPinfo();
+}
+$('twM').onclick = () => setTwist(((S.twist || {})[selected] || 0) - 15);
+$('twP').onclick = () => setTwist(((S.twist || {})[selected] || 0) + 15);
+$('twistVal').addEventListener('change', () => setTwist(parseFloat($('twistVal').value) || 0));
 $('tabNodes').onclick = () => { railTab = 'nodes'; refreshAll(); };
 $('tabExtra').onclick = () => { railTab = 'extra'; refreshAll(); };
 $('helpBtn').onclick = () => { const m = $('mouseHelp'); m.hidden = !m.hidden; $('helpBtn').classList.toggle('on', !m.hidden); };
@@ -1679,10 +1711,46 @@ for (const s of SIDES) Object.assign(TAILOF, { ['shoulder_' + s]: 'arm_' + s, ['
 const BALL = { spine: 30, spine1: 30, spine2: 30, neck: 45, head: 50, shoulder: 30, arm: 175, upleg: 120, eye: 35 };
 Object.assign(TAILOF, { jaw: 'jaw_end', eye_L: 'eye_end_L', eye_R: 'eye_end_R' });   // max swing from rest, °
 let poseRoot = null, skelHelp = null, poseOn = false, hoverId = null, dragId = null;
-const poseMeshes = [], PB = {}, PBNAME = {}, PINFO = {}, REST = new Map(), RESTW = new Map(), BONE2ID = new Map();   // RESTW: bone name -> world position at rest   // PBNAME: joint id -> bone name as in the GLB
+const poseMeshes = [], PB = {}, PBNAME = {}, PINFO = {}, REST = new Map(), RESTP = new Map(), RESTW = new Map(), BONE2ID = new Map();   // RESTW: bone name -> world position at rest   // PBNAME: joint id -> bone name as in the GLB
 const poseHelp = new THREE.Group(); scene.add(poseHelp);
-const hlMat = new THREE.MeshBasicMaterial({ color: 0xffd31a, transparent: true, opacity: .85, depthTest: false });
+const hlMat = new THREE.MeshBasicMaterial({ color: 0xffd31a, depthTest: false });   // the chosen bone: a yellow line a little thicker than the skeleton's
+const POSE_FAN = { ok: fanMat(0x3fbf6a, .16), bad: fanMat(0xe5484d, .1) };   // its range, faint: the bone is what is looked at
 
+// the pose mode's joints: each bone's hinge (its zero direction, its bend's plane, its range) or ball, from the skeleton
+function buildPinfo() {
+  for (const [id, t] of Object.entries(TAILOF)) {
+    const b = PB[id]; if (!b) continue;
+    const J = b.getWorldPosition(new V3);
+    const kid = b.children.find((c) => c.isBone);
+    const T = PB[t] ? PB[t].getWorldPosition(new V3) : S.pos[t] ? V(S.pos[t]) : kid ? kid.getWorldPosition(new V3) : null; if (!T) continue;
+    const pqi = b.parent.getWorldQuaternion(new Q).invert();
+    const info = { tailLocal: b.worldToLocal(T.clone()), len: T.distanceTo(J) };
+    const L = limitOf(id);
+    if (L) {
+      const z = L.zero === 'parent' ? J.clone().sub(b.parent.getWorldPosition(new V3)).normalize() : L.zero === 'self' ? T.clone().sub(J).normalize() : FOOT_ZERO();
+      const pp = bendPlane(L, id, z) || new V3(1, 0, 0);
+      info.hinge = { L, zL: z.clone().applyQuaternion(pqi), pL: pp.applyQuaternion(pqi) };
+    } else if (BALL[id.replace(/_[LR]$/, '')]) info.ball = { max: BALL[id.replace(/_[LR]$/, '')], dL: T.clone().sub(J).normalize().applyQuaternion(pqi) };
+    PINFO[id] = info;
+  }
+  // the palm's lines (wrist -> a finger's base) are no bones of their own: «meta_<finger>_<side>» turns the finger's base
+  // about the wrist, the whole finger with it (a knuckle set higher or lower); its rest way kept in the hand's frame
+  for (const s of SIDES) for (const f of FINGERS) {
+    const h = PB['hand_' + s], k = PB[`${f}1_${s}`]; if (!h || !k) continue;
+    const J = h.getWorldPosition(new V3), P = k.getWorldPosition(new V3), id = `meta_${f}_${s}`;
+    PB[id] = h;
+    PINFO[id] = { len: P.distanceTo(J), meta: { finger: `${f}1_${s}`, restL: P.sub(J).normalize().applyQuaternion(h.getWorldQuaternion(new Q).invert()) } };
+  }
+}
+function refreshPinfo() {   // the pose mode's joints after a bend was flipped or turned: from the rest pose
+  if (!poseRoot) return;
+  const keep = new Map(); for (const [b] of REST) keep.set(b, b.quaternion.clone());
+  for (const [b, q] of REST) b.quaternion.copy(q);
+  for (const [b, p] of RESTP) b.position.copy(p);
+  poseRoot.updateMatrixWorld(true); buildPinfo();
+  for (const [b, q] of keep) b.quaternion.copy(q);
+  poseRoot.updateMatrixWorld(true);
+}
 async function loadRigged() {
   const url = new URL('/file=' + DATA.rigged + '?v=' + (DATA.rigged_v || 0), window.parent.location.href).href;   // ?v: no stale cache after a rebuild
   const gltf = await new GLTFLoader().loadAsync(url);
@@ -1695,7 +1763,7 @@ async function loadRigged() {
   }
   const byName = {};
   poseRoot.traverse((o) => {
-    if (o.isBone) { byName[o.name] = o; REST.set(o, o.quaternion.clone()); RESTW.set(o.name, o.getWorldPosition(new V3())); }
+    if (o.isBone) { byName[o.name] = o; REST.set(o, o.quaternion.clone()); RESTP.set(o, o.position.clone()); RESTW.set(o.name, o.getWorldPosition(new V3())); }
     if (o.isMesh) { poseMeshes.push(o); for (const mt of [].concat(o.material)) mt.side = THREE.DoubleSide; }
   });
   for (const tbl of Object.values(DATA.names || {})) for (const [id, n] of Object.entries(tbl)) {
@@ -1703,21 +1771,7 @@ async function loadRigged() {
   }
   const keepGetter = posGetter;   // palm normals from the loaded skeleton (also works for Mixamo FBX)
   posGetter = (id) => (PB[id] ? PB[id].getWorldPosition(new V3) : S.pos[id] ? V(S.pos[id]) : null);
-  for (const [id, t] of Object.entries(TAILOF)) {
-    const b = PB[id]; if (!b) continue;
-    const J = b.getWorldPosition(new V3);
-    const kid = b.children.find((c) => c.isBone);
-    const T = PB[t] ? PB[t].getWorldPosition(new V3) : S.pos[t] ? V(S.pos[t]) : kid ? kid.getWorldPosition(new V3) : null; if (!T) continue;
-    const pqi = b.parent.getWorldQuaternion(new Q).invert();
-    const info = { tailLocal: b.worldToLocal(T.clone()), len: T.distanceTo(J) };
-    const L = limitOf(id);
-    if (L) {
-      const z = L.zero === 'parent' ? J.clone().sub(b.parent.getWorldPosition(new V3)).normalize() : L.zero === 'self' ? T.clone().sub(J).normalize() : FOOT_ZERO();
-      const f = flexVec(L, id), pp = f.clone().sub(z.clone().multiplyScalar(f.dot(z))).normalize();
-      info.hinge = { L, zL: z.clone().applyQuaternion(pqi), pL: pp.applyQuaternion(pqi) };
-    } else if (BALL[id.replace(/_[LR]$/, '')]) info.ball = { max: BALL[id.replace(/_[LR]$/, '')], dL: T.clone().sub(J).normalize().applyQuaternion(pqi) };
-    PINFO[id] = info;
-  }
+  buildPinfo();
   posGetter = keepGetter;
   if ((DATA.clips || []).length) {
     $('pClipFace').innerHTML = DATA.clips.map((c, i) => `<option value="${i}">${c.name}</option>`).join('');
@@ -1737,7 +1791,7 @@ async function loadRigged() {
   skelHelp = new THREE.SkeletonHelper(poseRoot); skelHelp.material.depthTest = false; skelHelp.material.transparent = true;
   skelHelp.material.opacity = .5; skelHelp.renderOrder = 996; scene.add(skelHelp);
 }
-const tailWorld = (id) => PB[id].localToWorld(PINFO[id].tailLocal.clone());
+const tailWorld = (id) => PINFO[id].meta ? PB[PINFO[id].meta.finger].getWorldPosition(new V3) : PB[id].localToWorld(PINFO[id].tailLocal.clone());
 function frameNow(id) {
   const b = PB[id], i = PINFO[id], pq = b.parent.getWorldQuaternion(new Q);
   return { j: b.getWorldPosition(new V3), z: i.hinge && i.hinge.zL.clone().applyQuaternion(pq), p: i.hinge && i.hinge.pL.clone().applyQuaternion(pq),
@@ -1772,20 +1826,27 @@ function poseReset() {
   stopClip(); if (mixer) mixer.stopAllAction();
   for (const m of poseMeshes) if (m.morphTargetInfluences) m.morphTargetInfluences.fill(0);
   if ($('pMorphV')) $('pMorphV').value = 0;
-  for (const [b, q] of REST) b.quaternion.copy(q); poseRoot.updateMatrixWorld(true);
+  for (const [b, q] of REST) b.quaternion.copy(q);
+  for (const [b, p] of RESTP) b.position.copy(p); poseRoot.updateMatrixWorld(true);
 }
 function poseHighlight(info) {
   for (const c of [...poseHelp.children]) { poseHelp.remove(c); if (c.geometry) c.geometry.dispose(); }
   const id = dragId || hoverId; if (!id || !PINFO[id]) { if (!dragId) $('pInfo').textContent = '{{js:ed.hover_over_an_arm_a_leg_the_head_or}}'; $('pInfo').className = 'pinfo'; return; }
   const F = frameNow(id), T = tailWorld(id), len = T.distanceTo(F.j);
-  const cyl = new THREE.Mesh(new THREE.CylinderGeometry(.012 * H, .006 * H, len, 10), hlMat);
+  const thick = Math.min(.0022 * H, .05 * len);
+  const cyl = new THREE.Mesh(new THREE.CylinderGeometry(thick, thick, len, 6), hlMat);
   cyl.position.copy(F.j).lerp(T, .5); cyl.quaternion.setFromUnitVectors(new V3(0, 1, 0), T.clone().sub(F.j).normalize());
   cyl.renderOrder = 999; poseHelp.add(cyl);
   const i = PINFO[id];
-  if (i.hinge) {
+  if (i.hinge && !freeOn) {   // free dragging has no stops: no range drawn
     const h = { j: F.j, z: F.z, p: F.p }, L = i.hinge.L, r = len * .9;
-    fan(h, L.min, L.max, r, FAN.okSel, poseHelp);
-    fan(h, L.max, Math.min(L.max + 50, 180), r, FAN.badSel, poseHelp); fan(h, Math.max(L.min - 50, -180), L.min, r, FAN.badSel, poseHelp);
+    fan(h, L.min, L.max, r, POSE_FAN.ok, poseHelp);
+    fan(h, L.max, Math.min(L.max + 50, 180), r, POSE_FAN.bad, poseHelp); fan(h, Math.max(L.min - 50, -180), L.min, r, POSE_FAN.bad, poseHelp);
+  }
+  if (i.meta) {
+    const a = deg(T.clone().sub(F.j).normalize().angleTo(i.meta.restL.clone().applyQuaternion(PB[id].getWorldQuaternion(new Q))));
+    $('pInfo').textContent = `${JMAP[i.meta.finger].label}{{raw:ed.meta_info}}` + (info && info.stop ? '{{js:ed.limit}}' : '') + (dragId ? '' : '{{js:ed.drag_with_the_mouse}}');
+    $('pInfo').className = 'pinfo' + (info && info.stop ? ' stop' : ''); return;
   }
   const name = JMAP[id].label, cur = i.hinge ? deg(Math.atan2(T.clone().sub(F.j).normalize().dot(F.p), T.clone().sub(F.j).normalize().dot(F.z))) : i.ball ? deg(T.clone().sub(F.j).normalize().angleTo(F.d)) : 0;
   const lim = i.hinge ? `{{raw:ed.normal_2}}` : i.ball ? `{{raw:ed.up_to_from_rest}}` : '';
@@ -1807,6 +1868,35 @@ function pickBone(e) {
   if (id === 'hips') id = 'spine';
   lastBone = best;
   return id && PINFO[id] ? id : null;
+}
+// The hand's lines by nearness on the screen (a finger bone is thin under the cursor, the palm's lines have no skin of
+// their own): the nearest within 8 px, the palm's ones not by the wrist where they all meet.
+function pickLink(e) {
+  const rc = canvas.getBoundingClientRect(), mx = e.clientX - rc.left, my = e.clientY - rc.top;
+  const scr = (v) => { const p = v.clone().project(camera); return [(p.x + 1) / 2 * rc.width, (1 - p.y) / 2 * rc.height, p.z]; };
+  let best = null, bd = 8;
+  for (const s of SIDES) for (const f of FINGERS) for (const id of [`meta_${f}_${s}`, `${f}1_${s}`, `${f}2_${s}`, `${f}3_${s}`]) {
+    if (!PINFO[id] || !PB[id]) continue;
+    const A = scr(PB[id].getWorldPosition(new V3)), B = scr(tailWorld(id)); if (A[2] > 1 || B[2] > 1) continue;
+    const vx = B[0] - A[0], vy = B[1] - A[1], l2 = vx * vx + vy * vy; if (l2 < 144) continue;
+    const t = Math.max(0, Math.min(1, ((mx - A[0]) * vx + (my - A[1]) * vy) / l2));
+    if (PINFO[id].meta && t < .25) continue;
+    const d = Math.hypot(A[0] + t * vx - mx, A[1] + t * vy - my); if (d < bd) { bd = d; best = id; }
+  }
+  return best;
+}
+const META_MAX = 25;   // a knuckle's swing from its rest, ° (not in «Free»)
+function aimMeta(id, dir) {
+  const i = PINFO[id].meta, h = PB[id], k = PB[i.finger], J = h.getWorldPosition(new V3), P = k.getWorldPosition(new V3);
+  const r = i.restL.clone().applyQuaternion(h.getWorldQuaternion(new Q));
+  let d = dir.clone().normalize(), stop = false;
+  if (!freeOn && d.angleTo(r) > rad(META_MAX)) {
+    const ax = r.clone().cross(d); if (ax.lengthSq() > 1e-12) d = r.clone().applyAxisAngle(ax.normalize(), rad(META_MAX)); stop = true;
+  }
+  const q = new Q().setFromUnitVectors(P.clone().sub(J).normalize(), d), wq = k.getWorldQuaternion(new Q), pqi = k.parent.getWorldQuaternion(new Q).invert();
+  const NP = J.clone().add(P.sub(J).applyQuaternion(q));
+  k.quaternion.copy(pqi.multiply(q.multiply(wq))); k.position.copy(k.parent.worldToLocal(NP)); k.updateMatrixWorld(true);
+  return { stop };
 }
 // ---- weight view: colour the skin by the weights of the bone under the cursor (blue 0 ... red 1)
 let lastBone = null, weightsOn = false, weightBone = null;
@@ -1850,6 +1940,18 @@ canvas.addEventListener('pointermove', (e) => {
   pendingMove = e;
   requestAnimationFrame(() => {
     const ev = pendingMove; pendingMove = null;
+    if (dragId && dragStart) {
+      // the bone turns with the mouse's move, not to the pointer (a short finger bone would jump): ~0.35° a pixel, with
+      // Shift 0.1°; across the screen about the view's up, up and down about its right
+      const k = THREE.MathUtils.degToRad(ev.shiftKey ? .1 : .35), dx = ev.clientX - dragStart.x, dy = ev.clientY - dragStart.y;
+      const right = new V3(1, 0, 0).applyQuaternion(camera.quaternion), up = new V3(0, 1, 0).applyQuaternion(camera.quaternion);
+      const d = dragStart.dir.clone().applyAxisAngle(up, dx * k).applyAxisAngle(right, dy * k);
+      if (/_([LR])$/.exec(dragId)) lastSide = RegExp.$1;
+      if (PINFO[dragId].meta) poseHighlight(aimMeta(dragId, d));
+      else if (freeOn) { aimFree(dragId, d); poseHighlight(); }
+      else poseHighlight(aimBone(dragId, d));
+      return;
+    }
     if (dragId) {
       const rc = canvas.getBoundingClientRect();
       ndc.set(((ev.clientX - rc.left) / rc.width) * 2 - 1, -((ev.clientY - rc.top) / rc.height) * 2 + 1);
@@ -1863,7 +1965,8 @@ canvas.addEventListener('pointermove', (e) => {
       if (F.z) { const ax = F.z.clone().cross(F.p).normalize(); d.sub(ax.multiplyScalar(d.dot(ax))); }
       poseHighlight(aimBone(dragId, d));
     } else {
-      const id = pickBone(ev);
+      let id = pickBone(ev);
+      id = pickLink(ev) || id;
       if (weightsOn && lastBone && lastBone !== weightBone) {
         weightBone = lastBone; paintWeights(weightBone);
         if (!id) { $('pInfo').textContent = `{{raw:ed.bone_weights}}`; $('pInfo').className = 'pinfo'; }
@@ -1874,9 +1977,25 @@ canvas.addEventListener('pointermove', (e) => {
 });
 canvas.addEventListener('pointerdown', (e) => {
   if (!poseOn || e.button !== 0 || !hoverId || playing || tcW.axis || (wearOn && wear && !wear.fittedShown)) return;   // the armour is being placed
+  posePush();
   dragId = hoverId; orbit.enabled = false; canvas.setPointerCapture(e.pointerId);
+  dragStart = { x: e.clientX, y: e.clientY, dir: tailWorld(dragId).sub(PB[dragId].getWorldPosition(new V3)).normalize() };
 });
-addEventListener('pointerup', () => { if (dragId) { dragId = null; orbit.enabled = true; poseHighlight(); } });
+addEventListener('pointerup', () => { if (dragId) { dragId = null; dragStart = null; orbit.enabled = true; poseHighlight(); } });
+// ---- the pose's own undo / redo (Ctrl+Z, Ctrl+Shift+Z, the buttons while posing): each drag and each pose button a step
+let dragStart = null;
+const poseUndo = [], poseRedo = [];
+const poseSnap = () => [...REST.keys()].map((b) => [b, b.quaternion.clone(), b.position.clone()]);
+const poseButtons = () => { $('undo').disabled = !poseUndo.length; $('redo').disabled = !poseRedo.length; };
+function posePush() { if (!poseRoot) return; poseUndo.push(poseSnap()); if (poseUndo.length > 100) poseUndo.shift(); poseRedo.length = 0; poseButtons(); }
+function poseStep(from, to) {
+  if (!from.length) return false;
+  to.push(poseSnap());
+  for (const [b, q, p] of from.pop()) { b.quaternion.copy(q); b.position.copy(p); }
+  poseRoot.updateMatrixWorld(true); poseHighlight(); poseButtons(); return true;
+}
+for (const id of ['pReset', 'pCheck', 'pSquat', 'pFist', 'pFistFit', 'pFistMirror', 'pJaw'])
+  $(id).addEventListener('click', () => posePush(), true);   // before the button moves the bones
 
 async function setPose(on) {
   if (on && !DATA.rigged) { alert('{{js:ed.first_press_build_the_skeleton_and}}'); return; }
@@ -1904,7 +2023,7 @@ $('pPlay').onclick = () => {
   $('pPlay').textContent = '{{js:ed.pause}}';
 };
 $('pClip').onchange = () => { if (playing) { stopClip(); $('pPlay').onclick(); } };
-window.sf3dPose = { PB, PINFO, REST, poseMeshes, pickBone, camera, ray, tcO, ovalHelper, S };   // for debugging from the browser console
+window.sf3dPose = { PB, PINFO, REST, poseMeshes, hover: () => hoverId, pickBone, camera, ray, tcO, ovalHelper, S, select: (id) => select(id), setTwist: (v) => setTwist(v), hingeFrame: (id) => hingeFrame(id), controls: orbit };   // for debugging from the browser console
 $('pReset').onclick = () => { poseReset(); $('pEmo').value = ''; applyEmotion(); poseHighlight(); };
 const FW = new V3(0, 0, 1), UPV = new V3(0, 1, 0), BK = new V3(0, 0, -1);
 $('pCheck').onclick = () => {
@@ -1967,11 +2086,201 @@ $('pJaw').onclick = () => {
   if (plate) setMorph('jawOpen', .8); else setHinge('jaw', 20);
   poseHighlight();
 };
+// the fist: each joint's angle in it (S.fist, from «Fit the fist») or the general one
+const fistAngle = (f, k, s) => { const v = S.fist && S.fist[`${f}${k}_${s}`]; return v !== undefined ? v : (f === 'thumb' ? [25, 40, 50] : [80, 95, 70])[k - 1]; };
 $('pFist').onclick = () => {
   stopClip();
-  for (const s of SIDES) for (const f of FINGERS) (f === 'thumb' ? [25, 40, 50] : [80, 95, 70]).forEach((a, i) => setHinge(`${f}${i + 1}_${s}`, a));
+  if (!applyFistPose(1)) for (const s of SIDES) for (const f of FINGERS) for (let k = 1; k <= 3; k++) setHinge(`${f}${k}_${s}`, fistAngle(f, k, s));
   poseHighlight();
 };
+// «Fit the fist»: the bones of the fingers set to make a real fist, worked back from how one looks. The four fingers curl
+// in planes across the palm (side by side, not fanned), their tips coming down on the palm a third of the hand's
+// length below their knuckles; the thumb lies across the middle bones of the index and middle fingers. For each joint
+// the plane of its bend is turned (S.twist) and its angle in the fist found (S.fist): the joints in their usual
+// shares (the middle one bends most), the chain turned until the tip is nearest its place
+const FIST_DEG = [90, 100, 40];   // the knuckle, the middle joint, the tip's joint
+function fitFist() {
+  const P = (id) => (S.pos[id] ? V(S.pos[id]) : null), rot = (v, k, a) => v.clone().applyAxisAngle(k, a);
+  const chainAt = (ch, k, th) => {   // the chain's points with its joints turned th about k
+    const out = [ch[0].clone()]; let ang = 0;
+    for (let i = 0; i < 3; i++) { ang += th[i]; out.push(out[i].clone().add(rot(ch[i + 1].clone().sub(ch[i]), k, ang))); }
+    return out;
+  };
+  const solve = (ch, k, share, T, most = 2.4) => {   // the scale of the shares that brings the tip nearest T (at most «most»)
+    let best = null;
+    for (let sc = 0; sc <= most; sc += .01) {
+      const th = share.map((x) => x * sc), pts = chainAt(ch, k, th), e = pts[3].distanceTo(T);
+      if (!best || e < best.e) best = { e, th, pts };
+    }
+    return best;
+  };
+  const setJoint = (id, k, theta) => {   // the plane turned so it bends about k, the fist's angle from its rest one
+    const L = limitOf(id); if (!L) return;
+    S.twist[id] = 0;
+    const h0 = hingeFrame(id); if (!h0) return;
+    const want = k.clone().cross(h0.z); if (want.lengthSq() < 1e-8) return; want.normalize();
+    S.twist[id] = Math.round(THREE.MathUtils.radToDeg(Math.atan2(h0.p.clone().cross(want).dot(h0.z), h0.p.dot(want))));
+    let h = hingeFrame(id); if (!h) return;
+    let ang = h.angle + THREE.MathUtils.radToDeg(theta);
+    if (ang < L.min) {   // past its stop that way: the plane turned round, the same turn is a bend the other way
+      S.twist[id] = ((S.twist[id] + 180 + 180) % 360) - 180;
+      h = hingeFrame(id); ang = h.angle - THREE.MathUtils.radToDeg(theta);
+    }
+    S.fist[id] = Math.round(ang);
+  };
+  S.twist = S.twist || {}; S.fist = S.fist || {};
+  const report = [], moved = [];
+  for (const sd of SIDES) {
+    const H = P('hand_' + sd), I = P('index1_' + sd), Pk = P('pinky1_' + sd) || P('ring1_' + sd), T1 = P('thumb1_' + sd);
+    if (!H || !I || !Pk) continue;
+    const K = I.clone().add(Pk).multiplyScalar(.5), hl = K.distanceTo(H), pw = I.distanceTo(Pk);
+    const c = I.clone().sub(Pk).normalize(), a = K.clone().sub(H).normalize(), n = new V3().crossVectors(c, a).normalize();
+    if (T1 && T1.clone().sub(H).dot(n) < 0) n.negate();   // towards the palm: the thumb's root is on its side
+    // the knuckles on one line: the middle and ring fingers' roots (their fingers with them) put on the line from the
+    // index finger's to the little finger's, along the hand — in a fist their bones end level, not in steps
+    const span = I.clone().sub(Pk).dot(c);
+    for (const f of ['middle', 'ring']) {
+      const r = P(`${f}1_${sd}`); if (!r || Math.abs(span) < 1e-6) continue;
+      const t = r.clone().sub(Pk).dot(c) / span, want = Pk.dot(a) + t * (I.dot(a) - Pk.dot(a)), d = a.clone().multiplyScalar(want - r.dot(a));
+      for (let k = 1; k <= 4; k++) { const id = `${f}${k}_${sd}`; if (S.pos[id]) S.pos[id] = arr(V(S.pos[id]).add(d)); }
+      if (d.length() > .02 * hl) moved.push(`${f}${sd}`);
+    }
+    const curled = {};
+    for (const f of ['index', 'middle', 'ring', 'pinky']) {
+      const ch = [1, 2, 3, 4].map((k) => P(`${f}${k}_${sd}`)); if (!ch.every(Boolean)) continue;
+      // a fist, from the side: the first bone at a right angle to the hand, the middle one turned back along the
+      // hand, the tip a little further in; the three joints of a finger in one plane, through the finger and the
+      // palm's normal
+      const k = ch[1].clone().sub(ch[0]).cross(n).normalize();
+      const th = FIST_DEG.map((x) => THREE.MathUtils.degToRad(x));
+      [1, 2, 3].forEach((j) => setJoint(`${f}${j}_${sd}`, k, th[j - 1]));
+      curled[f] = chainAt(ch, k, th);
+      report.push(`${f}${sd} ${(curled[f][3].clone().sub(ch[0]).dot(n) / pw * 100).toFixed(0)}%`);
+    }
+    const th = [1, 2, 3, 4].map((k) => P(`thumb${k}_${sd}`));
+    if (th.every(Boolean) && curled.index && curled.middle) {
+      // the thumb closes in two moves: its root swings across the palm (about the hand's length), then its two upper
+      // joints bend over the curled index and middle fingers, its tip on their middle bones' front
+      const mid = (q) => q[1].clone().add(q[2]).multiplyScalar(.5);
+      const m = mid(curled.index).add(mid(curled.middle)).multiplyScalar(.5);
+      const T = m.clone().addScaledVector(n, .2 * pw);   // on their outer side
+      const kA = a.clone(); if (kA.clone().cross(th[3].clone().sub(th[0])).dot(n) < 0) kA.negate();   // the swing towards the palm
+      let best = null;
+      for (let ph = -1.4; ph <= 1.4; ph += .02) {   // either way: the sign of the swing depends on the markup
+        const sw = th.map((q) => th[0].clone().add(q.clone().sub(th[0]).applyAxisAngle(kA, ph)));   // swung
+        let k2 = sw[2].clone().sub(sw[1]).cross(n).normalize();
+        if (k2.lengthSq() < .5) continue;
+        for (let ps = -1.6; ps <= 1.6; ps += .02) {
+          const p2 = sw[1].clone(), p3 = p2.clone().add(sw[2].clone().sub(sw[1]).applyAxisAngle(k2, ps)),
+            p4 = p3.clone().add(sw[3].clone().sub(sw[2]).applyAxisAngle(k2, ps * 1.8));
+          const e = p4.distanceTo(T);
+          if (!best || e < best.e) best = { e, ph, ps, k2: k2.clone().applyAxisAngle(kA, -ph) };   // k2 back on the rest pose
+        }
+      }
+      if (best) {
+        setJoint(`thumb1_${sd}`, kA, best.ph); setJoint(`thumb2_${sd}`, best.k2, best.ps); setJoint(`thumb3_${sd}`, best.k2, best.ps * .8);
+        report.push(`thumb${sd} ${(best.e / hl * 100).toFixed(0)}%`);
+      }
+    }
+  }
+  return { report, moved };
+}
+// ---- the fist by hand: in «Free» a finger's joints are dragged anywhere (no hinge, no stops); «Remember the fist» keeps
+// the fingers as they are (each bone's turn from its rest, S.fistPose) — «Fist» and the motion check show it then;
+// «Mirror the fist» puts the other hand the same way (each bone pointing the mirrored way)
+let freeOn = false, lastSide = 'R';
+const FIST_IDS = (sd) => FINGERS.flatMap((f) => [1, 2, 3].map((k) => `${f}${k}_${sd}`)).filter((id) => PB[id]);
+function aimFree(id, dir) {
+  const b = PB[id], J = b.getWorldPosition(new V3), cur = tailWorld(id).sub(J).normalize();
+  const q = new Q().setFromUnitVectors(cur, dir.clone().normalize()), wq = b.getWorldQuaternion(new Q), pqi = b.parent.getWorldQuaternion(new Q).invert();
+  b.quaternion.copy(pqi.multiply(q.multiply(wq))); b.updateMatrixWorld(true);
+}
+function applyFistPose(share) {   // the remembered fist, «share» of the way from the rest (the motion check closes it)
+  let any = false;
+  for (const [id, q] of Object.entries(S.fistPose || {})) {
+    const b = PB[id]; if (!b || !REST.has(b)) continue;
+    const d = new Q(...q), r = REST.get(b);
+    b.quaternion.copy(r.clone().multiply(new Q().slerp(d, share))); any = true;
+    b.position.copy(RESTP.get(b)); if (q.length >= 7) b.position.add(new V3(q[4], q[5], q[6]).multiplyScalar(share));
+  }
+  if (any) poseRoot.updateMatrixWorld(true);
+  return any;
+}
+$('pFree').onclick = () => { freeOn = !freeOn; $('pFree').classList.toggle('on', freeOn); $('pInfo').textContent = freeOn ? '{{js:ed.free_on}}' : ''; };
+$('pFistSave').onclick = () => {
+  pushUndo(); S.fistPose = {};
+  for (const sd of SIDES) for (const id of FIST_IDS(sd)) {
+    const b = PB[id], d = REST.get(b).clone().invert().multiply(b.quaternion), m = b.position.clone().sub(RESTP.get(b));
+    const moved = m.length() > 1e-6 * Math.max(1e-9, RESTP.get(b).length() || 1);
+    if (Math.abs(d.w) < .99995 || moved) S.fistPose[id] = [d.x, d.y, d.z, d.w].concat(moved ? [m.x, m.y, m.z] : []).map((x) => +x.toFixed(6));
+  }
+  sync(); $('pInfo').textContent = ((DATA.state || {}).auto ? '{{js:ed.fist_saved_auto}}' : '{{js:ed.fist_saved}}').replace('{0}', Object.keys(S.fistPose).length);
+};
+$('pFistMirror').onclick = () => {   // the other hand as this one: each bone, from the root out, pointing the mirrored way
+  const from = lastSide, to = from === 'L' ? 'R' : 'L';
+  const keep = freeOn; freeOn = true;
+  for (const f of FINGERS) if (PINFO[`meta_${f}_${from}`] && PINFO[`meta_${f}_${to}`]) {   // the knuckles first
+    const dir = tailWorld(`meta_${f}_${from}`).sub(PB['hand_' + from].getWorldPosition(new V3)); dir.x = -dir.x;
+    aimMeta(`meta_${f}_${to}`, dir);
+  }
+  freeOn = keep;
+  for (const f of FINGERS) for (let k = 1; k <= 3; k++) {
+    const a = PB[`${f}${k}_${from}`], b = PB[`${f}${k}_${to}`]; if (!a || !b) continue;
+    const dir = tailWorld(`${f}${k}_${from}`).sub(a.getWorldPosition(new V3)); dir.x = -dir.x;
+    aimFree(`${f}${k}_${to}`, dir);
+  }
+  poseHighlight(); $('pFistSave').onclick();
+};
+$('pFistFit').onclick = () => {
+  pushUndo(); stopClip();
+  const r = fitFist();
+  refreshPinfo(); sync(); refreshAll();
+  $('pFist').onclick();
+  $('pInfo').textContent = '{{js:ed.fist_fitted}}' + r.report.join(', ') + (r.moved.length ? ' ' + '{{js:ed.fist_knuckles_moved}}'.replace('{0}', r.moved.join(', ')) : '');
+};
+// ---- the check in motion: small loops on the spot, one group of joints at a time (or all in turn), each within its own
+// range, to see that the bones sit right (a finger bending sideways, an elbow the wrong way, a wrist twisting)
+const TEST_ORDER = ['fist', 'wrist', 'elbow', 'shoulder', 'knee', 'ankle', 'head', 'jaw'], TEST_SEC = 2.6;
+let test = null;   // {kind, t0}
+const TEST_LABEL = { fist: '{{js:ed.test_fist}}', wrist: '{{js:ed.test_wrist}}', elbow: '{{js:ed.test_elbow}}', shoulder: '{{js:ed.test_shoulder}}',
+  knee: '{{js:ed.test_knee}}', ankle: '{{js:ed.test_ankle}}', head: '{{js:ed.test_head}}', jaw: '{{js:ed.test_jaw}}' };
+function hingeTo(id, share) {   // a hinge at that share of its range: 0..1 flexes, below 0 extends (to its lower stop)
+  const i = PINFO[id]; if (!i || !i.hinge) return;
+  const L = i.hinge.L; setHinge(id, share >= 0 ? share * L.max : -share * L.min);
+}
+function testPose(kind, c, w) {   // c: 0 -> 1 -> 0 (a closing), w: -1 -> 1 -> -1 (to and fro)
+  for (const [b, q] of REST) b.quaternion.copy(q);
+  for (const [b, p] of RESTP) b.position.copy(p);
+  poseRoot.updateMatrixWorld(true);
+  for (const m of poseMeshes) if (m.morphTargetInfluences && m.morphTargetDictionary && 'jawOpen' in m.morphTargetDictionary) m.morphTargetInfluences[m.morphTargetDictionary.jawOpen] = 0;
+  if (kind === 'fist' && !applyFistPose(c)) for (const sd of SIDES) for (const f of FINGERS) for (let k = 1; k <= 3; k++) setHinge(`${f}${k}_${sd}`, c * fistAngle(f, k, sd));
+  if (kind === 'wrist') for (const sd of SIDES) hingeTo('hand_' + sd, .8 * w);
+  if (kind === 'elbow') for (const sd of SIDES) hingeTo('forearm_' + sd, .9 * c);
+  if (kind === 'shoulder') for (const sd of SIDES) { poseBend('arm_' + sd, UPV, 85 * c); hingeTo('forearm_' + sd, .3 * c); }
+  if (kind === 'knee') for (const sd of SIDES) { poseBend('upleg_' + sd, FW, 75 * c); hingeTo('leg_' + sd, .8 * c); }
+  if (kind === 'ankle') for (const sd of SIDES) hingeTo('foot_' + sd, .8 * w);
+  if (kind === 'head') { poseBend('neck', FW, 18 * w); poseBend('head', FW, 22 * w); }
+  if (kind === 'jaw') {
+    const plate = poseMeshes.some((m) => m.morphTargetDictionary && 'jawOpen' in m.morphTargetDictionary);
+    if (plate) setMorph('jawOpen', .85 * c); else hingeTo('jaw', .9 * c);
+  }
+}
+function testFrame() {
+  if (!test || !poseOn) return;
+  const t = (performance.now() - test.t0) / 1000;
+  const kind = test.kind === 'all' ? TEST_ORDER[Math.floor(t / TEST_SEC) % TEST_ORDER.length] : test.kind;
+  const ph = (t % TEST_SEC) / TEST_SEC, c = (1 - Math.cos(ph * 2 * Math.PI)) / 2, w = Math.sin(ph * 2 * Math.PI);
+  testPose(kind, c, w);
+  $('pInfo').textContent = '{{js:ed.test_now}}' + TEST_LABEL[kind];
+}
+function testStop() { if (!test) return; test = null; $('pTestGo').textContent = '{{js:ed.test_go}}'; $('pTestGo').classList.remove('on'); poseReset(); poseHighlight(); }
+$('pTestGo').onclick = () => {
+  if (test) { testStop(); return; }
+  stopClip(); test = { kind: $('pTest').value, t0: performance.now() };
+  $('pTestGo').textContent = '{{js:ed.test_stop}}'; $('pTestGo').classList.add('on');
+};
+$('pTest').onchange = () => { if (test) test = { kind: $('pTest').value, t0: performance.now() }; };
+for (const id of ['pReset', 'pCheck', 'pSquat', 'pFist', 'pJaw', 'pPlay']) $(id).addEventListener('click', () => { if (test && id !== 'pTestGo') { test = null; $('pTestGo').textContent = '{{js:ed.test_go}}'; $('pTestGo').classList.remove('on'); } }, true);
 $('pSquat').onclick = () => {
   poseReset();
   for (const s of SIDES) { poseBend('upleg_' + s, FW, 95); poseBend('leg_' + s, BK, 115); poseBend('arm_' + s, FW, 80); poseBend('forearm_' + s, UPV, 20); }
@@ -3118,7 +3427,7 @@ async function wearSend(action, extra, wait) {
     window.parent.document.querySelector('#' + DATA.wear_go).click();
   } catch (e) { $('wStatus').textContent = '{{js:ed.could_not_send_to_sf3d}}' + e.message; return null; }
   $('wStatus').textContent = wait;
-  const stem = DATA.rigged.split('/').pop().replace(/_landmarks_rigged\.glb$/i, '').replace(/\.glb$/i, '');
+  const stem = DATA.rigged.split('/').pop().replace(/_(landmarks_)?rigged\.glb$/i, '').replace(/\.glb$/i, '');
   const status = DATA.rigged.replace(/[^/]*$/, '') + stem + (action === 'wardrobe' ? '_wardrobe' : '_wear_' + req.item) + '.wear.json';
   for (let k = 0; k < 400; k++) {
     await new Promise((r) => setTimeout(r, 1500));
@@ -3309,7 +3618,7 @@ addEventListener('keydown', (e) => {   // G / R / S like the joints
     gltf.scene.traverse((o) => { if (o.isMesh) { meshes.push(o); o.geometry.computeBoundsTree(); for (const mt of [].concat(o.material)) mt.side = THREE.DoubleSide; } });
     if (DATA.state && DATA.state.joints) {
       Object.assign(S, { phase: 'edit', yaw: DATA.state.yaw || 0, sym: DATA.state.sym !== false, marks: DATA.state.marks || {},
-                         pos: DATA.state.joints, rot: DATA.state.rot || {}, bend: DATA.state.bend || {}, fmarks: DATA.state.fmarks || {}, face: DATA.state.face || {} });
+                         pos: DATA.state.joints, rot: DATA.state.rot || {}, bend: DATA.state.bend || {}, twist: DATA.state.twist || {}, fist: DATA.state.fist || {}, fistPose: DATA.state.fistPose || {}, fmarks: DATA.state.fmarks || {}, face: DATA.state.face || {} });
       cx = DATA.state.center_x || 0;
     }
     applyYaw(); $('msg').hidden = true;
@@ -3341,6 +3650,7 @@ renderer.setAnimationLoop(() => {
   if (frameHidden()) return;
   if (mixer && playing && poseOn) { mixer.update(dt); if (hoverId) poseHighlight(); }
   if (poseOn) sayFrame();
+  if (test) { if (poseOn) testFrame(); else testStop(); }
   renderer.render(scene, camera);
 });
 </script>

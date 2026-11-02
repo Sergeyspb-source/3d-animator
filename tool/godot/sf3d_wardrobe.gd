@@ -5,6 +5,7 @@
 ##
 ## A picture, then quit: godot --path <project> -- --shot=out.png [--anim=walk] [--at=0.5] [--yaw=30] [--zoom=2]
 ## [--pitch=-0.5] [--rise=0.3] (the look down, the point looked at raised by that share of the height)
+## [--focus=RightHand] (the point looked at: that bone, where the clip has it when the picture is taken)
 extends Node3D
 
 const Equip = preload("sf3d_equip.gd")
@@ -22,6 +23,8 @@ var _target := Vector3.ZERO
 var _worn := {}   # piece name -> its meshes
 var _repeat := true
 var _list := ItemList.new()
+var _args := {}   # --key=value after «--»
+var _h := 1.0     # the character's height
 
 
 func _ready() -> void:
@@ -29,7 +32,11 @@ func _ready() -> void:
 	add_child(_model)
 	var box := _bounds(_model)
 	_target = box.get_center()
+	_h = box.size.y
 	_dist = maxf(box.size.y, box.size.x) * 1.2
+	for a in OS.get_cmdline_user_args():
+		var kv := a.trim_prefix("--").split("=", true, 1)
+		_args[kv[0]] = kv[1] if kv.size() > 1 else ""
 	for p in pieces:
 		_worn[p.resource_path.get_file().get_basename().trim_prefix("wear_")] = Equip.wear(_model, p)
 	var players := _model.find_children("*", "AnimationPlayer", true, false)
@@ -39,10 +46,7 @@ func _ready() -> void:
 	_stage(box)
 	_ui()
 	_place_camera()
-	var args := {}
-	for a in OS.get_cmdline_user_args():
-		var kv := a.trim_prefix("--").split("=", true, 1)
-		args[kv[0]] = kv[1] if kv.size() > 1 else ""
+	var args := _args
 	var clips := _clips()
 	var first: int = clips.find(args.get("anim", ""))
 	if first < 0:   # the idle clip first, if there is one
@@ -60,7 +64,7 @@ func _ready() -> void:
 		_pitch = float(args.get("pitch", str(_pitch)))
 		_target.y += float(args.get("rise", "0")) * box.size.y
 		_place_camera()
-		_shoot(args["shot"], float(args.get("at", "0.5")))
+		_shoot(args["shot"], float(args.get("at", "0.5")), String(args.get("focus", "")))
 
 
 func _clips() -> Array:
@@ -144,6 +148,29 @@ func _ui() -> void:
 		cb.button_pressed = true
 		cb.toggled.connect(func(on): Equip.show(_worn[name], on))
 		box.add_child(cb)
+		var meshes: Array = _worn[name]
+		if not meshes.is_empty() and meshes[0].has_meta("sf3d_cloth"):   # a cloak: a wind from the front swings it
+			var sim = meshes[0].get_meta("sf3d_cloth")
+			box.add_child(_label("{{js:gd.wind}}"))
+			var wind := HSlider.new()
+			wind.min_value = 0
+			wind.max_value = 1
+			wind.step = 0.05
+			wind.value = float(_args.get("wind", "0"))
+			var blow := func(v): if is_instance_valid(sim): sim.external_force = Vector3(0, 0.4 * v, -3.0 * v)   # heights/s², against SF3DEquip.Cloth.GRAVITY's 4
+			blow.call(wind.value)
+			wind.value_changed.connect(blow)
+			box.add_child(wind)
+		var total := Equip.arrows(_worn[name], 1 << 20)
+		if total > 0:   # a quiver: how many arrows are left
+			box.add_child(_label("{{js:gd.arrows}}"))
+			var ar := HSlider.new()
+			ar.min_value = 0
+			ar.max_value = total
+			ar.step = 1
+			ar.value = total
+			ar.value_changed.connect(func(v): Equip.arrows(_worn[name], int(v)))
+			box.add_child(ar)
 	box.add_child(_label("{{js:gd.mouse_hint}}"))
 
 
@@ -177,8 +204,16 @@ func _unhandled_input(e: InputEvent) -> void:
 		_place_camera()
 
 
-func _shoot(path: String, at: float) -> void:
+func _shoot(path: String, at: float, focus := "") -> void:
 	await get_tree().create_timer(at).timeout
+	if focus != "":   # the camera on a bone as the clip has it now
+		var sk := Equip.skeleton_of(_model)
+		for i in (sk.get_bone_count() if sk else 0):
+			if sk.get_bone_name(i).ends_with(focus):
+				_target = sk.global_transform * sk.get_bone_global_pose(i).origin
+				_place_camera()
+				break
+		await RenderingServer.frame_post_draw
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png(path)
 	get_tree().quit()

@@ -61,7 +61,27 @@ PIECES = {"bracer": ("forearm", "hand", "forearm", ("Spine", "Hips", "Chest", "U
           # under the armour: clothes cut on the body (a shirt, an aketon, a gambeson, doublets, a vest, braies) and a coif
           "undercloth": ("hips", "neck", "spine1", (), "torso", "cloth", (0, 0, 0, 0),
                          dict(cloth_style="shirt", cloth_quilt=False, quilt_lines=False, material="cloth", cloth="#d2c6aa", gap=4, thickness=2, straps=0,
-                              surface="plain", rigidity=0))}
+                              surface="plain", rigidity=0)),
+          # held: a weapon in the hand (rigid on the hand's bone, its grip in the fist), a shield on the forearm
+          "weapon": ("forearm", "hand", "hand", (), "hand", "held", (0, 0, 0, 0),
+                     dict(weapon="sword", material="steel", trim="steel", tint="#4a2c18", cloth="#6b4a2a", straps=0, rigidity=1)),
+          "shield": ("forearm", "hand", "forearm", (), "forearm", "held", (0, 0, 0, 0),
+                     dict(shield="round", material="wood", trim="steel", tint="#4a2c18", cloth="#6b4a2a", straps=0, rigidity=1)),
+          # a cloak: from the neck over the shoulders and the back; Blender hangs it on chains of cloth bones, the game swings it
+          "cloak": ("spine2", "neck", "spine2", (), "torso", "cloak", (0, 0, 0, 0),
+                    dict(material="cloth", cloth="#4a3326", surface="plain", trim="", straps=0, rigidity=.5, gap=3, thickness=1.5)),
+          # a skirt: the same cloth from the waist down over the hips and the legs (Blender's chains on the hips' bone)
+          "skirt": ("hips", "spine", "hips", (), "hips", "cloak", (0, 0, 0, 0),
+                    dict(material="cloth", cloth="#5a4630", surface="plain", trim="", straps=0, rigidity=.5, gap=3, thickness=1.5)),
+          # a tabard: two panels from the shoulders, open at the sides, a belt round the waist (the same cloth on chains)
+          "tabard": ("spine2", "neck", "spine2", (), "torso", "cloak", (0, 0, 0, 0),
+                     dict(material="cloth", cloth="#6a2a24", surface="plain", trim="", straps=0, rigidity=.5, gap=3, thickness=1.5)),
+          # at the belt: a scabbard on a hip (rigid on the hips), a quiver on the back (on the chest's bone)
+          "sheath": ("hips", "spine1", "hips", (), "hips", "held", (0, 0, 0, 0),
+                     dict(sheath="scabbard", material="leather", trim="steel", tint="#4a2c18", cloth="#6b4a2a", straps=0, rigidity=1))}
+WEAPONS = ("sword", "dagger", "axe", "mace", "spear", "staff", "bow")
+SHIELDS = ("round", "kite", "heater")
+SHEATHS = ("scabbard", "dagger", "quiver", "quiver_hip")
 CLOTHS = ("cloth_shirt", "cloth_aketon", "cloth_gambeson", "cloth_doublet", "cloth_voider", "cloth_vest", "cloth_braies", "cloth_braies_long",
           "cloth_coif")
 GLOVES = ("glove_plain_leather", "glove_reinforced_leather", "glove_mail_mitten", "glove_hourglass", "glove_plate_mitten", "glove_hybrid")
@@ -99,11 +119,12 @@ T_LABELS = {"limb": ("ag.from", "ag.to", "ag.from_info"), "torso": ("ag.bottom",
             "cuirass": ("ag.bottom", "ag.neck_top", "ag.bottom_info"), "pauldron": ("ag.pauldron_from", "ag.sp_reach", "ag.pauldron_info"),
             "hips": ("ag.bottom", "ag.top", "ag.tassets_info"), "legs": ("ag.waist", "ag.leg_length", "ag.waist_info"),
             "head": ("ag.from", "ag.to", "ag.from_info"), "joint": ("ag.from", "ag.to", "ag.from_info"),
-            "glove": ("ag.from", "ag.to", "ag.from_info"), "cloth": ("ag.from", "ag.to", "ag.from_info")}
+            "glove": ("ag.from", "ag.to", "ag.from_info"), "cloth": ("ag.from", "ag.to", "ag.from_info"),
+            "held": ("ag.from", "ag.to", "ag.from_info"), "cloak": ("ag.from", "ag.to", "ag.from_info")}
 # (linear colour, roughness, metallic): metallic kept moderate, a game scene without reflections shows a full metal black
 PRESETS = {"iron": ((.34, .34, .35), .55, .55), "steel": ((.56, .58, .61), .35, .65),
            "bronze": ((.55, .36, .17), .42, .6), "leather": ((.30, .17, .09), .72, 0.0), "cloth": ((.25, .27, .3), .9, 0.0),
-           "brass": ((.62, .46, .2), .35, .65), "gold": ((.83, .6, .24), .3, .7)}
+           "brass": ((.62, .46, .2), .35, .65), "gold": ((.83, .6, .24), .3, .7), "wood": ((.24, .14, .07), .78, 0.0)}
 SURFACES = ("plates", "scales", "lamellar", "mail", "quilt", "plain", "splints", "brigandine")
 # the editor's choices with labels: where a cuirass opens, how an opening fastens, what goes over its shoulders, the
 # reference styles
@@ -111,13 +132,20 @@ CHOICES = {"opening_labels": ("none", "left", "right", "back", "front"), "closur
            "shoulder_labels": ("straps", "yoke", "none"),
            "style_labels": ("leather", "steel", "mail", "splints", "covered", "plate_mail", "lamellar", "brigandine", "wool", "leather_tr",
                             "mail_chausses", "plate_cuisses", "hidden_plate", "plate_and_mail", "compact", "extended", "carrier",
-                            "short_mail", "wrap_mail", "carrier_mail", "lames", *HELMETS, *ELBOWS, *FOOTWEAR, *GLOVES, *CLOTHS),
+                            "short_mail", "wrap_mail", "carrier_mail", "lames", *HELMETS, *ELBOWS, *FOOTWEAR, *GLOVES, *CLOTHS,
+                            *(f"weapon_{w}" for w in WEAPONS), *(f"shield_{x}" for x in SHIELDS), *(f"sheath_{x}" for x in SHEATHS)),
            "thigh_labels": ("none", "mail", "plate", "panels", "plate_mail"), "knee_labels": ("none", "patch", "cop")}
 
 
 def characters(cfg):
-    """Every character with a landmark skeleton under the export folder: (its name, the rigged GLB)."""
-    return [(LM._stem(p), p.resolve().as_posix()) for p in sorted(Path(cfg["export_dir"]).rglob("*_landmarks_rigged.glb"))]
+    """Every character with a skeleton under the export folder (built from the markup or by the auto-rigger; the
+    markup's first where a folder has both): (its name, the rigged GLB)."""
+    out = {}
+    for p in sorted(Path(cfg["export_dir"]).rglob("*_rigged.glb")):
+        key = (p.parent, LM._stem(p))
+        if key not in out or LM.is_landmark_rig(p):
+            out[key] = p
+    return [(LM._stem(p), p.resolve().as_posix()) for p in sorted(out.values())]
 
 
 def saved(rigged: Path) -> list:
@@ -184,7 +212,7 @@ def editor_page(rigged: Path, decals_dir: Path | None = None) -> str:
                        for k, v in PIECES.items()},
             "presets": PRESETS, "mat_labels": {k: _t(f"ag.mat_{k}") for k in PRESETS},
             "surface_labels": {k: _t(f"ag.surf_{k}") for k in SURFACES}, "saved": saved(rigged), "worn": worn(rigged),
-            "decals": decals(decals_dir) if decals_dir else [],
+            "decals": decals(decals_dir) if decals_dir else [], "fist": LM.fist_hand(rigged),
             **{grp: {k: _t(f"ag.{grp.split('_')[0]}_{k}") for k in keys} for grp, keys in CHOICES.items()}}
     return page.replace("@@DATA@@", json.dumps(data, ensure_ascii=False).replace("</", "<\\/"))
 
@@ -233,13 +261,18 @@ def generate(cfg, req) -> dict:
     made = MADE.get(piece)
     if not made:
         (work / "mesh.json").write_text(json.dumps(req["mesh"]), encoding="utf-8")
-    sides = [s for s in req.get("sides") or [] if s in ("L", "R")] if PIECES[piece][5] in ("limb", "joint", "glove") else []
+    sides = [s for s in req.get("sides") or [] if s in ("L", "R")] if PIECES[piece][5] in ("limb", "joint", "glove", "held") else []
     job = {"character": str(rigged), "out": str(work / "piece.glb"), "preview": str(work / "preview"), "work": str(work),
            "item": item, "names": {n: LM.bone_names(n) for n in ("mixamo", "godot")}, "piece": piece, "sides": sides,
            "mesh": str(work / "mesh.json"), "mask": str(work / "mask.json"), "wear": float(params.get("wear", .35)), "tex": int(params.get("tex", 1024)),
-           "seed": int(params.get("seed", 1))}
+           "seed": int(params.get("seed", 1)), "fist": LM.fist_hand(rigged),
+           "two": req.get("two") if re.fullmatch(r"[LR](_-?\d+){9}", str(req.get("two") or "")) else "",
+           "point": req.get("point") if re.fullmatch(r"-?\d+(_-?\d+){2}", str(req.get("point") or "")) else ""}
     if piece == "undercloth":
         job["style"] = params.get("cloth_style")
+    if PIECES[piece][5] in ("held", "cloak"):   # held, not worn (the fingers round a grip stay); a cloak swings off the body
+        job.pop("mask")
+        (work / "mask.json").unlink(missing_ok=True)
     if made:
         style = params.get(piece) if params.get(piece) in made[1] else made[1][0]
         job.update(style=style[len(made[2]):], params=made[3](params))
@@ -259,6 +292,8 @@ def generate(cfg, req) -> dict:
     shutil.copy2(work / "piece.glb", out)
     if (work / "mask.json").exists():   # what of the body it hides: SF3DEquip.wear() takes it away while it is on
         shutil.copy2(work / "mask.json", rigged.parent / f"{stem}_wear_{item}.mask.json")
+    else:   # a held piece hides nothing: an older piece's mask of that name goes
+        (rigged.parent / f"{stem}_wear_{item}.mask.json").unlink(missing_ok=True)
     # the editor's list of pieces: a fit.json and a source next to the result (marked: it is changed here, not there)
     shutil.copy2(work / "piece.glb", rigged.parent / f"{stem}_wear_{item}.src.glb")
     (rigged.parent / f"{stem}_wear_{item}.fit.json").write_text(json.dumps(
@@ -274,6 +309,55 @@ def generate(cfg, req) -> dict:
     return {"ok": True, "log": msg, "glb": out.resolve().as_posix(), "mask": mask.resolve().as_posix() if mask.exists() else None, "shots": shots}
 
 
+def qa(cfg, req) -> dict:
+    """The piece made last of this item checked in the character's animations (blender_wear_qa.py): where the skin
+    comes out through it, where its mask shows a hole. {ok, log, report}"""
+    rigged = Path(req["rigged"])
+    stem = LM._stem(rigged)
+    item = re.sub(r"[^A-Za-z0-9_-]+", "_", req.get("item") or "").strip("_")
+    piece = rigged.parent / f"{stem}_wear_{item}.glb"
+    if not piece.exists():
+        return {"ok": False, "log": _t("ag.qa_no_piece")}
+    work = Path(cfg["work_dir"]) / "armour_gen" / f"{stem}_{item}"
+    work.mkdir(parents=True, exist_ok=True)
+    anim = LM._animated_model(cfg, rigged, Path(cfg["work_dir"]) / "wardrobe" / LM._slug(stem))
+    mask = piece.with_suffix(".mask.json")
+    job = {"character": str(anim), "piece": str(piece), "mask": str(mask) if mask.exists() else None, "out": str(work / "qa.json"), "step": 3}
+    kind = req.get("piece")
+    if kind in PIECES and PIECES[kind][5] == "cloak":   # swung by the game's cloth (SF3DEquip.Cloth): Blender's clips cannot show it
+        return {"ok": True, "log": _t("ag.cloak_qa")}
+    held = kind in PIECES and PIECES[kind][5] == "held"
+    if held:   # the body going into it, not the arm holding it (a shield strapped on catches its upper arm by the elbow)
+        sides = [x for x in req.get("sides") or [] if x in ("L", "R")] or ["R"]
+        tables = [LM.bone_names(n) for n in ("mixamo", "godot")]
+        ids = [] if kind == "sheath" else [f"{j}_{sd}" for sd in sides for j in ("arm", "forearm", "hand", *(f"{f}{k}" for f in LM.FIST_FINGERS for k in (1, 2, 3, 4)))]
+        job["held"] = {"skip": sorted({t[i] for t in tables for i in ids if i in t}), "shield": kind == "shield",
+                       "fore": [t["hips" if kind == "sheath" else f"forearm_{sides[0]}"] for t in tables], "hips": [t["hips"] for t in tables]}
+    (work / "qa_job.json").write_text(json.dumps(job, ensure_ascii=False, indent=1), encoding="utf-8")
+    blender = cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe"
+    t = datetime.now()
+    r = subprocess.run([blender, "-b", "--factory-startup", "-P", str(ROOT / "blender_wear_qa.py"), "--", str(work / "qa_job.json")],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=1800,
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    (work / "qa.log").write_text(r.stdout + r.stderr, encoding="utf-8")
+    if not any(x.startswith("WEAR_QA_OK") for x in r.stdout.splitlines()):
+        return {"ok": False, "log": _t("ag.failed") + (r.stdout + r.stderr)[-1200:]}
+    rep = json.loads((work / "qa.json").read_text(encoding="utf-8"))
+    if held:
+        lines = [_t("ag.qa_held_line", c["clip"], c["through"], c["worst_frame"]) + (_t("ag.qa_held_facing", c["facing"]) if c["facing"] else "")
+                 for c in rep["clips"]]
+        bad = any(c["through"] for c in rep["clips"]) or any(c["facing"] for c in rep["clips"])
+        msg = _t("ag.qa_summary", len(rep["clips"]), (datetime.now() - t).seconds) + "\n" + "\n".join(lines) + "\n" + (
+            (_t("ag.qa_held_bad") if kind == "shield" else _t("ag.qa_held_bad_sheath") if kind == "sheath" else _t("ag.qa_held_bad_weapon"))
+            if bad else _t("ag.qa_held_good"))
+        return {"ok": True, "log": msg, "report": (work / "qa.json").resolve().as_posix(), "points": len(rep["points"]), "need": rep["need"]}
+    lines = [_t("ag.qa_line", c["clip"], c["poke_share"] * 100, c["worst_frame"], c["hole_share"] * 100) for c in rep["clips"]]
+    bad = [c for c in rep["clips"] if c["poke_share"] > .02 or c["hole_share"] > .05]
+    msg = _t("ag.qa_summary", len(rep["clips"]), (datetime.now() - t).seconds) + "\n" + "\n".join(lines) + "\n" + (
+        _t("ag.qa_bad") if bad else _t("ag.qa_good"))
+    return {"ok": True, "log": msg, "report": (work / "qa.json").resolve().as_posix(), "points": len(rep["points"])}
+
+
 def handle(cfg, text):
     """A request from the editor page. The answer also goes to a status file next to the character, which the page
     waits for: <stem>_wear_<item>.wear.json (the Godot fitting room: LM.wear's own, <stem>_wardrobe.wear.json).
@@ -281,6 +365,16 @@ def handle(cfg, text):
     req = json.loads(text)
     if req.get("action") == "wardrobe":
         return LM.wear(cfg, text), None
+    if req.get("action") == "qa":   # answered in <stem>_qa_<item>.wear.json
+        rigged = Path(req["rigged"])
+        try:
+            res = qa(cfg, req)
+        except Exception as e:  # noqa: BLE001
+            res = {"ok": False, "log": _t("lm.error", e)}
+        item = re.sub(r"[^A-Za-z0-9_-]+", "_", req.get("item") or "").strip("_")
+        (rigged.parent / f"{LM._stem(rigged)}_qa_{item}.wear.json").write_text(
+            json.dumps({"id": req.get("id"), **res}, ensure_ascii=False), encoding="utf-8")
+        return res["log"], None
     if req.get("action") == "made_preview":   # answered in <stem>_helmet_<style>.wear.json
         rigged = Path(req["rigged"])
         try:
@@ -341,7 +435,7 @@ def mount(config_loader, char=None, tab=None, active=None):
     if char is not None:   # the current character: on it as soon as the tab is seen
         opened = gr.State("")
         here = _t("ui.equipment_procedural")
-        ok = lambda r: bool(r) and str(r).endswith("_landmarks_rigged.glb")  # noqa: E731
+        ok = lambda r: LM.is_rig(r)  # noqa: E731  (any skeleton: from the markup or the auto-rigger)
         char.change(lambda r, act: (r, open_editor(r) if ok(r) else _t("ag.choose_a_character"), r) if act == here else (r, "", ""),
                     [char, active], [rig, editor, opened], show_progress="hidden")
         tab.select(lambda r, op: (open_editor(r) if ok(r) else _t("ag.choose_a_character"), r) if r != op else (gr.update(), op),

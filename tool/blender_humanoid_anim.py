@@ -7,10 +7,14 @@ computed in the character's own frame (forward / right / up measured from the bo
 are normalised to a relaxed stance first. Clips (Godot makes `_loop` clips loop and strips the suffix):
   idle_loop walk_loop run_loop jump fall_loop land attack_slash attack_overhead cast block_loop hit death
 Adds bone `rotation_quaternion` keys (and hips location), one NLA track per clip, exports GLB with the NLA tracks.
+A manner (style=normal|heavy|armored|robed|light|swagger|limp|undead, seed=... for one chosen at random within
+plausible bands, st_<knob>=value for one knob: tempo stride arm lean hunch bob sway limp limp_side swagger stiff) makes
+the same clips this character's own; death=back|forward|left|right|knees picks how it falls.
 Prints ANIM_ lines; preview=dir also renders 6 side-view frames of every clip (dir/<clip>_<n>.png).
 """
 import json
 import math
+import random
 import sys
 from pathlib import Path
 
@@ -23,7 +27,7 @@ opt = dict(a.split("=", 1) for a in argv[2:] if "=" in a)
 FPS = int(opt.get("fps", 30))
 PREVIEW = opt.get("preview")
 ALL = ["idle_loop", "walk_loop", "run_loop", "jump", "fall_loop", "land", "attack_slash", "attack_overhead", "cast",
-       "block_loop", "hit", "death"]
+       "block_loop", "hit", "death", "spear_ready_loop", "spear_thrust", "spear_throw", "bow_shoot"]
 TWOHAND = opt.get("twohand", "0") == "1"    # both hands on one sword: the left arm is solved to the grip of the right hand
 TILT = float(opt.get("sword_tilt", "-55"))  # degrees, blade tilt in the right hand's frame (same value as the Godot socket)
 HAND_GAP = float(opt.get("hand_gap", "0.22"))   # metres between the two hands along the handle
@@ -35,6 +39,31 @@ SHIELD = opt.get("shield", "0") == "1"      # the left arm carries a shield: hel
 FINGER_BLADE = opt.get("blade") == "fingers"
 print("ANIM_OPT twohand", TWOHAND, "shield", SHIELD, flush=True)
 WANT = [c.strip() for c in opt.get("clips", ",".join(ALL)).split(",") if c.strip()]
+
+# ---------------------------------------------------------------- the manner: the same clips, each character its own way
+# tempo (clip speed), stride (step length), arm (swing), lean (forward, -1..1), hunch (round back, 0..1), bob (up and
+# down), sway (side to side), limp (0..1, on limp_side), swagger (chest out, elbows out, 0..1), stiff (above 1 the upper
+# body moves less)
+ST = {"tempo": 1.0, "stride": 1.0, "arm": 1.0, "lean": 0.0, "hunch": 0.0, "bob": 1.0, "sway": 1.0, "limp": 0.0, "limp_side": "R",
+      "swagger": 0.0, "stiff": 1.0}
+MANNERS = {"normal": {}, "heavy": dict(tempo=.88, stride=.9, arm=.8, hunch=.2, stiff=1.25, bob=1.25, sway=1.3),
+           "armored": dict(tempo=.9, stride=.9, arm=.65, stiff=1.35, swagger=.1), "robed": dict(tempo=.95, stride=.75, arm=.7, sway=.8, bob=.7),
+           "light": dict(tempo=1.12, stride=1.1, arm=1.1, bob=1.2, stiff=.85), "swagger": dict(tempo=.95, swagger=.8, arm=1.2, sway=1.4),
+           "limp": dict(tempo=.9, stride=.85, limp=.7), "undead": dict(tempo=.82, hunch=.7, stiff=1.5, limp=.4, arm=.4, lean=.3)}
+if opt.get("seed"):   # a manner of its own, within plausible bands; now and then a limp or a swagger
+    _r = random.Random(str(opt["seed"]))
+    ST.update(tempo=_r.uniform(.9, 1.12), stride=_r.uniform(.85, 1.15), arm=_r.uniform(.7, 1.3), lean=_r.uniform(-.2, .3),
+              hunch=_r.uniform(0, .35), bob=_r.uniform(.8, 1.3), sway=_r.uniform(.7, 1.5), stiff=_r.uniform(.85, 1.25))
+    if _r.random() < .16:
+        ST.update(limp=_r.uniform(.3, .7), limp_side=_r.choice("LR"))
+    if _r.random() < .25:
+        ST.update(swagger=_r.uniform(.3, .8))
+ST.update(MANNERS.get(opt.get("style", "normal"), {}))
+for _k in ST:
+    if f"st_{_k}" in opt:
+        ST[_k] = opt[f"st_{_k}"] if _k == "limp_side" else float(opt[f"st_{_k}"])
+DEATH_KIND = opt.get("death", "back")
+print("ANIM_STYLE", json.dumps({k: (round(v, 3) if isinstance(v, float) else v) for k, v in ST.items()}), "death", DEATH_KIND, flush=True)
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.gltf(filepath=str(src))
@@ -219,12 +248,15 @@ def spine_split(total_pitch=0.0, total_roll=0.0, total_yaw=0.0):
 
 
 def gait(ph, amp, knee_max, arm_amp, elbow, lean, bob, sway, hip_yaw, arm_abd=9.0):
-    """one phase of a walk / run; ph in 0..1"""
+    """one phase of a walk / run; ph in 0..1; the manner's limp: the bad leg swings less and bends less, the pelvis
+    drops on the good side while the bad leg bears"""
     a = ph * TAU
     leg = {}
+    lim = ST["limp"]
     for s, off in (("L", 0.0), ("R", math.pi)):
-        sw = amp * S(a + off)
-        kn = 6 + knee_max * max(0.0, C(a + off)) ** 1.4
+        bad = lim if s == ST["limp_side"] else 0.0
+        sw = amp * S(a + off) * (1 - .45 * bad)
+        kn = 6 + knee_max * max(0.0, C(a + off)) ** 1.4 * (1 - .4 * bad)
         foot_ang = (kn - sw) * 0.85
         leg[f"thigh_{s}"] = (sw, 2.0, 0)
         leg[f"shin_{s}"] = (-kn, 0, 0)
@@ -234,9 +266,12 @@ def gait(ph, amp, knee_max, arm_amp, elbow, lean, bob, sway, hip_yaw, arm_abd=9.
         sw = arm_amp * S(a + off)
         arms[f"arm_{s}"] = (sw, arm_abd, 0)
         arms[f"forearm_{s}"] = (elbow + 12 * max(0.0, S(a + off + 0.6)), 0, 0)
-    sp = spine_split(lean, sway * 0.6 * S(a), -hip_yaw * 1.2 * S(a))
-    p = pose(hips=(0, sway * S(a), hip_yaw * S(a)), head=(-lean * 0.6, -sway * 0.4 * S(a), hip_yaw * 0.7 * S(a)),
-             hip_t=(0.0, 0.0, -bob * (0.5 + 0.5 * C(2 * a))), **leg, **arms, **sp)
+    bad_off = 0.0 if ST["limp_side"] == "L" else math.pi   # the bad leg bears while its swing is behind
+    drop = lim * 7 * max(0.0, -S(a + bad_off))
+    sp = spine_split(lean, sway * 0.6 * S(a) + drop * .5 * (1 if ST["limp_side"] == "L" else -1), -hip_yaw * 1.2 * S(a))
+    p = pose(hips=(0, sway * S(a) + drop * (1 if ST["limp_side"] == "L" else -1), hip_yaw * S(a)),
+             head=(-lean * 0.6, -sway * 0.4 * S(a), hip_yaw * 0.7 * S(a)),
+             hip_t=(0.0, 0.0, -bob * (0.5 + 0.5 * C(2 * a)) - .012 * lim * max(0.0, -S(a + bad_off))), **leg, **arms, **sp)
     return p
 
 
@@ -254,11 +289,13 @@ def idle(t):
 
 
 def walk(t):
-    return gait(t, amp=26, knee_max=48, arm_amp=22, elbow=18, lean=4, bob=0.022, sway=3.0, hip_yaw=5)
+    return gait(t, amp=26 * ST["stride"], knee_max=48 * (.7 + .3 * ST["stride"]), arm_amp=22 * ST["arm"], elbow=18, lean=4 + 10 * ST["lean"],
+                bob=0.022 * ST["bob"] * ST["stride"] ** .5, sway=3.0 * ST["sway"], hip_yaw=5 * (1 + .6 * ST["swagger"]))
 
 
 def run(t):
-    return gait(t, amp=44, knee_max=92, arm_amp=42, elbow=82, lean=14, bob=0.045, sway=4.0, hip_yaw=9, arm_abd=7)
+    return gait(t, amp=44 * ST["stride"], knee_max=92 * (.75 + .25 * ST["stride"]), arm_amp=42 * ST["arm"], elbow=82, lean=14 + 8 * ST["lean"],
+                bob=0.045 * ST["bob"] * ST["stride"] ** .5, sway=4.0 * ST["sway"], hip_yaw=9 * (1 + .5 * ST["swagger"]), arm_abd=7)
 
 
 def land_pose(c):
@@ -366,12 +403,97 @@ _DEATH_END = pose(hips=(-90, 0, 14), thigh_L=(22, 8, 0), thigh_R=(-4, 14, 0), sh
                   head=(-10, 0, 22), hip_t=(0, -0.44, -0.455), **spine_split(-4, 0, 0))
 DEATH = keyed([(0.0, pose()), (0.22, _DEATH_STAG), (0.55, _DEATH_FALL), (0.8, _DEATH_END),
                (1.0, _DEATH_END | {"hips": (-90, 0, 14)})])
+# other ways to fall: face down, onto a side, to the knees first and then forward
+_FWD = [pose(hips=(10, 0, -6), thigh_L=(-6, 4, 0), thigh_R=(14, 4, 0), shin_L=(-20, 0, 0), shin_R=(-30, 0, 0), arm_L=(30, 30, 0),
+             arm_R=(26, 34, 0), forearm_L=(40, 0, 0), forearm_R=(44, 0, 0), head=(16, 0, -8), hip_t=(0, .06, -.08), **spine_split(18, 0, -6)),
+        pose(hips=(48, 0, -6), thigh_L=(-30, 6, 0), thigh_R=(-10, 8, 0), shin_L=(-60, 0, 0), shin_R=(-34, 0, 0), arm_L=(70, 40, 0),
+             arm_R=(64, 44, 0), forearm_L=(30, 0, 0), forearm_R=(26, 0, 0), head=(10, 0, -10), hip_t=(0, .3, -.32), **spine_split(10, 0, 0)),
+        pose(hips=(90, 0, -10), thigh_L=(-14, 8, 0), thigh_R=(4, 12, 0), shin_L=(-24, 0, 0), shin_R=(-10, 0, 0), arm_L=(40, 70, 0),
+             arm_R=(30, 74, 0), forearm_L=(60, 0, 0), forearm_R=(50, 0, 0), head=(-20, 0, -30), hip_t=(0, .44, -.47), **spine_split(-4, 0, 0))]
+
+
+def _turned(p, deg):   # a pose turned about the up axis: the whole body, and where the pelvis goes with it
+    q = dict(p)
+    h = q.get("hips", (0.0, 0.0, 0.0))
+    q["hips"] = (h[0], h[1], h[2] + deg)
+    r_, f_, u_ = q["hip_t"]
+    c, s_ = math.cos(math.radians(deg)), math.sin(math.radians(deg))
+    q["hip_t"] = (r_ * c - f_ * s_, r_ * s_ + f_ * c, u_)
+    return q
+
+
+def _side(sg):   # sg = 1: to the right — it turns that way as it falls, and goes down backwards
+    return [_turned(_DEATH_STAG, 45 * sg), _turned(_DEATH_FALL, 80 * sg), _turned(_DEATH_END, 90 * sg)]
+
+
+_KNEES = [pose(thigh_L=(14, 4, 0), thigh_R=(14, 4, 0), shin_L=(-104, 0, 0), shin_R=(-104, 0, 0), foot_L=(30, 0, 0), foot_R=(30, 0, 0),
+               arm_L=(-6, 20, 0), arm_R=(-6, 20, 0), forearm_L=(20, 0, 0), forearm_R=(20, 0, 0), head=(26, 0, 0),
+               hip_t=(0, -.03, -.24), **spine_split(24, 0, 0)),
+          pose(hips=(40, 0, 0), thigh_L=(-20, 6, 0), thigh_R=(-14, 6, 0), shin_L=(-90, 0, 0), shin_R=(-80, 0, 0), arm_L=(50, 30, 0),
+               arm_R=(50, 30, 0), forearm_L=(30, 0, 0), forearm_R=(30, 0, 0), head=(20, 0, 0), hip_t=(0, .14, -.32), **spine_split(20, 0, 0)),
+          pose(hips=(86, 0, 8), thigh_L=(-30, 8, 0), thigh_R=(-20, 10, 0), shin_L=(-60, 0, 0), shin_R=(-40, 0, 0), arm_L=(60, 60, 0),
+               arm_R=(40, 70, 0), forearm_L=(50, 0, 0), forearm_R=(40, 0, 0), head=(-14, 0, -24), hip_t=(0, .38, -.46), **spine_split(0, 0, 0))]
+_DEATHS = {"forward": _FWD, "left": _side(-1), "right": _side(1), "knees": _KNEES}
+if DEATH_KIND in _DEATHS:
+    _st, _fl, _en = _DEATHS[DEATH_KIND]
+    DEATH = keyed([(0.0, pose()), (0.22, _st), (0.55, _fl), (0.8, _en), (1.0, _en)])
+
+# ---- a spear (in the right hand; the left reaches the haft in the game when it is held in both) and a bow (in the left
+# hand, the right one drawing). The weapon's own way is the game's: SF3DEquip keeps a spear's head forward and puts the
+# other hand on the haft, so these move the body and the arms only.
+def spear_ready(t):   # the stance: the left foot forward, the knees soft, the right hand by the hip, the left forward
+    a = t * TAU
+    br = S(a)
+    return pose(hips=(0, 0, -12), thigh_L=(16, 6, 0), thigh_R=(-12, 6, 0), shin_L=(-20, 0, 0), shin_R=(-16, 0, 0),
+                foot_L=(4, 0, 0), foot_R=(6, 0, 0),
+                arm_R=(12 + br, 16, 0), forearm_R=(62 + 2 * br, 0, 0), arm_L=(48 + br, 14, 0), forearm_L=(36, 0, 0),
+                head=(2, 0, 10), hip_t=(0, -0.01, -0.035 + 0.004 * br), **spine_split(6 + br, 0, 4))
+
+
+_SP_READY = spear_ready(0.0)
+_SP_BACK = pose(hips=(0, 0, -24), thigh_L=(18, 6, 0), thigh_R=(-18, 6, 0), shin_L=(-24, 0, 0), shin_R=(-22, 0, 0),
+                foot_L=(4, 0, 0), foot_R=(8, 0, 0),
+                arm_R=(-18, 20, 0), forearm_R=(78, 0, 0), arm_L=(30, 16, 0), forearm_L=(48, 0, 0),
+                head=(2, 0, 20), hip_t=(0, -0.04, -0.045), **spine_split(2, 0, -6))
+_SP_LUNGE = pose(hips=(6, 0, 10), thigh_L=(46, 6, 0), thigh_R=(-24, 6, 0), shin_L=(-48, 0, 0), shin_R=(-8, 0, 0),
+                 foot_L=(6, 0, 0), foot_R=(-6, 0, 0),
+                 arm_R=(62, 10, 0), forearm_R=(14, 0, 0), arm_L=(76, 10, 0), forearm_L=(12, 0, 0),
+                 head=(-6, 0, -6), hip_t=(0, 0.12, -0.07), **spine_split(18, 0, 14))
+SPEAR_THRUST = keyed([(0.0, _SP_READY), (0.3, _SP_BACK), (0.42, _SP_BACK), (0.55, _SP_LUNGE), (0.68, _SP_LUNGE), (1.0, _SP_READY)])
+_TH_WIND = pose(hips=(-4, 0, -34), thigh_L=(24, 6, 0), thigh_R=(-20, 8, 0), shin_L=(-14, 0, 0), shin_R=(-30, 0, 0),
+                foot_R=(10, 0, 0),
+                arm_R=(110, 70, 0), forearm_R=(96, 0, 0), hand_R=(-20, 0, 0), arm_L=(80, 14, 0), forearm_L=(10, 0, 0),
+                head=(-4, 0, 30), hip_t=(0, -0.05, -0.03), **spine_split(-12, 2, -16))
+_TH_RELEASE = pose(hips=(6, 0, 18), thigh_L=(36, 6, 0), thigh_R=(-30, 6, 0), shin_L=(-30, 0, 0), shin_R=(-14, 0, 0),
+                   foot_L=(6, 0, 0),
+                   arm_R=(140, 14, 0), forearm_R=(20, 0, 0), hand_R=(20, 0, 0), arm_L=(-10, 24, 0), forearm_L=(40, 0, 0),
+                   head=(4, 0, -10), hip_t=(0, 0.1, -0.05), **spine_split(18, -2, 22))
+_TH_FOLLOW = pose(hips=(10, 0, 22), thigh_L=(40, 6, 0), thigh_R=(-24, 6, 0), shin_L=(-40, 0, 0), shin_R=(-20, 0, 0),
+                  arm_R=(60, 4, 30), forearm_R=(20, 0, 0), hand_R=(30, 0, 0), arm_L=(-20, 24, 0), forearm_L=(36, 0, 0),
+                  head=(8, 0, -14), hip_t=(0, 0.12, -0.07), **spine_split(28, -2, 26))
+SPEAR_THROW = keyed([(0.0, _SP_READY), (0.32, _TH_WIND), (0.46, _TH_WIND), (0.56, _TH_RELEASE), (0.68, _TH_FOLLOW), (1.0, _SP_READY)])
+# the bow: side on (the left shoulder towards the mark), the head turned to it, the bow arm level, the string drawn to
+# the chin, loosed (the right hand flies back), held, and down. The drawing hand is put at the chin by IK (bow_draw):
+# the arm's angles cannot fold the forearm level when the rest pose already holds the arms out
+_BOW_IDLE = pose(arm_L=(16, 12, 0), forearm_L=(24, 0, 0), arm_R=(4, 10, 0), forearm_R=(16, 0, 0), thigh_L=(6, 6, 0), thigh_R=(-6, 6, 0),
+                 shin_L=(-6, 0, 0), shin_R=(-6, 0, 0))
+_BOW_NOCK = pose(hips=(0, 0, -30), thigh_L=(8, 10, 0), thigh_R=(-8, 10, 0), shin_L=(-8, 0, 0), shin_R=(-8, 0, 0),
+                 arm_L=(64, 30, 0), forearm_L=(20, 0, 0), arm_R=(56, 24, 0), forearm_R=(70, 0, 0),
+                 head=(0, 0, 36), hip_t=(0, 0, -0.01), **spine_split(0, 0, -10))
+_BOW_DRAW = pose(hips=(0, 0, -36), thigh_L=(8, 12, 0), thigh_R=(-8, 12, 0), shin_L=(-8, 0, 0), shin_R=(-8, 0, 0),
+                 arm_L=(72, 44, 0), forearm_L=(4, 0, 0), arm_R=(0, 84, 0), forearm_R=(140, 0, 0), hand_R=(10, 0, 0),
+                 head=(2, 0, 46), hip_t=(0, 0, -0.012), **spine_split(-2, 0, -12))
+_BOW_LOOSE = _BOW_DRAW | {"hand_R": (-20, 0, 0)}
+BOW_SHOOT = keyed([(0.0, _BOW_IDLE), (0.22, _BOW_NOCK), (0.5, _BOW_DRAW), (0.66, _BOW_DRAW), (0.7, _BOW_LOOSE), (0.82, _BOW_LOOSE),
+                   (1.0, _BOW_IDLE)])
 
 CLIPS = {"idle_loop": (3.0, idle, True), "walk_loop": (1.0, walk, True), "run_loop": (0.68, run, True),
          "jump": (1.0, JUMP, False), "fall_loop": (0.8, fall, True), "land": (0.5, LAND, False),
          "attack_slash": (0.95, ATTACK_SLASH, False), "attack_overhead": (1.1, ATTACK_OVERHEAD, False),
          "cast": (1.5, cast, False), "block_loop": (1.0, block, True), "hit": (0.5, HIT, False),
-         "death": (1.7, DEATH, False)}
+         "death": (1.7, DEATH, False),
+         "spear_ready_loop": (2.4, spear_ready, True), "spear_thrust": (0.9, SPEAR_THRUST, False),
+         "spear_throw": (1.3, SPEAR_THROW, False), "bow_shoot": (2.0, BOW_SHOOT, False)}
 
 
 # ---------------------------------------------------------------- apply a pose to the armature
@@ -487,6 +609,66 @@ def solve_left_arm(palm_off=None):
     pb[NAME["forearm_L"]].rotation_quaternion = (m_fa.inverted() @ (tot_up.inverted() @ tot_fa) @ m_fa).to_quaternion()
 
 
+def arm_to(side, wrist, pole, w=1.0):
+    """two-bone IK in code: the side's wrist towards `wrist` (armature space; w of the way from where the pose put it),
+    the elbow towards `pole`"""
+    bpy.context.view_layer.update()
+    pb = arm.pose.bones
+    ka, kf, kh = (NAME[f"{j}_{side}"] for j in ("arm", "forearm", "hand"))
+    l1 = (bones[kf].head_local - bones[ka].head_local).length
+    l2 = (bones[kh].head_local - bones[kf].head_local).length
+    du = (bones[kf].head_local - bones[ka].head_local).normalized()
+    df = (bones[kh].head_local - bones[kf].head_local).normalized()
+    shoulder = pb[ka].head.copy()
+    target = pb[kh].head.lerp(wrist, w)
+    d = target - shoulder
+    dist = min(max(d.length, abs(l1 - l2) + 1e-4), l1 + l2 - 1e-4)
+    dirv = d.normalized()
+    a_ = (l1 * l1 - l2 * l2 + dist * dist) / (2 * dist)
+    h_ = math.sqrt(max(l1 * l1 - a_ * a_, 0.0))
+    perp = pole - dirv * pole.dot(dirv)
+    perp = perp.normalized() if perp.length > 1e-6 else -up
+    elbow = shoulder + dirv * a_ + perp * h_
+    wr = elbow + (target - elbow).normalized() * l2
+    tot_up = du.rotation_difference((elbow - shoulder).normalized()).to_matrix()
+    tot_fa = df.rotation_difference((wr - elbow).normalized()).to_matrix()
+    par = pb[ka].parent
+    rp = (par.matrix.to_3x3() @ par.bone.matrix_local.to_3x3().inverted()) if par else Matrix.Identity(3)
+    pb[ka].rotation_quaternion = (REST[ka].inverted() @ (rp.inverted() @ tot_up) @ REST[ka]).to_quaternion()
+    pb[kf].rotation_quaternion = (REST[kf].inverted() @ (tot_up.inverted() @ tot_fa) @ REST[kf]).to_quaternion()
+
+
+def bow_draw(t):
+    """bow_shoot: the drawing (right) hand to the chin on the bow's side from the nock to the loose, then back past the
+    head (the string let go), then to the pose again; the elbow back and out, away from the bow"""
+    w = smooth((t - .24) / .22) * (1 - smooth((t - .84) / .14))
+    if w <= 0:
+        return
+    bpy.context.view_layer.update()
+    pb = arm.pose.bones
+    head = pb[NAME["head"]].head.copy()
+    bow = pb[NAME["hand_L"]].head.copy()
+    toward = bow - head
+    toward = (toward - up * toward.dot(up)).normalized()
+    anchor = head - up * .05 * HEIGHT + toward * .05 * HEIGHT
+    if t > .7:   # loosed: the hand flies back along the arrow's line
+        anchor = anchor - toward * .1 * HEIGHT * smooth((t - .7) / .05)
+    arm_to("R", anchor, -toward - up * .3, w)
+    # the hand's fingers towards the bow (hooked on the string), w of the way
+    bpy.context.view_layer.update()
+    hn = NAME["hand_R"]
+    mid = next((b for b in bones if b.name.endswith("RightHandMiddle1") or b.name.endswith("RightMiddleProximal")), None)
+    if mid is None:
+        return
+    along = REST[hn].inverted() @ (mid.head_local - bones[hn].head_local).normalized()
+    cur = (pb[hn].matrix.to_3x3() @ along).normalized()
+    want = cur.lerp(toward, w).normalized()
+    tot_new = cur.rotation_difference(want).to_matrix() @ (pb[hn].matrix.to_3x3() @ REST[hn].inverted())
+    par = pb[hn].parent
+    rp = par.matrix.to_3x3() @ par.bone.matrix_local.to_3x3().inverted()
+    pb[hn].rotation_quaternion = (REST[hn].inverted() @ (rp.inverted() @ tot_new) @ REST[hn]).to_quaternion()
+
+
 def centre_right_hand(share=.75, pull=0.0, push=0.0):
     """both hands on one handle: the right wrist pulled towards the body's middle (the clip keeps its height and its
     forward reach), so the left arm can reach the handle; a two-bone solve of the right arm, its hand turned as before"""
@@ -597,7 +779,33 @@ if FINGER_BLADE and AIM:
 GUARD = {"arm_L": (34, 24, 0), "forearm_L": (86, 0, 0), "hand_L": (0, 0, 0)}
 
 
+_UPPER = ("spine", "spine1", "spine2", "neck", "head", "arm_L", "arm_R", "forearm_L", "forearm_R")
+
+
+def mannered(p, name):
+    """The manner over a clip's pose: the hunch, the lean and the swagger in the back, the neck and the arms, the
+    stiffness damping the upper body; full in walking, less standing, least in actions"""
+    w = 1.0 if name in ("walk_loop", "run_loop") else .7 if name in ("idle_loop", "block_loop") else .4
+    p = dict(p)
+    add = lambda k, d: k in p and p.__setitem__(k, tuple(x + y for x, y in zip(p[k], d)))
+    damp = 1 + (1 / max(ST["stiff"], .3) - 1) * (1.0 if w == 1.0 else .6 if w == .7 else .3)
+    for k in _UPPER:
+        if k in p and k in BASE:
+            p[k] = tuple(b + (x - b) * damp for x, b in zip(p[k], BASE[k]))
+    for k, v in spine_split(w * (14 * ST["hunch"] + 8 * ST["lean"] - 6 * ST["swagger"]), 0, 0).items():
+        add(k, v)
+    add("neck", (w * 6 * ST["hunch"], 0, 0))
+    add("head", (-w * (12 * ST["hunch"] + 4 * ST["lean"] - 3 * ST["swagger"]), 0, 0))
+    for s in "LR":
+        add(f"arm_{s}", (w * 6 * ST["hunch"], w * 10 * ST["swagger"], 0))
+    return p
+
+
 def key_clip(name, seconds, fn, loop):
+    if name != "death":
+        seconds = seconds / max(ST["tempo"], .3)
+        _fn = fn
+        fn = lambda t, _f=_fn: mannered(_f(t), name)
     n = max(2, int(round(seconds * FPS)))
     act = bpy.data.actions.new(name)
     ad = arm.animation_data_create()
@@ -620,6 +828,8 @@ def key_clip(name, seconds, fn, loop):
             for k_, v_ in ONE_READY.items():
                 pose_i[k_] = v_
         set_pose(pose_i)
+        if name == "bow_shoot" and "hand_L" in NAME and "head" in NAME:
+            bow_draw(i / (n - 1))
         if TWOHAND and FINGER_BLADE and name != "death":
             # the left palm's place on the handle (below the right hand, along the turned blade) must be in the left
             # arm's reach: the right hand comes in closer until it is

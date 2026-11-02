@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import materials as MT  # noqa: E402
 import sf3d_tool as T  # noqa: E402  (заодно добавляет sf3d-src в sys.path)
 import rwt_ui  # GPT: Mount isolated weight repair without extending rig generation.
+import landmarks  # any skeleton: what the tools read off it
 import landmarks_ui  # hand-placed landmark skeleton (Mixamo-like)
 import face_parts_ui  # procedural eyes, teeth, tongue
 import armour_gen_ui  # procedural armour from the character's own skin
@@ -786,8 +787,11 @@ def _char_files(value):
     cat, nm = value.split("/", 1)
     d = Path(T.load_config()["export_dir"]) / cat / nm
     first = lambda *ns: next((d / n for n in ns if (d / n).exists()), None)  # noqa: E731
-    return {"name": nm, "dir": d, "source": first(f"{nm}.glb"), "rigged": first(f"{nm}_landmarks_rigged.glb", f"{nm}_rigged.glb"),
-            "parts": first(f"{nm}_parts.glb")}
+    src = first(f"{nm}.glb")
+    rigged = first(f"{nm}_landmarks_rigged.glb", f"{nm}_rigged.glb")
+    if rigged is None and src is not None and landmarks.has_skin(src):   # a model loaded with its skeleton: it is the rig
+        rigged = src
+    return {"name": nm, "dir": d, "source": src, "rigged": rigged, "parts": first(f"{nm}_parts.glb")}
 
 
 def _characters():
@@ -842,10 +846,15 @@ def char_add(upload):
     if not upload:
         return gr.update()
     src = Path(upload if isinstance(upload, str) else upload.name)
-    name = T.slug(src.stem)
+    stem = re.sub(r"_(landmarks_)?rigged$", "", src.stem)
+    name = T.slug(stem)
     d = Path(T.load_config()["export_dir"]) / "character" / name
-    d.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, d / f"{name}.glb")
+    rigged = stem != src.stem and landmarks.has_skin(src)   # a skeleton made here: the same character, not a new one
+    dst = d / (f"{name}{src.stem[len(stem):]}.glb" if rigged else f"{name}.glb")
+    if src.resolve() != dst.resolve() and not (dst.exists() and dst.stat().st_size == src.stat().st_size
+                                               and dst.read_bytes() == src.read_bytes()):
+        d.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
     return gr.update(choices=_characters(), value=f"character/{name}")
 
 
@@ -1720,7 +1729,7 @@ def hanim_pick(upload, asset):
     return str(src) if src and src.exists() else None
 
 
-def hanim_run(upload, asset, clip_labels):
+def hanim_run(upload, asset, clip_labels, manner=None, seed=None, death=None):
     """'Добавить анимации': Blender adds the chosen clips to a rigged humanoid and exports <name>_anim.glb."""
     import hanim as HA
     cfg = T.load_config()
@@ -1737,7 +1746,9 @@ def hanim_run(upload, asset, clip_labels):
     log = [_t("ui.adding_animations_to_about_a_minute", len(clips), src.name)]
     yield "\n".join(log), [], None
     try:
-        info = HA.animate(cfg["blender_exe"], src, dst, clips, prev)
+        inv_m = {_t(f"hanim.manner_{k}"): k for k in HA.MANNERS}
+        inv_d = {_t(f"hanim.death_{k}"): k for k in HA.DEATHS}
+        info = HA.animate(cfg["blender_exe"], src, dst, clips, prev, style=inv_m.get(manner), seed=seed, death=inv_d.get(death))
     except Exception as e:  # noqa: BLE001
         yield _t("ui.error_2", e), [], None
         return
@@ -2295,6 +2306,8 @@ def build():
                         creature_state = gr.State(None)
                         with gr.Column(visible=False) as rig_manual_box:
                             lm_data, lm_editor = landmarks_ui.mount(T.load_config, rig_asset, rig_upload, accordion=False)
+                        with gr.Accordion(_t("lm.rig_pose_title"), open=False):   # any skeleton: the pose and the fist
+                            landmarks_ui.mount_rig_pose(T.load_config, char_rig)
 
                     # ---------------------------------------------------------------- humanoid animation library
                     with gr.Tab(_t("ui.animations_procedural"), id="hanim"):
@@ -2308,6 +2321,12 @@ def build():
                                                     type="filepath")
                                 ha_clips = gr.CheckboxGroup(list(HA.CLIPS.values()), value=list(HA.CLIPS.values()),
                                                             label=_t("ui.which_clips_to_add"))
+                                with gr.Row():   # the manner: the same clips, this character's own way of moving
+                                    ha_manner = gr.Dropdown([_t(f"hanim.manner_{k}") for k in HA.MANNERS], value=_t("hanim.manner_normal"),
+                                                            label=_t("hanim.manner"), info=_t("hanim.manner_info"), scale=3)
+                                    ha_seed = gr.Textbox(label=_t("hanim.seed"), info=_t("hanim.seed_info"), scale=2)
+                                    ha_death = gr.Dropdown([_t(f"hanim.death_{k}") for k in HA.DEATHS], value=_t("hanim.death_back"),
+                                                           label=_t("hanim.death_kind"), scale=2)
                                 ha_btn = gr.Button(_t("ui.add_the_animations"), variant="primary")
                                 ha_log = gr.Textbox(label=_t("face.progress"), lines=8, interactive=False)
                             with gr.Column(scale=1):
@@ -2621,7 +2640,7 @@ def build():
         ha_refresh_btn.click(lambda: gr.update(choices=_rigged_assets()), None, ha_asset)
         ha_asset.change(hanim_pick, [ha_upload, ha_asset], ha_view, show_progress="hidden")
         ha_upload.change(hanim_pick, [ha_upload, ha_asset], ha_view, show_progress="hidden")
-        ha_btn.click(hanim_run, [ha_upload, ha_asset, ha_clips], [ha_log, ha_gallery, ha_view])
+        ha_btn.click(hanim_run, [ha_upload, ha_asset, ha_clips, ha_manner, ha_seed, ha_death], [ha_log, ha_gallery, ha_view])
 
         # destructibles
         dst_refresh_btn.click(lambda: gr.update(choices=_export_assets()), None, dst_asset)

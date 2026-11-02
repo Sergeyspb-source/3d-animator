@@ -102,12 +102,295 @@ def clean_glb(src: Path) -> Path:
     return out
 
 
+def _glb_json(glb: Path) -> dict:
+    """The GLB's JSON chunk (only it is read, not the buffers)."""
+    import struct
+    with open(glb, "rb") as fh:
+        head = fh.read(20)
+        n = struct.unpack("<I", head[12:16])[0]
+        return json.loads(fh.read(n))
+
+
+FIST_FINGERS = ("thumb", "index", "middle", "ring", "pinky")
+
+
+# ---------------------------------------------------------------- any skeleton, not only the landmark one
+# A character's skeleton is either built from the markup (<name>_landmarks_rigged.glb, its markup <name>_landmarks.json)
+# or made by the auto-rigger (<name>_rigged.glb, its passport <name>_rig.json: the bone names and the mapping). Every
+# tool takes either: what the markup gives (the joints the «Броня» mode places a piece between, the remembered fist)
+# comes for an auto-rig from its bones and its passport. Only the face (jaw, eyes, the mouth's shape keys) needs the
+# face marked: the auto-rigger does not find eyes and lips.
+def has_skin(glb) -> bool:
+    """True if the GLB is skinned (has a skeleton the mesh follows)."""
+    try:
+        return Path(glb).suffix.lower() == ".glb" and bool(_glb_json(glb).get("skins"))
+    except Exception:  # noqa: BLE001  (not a GLB, a broken one)
+        return False
+
+
+def is_landmark_rig(rigged) -> bool:
+    return Path(rigged).name.endswith("_landmarks_rigged.glb")
+
+
+def is_rig(rigged) -> bool:
+    """A model with a skeleton any tool can work on: built from the markup, auto-rigged, or a skinned GLB loaded as is."""
+    if not rigged or not Path(rigged).exists():
+        return False
+    p = Path(rigged)
+    return is_landmark_rig(p) or p.name.endswith("_rigged.glb") or has_skin(p)
+
+
+def rig_meta(rigged: Path) -> Path:
+    """The file that holds what the skeleton's tools remember (the fist, the bone names): the markup for a landmark
+    rig, the passport <name>_rig.json beside any other."""
+    rigged = Path(rigged)
+    return rigged.with_name(_stem(rigged) + ("_landmarks.json" if is_landmark_rig(rigged) else "_rig.json"))
+
+
+def _read_meta(rigged: Path) -> dict:
+    try:
+        d = json.loads(rig_meta(rigged).read_text(encoding="utf-8"))
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def rig_naming(rigged: Path, j: dict | None = None) -> str:
+    """"mixamo" or "godot": the bone names of the skeleton (from its markup / passport, else by its bones)."""
+    meta = _read_meta(rigged).get("naming")
+    if meta in ("mixamo", "godot"):
+        return meta
+    names = {nd.get("name") for nd in (j or _glb_json(rigged)).get("nodes", [])}
+    return max(("mixamo", "godot"), key=lambda n: sum(b in names for b in bone_names(n).values()))
+
+
+def _rest_worlds(j: dict) -> list:
+    """Each node's world matrix (4x4 numpy) in the GLB's rest."""
+    import numpy as np
+    nodes = j.get("nodes", [])
+    parent = {c: i for i, nd in enumerate(nodes) for c in nd.get("children", [])}
+    memo = {}
+
+    def local(nd):
+        if "matrix" in nd:
+            return np.array(nd["matrix"], float).reshape(4, 4).T
+        x, y, z, w = nd.get("rotation", [0, 0, 0, 1])
+        r = np.array([[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+                      [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+                      [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
+        m = np.eye(4)
+        m[:3, :3] = r * np.array(nd.get("scale", [1, 1, 1]), float)
+        m[:3, 3] = nd.get("translation", [0, 0, 0])
+        return m
+
+    def world(i):
+        if i not in memo:
+            memo[i] = (world(parent[i]) if i in parent else np.eye(4)) @ local(nodes[i])
+        return memo[i]
+
+    return [world(i) for i in range(len(nodes))]
+
+
+def rig_joints(rigged: Path) -> dict:
+    """The joints the markup would give ({id: [x, y, z]}, the model's space), read off a skeleton's bones at rest. The
+    ends no bone stands at are put as the markup puts them (measured on the marked characters): a finger's tip 0.8 of
+    its last joint on, the hand's end at the knuckles, the toe's end 0.4 of the foot's length on along the ground, the
+    head's top at the top of the model."""
+    import numpy as np
+    j = _glb_json(rigged)
+    names = bone_names(rig_naming(rigged, j))
+    worlds = _rest_worlds(j)
+    by_name = {nd.get("name"): i for i, nd in enumerate(j.get("nodes", []))}
+    P = {k: worlds[by_name[n]][:3, 3] for k, n in names.items() if n in by_name}
+    on = lambda a, b, f: P[b] + (P[b] - P[a]) * f  # noqa: E731  (past b, f of a->b)
+    for s in "LR":
+        for f in FIST_FINGERS:
+            if f"{f}3_{s}" in P and f"{f}2_{s}" in P and f"{f}4_{s}" not in P:
+                P[f"{f}4_{s}"] = on(f"{f}2_{s}", f"{f}3_{s}", .8)
+        if f"hand_end_{s}" not in P and f"hand_{s}" in P:
+            if f"middle1_{s}" in P:
+                P[f"hand_end_{s}"] = P[f"hand_{s}"] + (P[f"middle1_{s}"] - P[f"hand_{s}"]) * 1.05
+            elif f"forearm_{s}" in P:
+                P[f"hand_end_{s}"] = on(f"forearm_{s}", f"hand_{s}", .35)
+        if f"toe_end_{s}" not in P and f"toe_{s}" in P and f"foot_{s}" in P:   # along the ground, not into it
+            d = P[f"toe_{s}"] - P[f"foot_{s}"]
+            flat = np.array([d[0], 0.0, d[2]])
+            P[f"toe_end_{s}"] = P[f"toe_{s}"] + flat / max(np.linalg.norm(flat), 1e-9) * np.linalg.norm(d) * .4
+    if "head_top" not in P and "head" in P:
+        top = None
+        for i, nd in enumerate(j.get("nodes", [])):   # the model's top: its meshes' boxes (POSITION min/max) in the world
+            if "mesh" not in nd:
+                continue
+            for pr in j["meshes"][nd["mesh"]]["primitives"]:
+                acc = j["accessors"][pr["attributes"]["POSITION"]] if "POSITION" in pr["attributes"] else {}
+                if "min" in acc and "max" in acc:
+                    lo, hi = acc["min"], acc["max"]
+                    for c in np.array(np.meshgrid(*zip(lo, hi))).T.reshape(-1, 3):
+                        y = float((worlds[i] @ np.append(c, 1))[1])
+                        top = y if top is None else max(top, y)
+        P["head_top"] = (np.array([P["head"][0], top, P["head"][2]]) if top is not None and top > P["head"][1]
+                         else on("neck", "head", 2.8) if "neck" in P else P["head"] + np.array([0, .1, 0]))
+    return {k: [round(float(x), 6) for x in v] for k, v in P.items()}
+
+
+def rig_state(rigged: Path, export_dir=None) -> dict | None:
+    """The editor's state on a built character: the markup for a landmark rig, else one read off the skeleton itself
+    (its joints, the fist remembered in its passport), marked "auto" (no clicks to edit, no face)."""
+    rigged = Path(rigged)
+    if is_landmark_rig(rigged):
+        return _read_meta(rigged) or None
+    meta = _read_meta(rigged)
+    return {"version": 1, "source": rigged.resolve().as_posix(), "auto": True, "yaw": 0, "sym": True, "center_x": 0,
+            "naming": rig_naming(rigged), "joints": rig_joints(rigged), "fistPose": meta.get("fistPose") or {}}
+
+
+def keep_rig_fist(rigged: Path, text) -> bool:
+    """«Remember the fist» in the pose check of any skeleton: the fistPose written into its markup / passport (the
+    procedural editor, «Броня» and the fitting room take it from there). True if written."""
+    rigged = Path(rigged)
+    sent = json.loads(text or "{}") or {}
+    pose = sent.get("fistPose")
+    if pose is None or not is_rig(rigged):
+        return False
+    if not sent.get("source") or Path(sent["source"]).resolve() != rigged.resolve():   # another model's
+        return False
+    meta = _read_meta(rigged)
+    if is_landmark_rig(rigged) and not meta:
+        return False
+    if (meta.get("fistPose") or {}) == pose:
+        return False
+    meta["fistPose"] = pose
+    if not is_landmark_rig(rigged):
+        meta.setdefault("naming", rig_naming(rigged))
+        meta.setdefault("path", str(rigged))
+    rig_meta(rigged).write_text(json.dumps(meta, ensure_ascii=False, indent=1 if is_landmark_rig(rigged) else 2), encoding="utf-8")
+    return True
+
+
+def keep_fist(src: Path, export_dir, text) -> bool:
+    """The fist remembered in the editor (fistPose, turns from the built rig's rest) written into the built model's
+    saved markup, without rebuilding: the procedural editor and the fitting room take it from there. True if written."""
+    rigged, saved = output_paths(src, export_dir)
+    if not (rigged.exists() and saved.exists()):
+        return False
+    sent = json.loads(text or "{}") or {}
+    pose = sent.get("fistPose")
+    if pose is None or not sent.get("source") or Path(sent["source"]).resolve() != Path(src).resolve():   # another model's
+        return False
+    state = json.loads(saved.read_text(encoding="utf-8"))
+    if (state.get("fistPose") or {}) == pose:
+        return False
+    state["fistPose"] = pose
+    saved.write_text(json.dumps(state, ensure_ascii=False, indent=1), encoding="utf-8")
+    return True
+
+
+def fist_hand(rigged: Path) -> dict:
+    """The fist remembered in the markup («Remember the fist»: fistPose, each finger bone's turn from its rest in its
+    own axes, the knuckles' shift in their parent's) put so any rig of the character takes it, whatever its bones'
+    axes (Blender's re-export turns them): per bone its turn as the hand's frame sees it and, for a finger's first bone,
+    its shift in that frame over the hand's length. The hand's frame: across (little finger -> index), along (wrist ->
+    knuckles), palm (the thumb's side); the same in the procedural editor's «Fist» and SF3DEquip.Grip.
+    {"index1_L": {"q": [x, y, z, w], "o": [a, b, c]}, ...}; {} when no fist was remembered."""
+    import numpy as np
+    pose = _read_meta(rigged).get("fistPose") or {}   # the markup, or an auto-rig's passport
+    if not pose:
+        return {}
+    try:
+        j = _glb_json(rigged)
+    except (OSError, ValueError):
+        return {}
+    names = bone_names(rig_naming(rigged, j))
+    nodes = j.get("nodes", [])
+    by_name = {nd.get("name"): i for i, nd in enumerate(nodes)}
+    parent = {c: i for i, nd in enumerate(nodes) for c in nd.get("children", [])}
+
+    def quat(q):   # [x, y, z, w] -> 3x3
+        x, y, z, w = q
+        return np.array([[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+                         [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+                         [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
+
+    def qmul(a, b):
+        ax, ay, az, aw = a
+        bx, by, bz, bw = b
+        return [aw * bx + ax * bw + ay * bz - az * by, aw * by - ax * bz + ay * bw + az * bx,
+                aw * bz + ax * by - ay * bx + az * bw, aw * bw - ax * bx - ay * by - az * bz]
+
+    def local(i, posed):
+        nd = nodes[i]
+        if "matrix" in nd:
+            return np.array(nd["matrix"], float).reshape(4, 4).T
+        q, t = list(nd.get("rotation", [0, 0, 0, 1])), np.array(nd.get("translation", [0, 0, 0]), float)
+        sc = np.array(nd.get("scale", [1, 1, 1]), float)
+        d = posed.get(i)
+        if d:
+            q = qmul(q, d[:4])
+            if len(d) >= 7:
+                t = t + np.array(d[4:7], float)
+        m = np.eye(4)
+        m[:3, :3] = quat(q) * sc
+        m[:3, 3] = t
+        return m
+
+    def world(i, posed, memo):
+        if i not in memo:
+            memo[i] = (world(parent[i], posed, memo) if i in parent else np.eye(4)) @ local(i, posed)
+        return memo[i]
+
+    def rot(m):   # the rotation of a (uniformly scaled) matrix
+        r = m[:3, :3]
+        return r / np.cbrt(np.linalg.det(r))
+
+    def to_q(r):   # 3x3 rotation -> [x, y, z, w]
+        w = np.sqrt(max(0.0, 1 + r[0, 0] + r[1, 1] + r[2, 2])) / 2
+        x = np.sqrt(max(0.0, 1 + r[0, 0] - r[1, 1] - r[2, 2])) / 2
+        y = np.sqrt(max(0.0, 1 - r[0, 0] + r[1, 1] - r[2, 2])) / 2
+        z = np.sqrt(max(0.0, 1 - r[0, 0] - r[1, 1] + r[2, 2])) / 2
+        x, y, z = np.copysign(x, r[2, 1] - r[1, 2]), np.copysign(y, r[0, 2] - r[2, 0]), np.copysign(z, r[1, 0] - r[0, 1])
+        return [float(v) for v in (x, y, z, w)]
+
+    posed = {by_name[names[k]]: v for k, v in pose.items() if names.get(k) in by_name}
+    rest_m, pose_m = {}, {}
+    out = {}
+    for s in "LR":
+        ids = {k: by_name.get(names.get(k)) for k in [f"hand_{s}"] + [f"{f}{n}_{s}" for f in FIST_FINGERS for n in (1, 2, 3)]}
+        h, i1, p1 = ids[f"hand_{s}"], ids[f"index1_{s}"], ids[f"pinky1_{s}"] if ids[f"pinky1_{s}"] is not None else ids[f"ring1_{s}"]
+        if h is None or i1 is None or p1 is None:
+            continue
+        P = {k: world(i, {}, rest_m)[:3, 3] for k, i in ids.items() if i is not None}
+        H, I, Pk = P[f"hand_{s}"], P[f"index1_{s}"], world(p1, {}, rest_m)[:3, 3]
+        across = (I - Pk) / np.linalg.norm(I - Pk)
+        K = (I + Pk) / 2
+        along = (K - H) / np.linalg.norm(K - H)
+        palm = np.cross(across, along)
+        palm /= np.linalg.norm(palm)
+        if f"thumb1_{s}" in P and np.dot(P[f"thumb1_{s}"] - H, palm) < 0:
+            palm = -palm
+        along = np.cross(palm, across)
+        along /= np.linalg.norm(along)
+        F = np.stack([across, along, palm], axis=1)   # the hand's frame: its columns
+        hl = float(np.linalg.norm(K - H))
+        if not any(k.endswith("_" + s) for k in pose):
+            continue
+        for k, i in ids.items():
+            if i is None or k.startswith("hand"):
+                continue
+            R = rot(world(i, posed, pose_m)) @ rot(world(i, {}, rest_m)).T   # the bone's turn, in the world
+            e = {"q": to_q(F.T @ R @ F)}
+            if k[-3] == "1":
+                e["o"] = [float(v) for v in F.T @ (world(i, posed, pose_m)[:3, 3] - world(i, {}, rest_m)[:3, 3]) / hl]
+            out[k] = e
+    return out
+
+
 WEAR_ID = "sf3d_wear_json"      # textbox the editor's armour mode writes into
 WEAR_GO = "sf3d_wear_go"        # hidden button the editor clicks
 
 
 def _stem(rigged: Path) -> str:
-    return re.sub(r"_landmarks_rigged$", "", Path(rigged).stem)
+    """The character's name from its skeleton's model: <name>_landmarks_rigged.glb or <name>_rigged.glb -> <name>."""
+    return re.sub(r"_(landmarks_)?rigged$", "", Path(rigged).stem)
 
 
 def wear(cfg, text):
@@ -327,7 +610,8 @@ def _animated_model(cfg, rigged: Path, work: Path) -> Path:
     out = work.parent / f"{work.name}_anim.glb"   # outside the Godot project: only its copy is imported
     if not out.exists() or out.stat().st_mtime < rigged.stat().st_mtime:
         HA.animate(cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe", rigged, out,
-                   ["idle_loop", "walk_loop", "run_loop", "attack_slash", "attack_overhead", "cast", "block_loop", "hit"])
+                   ["idle_loop", "walk_loop", "run_loop", "attack_slash", "attack_overhead", "cast", "block_loop", "hit",
+                    "spear_ready_loop", "spear_thrust", "spear_throw", "bow_shoot"])
     return out
 
 
@@ -358,6 +642,11 @@ def wardrobe(cfg, rigged: Path) -> dict:
         dst = proj / name
         if srcp.resolve() != dst.resolve() and (not dst.exists() or dst.stat().st_mtime < srcp.stat().st_mtime or dst.stat().st_size != srcp.stat().st_size):
             shutil.copy2(srcp, dst)
+    fist = fist_hand(rigged)   # the fist remembered in the markup: SF3DEquip.Grip closes a holding hand so
+    if fist:
+        (proj / "fist.json").write_text(json.dumps(fist), encoding="utf-8")
+    else:
+        (proj / "fist.json").unlink(missing_ok=True)
     for gd in ("sf3d_equip.gd", "sf3d_wardrobe.gd"):   # the texts in the interface language
         (proj / gd).write_text(i18n.fill((ROOT / "godot" / gd).read_text(encoding="utf-8")), encoding="utf-8")
     (proj / "project.godot").write_text(f"""config_version=5
@@ -445,13 +734,14 @@ def parse(text):
 
 
 def editor_page(src: Path, state: dict | None, rigged: Path | None = None, mode: str | None = None, say: str | None = None,
-                wear_ids: tuple[str, str] = (WEAR_ID, WEAR_GO)):
+                wear_ids: tuple[str, str] = (WEAR_ID, WEAR_GO), target: str = TARGET_ID):
     """rigged: built GLB for the pose mode (fetched by the page through Gradio's /file= route, so it must lie in
     an allowed path such as export_dir); mode='pose' opens the page straight in the pose mode, mode='say' only
     looks: the face close with the lip-sync clip say (its name) chosen and played, mode='wear' opens it straight in the
-    armour mode («Броня»). wear_ids: the hidden textbox and button its armour mode sends through (each tab its own)."""
+    armour mode («Броня»). wear_ids: the hidden textbox and button its armour mode sends through (each tab its own);
+    target: the textbox the page's state goes to (the markup's, by default)."""
     page = i18n.fill(EDITOR.read_text(encoding="utf-8"))
-    data = {"state": state, "target": TARGET_ID, "wear_target": wear_ids[0], "wear_go": wear_ids[1], "source": str(src), "mode": mode, "say": say,
+    data = {"state": state, "target": target, "wear_target": wear_ids[0], "wear_go": wear_ids[1], "source": str(src), "mode": mode, "say": say,
             "rigged": Path(rigged).resolve().as_posix() if rigged and Path(rigged).exists() else None,
             "rigged_v": int(Path(rigged).stat().st_mtime) if rigged and Path(rigged).exists() else 0,
             "names": {"mixamo": bone_names("mixamo"), "godot": bone_names("godot")},
@@ -645,6 +935,12 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=T
             cr = json.loads(line.split(" ", 1)[1])
             images_extra += cr.get("previews", [])
             yield (_t("lm.mouth_cut_lips_turned_in_a_cavity", ', '.join(cr.get('inserted', []))))
+            ts = cr.get("through_skin") or {}
+            was, left = sum((ts.get("before") or {}).values()), sum((ts.get("after") or {}).values())
+            if was:   # the mouth's insides seen through the skin in some pose: taken in (step 6 of the cut)
+                yield (_t("lm.mouth_through_skin_fixed", was, len(ts.get("before") or {})) if not left
+                       else _t("lm.mouth_through_skin_left", was, left,
+                               ", ".join(sorted(ts["after"], key=lambda k: -ts["after"][k])[:4])))   # the worst poses
         else:
             fail = next((x for x in r.stdout.splitlines() if x.startswith("CUT_FAIL")), (r.stdout + r.stderr)[-600:])
             yield _t("lm.the_mouth_cut_failed_the_model_is") + fail
