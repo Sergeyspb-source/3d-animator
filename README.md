@@ -66,7 +66,13 @@ Character → Skeleton → «By hand with landmarks», then «Open the markup».
 
 ![Landmark markup](docs/images/en/03_markup.jpg)
 
+The eyeballs in the markup are the face-parts set's own eye (the set chosen in the build options, else the standard one): it sits in the socket as the build will put it, so a wrong place or size shows at once; a click on it selects the eye joint. The teeth: in the mouth mode (the mouth oval and eyelids) a grey fence behind the lips shows where the face-parts set's rows will stand. «Teeth» gives them a place of your own: a handle at the front of the upper incisors' edge (move it in height and depth; the view turns to the side, «X-ray» shows it through the skin), «Teeth −» / «Teeth +» make the rows narrower or wider; «Teeth» again goes back to automatic. Building the mouth then checks every pose (rest and each shape key): the teeth, gums, tongue or the cavity seen through the skin are taken in (a row of teeth as a whole, the soft parts where they show), and the build log says how many points came out and whether any are left.
+
 **Pose** shows the built model with its skeleton. Drag an arm or a leg to bend it; «Check pose» bends every limb at once, so creases and bad weights show. «▶ Motion check» bends the joints to and fro by groups (fist, wrists, elbows, shoulders, knees, ankles, head, jaw) or all in turn — you see whether the bones sit right.
+
+Expressions by hand: in «Pose» pick a shape key (jawOpen, mouthSmile, the brows…) and press «✎ Edit». The face shows that key at full strength and a brush moves its skin: «Grab» drags the skin under the brush with the mouse, «Raise» / «Press» push it along the surface, «Smooth» evens it out (bumps, creases); radius, strength and «Mirror» (the other half of the face the same) are in the panel, Ctrl+Z / Ctrl+Shift+Z undo and redo. «Save» writes the edit into the model at once, no skeleton rebuild (`tool/face_edits.py`; the light is corrected as the surface turns), and keeps it beside the character in `<character>_face_edits.json`, the model as built in `….noedit.glb`: a rebuilt skeleton gets the edits again, their points found by place. «Discard» drops the unsaved strokes, «Remove all edits» brings the key back as built. Lip sync, the emotions and Godot use the edited keys.
+
+An auto-rigged skeleton (`<character>_rigged.glb`, «Make the skeleton» on the same tab) works with the equipment as well: the procedural editor, «Equipment: fitting a piece» (the joints a piece is placed between are read off its bones) and the Godot fitting room. «Pose and fist» at the bottom of the «Skeleton» tab opens the pose check of any skeleton; its «Remember the fist» is kept beside an auto-rig in `<character>_rig.json`. Only the face (the jaw, eyes and the speech mouth) needs the face marked by landmarks.
 
 | Pose mode | «Check pose» |
 |---|---|
@@ -402,6 +408,7 @@ tool/
   rigging.py, outfit.py, hanim.py, fbxanim.py, materials.py, surfaces.py,
   fx_flipbook.py, modkit.py, destruct.py, refgen.py, anim_gallery.py, rwt_*.py   feature modules
   landmarks*.py, landmark_editor.html   skeleton from hand-placed landmarks and armour fitting (three.js editor)
+  face_edits.py                 the expressions corrected by hand, laid on the model (and again after a rebuild)
   blender_*.py                headless Blender scripts (blender -b -P tool\blender_x.py -- args)
   godot/                      Godot scripts and shaders used by generated scenes (incl. FaceCurvesPlayer for lip sync,
                               SF3DEquip to put fitted armour on, the armour fitting room)

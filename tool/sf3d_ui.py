@@ -788,10 +788,44 @@ def _char_files(value):
     d = Path(T.load_config()["export_dir"]) / cat / nm
     first = lambda *ns: next((d / n for n in ns if (d / n).exists()), None)  # noqa: E731
     src = first(f"{nm}.glb")
-    rigged = first(f"{nm}_landmarks_rigged.glb", f"{nm}_rigged.glb")
+    landmark, auto = first(f"{nm}_landmarks_rigged.glb"), first(f"{nm}_rigged.glb")
+    rigged = landmark or auto
     if rigged is None and src is not None and landmarks.has_skin(src):   # a model loaded with its skeleton: it is the rig
-        rigged = src
-    return {"name": nm, "dir": d, "source": src, "rigged": rigged, "parts": first(f"{nm}_parts.glb")}
+        rigged = auto = src
+    return {"name": nm, "dir": d, "source": src, "rigged": rigged, "landmark": landmark, "auto": auto,
+            "parts": first(f"{nm}_parts.glb")}
+
+
+def _char_counts(f):
+    return (len(list(f["dir"].glob("*.face.json"))),
+            len([x for x in f["dir"].glob("*_wear_*.glb") if not x.name.endswith(".src.glb")]))
+
+
+def _face_words(s):
+    """The face of a built model in words: «лицо: разрез, ретопология» ('' without a face)."""
+    if not s.get("keys") and not s.get("eyes"):
+        return ""
+    w = [_t("ui.tag_mouth_cut") if s.get("mouth") == "cut" else _t("ui.tag_mouth_plate") if s.get("mouth") == "plate" else None,
+         _t("ui.tag_retopo") if s.get("retopo") else None, _t("ui.tag_eyes") if s.get("eyes") else None]
+    return _t("ui.tag_face", ", ".join(x for x in w if x))
+
+
+def _char_tags(f):
+    """What the character has, short, for its line in the list: the skeleton(s), the face, clips, pieces."""
+    tags = []
+    if f.get("landmark"):
+        fw = _face_words(landmarks.rig_summary(f["landmark"]))
+        tags.append(_t("ui.tag_landmarks") + (" (" + fw + ")" if fw else ""))
+    if f.get("auto"):
+        tags.append(_t("ui.tag_auto"))
+    if not tags:
+        tags.append(_t("ui.tag_no_skeleton") if f.get("source") else _t("ui.tag_parts_only"))
+    clips, worn = _char_counts(f)
+    if clips:
+        tags.append(_t("ui.tag_clips", clips))
+    if worn:
+        tags.append(_t("ui.tag_worn", worn))
+    return " · ".join(tags)
 
 
 def _characters():
@@ -801,7 +835,8 @@ def _characters():
     for d in sorted(x for x in ex.glob("*/*") if x.is_dir()):
         f = _char_files(f"{d.parent.name}/{d.name}")
         if f["rigged"] or f["parts"] or (d.parent.name == "character" and f["source"]):
-            out.append((d.name if d.parent.name == "character" else f"{d.name} ({d.parent.name})", f"{d.parent.name}/{d.name}"))
+            nm = d.name if d.parent.name == "character" else f"{d.name} ({d.parent.name})"
+            out.append((f"{nm} — {_char_tags(f)}", f"{d.parent.name}/{d.name}"))
     return out
 
 
@@ -830,15 +865,41 @@ def char_remember(value):
 
 
 def char_info(value):
-    """What the character has, in one line, and its model for the 3D view (the skeleton's when it has one)."""
+    """What the character has - its folder, every file with its date and what it is (for a built skeleton: its
+    bones and face), which model the tools take - and that model for the 3D view (the skeleton's when it has one)."""
     f = _char_files(value)
     if not f:
         return _t("ui.char_none"), None
-    yes = lambda x: "✓" if x else "—"  # noqa: E731
-    clips = len(list(f["dir"].glob("*.face.json")))
-    worn = len([x for x in f["dir"].glob("*_wear_*.glb") if not x.name.endswith(".src.glb")])
-    return (_t("ui.char_has", yes(f["source"] or f["rigged"]), yes(f["rigged"]), yes(f["parts"]), clips, worn),
+    from datetime import datetime
+    when = lambda p: datetime.fromtimestamp(p.stat().st_mtime).strftime("%d.%m %H:%M")  # noqa: E731
+    lines = [_t("ui.char_folder", f["dir"])]
+    if f["source"] and f["source"] != f.get("auto"):
+        lines.append(_t("ui.char_file_source", f["source"].name, when(f["source"])))
+    for key, label in (("landmark", "ui.char_file_landmarks"), ("auto", "ui.char_file_auto")):
+        p = f.get(key)
+        if p:
+            s = landmarks.rig_summary(p)
+            fw = _face_words(s)
+            lines.append(_t(label, p.name, when(p), s.get("bones", 0)) + (" · " + fw if fw else "")
+                         + (" · " + _t("ui.char_face_edits") if p.with_name(landmarks._stem(p) + "_face_edits.json").exists() else ""))
+    if f["parts"]:
+        lines.append(_t("ui.char_file_parts", f["parts"].name, when(f["parts"])))
+    clips, worn = _char_counts(f)
+    lines.append(_t("ui.char_counts", clips, worn))
+    if f["rigged"]:
+        lines.append(_t("ui.char_tools_take", f["rigged"].name))
+    return ("\n".join("- " + x if i else x for i, x in enumerate(lines)),
             str(f["rigged"] or f["source"] or f["parts"]) if (f["rigged"] or f["source"] or f["parts"]) else None)
+
+
+def char_open_folder(value):
+    """The character's folder in the file manager (Windows Explorer)."""
+    f = _char_files(value)
+    if f and f["dir"].exists():
+        try:
+            os.startfile(str(f["dir"]))   # noqa: S606 — a folder the app made, opened for the user
+        except (AttributeError, OSError):
+            pass
 
 
 def char_add(upload):
@@ -847,13 +908,18 @@ def char_add(upload):
         return gr.update()
     src = Path(upload if isinstance(upload, str) else upload.name)
     stem = re.sub(r"_(landmarks_)?rigged$", "", src.stem)
-    name = T.slug(stem)
-    d = Path(T.load_config()["export_dir"]) / "character" / name
+    root = Path(T.load_config()["export_dir"]) / "character"
+    # its folder: one of the file's own name if there is one already (a build of the same file made it), else the
+    # name made safe
+    name = stem if (root / stem).is_dir() else T.slug(stem)
+    d = root / name
     rigged = stem != src.stem and landmarks.has_skin(src)   # a skeleton made here: the same character, not a new one
     dst = d / (f"{name}{src.stem[len(stem):]}.glb" if rigged else f"{name}.glb")
     if src.resolve() != dst.resolve() and not (dst.exists() and dst.stat().st_size == src.stat().st_size
                                                and dst.read_bytes() == src.read_bytes()):
         d.mkdir(parents=True, exist_ok=True)
+        if dst.exists():   # another file of the same name: the old one kept beside it
+            shutil.copy2(dst, dst.with_name(dst.stem + ".prev.glb"))
         shutil.copy2(src, dst)
     return gr.update(choices=_characters(), value=f"character/{name}")
 
@@ -862,9 +928,13 @@ def char_for_tabs(value):
     """The current character's files, each in the form its tab's (hidden) picker takes."""
     f = _char_files(value) or {}
     rig = str(f["rigged"]) if f.get("rigged") else None
-    return (value if f.get("source") or f.get("rigged") else None,   # skeleton, lipsync: "category/name"
-            value if f.get("rigged") else None, value if f.get("rigged") else None,   # animations
-            str(f["parts"]) if f.get("parts") else None,   # whole set
+
+    def pick(v, choices):   # the lists were filled when the app started: a character made since is added, or the
+        return gr.update(choices=sorted(set(choices) | ({v} if v else set())), value=v)   # pick keeps the old one
+
+    return (pick(value if f.get("source") or f.get("rigged") else None, _export_assets()),   # skeleton, lipsync: "category/name"
+            pick(value if f.get("rigged") else None, _rigged_assets()), pick(value if f.get("rigged") else None, _rigged_assets()),   # animations
+            pick(str(f["parts"]) if f.get("parts") else None, _parts_bodies()),   # whole set
             rig)   # procedural, weights
 
 
@@ -1034,7 +1104,9 @@ def _src_of(upload, asset):
 
 
 def preview_pick(upload, asset):
-    """Show the chosen model in the tab's 3D view right away."""
+    """Show the chosen model in the tab's 3D view right away: the GLB loaded, else the character as the bar shows it."""
+    if not upload:
+        return char_info(asset)[1] if asset and "/" in asset else None
     src, _, _ = _src_of(upload, asset)
     return str(src) if src and src.exists() else None
 
@@ -2263,6 +2335,7 @@ def build():
                             char_dd = gr.Dropdown(_characters(), value=_char_default(), label=_t("ui.current_character"), scale=4)
                             char_refresh = gr.Button(_t("ui.refresh"), scale=1)
                             char_up = gr.UploadButton(_t("ui.char_add"), file_types=[".glb"], type="filepath", scale=2)
+                            char_dir = gr.Button(_t("ui.char_open_folder"), scale=1)
                         char_md = gr.Markdown(char_info(_char_default())[0])
                     with gr.Column(scale=2):
                         char_view = gr.Model3D(value=char_info(_char_default())[1], label=_t("ui.model"), height=230,
@@ -2568,14 +2641,20 @@ def build():
         tabs_char.select(tab_shown, None, char_tab, show_progress="hidden")
         char_dd.change(char_info, char_dd, [char_md, char_view], show_progress="hidden")
         char_dd.change(char_remember, char_dd, None, show_progress="hidden")
+        # another character: the one-off GLB of the «Skeleton» tab goes (the view, the markup, the build take the character)
+        char_dd.change(lambda: None, None, rig_upload, show_progress="hidden")
         char_dd.change(char_for_tabs, char_dd, [rig_asset, ha_asset, fx_asset, out_body, char_rig], show_progress="hidden")
         char_refresh.click(lambda v: gr.update(choices=_characters(), value=v), char_dd, char_dd)
         char_up.upload(char_add, char_up, char_dd)
+        char_dir.click(char_open_folder, char_dd, None)
         ui.load(char_for_tabs, char_dd, [rig_asset, ha_asset, fx_asset, out_body, char_rig], show_progress="hidden")
 
         # rigging
         rig_refresh_btn.click(rig_refresh, None, rig_asset)
-        rig_upload.change(preview_pick, [rig_upload, rig_asset], char_view, show_progress="hidden")   # a one-off model
+        rig_upload.change(preview_pick, [rig_upload, rig_asset], char_view, show_progress="hidden")
+        # a GLB loaded here becomes a character (its own folder export/character/<name>) and the current one: the bar,
+        # the view, the markup and the build all on it
+        rig_upload.upload(char_add, rig_upload, char_dd)
 
         def on_kind(label):
             c = RIG_KINDS.get(label) == "creature"

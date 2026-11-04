@@ -233,6 +233,54 @@ def rig_joints(rigged: Path) -> dict:
     return {k: [round(float(x), 6) for x in v] for k, v in P.items()}
 
 
+def rig_summary(glb) -> dict:
+    """What a built model has, read off its GLB (only the JSON part): {"bones", "keys" (face shape keys), "mouth"
+    ("cut" / "plate" / None), "retopo" (the face rebuilt: its «face_mask»), "eyes" (eyeballs put in)}."""
+    try:
+        j = _glb_json(glb)
+    except Exception:  # noqa: BLE001
+        return {}
+    mats = [m.get("name", "") for m in j.get("materials", [])]
+    meshes = [m.get("name", "") for m in j.get("meshes", [])]
+    return {"bones": max((len(sk.get("joints", [])) for sk in j.get("skins", [])), default=0),
+            "keys": max((len((m.get("extras") or {}).get("targetNames") or []) for m in j.get("meshes", [])), default=0),
+            "mouth": "cut" if any(x.startswith("lip_inner") for x in mats) else "plate" if "Mouth" in meshes else None,
+            "retopo": any(x.startswith("face_mask") for x in mats),
+            "eyes": any(x in ("Eye_L", "Eye_R") or x.startswith("Eye_L.") for x in meshes)}
+
+
+def model_height(glb) -> float | None:
+    """The model's height (its meshes' boxes in the world, as the markup editor measures it), or None."""
+    try:
+        j = _glb_json(glb)
+    except Exception:  # noqa: BLE001
+        return None
+    import numpy as np
+    worlds, lo, hi = _rest_worlds(j), None, None
+    for i, nd in enumerate(j.get("nodes", [])):
+        if "mesh" not in nd:
+            continue
+        for pr in j["meshes"][nd["mesh"]]["primitives"]:
+            acc = j["accessors"][pr["attributes"]["POSITION"]] if "POSITION" in pr["attributes"] else {}
+            if "min" in acc and "max" in acc:
+                for c in np.array(np.meshgrid(*zip(acc["min"], acc["max"]))).T.reshape(-1, 3):
+                    y = float((worlds[i] @ np.append(c, 1))[1])
+                    lo, hi = (y, y) if lo is None else (min(lo, y), max(hi, y))
+    return hi - lo if lo is not None else None
+
+
+def markup_mismatch(src: Path, marks: dict) -> str | None:
+    """Why this markup is not this model's, or None: made in an editor open on another file (its source) and of
+    another height (more than 3 %). A build with it put a goblin's eyes at a tall man's mouth."""
+    ms = marks.get("source")
+    if not ms or Path(ms).resolve() == Path(src).resolve():
+        return None
+    h, mh = model_height(src), marks.get("height")
+    if not h or not mh or abs(h - mh) <= 0.03 * h:
+        return None
+    return _t("lm.markup_of_another_model", Path(ms).name, Path(src).name, round(mh, 4), round(h, 4))
+
+
 def rig_state(rigged: Path, export_dir=None) -> dict | None:
     """The editor's state on a built character: the markup for a landmark rig, else one read off the skeleton itself
     (its joints, the fist remembered in its passport), marked "auto" (no clicks to edit, no face)."""
@@ -409,11 +457,26 @@ def wear(cfg, text):
     status = rigged.parent / f"{_stem(rigged)}_{'wardrobe' if action == 'wardrobe' else 'wear_' + item}.wear.json"
     try:
         res = (wardrobe(cfg, rigged) if action == "wardrobe" else _repaint(cfg, req, rigged, item) if action == "repaint"
-               else _hollow(cfg, req, rigged, item) if action == "hollow" else _wear(cfg, req, rigged, item, action == "wear"))
+               else _hollow(cfg, req, rigged, item) if action == "hollow" else _face_edit(req, rigged) if action == "face_edit"
+               else _wear(cfg, req, rigged, item, action == "wear"))
     except Exception as e:  # noqa: BLE001  (the editor must hear back, or it waits for minutes)
         res = {"ok": False, "log": _t("lm.error", e)}
     status.write_text(json.dumps({"id": req.get("id"), **res}, ensure_ascii=False), encoding="utf-8")
     return res["log"]
+
+
+def _face_edit(req, rigged: Path) -> dict:
+    """The expression brush's edits («Поза» → «Править выражение»): {changes: {key: [groups]}, reset: [keys]} laid on
+    the model as built and kept next to it (face_edits.py). The editor waits for <stem>_wear_face_edits.wear.json."""
+    import face_edits as FE
+    res = FE.save(rigged, req.get("changes") or {}, req.get("reset") or [])
+    log = _t("lm.face_edits_saved", res["sent"], len(res["keys"]), ", ".join(res["keys"]) or "—")
+    if res["missed"]:
+        log += " " + _t("lm.face_edits_missed", res["missed"])
+    out = {"ok": True, "log": log, "v": int(rigged.stat().st_mtime), "keys": res["keys"]}
+    if req.get("want"):   # the key as it is now in the model (after a reset: as built), sparse, for the editor to show
+        out["built"] = FE.key_data(rigged, req["want"])
+    return out
 
 
 def _save_fit(rigged: Path, item: str, piece: bytes, state) -> dict:
@@ -733,8 +796,33 @@ def parse(text):
     return data
 
 
+def editor_eyes(cfg, kit="") -> tuple[Path, float] | None:
+    """(eyes.glb, eye radius) the markup shows the eyeballs with: the face-parts set chosen for the build, else the
+    standard one (made once in work_dir/face_parts_default, or taken from a build that made it already)."""
+    if kit:
+        f = Path(cfg["export_dir"]) / "face_parts" / kit / "eyes.glb"
+        if f.exists():
+            try:
+                return f, float(json.loads((f.parent / "parts.json").read_text(encoding="utf-8")).get("eye_radius", 0.012))
+            except (OSError, ValueError):
+                return f, 0.012
+    work = Path(cfg["work_dir"])
+    d = work / "face_parts_default"
+    if not (d / "eyes.glb").exists():
+        made = sorted(work.glob("landmark_rig/*/face_parts_default/eyes.glb"), key=lambda p: p.stat().st_mtime)
+        if made:
+            import shutil
+            shutil.copytree(made[-1].parent, d, dirs_exist_ok=True)
+        else:
+            try:
+                face_kit_eyes(cfg, "", work)
+            except Exception:  # noqa: BLE001 — without it the markup draws wire spheres
+                return None
+    return ((d / "eyes.glb"), 0.012) if (d / "eyes.glb").exists() else None
+
+
 def editor_page(src: Path, state: dict | None, rigged: Path | None = None, mode: str | None = None, say: str | None = None,
-                wear_ids: tuple[str, str] = (WEAR_ID, WEAR_GO), target: str = TARGET_ID):
+                wear_ids: tuple[str, str] = (WEAR_ID, WEAR_GO), target: str = TARGET_ID, eyes=None):
     """rigged: built GLB for the pose mode (fetched by the page through Gradio's /file= route, so it must lie in
     an allowed path such as export_dir); mode='pose' opens the page straight in the pose mode, mode='say' only
     looks: the face close with the lip-sync clip say (its name) chosen and played, mode='wear' opens it straight in the
@@ -747,7 +835,12 @@ def editor_page(src: Path, state: dict | None, rigged: Path | None = None, mode:
             "names": {"mixamo": bone_names("mixamo"), "godot": bone_names("godot")},
             "clips": face_clips(rigged) if rigged and Path(rigged).exists() else [],
             "emotions": emotion_presets() if rigged and Path(rigged).exists() else [],
-            "fits": saved_fits(Path(rigged)) if rigged and Path(rigged).exists() else []}
+            "fits": saved_fits(Path(rigged)) if rigged and Path(rigged).exists() else [],
+            # the build the pose mode shows: when, and what it has (the markup page says it over the pose)
+            "build": ({"date": datetime.fromtimestamp(Path(rigged).stat().st_mtime).strftime("%d.%m %H:%M"), **rig_summary(rigged)}
+                      if rigged and Path(rigged).exists() else None),
+            # eyes: (eyes.glb, radius) of editor_eyes, drawn for the eyeballs of the markup
+            "eyes": {"b64": base64.b64encode(Path(eyes[0]).read_bytes()).decode("ascii"), "r": eyes[1]} if eyes else None}
     # </script> inside JSON would end the tag early
     return (page.replace("@@DATA@@", json.dumps(data, ensure_ascii=False).replace("</", "<\\/"))
                 .replace("@@GLB@@", base64.b64encode((src if mode == "view" else clean_glb(src)).read_bytes()).decode("ascii")))
@@ -923,6 +1016,8 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=T
               "jaw_bone": names["jaw"] if "jaw" in landmarks["joints"] else "",
               "teeth_glb": str(kd / "teeth.glb"), "tongue_glb": str(kd / "tongue.glb"),
               "kit": {"arch_width": kinfo.get("arch_width", 0.05)}, "report": str(work / "cut_report.json"),
+              # the teeth's own place from the markup («Зубы»): the front of the upper incisors, the rows' width
+              "teeth_front": face.get("teeth_front"), "teeth_scale": float(face.get("teeth_scale") or 1.0),
               "preview": str(work / "mouth_cut.png")}
         (work / "cut_job.json").write_text(json.dumps(cj, ensure_ascii=False), encoding="utf-8")
         r = subprocess.run([blender, "-b", "--factory-startup", "-P", str(ROOT / "blender_mouth_cut.py"), "--",
@@ -999,6 +1094,13 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=T
             yield _t("lm.eyeballs_failed_the_model_is_without") + fail
     final.parent.mkdir(parents=True, exist_ok=True)
     final.write_bytes(model.read_bytes())
+    try:   # the expressions corrected by hand before: on the new model again, their points found by place
+        import face_edits as FE
+        fe = FE.reapply(final)
+        if fe:
+            yield _t("lm.face_edits_reapplied", fe["points"], fe["points"] + fe["missed"], ", ".join(fe["keys"]))
+    except Exception as e:  # noqa: BLE001 — the skeleton is built; the edits stay in their file
+        yield _t("lm.face_edits_reapply_failed", e)
     scene = godot_scene(final)
     saved.write_text(json.dumps({**landmarks, "source": str(src), "naming": naming}, ensure_ascii=False, indent=1),
                      encoding="utf-8")

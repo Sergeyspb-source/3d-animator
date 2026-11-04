@@ -112,6 +112,16 @@
   .posebar button.on { background:var(--accent); color:var(--accent-fg); }
   .pinfo { background:color-mix(in srgb,var(--panel) 90%,transparent); border-radius:6px; padding:4px 8px; font:12px var(--mono); }
   .pinfo.stop { color:#e5484d; }
+  .posenote { position:absolute; left:10px; top:64px; z-index:5; max-width:62%; background:color-mix(in srgb,var(--panel) 92%,transparent);
+    border:1px solid var(--line); border-radius:8px; padding:6px 10px; font-size:12px; }
+  .posenote.warn { border-color:#e5484d; }
+  .sculptbox { position:absolute; right:10px; top:44px; z-index:6; width:250px; background:var(--panel); border:1px solid var(--line);
+    border-radius:10px; padding:10px; display:flex; flex-direction:column; gap:7px; font-size:12px; }
+  .sculptbox .seg { display:flex; flex-wrap:wrap; gap:4px; }
+  .sculptbox .seg button.on { background:var(--accent); color:var(--accent-fg); }
+  .sculptbox label { display:flex; align-items:center; gap:6px; }
+  .sculptbox input[type=range] { flex:1; }
+  .sculptbox .st { font:11px var(--mono); color:var(--muted, #888); min-height:2.4em; }
   .mouse { position:absolute; left:10px; top:36px; z-index:3; display:flex; gap:8px; align-items:center;
     background:color-mix(in srgb,var(--panel) 94%,transparent); border:1px solid var(--line); border-radius:8px; padding:7px 10px; font-size:12px; line-height:1.5; }
   .mouse svg { width:24px; height:36px; flex:none; }
@@ -217,12 +227,23 @@
     <div class="hint" id="hint" hidden></div>
     <div class="msg" id="msg">{{ed.loading_the_model}}</div>
     <button class="saybig" id="sayBig" hidden>{{ed.line}}</button>
+    <div class="posenote" id="poseNote" hidden></div>
+    <div class="sculptbox" id="sculptBox" hidden>
+      <b id="scKey"></b>
+      <div class="seg" id="scModes"><button data-m="grab" class="on" title="{{ed.sc_grab_title}}">{{ed.sc_grab}}</button><button data-m="raise" title="{{ed.sc_raise_title}}">{{ed.sc_raise}}</button><button data-m="press" title="{{ed.sc_press_title}}">{{ed.sc_press}}</button><button data-m="smooth" title="{{ed.sc_smooth_title}}">{{ed.sc_smooth}}</button></div>
+      <label>{{ed.sc_radius}} <input type="range" id="scR" min="3" max="60" value="14"><span id="scRv"></span></label>
+      <label>{{ed.sc_strength}} <input type="range" id="scS" min="5" max="100" value="50"><span id="scSv"></span></label>
+      <label><input type="checkbox" id="scMirror" checked> {{ed.sc_mirror}}</label>
+      <div class="seg"><button id="scUndo" title="Ctrl+Z">{{ed.undo_2}}</button><button id="scRedo" title="Ctrl+Shift+Z">{{ed.redo}}</button><button id="scDrop" title="{{ed.sc_drop_title}}">{{ed.sc_drop}}</button></div>
+      <div class="seg"><button id="scSave" title="{{ed.sc_save_title}}">{{ed.sc_save}}</button><button id="scClear" title="{{ed.sc_clear_title}}">{{ed.sc_clear}}</button><button id="scDone">{{ed.sc_done}}</button></div>
+      <div class="st" id="scSt"></div>
+    </div>
     <div class="posebar" id="poseBar" hidden>
       <button id="pReset">{{ed.reset_the_pose}}</button><button id="pCheck">{{ed.check_pose}}</button><button id="pSquat">{{ed.crouch}}</button><button id="pFist">{{ed.fist}}</button><button id="pFistFit" title="{{ed.fist_fit_title}}">{{ed.fist_fit}}</button><button id="pFree" title="{{ed.free_title}}">{{ed.free}}</button><button id="pFistSave" title="{{ed.fist_save_title}}">{{ed.fist_save}}</button><button id="pFistMirror" title="{{ed.fist_mirror_title}}">{{ed.fist_mirror}}</button><button id="pJaw">{{ed.open_the_mouth}}</button>
       <select id="pTest" title="{{ed.test_title}}"><option value="all">{{ed.test_all}}</option><option value="fist">{{ed.test_fist}}</option><option value="wrist">{{ed.test_wrist}}</option><option value="elbow">{{ed.test_elbow}}</option><option value="shoulder">{{ed.test_shoulder}}</option><option value="knee">{{ed.test_knee}}</option><option value="ankle">{{ed.test_ankle}}</option><option value="head">{{ed.test_head}}</option><option value="jaw">{{ed.test_jaw}}</option></select><button id="pTestGo" title="{{ed.test_title}}">{{ed.test_go}}</button>
       <select id="pClipFace" hidden title="{{ed.lipsync_lines_next_to_the_model}}"></select><button id="pSay" hidden>{{ed.line}}</button>
       <select id="pEmo" hidden title="{{ed.emotion_the_same_brow_eyelid_and}}"></select><input type="range" id="pEmoV" min="0" max="2" step="0.05" value="1" hidden style="width:80px" title="{{ed.emotion_strength_1_as_in_the_game}}">
-      <select id="pMorph" hidden title="{{ed.the_model_s_shape_keys_speech_mouth}}"></select><input type="range" id="pMorphV" min="0" max="1" step="0.01" value="0" hidden style="width:110px">
+      <select id="pMorph" hidden title="{{ed.the_model_s_shape_keys_speech_mouth}}"></select><input type="range" id="pMorphV" min="0" max="1" step="0.01" value="0" hidden style="width:110px"><button id="pSculpt" hidden title="{{ed.sculpt_title}}">{{ed.sculpt}}</button>
       <button id="pWeights" title="{{ed.colour_the_model_by_the_weights_of}}">{{ed.weights}}</button>
       <span class="legend" id="pLegend" hidden>0 <i></i> 1</span>
       <select id="pClip" hidden></select><button id="pPlay" hidden>{{ed.animation}}</button>
@@ -268,6 +289,7 @@
         <button id="ovalBtn" title="{{ed.a_mouth_template_of_rings_drag_the}}">{{ed.mouth_oval}}</button>
         <button id="eyeSmall" title="{{ed.smaller_eyeball}}" hidden>{{ed.eye}}</button><button id="eyeBig" title="{{ed.bigger_eyeball}}" hidden>{{ed.eye_2}}</button>
         <button id="mouthOpenBtn" title="{{ed.the_mouth_on_the_model_is_slightly}}" hidden>{{ed.mouth_slightly_open}}</button>
+        <button id="teethBtn" title="{{ed.teeth_title}}" hidden>{{ed.teeth}}</button><button id="teethNarrow" title="{{ed.teeth_narrower}}" hidden>{{ed.teeth_minus}}</button><button id="teethWide" title="{{ed.teeth_wider}}" hidden>{{ed.teeth_plus}}</button>
       </div>
     </div>
     <div class="box" id="selBox">
@@ -416,7 +438,7 @@ const S = {   // editor state (serialised)
 };
 let current = null;       // landmark being placed
 let selected = null;      // joint selected in edit phase
-let view = 'front', xray = false;
+let view = 'front', xray = false, markupMismatch = '';
 let railTab = 'nodes';     // right panel: 'nodes' (list) or 'extra' (fingers, face, mouth)
 const undoStack = [], redoStack = [];
 
@@ -683,7 +705,7 @@ function fan(h, a0, a1, r, material, group = fanGroup) {   // sector at the join
 const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true, opacity: .8 });
 let lines = null; const spheres = {};
 function draw() {
-  for (const k in spheres) { jointGroup.remove(spheres[k]); delete spheres[k]; }
+  for (const k in spheres) { jointGroup.remove(spheres[k]); if (k.startsWith('eyeball_') && !spheres[k].userData.shared) spheres[k].geometry.dispose(); delete spheres[k]; }
   if (lines) { scene.remove(lines); lines.geometry.dispose(); lines = null; }
   for (const c of [...fanGroup.children]) { fanGroup.remove(c); c.geometry.dispose(); }
   const r = .011 * H / Math.max(1, camera.zoom);
@@ -698,8 +720,8 @@ function draw() {
     fan(h, Math.max(h.L.min - 50, -180), h.L.min, rr, sel ? FAN.badSel : FAN.bad);
   }
   if (!faceMode && S.phase === 'edit' && !poseOn) for (const [k, v] of Object.entries(S.face || {}))   // placed face points, for checking
-    if (v && (k.startsWith('mouth') || (k.startsWith('eye_') && k !== 'eye_L' && k !== 'eye_R'))) { const sp = new THREE.Mesh(sphereGeo, COL.mouth); sp.scale.setScalar(r * .35); sp.position.copy(V(v)); sp.renderOrder = 999; jointGroup.add(sp); spheres['fm_face_' + k] = sp; }
-  if (faceMode) for (const [k, v] of Object.entries(S.face)) if (v) {
+    if (Array.isArray(v) && (k.startsWith('mouth') || (k.startsWith('eye_') && k !== 'eye_L' && k !== 'eye_R'))) { const sp = new THREE.Mesh(sphereGeo, COL.mouth); sp.scale.setScalar(r * .35); sp.position.copy(V(v)); sp.renderOrder = 999; jointGroup.add(sp); spheres['fm_face_' + k] = sp; }
+  if (faceMode) for (const [k, v] of Object.entries(S.face)) if (Array.isArray(v)) {
     const sp = new THREE.Mesh(sphereGeo, k === faceMode.cur ? COL.sel : COL.place); sp.scale.setScalar(r * .5);
     sp.position.copy(V(v)); sp.renderOrder = 999; jointGroup.add(sp); spheres['fc_' + k] = sp;
   }
@@ -723,7 +745,7 @@ function draw() {
     }
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(seg, 3));
     lines = new THREE.LineSegments(g, lineMat); lines.renderOrder = 998; lines.visible = !poseOn; scene.add(lines);
-    for (const sd of SIDES) eyeWire(jointGroup, sd, 0x35c2e8);   // eyeballs: centre = eye joint, radius to its end
+    for (const sd of SIDES) { const o = eyeWire(jointGroup, sd, 0x35c2e8); if (o) spheres['eyeball_' + sd] = o; }   // eyeballs: centre = eye joint, radius to its end (taken away on the next drawing like the joints)
   }
 }
 
@@ -829,9 +851,11 @@ function refreshAll() {
   $('ovalBtn').classList.toggle('on', !!ovalMode);
   $('eyeSmall').hidden = $('eyeBig').hidden = !ovalMode || !S.pos.eye_L;
   $('mouthOpenBtn').hidden = !ovalMode; $('mouthOpenBtn').classList.toggle('on', !!S.face.mouth_open_top);
+  $('teethBtn').hidden = !ovalMode; $('teethBtn').classList.toggle('on', !!S.face.teeth_front);
+  $('teethNarrow').hidden = $('teethWide').hidden = !ovalMode || !S.face.teeth_front;
   $('faceClear').hidden = !S.pos.jaw;
   $('fClear').hidden = !Object.keys(S.pos).some((k) => FINGER_RE.test(k));
-  const w = S.phase === 'edit' ? bendWarnings() : [];
+  const w = (S.phase === 'edit' ? bendWarnings() : []).concat(markupMismatch ? [{ text: markupMismatch }] : []);
   $('warn').innerHTML = w.length ? w.map((x) => '⚠ ' + x.text).join('<br>') : (S.phase === 'edit' ? '{{js:ed.joint_bends_are_normal}}' : '');
   $('sym').checked = S.sym; $('xray').classList.toggle('on', xray);
   $('yawTxt').textContent = S.yaw ? `{{raw:ed.model_turned_by}}` : '';
@@ -949,11 +973,12 @@ const FACE_MARKS = { eye_L: '{{js:ed.centre_of_the_left_eye_pupil_on_the}}', eye
 const EYE_RIM = ['eye_in', 'eye_top', 'eye_out', 'eye_bot'];
 const faceKeys = () => (S.sym ? ['eye_L', 'mouth_corner_L', 'mouth_mid_L', 'mouth_c'] : ['eye_L', 'eye_R', 'mouth_corner_L', 'mouth_mid_L', 'mouth_c', 'mouth_mid_R', 'mouth_corner_R'])
   .concat(faceMode && faceMode.eyes ? EYE_RIM.map((k) => k + '_L').concat(S.sym ? [] : EYE_RIM.map((k) => k + '_R')) : []);
-function faceView() {
+function faceView(side) {   // the head close, from the front (or from the character's left: the teeth's depth)
   const hd = V(S.pos.head), top = V(S.pos.head_top), chin = S.marks.chin ? V(S.marks.chin) : hd;
   const c = new THREE.Vector3(hd.x, (top.y + chin.y) / 2 - (top.y - chin.y) * .1, hd.z), len = (top.y - chin.y) * 1.5;
-  camera.position.set(c.x, c.y, c.z + H * 4); camera.up.set(0, 1, 0); orbit.target.copy(c); camera.lookAt(c);
-  camera.zoom = (H * 1.2) / Math.max(len, 1e-6); camera.updateProjectionMatrix(); orbit.update(); view = 'front'; refreshAll();
+  if (side) camera.position.set(c.x + H * 4, c.y, c.z); else camera.position.set(c.x, c.y, c.z + H * 4);
+  camera.up.set(0, 1, 0); orbit.target.copy(c); camera.lookAt(c);
+  camera.zoom = (H * 1.2) / Math.max(len, 1e-6); camera.updateProjectionMatrix(); orbit.update(); view = side ? 'side' : 'front'; refreshAll();
 }
 // ---------------------------------------------------------------- mouth oval: ring template fitted by handles
 // Handles (glTF, on the skin): mouth_corner_L/R, mouth_mid_L/R, mouth_c (slit), lip_top / lip_bot (lip edges at
@@ -1010,15 +1035,66 @@ const EYEBALLS = () => ['eyeball_L'].concat(S.sym ? [] : ['eyeball_R']).filter((
 const FACE_TOP = () => (S.face.face_top ? ['face_top'] : []);
 // a mouth modelled half-open: the inner lip edges at the middle; the slit ring becomes the opening between them
 const OPEN_KEYS = () => (S.face.mouth_open_top && S.face.mouth_open_bot ? ['mouth_open_top', 'mouth_open_bot'] : []);
-const ovalHandles = () => OVAL_KEYS.concat(OPEN_KEYS(), EYE_HANDLES(), EYEBALLS(), FACE_TOP());
+// the teeth: where the face-parts set's rows will stand (blender_mouth_cut.py step 4). By default the set is scaled to
+// 0.95 of the mouth width and put 0.10 W behind the middle of the lips at the slit; «Зубы» gives a handle at the
+// front of the upper incisors' biting edge (moved in height and depth, seen from the side, in X-ray) and «−»/«+»
+// the width of the rows. TEETH_ARCH: the standard set's upper row from above, TEETH_FRONT: its front point, both in
+// arch widths (Blender axes: y back, z up), measured on face_parts_default/teeth.glb.
+const TEETH_ARCH = [[-0.485, 0.358], [-0.489, 0.323], [-0.418, 0.186], [-0.39, 0.157], [-0.323, 0.07], [-0.251, -0.019], [-0.153, -0.038],
+  [-0.117, -0.041], [0.013, -0.02], [0.117, -0.041], [0.153, -0.038], [0.251, -0.019], [0.323, 0.07], [0.39, 0.157], [0.418, 0.186],
+  [0.489, 0.323], [0.529, 0.423], [0.559, 0.512], [0.582, 0.673], [0.576, 0.765], [0.49, 0.806], [-0.49, 0.806], [-0.576, 0.765],
+  [-0.582, 0.673], [-0.559, 0.512], [-0.529, 0.423]];
+const TEETH_FRONT = { y: -0.035, z: -0.093 }, TEETH_GUM_TOP = 0.142;
+function teethGeom() {   // { front, anchor, s: metres per arch width } in editor (glTF) axes, or null before the mouth
+  const F = S.face; if (!F.mouth_corner_L || !F.mouth_corner_R || !F.mouth_c) return null;
+  const P = ovalParams(F), W = V(F.mouth_corner_L).distanceTo(V(F.mouth_corner_R)), s0 = .95 * W, s = s0 * (F.teeth_scale || 1);
+  const auto = new THREE.Vector3(P.cx, P.L(P.cx) + TEETH_FRONT.z * s0, F.mouth_c[2] - .10 * W - TEETH_FRONT.y * s0);
+  const front = F.teeth_front ? V(F.teeth_front) : auto;
+  return { front, s, W, anchor: new THREE.Vector3(front.x, front.y - TEETH_FRONT.z * s, front.z + TEETH_FRONT.y * s) };
+}
+function teethWire(group) {   // the upper row as a fence: its biting edge, the gum's top and uprights between them
+  const g = teethGeom(); if (!g) return;
+  const col = S.face.teeth_front ? 0xffffff : 0xb8bcc2, at = (x, y, h) => [g.anchor.x + x * g.s, g.anchor.y + h * g.s, g.anchor.z - y * g.s];
+  const mat = (op) => new THREE.LineBasicMaterial({ color: col, depthTest: false, transparent: true, opacity: op });
+  for (const [h, op] of [[TEETH_FRONT.z, .95], [TEETH_GUM_TOP, .5]]) {
+    const pts = []; for (const [x, y] of TEETH_ARCH.concat([TEETH_ARCH[0]])) pts.push(...at(x, y, h));
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    const l = new THREE.Line(geo, mat(op)); l.renderOrder = 998; group.add(l);
+  }
+  const up = []; for (const [x, y] of TEETH_ARCH) up.push(...at(x, y, TEETH_FRONT.z), ...at(x, y, TEETH_GUM_TOP));
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(up, 3));
+  const l = new THREE.LineSegments(geo, mat(.6)); l.renderOrder = 998; group.add(l);
+}
+const TEETH = () => (S.face.teeth_front ? ['teeth'] : []);
+const ovalHandles = () => OVAL_KEYS.concat(OPEN_KEYS(), EYE_HANDLES(), EYEBALLS(), FACE_TOP(), TEETH());
 const eyeMid = () => { const l = V(S.face.eye_L), r = S.face.eye_R ? V(S.face.eye_R) : mirror(l); return { c: l.clone().add(r).multiplyScalar(.5), ipd: l.distanceTo(r) }; };
-const handlePos = (k) => (k.startsWith('eyeball') ? S.pos['eye_' + k.slice(-1)] : S.face[k]);
+const handlePos = (k) => (k.startsWith('eyeball') ? S.pos['eye_' + k.slice(-1)] : k === 'teeth' ? S.face.teeth_front : S.face[k]);
 const eyeR = (sd) => (S.pos['eye_' + sd] && S.pos['eye_end_' + sd] ? V(S.pos['eye_' + sd]).distanceTo(V(S.pos['eye_end_' + sd])) : 0);
-function eyeWire(group, sd, colour) {
-  const c = S.pos['eye_' + sd], r = eyeR(sd); if (!c || !r) return;
-  const ws = new THREE.LineSegments(new THREE.WireframeGeometry(new THREE.SphereGeometry(r, 16, 10)),
-    new THREE.LineBasicMaterial({ color: colour, depthTest: false, transparent: true, opacity: .6 }));
-  ws.position.copy(V(c)); ws.renderOrder = 997; group.add(ws);
+// the eyeball: the face-parts set's own eye (the one the build puts in: DATA.eyes), its centre at the eye joint, as big
+// as the joint's distance to its end (the cornea) and looking that way; it sits in the socket like on the model, so a
+// wrong place or size shows at once. A wire sphere only when the page has no eye.
+let EYE = null;   // { geo, mat, r }
+if (DATA.eyes && DATA.eyes.b64) {
+  const raw = atob(DATA.eyes.b64), u8 = new Uint8Array(raw.length); for (let i = 0; i < raw.length; i++) u8[i] = raw.charCodeAt(i);
+  new GLTFLoader().parse(u8.buffer, '', (g) => {
+    let m = null; g.scene.traverse((o) => { if (o.isMesh && !m) m = o; });
+    if (m) { EYE = { geo: m.geometry, mat: m.material, r: DATA.eyes.r || .012 }; draw(); if (ovalMode) drawOval(); }
+  }, () => {});
+}
+function eyeWire(group, sd, colour) {   // the object added (to take away on the next drawing), or null
+  const c = S.pos['eye_' + sd], r = eyeR(sd); if (!c || !r) return null;
+  let o;
+  if (EYE) {
+    o = new THREE.Mesh(EYE.geo, EYE.mat); o.userData.shared = true;   // shared: never disposed with the drawing
+    o.scale.setScalar(r / EYE.r);
+    const e = S.pos['eye_end_' + sd]; if (e) o.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), V(e).sub(V(c)).normalize());
+  } else {
+    o = new THREE.LineSegments(new THREE.WireframeGeometry(new THREE.SphereGeometry(r, 16, 10)),
+      new THREE.LineBasicMaterial({ color: colour, depthTest: false, transparent: true, opacity: .6 }));
+    o.renderOrder = 997;
+  }
+  o.position.copy(V(c)); o.userData.id = 'eye_' + sd;   // a click on the eyeball selects the eye joint
+  group.add(o); return o;
 }
 function eyeLoop(sd) {   // closed Catmull-Rom through the 4 eyelid points, as blender_eye_insert.py / face_topo.py
   const pts = ['eye_in', 'eye_top', 'eye_out', 'eye_bot'].map((k) => S.face[k + '_' + sd]).filter(Boolean).map(V);
@@ -1112,7 +1188,7 @@ function openCheck(F) {   // once per markup: the user may take the points away 
   ovalAutoOpen = true;
 }
 function drawOval() {
-  for (const c of [...ovalGroup.children]) { ovalGroup.remove(c); if (c.geometry) c.geometry.dispose(); }
+  for (const c of [...ovalGroup.children]) { ovalGroup.remove(c); if (c.geometry && !c.userData.shared) c.geometry.dispose(); }
   if (!ovalMode || !OVAL_KEYS.every((k) => S.face[k])) return;
   const P = ovalParams(S.face), zf = V(S.face.mouth_c).z, N = 48;
   // depth chained ring by ring along each direction (slit outward): a ring never jumps onto an overhanging nose
@@ -1137,6 +1213,7 @@ function drawOval() {
     l.renderOrder = 998; ovalGroup.add(l);
   }
   for (const sd of ['L', 'R']) eyeWire(ovalGroup, sd, 0x35c2e8);   // eyeballs as wire spheres
+  teethWire(ovalGroup);   // where the teeth will stand (grey: automatic)
   if (S.face.face_top && S.face.eye_L) {   // the mask top across the forehead
     const t = V(S.face.face_top), { ipd } = eyeMid(), pts = [];
     for (let i = 0; i <= 24; i++) {
@@ -1175,12 +1252,15 @@ tcO.addEventListener('mouseUp', () => {
 });
 function ovalSelect(k) {
   ovalMode.sel = k;
-  tcO.showZ = !!(k && k.startsWith('eyeball'));   // an eyeball moves in depth too
+  tcO.showZ = !!(k && (k.startsWith('eyeball') || k === 'teeth'));   // an eyeball and the teeth move in depth too
   if (k) { ovalHelper.position.copy(V(handlePos(k))); ovalHelper.updateMatrixWorld(); tcO.attach(ovalHelper); } else tcO.detach();
   drawOval();
 }
 function ovalApply(k, w) {
   const F = S.face;
+  if (k === 'teeth') {   // inside the head: height and depth as dragged (the middle with symmetry)
+    F.teeth_front = [S.sym ? cx : w.x, w.y, w.z].map((x) => +x.toFixed(5)); drawOval(); return;
+  }
   if (k.startsWith('eyeball')) {   // moves the eye joint with its cornea point; the other eye mirrors
     const sd = k.slice(-1), d = w.clone().sub(V(S.pos['eye_' + sd]));
     for (const id of ['eye_' + sd, 'eye_end_' + sd]) setPos(id, V(S.pos[id]).add(d));
@@ -1243,6 +1323,19 @@ $('mouthOpenBtn').onclick = () => {
   drawOval(); refreshAll(); sync();
 };
 $('eyeSmall').onclick = () => eyeScale(1 / 1.06); $('eyeBig').onclick = () => eyeScale(1.06);
+$('teethBtn').onclick = () => {   // own place for the teeth (from where they would stand), or back to automatic
+  if (!ovalMode) return; const g = teethGeom(); if (!g) return; pushUndo();
+  if (S.face.teeth_front) { delete S.face.teeth_front; delete S.face.teeth_scale; if (ovalMode.sel === 'teeth') ovalSelect(null); }
+  else { S.face.teeth_front = g.front.toArray().map((x) => +x.toFixed(5)); ovalSelect('teeth'); faceView(true); }
+  drawOval(); refreshAll(); sync();
+};
+function teethScale(f) {   // the rows wider or narrower; their front stays where it is
+  if (!ovalMode || !S.face.teeth_front) return; pushUndo();
+  S.face.teeth_scale = +Math.min(1.6, Math.max(.6, (S.face.teeth_scale || 1) * f)).toFixed(3);
+  $('hint').textContent = '{{js:ed.teeth_width_now}}'.replace('{0}', Math.round(S.face.teeth_scale * 100));
+  drawOval(); sync();
+}
+$('teethNarrow').onclick = () => teethScale(1 / 1.05); $('teethWide').onclick = () => teethScale(1.05);
 $('ovalBtn').onclick = () => {
   if (S.phase !== 'edit') return;
   if (ovalMode) { tcO.detach(); ovalMode = null; drawOval(); refreshAll(); sync(); return; }
@@ -1755,6 +1848,10 @@ async function loadRigged() {
   const url = new URL('/file=' + DATA.rigged + '?v=' + (DATA.rigged_v || 0), window.parent.location.href).href;   // ?v: no stale cache after a rebuild
   const gltf = await new GLTFLoader().loadAsync(url);
   poseRoot = gltf.scene; scene.add(poseRoot); poseRoot.updateMatrixWorld(true);
+  poseRoot.traverse((o) => {   // which glTF mesh and primitive each three.js mesh is: the expression edits name them so
+    const a = o.isMesh && gltf.parser.associations.get(o);
+    if (a && a.meshes !== undefined) o.userData.gref = { mesh: gltf.parser.json.meshes[a.meshes].name || String(a.meshes), prim: a.primitives || 0 };
+  });
   clips = gltf.animations || [];
   if (clips.length) {
     mixer = new THREE.AnimationMixer(poseRoot);
@@ -1782,6 +1879,7 @@ async function loadRigged() {
   if (morphs.size) {
     $('pMorph').innerHTML = [...morphs].map((k) => `<option>${k}</option>`).join('');
     $('pMorph').hidden = $('pMorphV').hidden = false;
+    $('pSculpt').hidden = DATA.mode === 'say';   // the lipsync viewer only looks
   }
   const emos = (DATA.emotions || []).filter((e) => [...morphs].some((k) => emoValue(e.keys, k) > 0));
   if (emos.length) {
@@ -1935,7 +2033,7 @@ let mixer = null, clips = [], action = null, playing = false; const clock = new 
 function stopClip() { if (action) action.stop(); action = null; playing = false; $('pPlay').textContent = '{{js:ed.animation}}'; }
 let pendingMove = null;
 canvas.addEventListener('pointermove', (e) => {
-  if (!poseOn || wearOn) return;   // the armour mode picks the armour, not the bones
+  if (!poseOn || wearOn || SC.on) return;   // the armour mode picks the armour, the brush the skin, not the bones
   if (pendingMove) { pendingMove = e; return; }
   pendingMove = e;
   requestAnimationFrame(() => {
@@ -1976,7 +2074,7 @@ canvas.addEventListener('pointermove', (e) => {
   });
 });
 canvas.addEventListener('pointerdown', (e) => {
-  if (!poseOn || e.button !== 0 || !hoverId || playing || tcW.axis || (wearOn && wear && !wear.fittedShown)) return;   // the armour is being placed
+  if (!poseOn || SC.on || e.button !== 0 || !hoverId || playing || tcW.axis || (wearOn && wear && !wear.fittedShown)) return;   // the armour is being placed
   posePush();
   dragId = hoverId; orbit.enabled = false; canvas.setPointerCapture(e.pointerId);
   dragStart = { x: e.clientX, y: e.clientY, dir: tailWorld(dragId).sub(PB[dragId].getWorldPosition(new V3)).normalize() };
@@ -1997,6 +2095,19 @@ function poseStep(from, to) {
 for (const id of ['pReset', 'pCheck', 'pSquat', 'pFist', 'pFistFit', 'pFistMirror', 'pJaw'])
   $(id).addEventListener('click', () => posePush(), true);   // before the button moves the bones
 
+// over the pose on the markup page: which build is shown (when, with what face) and, when the markup was changed since
+// the page opened, that the pose is still the old build: «Построить скелет» makes it anew
+let MARKUP0 = null;
+const markupNow = () => JSON.stringify({ p: S.pos, f: S.face, r: S.rot, b: S.bend, t: S.twist });
+function poseNote(on) {
+  const el = $('poseNote'), b = DATA.build;
+  if (!on || !b || DATA.mode === 'view' || DATA.mode === 'wear' || DATA.mode === 'say') { el.hidden = true; return; }
+  const face = [b.mouth === 'cut' ? '{{js:ui.tag_mouth_cut}}' : b.mouth === 'plate' ? '{{js:ui.tag_mouth_plate}}' : '', b.retopo ? '{{js:ui.tag_retopo}}' : '',
+                b.eyes ? '{{js:ui.tag_eyes}}' : ''].filter(Boolean).join(', ');
+  const changed = MARKUP0 !== null && markupNow() !== MARKUP0;
+  el.textContent = '{{js:ed.pose_build}}'.replace('{0}', b.date).replace('{1}', face || '—') + (changed ? ' ' + '{{js:ed.pose_markup_changed}}' : '');
+  el.classList.toggle('warn', changed); el.hidden = false;
+}
 async function setPose(on) {
   if (on && !DATA.rigged) { alert('{{js:ed.first_press_build_the_skeleton_and}}'); return; }
   if (on && !poseRoot) {
@@ -2004,6 +2115,8 @@ async function setPose(on) {
     try { await loadRigged(); } catch (err) { $('msg').textContent = '{{js:ed.could_not_open_the_built_model}}' + err.message; return; }
     $('msg').hidden = true;
   }
+  if (!on && typeof SC !== 'undefined') scExit();
+  poseNote(on);
   poseOn = on; hoverId = dragId = null;
   model.visible = !on; jointGroup.visible = fanGroup.visible = !on; if (lines) lines.visible = !on;
   if (poseRoot) { poseRoot.visible = on; skelHelp.visible = on; }
@@ -2078,6 +2191,323 @@ function applyEmotion() {
   if (m) $('pMorphV').value = m.morphTargetInfluences[m.morphTargetDictionary[sel]];
 }
 $('pEmo').onchange = applyEmotion; $('pEmoV').oninput = applyEmotion;
+// ---------------------------------------------------------------- expressions by hand: a brush on a shape key
+// «Править выражение» on the key chosen in the list: the face shows that key at full strength (baked into the drawn
+// mesh while it is edited: three.js packs every key into one texture, rebuilt only when the key count changes) and the
+// brush moves the key's displacement — «Тянуть» drags the skin under the brush with the mouse, «Поднять» / «Вдавить»
+// push it along the surface's normal, «Сгладить» evens the displacement out; «Зеркально» does the same on the other
+// half of the face. Points the mesh keeps twice (UV seams, the face split by materials) move together, so the skin
+// never tears. «Сохранить» sends the change since the model was loaded (face_edits.py lays it on the model as built
+// and keeps it next to the character); the light is corrected as the surface turns.
+const SC = { on: false, key: null, mode: 'grab', items: [], undo: [], redo: [], stroke: null, orig: new Map(), dirty: false };
+let SCN = null;   // the face's points: { n, pos (world, now), rest (world, no key), verts (CSR), grid, adj (CSR), mirror }
+const scR = () => +$('scR').value / 100 * (PB.head && PB.neck ? Math.max(PB.head.getWorldPosition(new V3).distanceTo(PB.neck.getWorldPosition(new V3)) * 2, .05 * H) : .1 * H);
+const scS = () => +$('scS').value / 100;
+const scFall = (d, R) => { const t = d / R; return t >= 1 ? 0 : (1 - t * t) * (1 - t * t); };
+function scFaceMeshes(key) {   // the face's primitives carrying the key: the mesh with the most keys (not the teeth)
+  const ms = poseMeshes.filter((m) => m.morphTargetDictionary && key in m.morphTargetDictionary && m.userData.gref);
+  const most = Math.max(0, ...ms.map((m) => Object.keys(m.morphTargetDictionary).length));
+  return ms.filter((m) => Object.keys(m.morphTargetDictionary).length === most);
+}
+function scBuild(key) {
+  SC.items = scFaceMeshes(key).map((m) => {
+    const t = m.morphTargetDictionary[key], g = m.geometry, pa = g.attributes.position, na = g.attributes.normal;
+    const arr = g.morphAttributes.position[t].array, narr = g.morphAttributes.normal ? g.morphAttributes.normal[t].array : null;
+    const it = { m, t, arr, narr, base0: pa.array.slice(), nbase0: na ? na.array.slice() : null, mw: m.matrixWorld.clone(),
+                 inv3: new THREE.Matrix3().setFromMatrix4(m.matrixWorld).invert(), index: g.index ? g.index.array : null };
+    if (!SC.orig.has(key)) SC.orig.set(key, new Map());
+    if (!SC.orig.get(key).has(m.uuid)) SC.orig.get(key).set(m.uuid, { arr: arr.slice(), narr: narr ? narr.slice() : null });
+    return it;
+  });
+  // the points: a vertex the mesh has twice (same rest place) is one point
+  const q = H * 1e-5, ids = new Map(), owner = [];
+  for (const [k, it] of SC.items.entries()) {
+    const b = it.base0, n = b.length / 3; it.node = new Int32Array(n);
+    for (let i = 0; i < n; i++) {
+      const h = Math.round(b[3 * i] / q) + ',' + Math.round(b[3 * i + 1] / q) + ',' + Math.round(b[3 * i + 2] / q);
+      let id = ids.get(h); if (id === undefined) { id = owner.length; ids.set(h, id); owner.push([]); }
+      owner[id].push(k, i); it.node[i] = id;
+    }
+  }
+  const n = owner.length, pos = new Float32Array(3 * n), rest = new Float32Array(3 * n), v = new V3();
+  for (let id = 0; id < n; id++) {
+    const it = SC.items[owner[id][0]], i = owner[id][1];
+    v.set(it.base0[3 * i], it.base0[3 * i + 1], it.base0[3 * i + 2]).applyMatrix4(it.mw); rest.set([v.x, v.y, v.z], 3 * id);
+    v.set(it.base0[3 * i] + it.arr[3 * i], it.base0[3 * i + 1] + it.arr[3 * i + 1], it.base0[3 * i + 2] + it.arr[3 * i + 2]).applyMatrix4(it.mw);
+    pos.set([v.x, v.y, v.z], 3 * id);
+  }
+  // neighbours (for «Сгладить») from the triangles, over the points
+  const nb = Array.from({ length: n }, () => new Set());
+  for (const it of SC.items) {
+    const ix = it.index || Uint32Array.from({ length: it.node.length }, (_, i) => i);
+    it.vtri = Array.from({ length: it.node.length }, () => []);
+    for (let f = 0; f < ix.length; f += 3) {
+      const a = it.node[ix[f]], b = it.node[ix[f + 1]], c = it.node[ix[f + 2]];
+      nb[a].add(b).add(c); nb[b].add(a).add(c); nb[c].add(a).add(b);
+      it.vtri[ix[f]].push(f); it.vtri[ix[f + 1]].push(f); it.vtri[ix[f + 2]].push(f);
+    }
+  }
+  const mid = PB.hips ? PB.hips.getWorldPosition(new V3).x : bbox.getCenter(new V3).x;
+  SCN = { n, pos, rest, owner, nb: nb.map((s_) => [...s_].filter((j) => j !== undefined)), mid, cell: .02 * H, grid: null, mirror: new Int32Array(n).fill(-2) };
+  scGrid();
+}
+function scGrid() {
+  const g = new Map(), c = SCN.cell, p = SCN.pos;
+  for (let id = 0; id < SCN.n; id++) {
+    const h = Math.floor(p[3 * id] / c) + ',' + Math.floor(p[3 * id + 1] / c) + ',' + Math.floor(p[3 * id + 2] / c);
+    let l = g.get(h); if (!l) g.set(h, l = []); l.push(id);
+  }
+  SCN.grid = g;
+}
+function scNear(P, R) {   // [id, falloff] of the points within R of P (their places now)
+  const c = SCN.cell, r = Math.ceil(R / c) + 1, cx_ = Math.floor(P.x / c), cy = Math.floor(P.y / c), cz = Math.floor(P.z / c), out = [], p = SCN.pos;
+  for (let a = -r; a <= r; a++) for (let b = -r; b <= r; b++) for (let d = -r; d <= r; d++) {
+    const l = SCN.grid.get((cx_ + a) + ',' + (cy + b) + ',' + (cz + d)); if (!l) continue;
+    for (const id of l) {
+      const dd = Math.hypot(p[3 * id] - P.x, p[3 * id + 1] - P.y, p[3 * id + 2] - P.z);
+      if (dd < R) out.push([id, scFall(dd, R)]);
+    }
+  }
+  return out;
+}
+function scMirrorOf(id) {   // the point across the face's middle (-1: none near enough)
+  if (SCN.mirror[id] !== -2) return SCN.mirror[id];
+  const p = SCN.pos, M = new V3(2 * SCN.mid - p[3 * id], p[3 * id + 1], p[3 * id + 2]);
+  let best = -1, bd = .004 * H;
+  for (const [j] of scNear(M, bd)) { const d = Math.hypot(p[3 * j] - M.x, p[3 * j + 1] - M.y, p[3 * j + 2] - M.z); if (d < bd) { bd = d; best = j; } }
+  SCN.mirror[id] = best; return best;
+}
+function scMove(id, dw) {   // a point moved by a world vector: every vertex it is, in the key and in the drawn mesh
+  const st = SC.stroke, o = SCN.owner[id];
+  for (let k = 0; k < o.length; k += 2) {
+    const it = SC.items[o[k]], i = o[k + 1], code = o[k] * 1e7 + i;
+    if (st && !st.old.has(code)) st.old.set(code, [it.arr[3 * i], it.arr[3 * i + 1], it.arr[3 * i + 2]]);
+    const l = dw.clone().applyMatrix3(it.inv3);
+    it.arr[3 * i] += l.x; it.arr[3 * i + 1] += l.y; it.arr[3 * i + 2] += l.z;
+    const pa = it.m.geometry.attributes.position.array;
+    pa[3 * i] = it.base0[3 * i] + it.arr[3 * i]; pa[3 * i + 1] = it.base0[3 * i + 1] + it.arr[3 * i + 1]; pa[3 * i + 2] = it.base0[3 * i + 2] + it.arr[3 * i + 2];
+    it.dirty = true;
+  }
+  SCN.pos[3 * id] += dw.x; SCN.pos[3 * id + 1] += dw.y; SCN.pos[3 * id + 2] += dw.z;
+  if (st) st.ids.add(id);
+  SC.dirty = true;
+}
+function scFlush() { for (const it of SC.items) if (it.dirty) { it.m.geometry.attributes.position.needsUpdate = true; it.dirty = false; } }
+function scLight(codes) {   // the normals' displacement turned as the surface turned (the same as face_edits.py)
+  const vn = (it, i, get) => {
+    const n = new V3(), a = new V3(), b = new V3(), c = new V3(), ix = it.index;
+    for (const f of it.vtri[i]) {
+      get(it, ix ? ix[f] : f, a); get(it, ix ? ix[f + 1] : f + 1, b); get(it, ix ? ix[f + 2] : f + 2, c);
+      n.add(b.sub(a).cross(c.sub(a)));
+    }
+    return n.lengthSq() > 1e-30 ? n.normalize() : n;
+  };
+  const touched = new Map();   // item -> vertices whose normal may change: the moved ones and their triangles' others
+  for (const [code, old] of codes) {
+    const k = Math.floor(code / 1e7), i = code % 1e7, it = SC.items[k], ix = it.index;
+    if (!touched.has(k)) touched.set(k, new Set());
+    for (const f of it.vtri[i]) for (let e = 0; e < 3; e++) touched.get(k).add(ix ? ix[f + e] : f + e);
+  }
+  for (const [k, vs] of touched) {
+    const it = SC.items[k]; if (!it.narr) continue;
+    const now = (it_, i, out) => out.set(it_.base0[3 * i] + it_.arr[3 * i], it_.base0[3 * i + 1] + it_.arr[3 * i + 1], it_.base0[3 * i + 2] + it_.arr[3 * i + 2]);
+    const was = (it_, i, out) => { const o = codes.get(k * 1e7 + i); return o ? out.set(it_.base0[3 * i] + o[0], it_.base0[3 * i + 1] + o[1], it_.base0[3 * i + 2] + o[2]) : now(it_, i, out); };
+    const na = it.m.geometry.attributes.normal;
+    for (const i of vs) {
+      const d = vn(it, i, now).sub(vn(it, i, was));
+      it.narr[3 * i] += d.x; it.narr[3 * i + 1] += d.y; it.narr[3 * i + 2] += d.z;
+      if (na && it.nbase0) for (let e = 0; e < 3; e++) na.array[3 * i + e] = it.nbase0[3 * i + e] + it.narr[3 * i + e];
+    }
+    if (na) na.needsUpdate = true;
+  }
+}
+function scBake(on) {   // the key drawn at full strength in the mesh itself (on), or back to a key (off)
+  for (const it of SC.items) {
+    const g = it.m.geometry, pa = g.attributes.position, na = g.attributes.normal;
+    for (let i = 0; i < pa.array.length; i++) pa.array[i] = it.base0[i] + (on ? it.arr[i] : 0);
+    if (na && it.nbase0) for (let i = 0; i < na.array.length; i++) na.array[i] = it.nbase0[i] + (on && it.narr ? it.narr[i] : 0);
+    pa.needsUpdate = true; if (na) na.needsUpdate = true;
+    g.computeBoundingSphere(); g.computeBoundingBox();
+    if (!on) g.dispose();   // the keys' texture is made again, with the edited key
+  }
+}
+function scHit(e) {
+  const rc = canvas.getBoundingClientRect();
+  ndc.set(((e.clientX - rc.left) / rc.width) * 2 - 1, -((e.clientY - rc.top) / rc.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  return ray.intersectObjects(SC.items.map((it) => it.m), false)[0] || null;
+}
+const scNormal = (h) => (h.face ? h.face.normal.clone().transformDirection(h.object.matrixWorld) : camera.getWorldDirection(new V3).negate());
+function scDab(P, N) {   // «Поднять» / «Вдавить» / «Сгладить» at P (and mirrored)
+  const R = scR(), s = scS(), spots = [[P, N, false]];
+  if ($('scMirror').checked) spots.push([new V3(2 * SCN.mid - P.x, P.y, P.z), new V3(-N.x, N.y, N.z), true]);
+  for (const [Q, n] of spots) {
+    const near = scNear(Q, R);
+    if (SC.mode === 'smooth') {
+      const p = SCN.pos, r = SCN.rest, moves = [];
+      for (const [id, w] of near) {
+        const nb = SCN.nb[id]; if (!nb.length) continue;
+        const avg = new V3(); for (const j of nb) avg.x += p[3 * j] - r[3 * j], avg.y += p[3 * j + 1] - r[3 * j + 1], avg.z += p[3 * j + 2] - r[3 * j + 2];
+        avg.multiplyScalar(1 / nb.length);
+        const cur = new V3(p[3 * id] - r[3 * id], p[3 * id + 1] - r[3 * id + 1], p[3 * id + 2] - r[3 * id + 2]);
+        moves.push([id, avg.sub(cur).multiplyScalar(w * s * .6)]);
+      }
+      for (const [id, d] of moves) scMove(id, d);
+    } else {
+      const k = (SC.mode === 'press' ? -1 : 1) * s * R * .05;
+      for (const [id, w] of near) scMove(id, n.clone().multiplyScalar(k * w));
+    }
+  }
+  scFlush();
+}
+const scRing = new THREE.Mesh(new THREE.RingGeometry(.94, 1, 48), new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true, opacity: .8, side: THREE.DoubleSide }));
+scRing.renderOrder = 999; scRing.visible = false; scene.add(scRing);
+function scShowRing(h) {
+  if (!h) { scRing.visible = false; return; }
+  const n = scNormal(h); scRing.position.copy(h.point); scRing.scale.setScalar(scR());
+  scRing.quaternion.setFromUnitVectors(new V3(0, 0, 1), n); scRing.visible = true;
+}
+canvas.addEventListener('pointerdown', (e) => {
+  if (!SC.on || e.button !== 0) return;
+  const h = scHit(e); if (!h) return;   // off the face: the view turns as always
+  e.stopImmediatePropagation(); orbit.enabled = false; canvas.setPointerCapture(e.pointerId);
+  SC.stroke = { old: new Map(), ids: new Set(), P0: h.point.clone(), last: h.point.clone(), applied: new Map(), grab: null };
+  if (SC.mode === 'grab') {   // the points under the brush (and their mirror) follow the mouse in the view's plane
+    const R = scR(), g = new Map();
+    for (const [id, w] of scNear(h.point, R)) g.set(id, { w, mx: 1 });
+    if ($('scMirror').checked) for (const [id, w] of scNear(new V3(2 * SCN.mid - h.point.x, h.point.y, h.point.z), R)) {
+      const prev = g.get(id); if (prev && prev.mx === 1) prev.mx = 0; else if (!prev) g.set(id, { w, mx: -1 });   // on the middle: no side-to-side
+    }
+    SC.stroke.grab = g; SC.stroke.plane = new THREE.Plane().setFromNormalAndCoplanarPoint(camera.getWorldDirection(new V3), h.point);
+  } else scDab(h.point, scNormal(h));
+}, true);
+canvas.addEventListener('pointermove', (e) => {
+  if (!SC.on) return;
+  if (!SC.stroke) { scShowRing(scHit(e)); return; }
+  e.stopImmediatePropagation();
+  if (SC.mode === 'grab') {
+    const rc = canvas.getBoundingClientRect();
+    ndc.set(((e.clientX - rc.left) / rc.width) * 2 - 1, -((e.clientY - rc.top) / rc.height) * 2 + 1); ray.setFromCamera(ndc, camera);
+    const X = ray.ray.intersectPlane(SC.stroke.plane, new V3); if (!X) return;
+    const D = X.sub(SC.stroke.P0).multiplyScalar(scS() * 2);
+    for (const [id, g] of SC.stroke.grab) {
+      const want = new V3(D.x * g.mx, D.y, D.z).multiplyScalar(g.w), had = SC.stroke.applied.get(id) || new V3();
+      scMove(id, want.clone().sub(had)); SC.stroke.applied.set(id, want);
+    }
+    scFlush(); scRing.visible = false; return;
+  }
+  const h = scHit(e); scShowRing(h); if (!h) return;
+  if (h.point.distanceTo(SC.stroke.last) < scR() * .15) return;   // a dab every ~0.15 of the radius
+  SC.stroke.last.copy(h.point); scDab(h.point, scNormal(h));
+}, true);
+addEventListener('pointerup', () => {
+  if (!SC.on || !SC.stroke) return;
+  const st = SC.stroke; SC.stroke = null; orbit.enabled = true;
+  if (!st.old.size) return;
+  scLight(st.old);
+  const now = new Map(); for (const code of st.old.keys()) { const it = SC.items[Math.floor(code / 1e7)], i = code % 1e7; now.set(code, [it.arr[3 * i], it.arr[3 * i + 1], it.arr[3 * i + 2]]); }
+  SC.undo.push({ key: SC.key, old: st.old, now }); if (SC.undo.length > 60) SC.undo.shift(); SC.redo.length = 0;
+  scGrid(); scStatus();
+}, true);
+function scSet(rec, which) {   // undo / redo of a stroke: every vertex back to its values, the points and the light too
+  const vals = rec[which], back = new Map();
+  for (const [code, v] of vals) {
+    const k = Math.floor(code / 1e7), i = code % 1e7, it = SC.items[k];
+    back.set(code, [it.arr[3 * i], it.arr[3 * i + 1], it.arr[3 * i + 2]]);
+    it.arr[3 * i] = v[0]; it.arr[3 * i + 1] = v[1]; it.arr[3 * i + 2] = v[2];
+    const pa = it.m.geometry.attributes.position.array; for (let e = 0; e < 3; e++) pa[3 * i + e] = it.base0[3 * i + e] + it.arr[3 * i + e];
+    it.dirty = true;
+    const id = it.node[i], q = new V3(it.base0[3 * i] + v[0], it.base0[3 * i + 1] + v[1], it.base0[3 * i + 2] + v[2]).applyMatrix4(it.mw);
+    SCN.pos.set([q.x, q.y, q.z], 3 * id);
+  }
+  scFlush(); scLight(back); scGrid(); SC.dirty = true; scStatus();
+}
+function scUndo() { const r = SC.undo.pop(); if (!r || r.key !== SC.key) { if (r) SC.undo.push(r); return; } scSet(r, 'old'); SC.redo.push(r); }
+function scRedo() { const r = SC.redo.pop(); if (!r || r.key !== SC.key) { if (r) SC.redo.push(r); return; } scSet(r, 'now'); SC.undo.push(r); }
+addEventListener('keydown', (e) => {
+  if (!SC.on || !(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'z' && e.key.toLowerCase() !== 'я') return;
+  e.preventDefault(); e.stopImmediatePropagation(); if (e.shiftKey) scRedo(); else scUndo();
+}, true);
+function scChanges() {   // {key: [{mesh, prim, v: [[i, rest x, y, z, offset x, y, z]]}]}: what moved since the model was loaded (or saved)
+  const out = {};
+  for (const [key, per] of SC.orig) {
+    const groups = [];
+    for (const m of poseMeshes) {
+      const o = per.get(m.uuid); if (!o) continue;
+      const arr = m.geometry.morphAttributes.position[m.morphTargetDictionary[key]].array, b = SC.key === key && SC.on ? SC.items.find((it) => it.m === m).base0 : m.geometry.attributes.position.array, v = [];
+      for (let i = 0; i < arr.length / 3; i++) {
+        const dx = arr[3 * i] - o.arr[3 * i], dy = arr[3 * i + 1] - o.arr[3 * i + 1], dz = arr[3 * i + 2] - o.arr[3 * i + 2];
+        if (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) > 1e-9) v.push([i, b[3 * i], b[3 * i + 1], b[3 * i + 2], dx, dy, dz].map((x, k) => (k ? +x.toPrecision(7) : x)));
+      }
+      if (v.length) groups.push({ mesh: m.userData.gref.mesh, prim: m.userData.gref.prim, v });
+    }
+    if (groups.length) out[key] = groups;
+  }
+  return out;
+}
+function scStatus(text) {
+  const n = Object.values(scChanges()).reduce((a, g) => a + g.reduce((b, x) => b + x.v.length, 0), 0);
+  $('scSt').textContent = text || (n ? '{{js:ed.sc_unsaved}}'.replace('{0}', n) : '{{js:ed.sc_nothing_unsaved}}');
+  $('scUndo').disabled = !SC.undo.some((r) => r.key === SC.key); $('scRedo').disabled = !SC.redo.some((r) => r.key === SC.key);
+}
+function scEnter(key) {
+  poseReset(); setMorph(key, 0); SC.key = key; scBuild(key); scBake(true); SC.on = true;
+  $('sculptBox').hidden = false; $('pSculpt').classList.add('on'); $('scKey').textContent = '{{js:ed.sc_editing}}'.replace('{0}', key);
+  hoverId = null; poseHighlight(); scStatus();
+}
+function scExit() {
+  if (!SC.on) return;
+  scBake(false); SC.on = false; SC.stroke = null; scRing.visible = false;
+  $('sculptBox').hidden = true; $('pSculpt').classList.remove('on');
+  setMorph(SC.key, 1); $('pMorph').value = SC.key; $('pMorphV').value = 1;
+}
+$('pSculpt').onclick = () => { if (SC.on) scExit(); else if ($('pMorph').value) scEnter($('pMorph').value); };
+$('pMorph').addEventListener('change', () => { if (SC.on && $('pMorph').value !== SC.key) { scExit(); scEnter($('pMorph').value); } });
+for (const b of $('scModes').querySelectorAll('button')) b.onclick = () => {
+  SC.mode = b.dataset.m; for (const x of $('scModes').querySelectorAll('button')) x.classList.toggle('on', x === b);
+};
+const scLabels = () => { $('scRv').textContent = $('scR').value + '%'; $('scSv').textContent = $('scS').value + '%'; };
+$('scR').oninput = $('scS').oninput = scLabels; scLabels();
+$('scUndo').onclick = scUndo; $('scRedo').onclick = scRedo; $('scDone').onclick = scExit;
+$('scDrop').onclick = () => {   // every unsaved change of this key back
+  const o = SC.orig.get(SC.key); if (!o) return;
+  for (const it of SC.items) { const w = o.get(it.m.uuid); it.arr.set(w.arr); if (it.narr && w.narr) it.narr.set(w.narr); }
+  const key = SC.key; scBake(false); SC.on = false; SC.undo = SC.undo.filter((r) => r.key !== key); SC.redo = SC.redo.filter((r) => r.key !== key); scEnter(key);
+};
+async function scSend(extra, wait) {
+  const js = await wearSend('face_edit', Object.assign({ item: 'face_edits' }, extra), wait);
+  $('scSt').textContent = js ? js.log : $('wStatus').textContent;
+  return js;
+}
+$('scSave').onclick = async () => {
+  const changes = scChanges(); if (!Object.keys(changes).length) { scStatus(); return; }
+  const js = await scSend({ changes }, '{{js:ed.sc_saving}}');
+  if (js && js.ok) {   // what is saved is the new start: the next save sends only what changes after it
+    for (const [key, per] of SC.orig) for (const m of poseMeshes) {
+      const o = per.get(m.uuid); if (!o) continue; const t = m.morphTargetDictionary[key];
+      o.arr = m.geometry.morphAttributes.position[t].array.slice(); if (o.narr) o.narr = m.geometry.morphAttributes.normal[t].array.slice();
+    }
+    if (js.v) DATA.rigged_v = js.v;
+  }
+};
+window.sf3dSculpt = { SC, get SCN() { return SCN; }, changes: scChanges, faceView: () => faceView() };   // for the tests
+$('scClear').onclick = async () => {   // the key as the build made it: the saved edits go too
+  if (!confirm('{{js:ed.sc_clear_confirm}}'.replace('{0}', SC.key))) return;
+  const key = SC.key, js = await scSend({ reset: [key], want: key }, '{{js:ed.sc_saving}}');
+  if (!js || !js.ok || !js.built) return;
+  scBake(false); SC.on = false;
+  for (const m of poseMeshes) {   // the key's displacement as built, sent back sparse
+    const g = (js.built || []).find((x) => m.userData.gref && x.mesh === m.userData.gref.mesh && x.prim === m.userData.gref.prim);
+    if (!g || !m.morphTargetDictionary || !(key in m.morphTargetDictionary)) continue;
+    const t = m.morphTargetDictionary[key], pa = m.geometry.morphAttributes.position[t].array, nm = m.geometry.morphAttributes.normal;
+    pa.fill(0); g.pi.forEach((i, k) => pa.set(g.pd.slice(3 * k, 3 * k + 3), 3 * i));
+    if (nm && g.ni) { const na = nm[t].array; na.fill(0); g.ni.forEach((i, k) => na.set(g.nd.slice(3 * k, 3 * k + 3), 3 * i)); }
+    const o = SC.orig.get(key) && SC.orig.get(key).get(m.uuid); if (o) { o.arr = pa.slice(); if (o.narr && nm) o.narr = nm[t].array.slice(); }
+  }
+  SC.undo = SC.undo.filter((r) => r.key !== key); SC.redo = SC.redo.filter((r) => r.key !== key);
+  if (js.v) DATA.rigged_v = js.v;
+  scEnter(key); scStatus(js.log);
+};
 // with a mouth plate the jawOpen key opens the mouth (as lip sync does); turning the Jaw bone as well would open it
 // twice and leave the plate floating in front of the chin. Without a plate the Jaw bone opens it.
 $('pJaw').onclick = () => {
@@ -3621,7 +4051,10 @@ addEventListener('keydown', (e) => {   // G / R / S like the joints
                          pos: DATA.state.joints, rot: DATA.state.rot || {}, bend: DATA.state.bend || {}, twist: DATA.state.twist || {}, fist: DATA.state.fist || {}, fistPose: DATA.state.fistPose || {}, fmarks: DATA.state.fmarks || {}, face: DATA.state.face || {} });
       cx = DATA.state.center_x || 0;
     }
-    applyYaw(); $('msg').hidden = true;
+    applyYaw(); $('msg').hidden = true; MARKUP0 = markupNow();
+    // a markup saved for a model of another height: it was placed on another one (an editor left open on it)
+    if (DATA.state && DATA.state.joints && DATA.state.height && Math.abs(DATA.state.height - H) > .03 * H)
+      markupMismatch = '{{js:ed.markup_other_model}}'.replace('{0}', (+DATA.state.height).toFixed(3)).replace('{1}', H.toFixed(3));
     if (S.phase === 'edit') showGuide(false);   // the schematic helps while placing; collapsed for a finished markup
     if (S.phase === 'place') current = nextMark().id;
     resize(); setView('front'); sync();

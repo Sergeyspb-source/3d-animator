@@ -686,7 +686,10 @@ skin(cav, lambda p: JAW_IN * jaw_blend(p.z, line_z(cx), 0.08 * W))
 
 # ------------------------------------------------------------------ 4. teeth and tongue
 kit_w = float(job.get("kit", {}).get("arch_width", 0.05))
-s = W * 0.95 / kit_w
+# the set scaled to the mouth width (0.95 W; the markup's «Зубы −/+» times that) and put 0.10 W behind the middle of
+# the lips at the slit, or - with the markup's own place («Зубы»: the front of the upper incisors' biting edge) - so
+# that this front point of the set lands there
+s = W * 0.95 / kit_w * max(0.3, min(2.0, float(job.get("teeth_scale") or 1.0)))
 anchor = Vector((cx, M.y + 0.10 * W, line_z(cx)))
 parts = []
 for path in (job.get("teeth_glb"), job.get("tongue_glb")):
@@ -697,12 +700,25 @@ for path in (job.get("teeth_glb"), job.get("tongue_glb")):
     for o in set(bpy.data.objects) - before:
         if o.type != "MESH":
             bpy.data.objects.remove(o, do_unlink=True); continue
-        o.select_set(True)
-        bpy.context.view_layer.objects.active = o
-        o.matrix_world = Matrix.Translation(anchor) @ Matrix.Scale(s, 4) @ o.matrix_world
-        bpy.ops.object.select_all(action="DESELECT"); o.select_set(True)
-        bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
         parts.append(o)
+tu = next((o for o in parts if o.name.startswith("Teeth_Upper")), None)
+_kf = Vector()
+if tu is not None:
+    _tv = [tu.matrix_world @ v.co for v in tu.data.vertices]
+    _mid = [v for v in _tv if abs(v.x) < 0.1 * kit_w] or _tv
+    _y0 = min(v.y for v in _mid)                       # the set's front (Blender: forward is -y) ...
+    _kf = Vector((0.0, _y0, min(v.z for v in _mid if v.y < _y0 + 0.03 * kit_w)))   # ... at the incisors' biting edge
+manual = bool(job.get("teeth_front")) and tu is not None
+if manual:
+    anchor = bl(job["teeth_front"]) - _kf * s
+_front = anchor + _kf * s
+report["teeth"] = {"place": "markup" if manual else "auto", "scale": round(s * kit_w / (0.95 * W), 3),
+                   "front": [round(_front.x, 5), round(_front.z, 5), round(-_front.y, 5)]}   # glTF axes, before step 6
+for o in parts:
+    bpy.ops.object.select_all(action="DESELECT"); o.select_set(True)
+    bpy.context.view_layer.objects.active = o
+    o.matrix_world = Matrix.Translation(anchor) @ Matrix.Scale(s, 4) @ o.matrix_world
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
 for o in parts:
     on_jaw = o.name.startswith(("Teeth_Lower", "Gum_Lower", "Tongue"))
     skin(o, lambda p, j=on_jaw: JAW_IN if j else 0.0)
