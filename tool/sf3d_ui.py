@@ -801,31 +801,34 @@ def _char_counts(f):
             len([x for x in f["dir"].glob("*_wear_*.glb") if not x.name.endswith(".src.glb")]))
 
 
-def _face_words(s):
-    """The face of a built model in words: «лицо: разрез, ретопология» ('' without a face)."""
-    if not s.get("keys") and not s.get("eyes"):
-        return ""
-    w = [_t("ui.tag_mouth_cut") if s.get("mouth") == "cut" else _t("ui.tag_mouth_plate") if s.get("mouth") == "plate" else None,
-         _t("ui.tag_retopo") if s.get("retopo") else None, _t("ui.tag_eyes") if s.get("eyes") else None]
-    return _t("ui.tag_face", ", ".join(x for x in w if x))
+# what a character has, as icons (the list shows plain text: emoji); the legend is under the list's label
+ICON = {"landmark": "🦴", "auto": "🤖", "parts": "🧩", "none": "○", "cut": "👄", "plate": "💬", "retopo": "🕸", "eyes": "👁",
+        "clips": "🎙", "worn": "🛡"}
+
+
+def _face_icons(s):
+    """The face of a built model: its mouth (cut / plate), the retopology and the eyes, as icons ('' without a face)."""
+    return "".join(ICON[k] for k, on in (("cut", s.get("mouth") == "cut"), ("plate", s.get("mouth") == "plate"),
+                                          ("retopo", s.get("retopo")), ("eyes", s.get("eyes"))) if on)
 
 
 def _char_tags(f):
-    """What the character has, short, for its line in the list: the skeleton(s), the face, clips, pieces."""
+    """What the character has, for its line in the list: «🦴👄🕸👁 🤖 🎙2 🛡4»."""
     tags = []
     if f.get("landmark"):
-        fw = _face_words(landmarks.rig_summary(f["landmark"]))
-        tags.append(_t("ui.tag_landmarks") + (" (" + fw + ")" if fw else ""))
+        tags.append(ICON["landmark"] + _face_icons(landmarks.rig_summary(f["landmark"])))
     if f.get("auto"):
-        tags.append(_t("ui.tag_auto"))
+        tags.append(ICON["auto"])
+    if f.get("parts"):
+        tags.append(ICON["parts"])
     if not tags:
-        tags.append(_t("ui.tag_no_skeleton") if f.get("source") else _t("ui.tag_parts_only"))
+        tags.append(ICON["none"])
     clips, worn = _char_counts(f)
     if clips:
-        tags.append(_t("ui.tag_clips", clips))
+        tags.append(f"{ICON['clips']}{clips}")
     if worn:
-        tags.append(_t("ui.tag_worn", worn))
-    return " · ".join(tags)
+        tags.append(f"{ICON['worn']}{worn}")
+    return " ".join(tags)
 
 
 def _characters():
@@ -836,7 +839,7 @@ def _characters():
         f = _char_files(f"{d.parent.name}/{d.name}")
         if f["rigged"] or f["parts"] or (d.parent.name == "character" and f["source"]):
             nm = d.name if d.parent.name == "character" else f"{d.name} ({d.parent.name})"
-            out.append((f"{nm} — {_char_tags(f)}", f"{d.parent.name}/{d.name}"))
+            out.append((f"{nm}   {_char_tags(f)}", f"{d.parent.name}/{d.name}"))
     return out
 
 
@@ -879,7 +882,7 @@ def char_info(value):
         p = f.get(key)
         if p:
             s = landmarks.rig_summary(p)
-            fw = _face_words(s)
+            fw = _face_icons(s)
             lines.append(_t(label, p.name, when(p), s.get("bones", 0)) + (" · " + fw if fw else "")
                          + (" · " + _t("ui.char_face_edits") if p.with_name(landmarks._stem(p) + "_face_edits.json").exists() else ""))
     if f["parts"]:
@@ -2332,7 +2335,8 @@ def build():
                 with gr.Row(elem_classes=["char-bar"]):   # the current character: every tool below works on it
                     with gr.Column(scale=3):
                         with gr.Row():
-                            char_dd = gr.Dropdown(_characters(), value=_char_default(), label=_t("ui.current_character"), scale=4)
+                            char_dd = gr.Dropdown(_characters(), value=_char_default(), label=_t("ui.current_character"), scale=4,
+                                                  info=_t("ui.char_legend"))
                             char_refresh = gr.Button(_t("ui.refresh"), scale=1)
                             char_up = gr.UploadButton(_t("ui.char_add"), file_types=[".glb"], type="filepath", scale=2)
                             char_dir = gr.Button(_t("ui.char_open_folder"), scale=1)

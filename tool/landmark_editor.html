@@ -72,6 +72,8 @@
   label.chk { display:flex; gap:6px; align-items:center; cursor:pointer; }
   .list { display:grid; gap:3px; max-height:210px; overflow:auto; }
   .item { display:flex; justify-content:space-between; gap:6px; text-align:left; padding:4px 8px; }
+  .sw { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:5px; vertical-align:-1px; border:1px solid rgba(0,0,0,.35); flex:none; }
+  #faceLegend { display:flex; flex-wrap:wrap; gap:3px 10px; font-size:11px; margin:4px 0 2px; color:var(--muted, #666); }
   .item .st { font:11px var(--mono); color:var(--muted); }
   .item.done .st { color:var(--ok); }
   .item.cur { border-color:var(--accent); }
@@ -112,6 +114,8 @@
   .posebar button.on { background:var(--accent); color:var(--accent-fg); }
   .pinfo { background:color-mix(in srgb,var(--panel) 90%,transparent); border-radius:6px; padding:4px 8px; font:12px var(--mono); }
   .pinfo.stop { color:#e5484d; }
+  .plab { font:11px var(--mono); color:var(--fg); background:color-mix(in srgb,var(--panel) 85%,transparent); border-radius:5px; padding:2px 5px; }
+  .posebar #pEmoVLab:has(+ #pEmoV[hidden]), .posebar #pMorphVLab:has(+ #pMorphV[hidden]) { display:none; }   /* a slider's word goes with it */
   .posenote { position:absolute; left:10px; top:64px; z-index:5; max-width:62%; background:color-mix(in srgb,var(--panel) 92%,transparent);
     border:1px solid var(--line); border-radius:8px; padding:6px 10px; font-size:12px; }
   .posenote.warn { border-color:#e5484d; }
@@ -228,9 +232,34 @@
     <div class="msg" id="msg">{{ed.loading_the_model}}</div>
     <button class="saybig" id="sayBig" hidden>{{ed.line}}</button>
     <div class="posenote" id="poseNote" hidden></div>
+    <div class="sculptbox" id="meshBox" hidden>
+      <b>{{ed.mx}}</b>
+      <div class="seg" id="mxModes"><button data-m="cut" class="on" title="{{ed.mx_cut_title}}">{{ed.mx_cut_mode}}</button><button data-m="fill" title="{{ed.mx_fill_title}}">{{ed.mx_fill_mode}}</button></div>
+      <label><input type="checkbox" id="mxWire" checked> {{ed.mx_wire}}</label>
+      <label>{{ed.sc_radius}} <input type="range" id="mxR" min="1" max="60" value="8"><span id="mxRv"></span></label>
+      <label><input type="checkbox" id="mxMirror"> {{ed.sc_mirror}}</label>
+      <label>{{ed.tx_colour}} <input type="color" id="mxC" value="#8a7a3c" title="{{ed.mx_colour_title}}"></label>
+      <div class="seg"><button id="mxFill" hidden>{{ed.mx_fill}}</button></div>
+      <div class="seg"><button id="mxUndo" title="Ctrl+Z">{{ed.undo_2}}</button><button id="mxRedo" title="Ctrl+Shift+Z">{{ed.redo}}</button></div>
+      <div class="seg"><button id="mxSave" title="{{ed.mx_save_title}}">{{ed.sc_save}}</button><button id="mxClear" title="{{ed.mx_clear_title}}">{{ed.sc_clear}}</button><button id="mxDone">{{ed.sc_done}}</button></div>
+      <div class="st" id="mxSt"></div>
+    </div>
+    <div class="sculptbox" id="texBox" hidden>
+      <b>{{ed.tx}}</b>
+      <div class="seg" id="txModes"><button data-m="paint" class="on" title="{{ed.tx_paint_title}}">{{ed.tx_paint}}</button><button data-m="pick" title="{{ed.tx_pick_title}}">{{ed.tx_pick}}</button><button data-m="erase" title="{{ed.tx_erase_title}}">{{ed.tx_erase}}</button></div>
+      <label>{{ed.tx_colour}} <input type="color" id="txC" value="#8a7a3c"></label>
+      <label>{{ed.sc_radius}} <input type="range" id="txR" min="1" max="100" value="12"><span id="txRv"></span></label>
+      <label>{{ed.sc_strength}} <input type="range" id="txS" min="5" max="100" value="60"><span id="txSv"></span></label>
+      <label><input type="checkbox" id="txMirror" checked> {{ed.sc_mirror}}</label>
+      <div class="seg"><button id="txUndo" title="Ctrl+Z">{{ed.undo_2}}</button><button id="txRedo" title="Ctrl+Shift+Z">{{ed.redo}}</button></div>
+      <div class="seg"><button id="txSave" title="{{ed.tx_save_title}}">{{ed.sc_save}}</button><button id="txClear" title="{{ed.tx_clear_title}}">{{ed.sc_clear}}</button><button id="txDone">{{ed.sc_done}}</button></div>
+      <div class="st" id="txSt"></div>
+    </div>
     <div class="sculptbox" id="sculptBox" hidden>
       <b id="scKey"></b>
-      <div class="seg" id="scModes"><button data-m="grab" class="on" title="{{ed.sc_grab_title}}">{{ed.sc_grab}}</button><button data-m="raise" title="{{ed.sc_raise_title}}">{{ed.sc_raise}}</button><button data-m="press" title="{{ed.sc_press_title}}">{{ed.sc_press}}</button><button data-m="smooth" title="{{ed.sc_smooth_title}}">{{ed.sc_smooth}}</button></div>
+      <div class="seg" id="scModes"><button data-m="grab" class="on" title="{{ed.sc_grab_title}}">{{ed.sc_grab}}</button><button data-m="raise" title="{{ed.sc_raise_title}}">{{ed.sc_raise}}</button><button data-m="press" title="{{ed.sc_press_title}}">{{ed.sc_press}}</button><button data-m="smooth" title="{{ed.sc_smooth_title}}">{{ed.sc_smooth}}</button><button data-m="even" title="{{ed.sc_even_title}}">{{ed.sc_even}}</button></div>
+      <div class="seg"><button id="scLip" title="{{ed.sc_lip_title}}">{{ed.sc_lip}}</button><button id="scLipGo" hidden title="{{ed.sc_lip_go_title}}">{{ed.sc_lip_go}}</button></div>
+      <label id="scLipMirrorL" hidden title="{{ed.sc_lip_mirror_title}}"><input type="checkbox" id="scLipMirror"> {{ed.sc_lip_mirror}}</label>
       <label>{{ed.sc_radius}} <input type="range" id="scR" min="3" max="60" value="14"><span id="scRv"></span></label>
       <label>{{ed.sc_strength}} <input type="range" id="scS" min="5" max="100" value="50"><span id="scSv"></span></label>
       <label><input type="checkbox" id="scMirror" checked> {{ed.sc_mirror}}</label>
@@ -242,8 +271,8 @@
       <button id="pReset">{{ed.reset_the_pose}}</button><button id="pCheck">{{ed.check_pose}}</button><button id="pSquat">{{ed.crouch}}</button><button id="pFist">{{ed.fist}}</button><button id="pFistFit" title="{{ed.fist_fit_title}}">{{ed.fist_fit}}</button><button id="pFree" title="{{ed.free_title}}">{{ed.free}}</button><button id="pFistSave" title="{{ed.fist_save_title}}">{{ed.fist_save}}</button><button id="pFistMirror" title="{{ed.fist_mirror_title}}">{{ed.fist_mirror}}</button><button id="pJaw">{{ed.open_the_mouth}}</button>
       <select id="pTest" title="{{ed.test_title}}"><option value="all">{{ed.test_all}}</option><option value="fist">{{ed.test_fist}}</option><option value="wrist">{{ed.test_wrist}}</option><option value="elbow">{{ed.test_elbow}}</option><option value="shoulder">{{ed.test_shoulder}}</option><option value="knee">{{ed.test_knee}}</option><option value="ankle">{{ed.test_ankle}}</option><option value="head">{{ed.test_head}}</option><option value="jaw">{{ed.test_jaw}}</option></select><button id="pTestGo" title="{{ed.test_title}}">{{ed.test_go}}</button>
       <select id="pClipFace" hidden title="{{ed.lipsync_lines_next_to_the_model}}"></select><button id="pSay" hidden>{{ed.line}}</button>
-      <select id="pEmo" hidden title="{{ed.emotion_the_same_brow_eyelid_and}}"></select><input type="range" id="pEmoV" min="0" max="2" step="0.05" value="1" hidden style="width:80px" title="{{ed.emotion_strength_1_as_in_the_game}}">
-      <select id="pMorph" hidden title="{{ed.the_model_s_shape_keys_speech_mouth}}"></select><input type="range" id="pMorphV" min="0" max="1" step="0.01" value="0" hidden style="width:110px"><button id="pSculpt" hidden title="{{ed.sculpt_title}}">{{ed.sculpt}}</button>
+      <span class="plab" id="pEmoLab" hidden>{{ed.emo_label}}</span><select id="pEmo" hidden title="{{ed.emotion_the_same_brow_eyelid_and}}"></select><span class="plab" id="pEmoVLab">{{ed.emo_strength_short}}</span><input type="range" id="pEmoV" min="0" max="2" step="0.05" value="1" hidden style="width:80px" title="{{ed.emotion_strength_1_as_in_the_game}}">
+      <span class="plab" id="pMorphLab" hidden>{{ed.key_label}}</span><select id="pMorph" hidden title="{{ed.the_model_s_shape_keys_speech_mouth}}"></select><span class="plab" id="pMorphVLab">{{ed.key_amount_short}}</span><input type="range" id="pMorphV" min="0" max="1" step="0.01" value="0" hidden style="width:110px" title="{{ed.key_amount_title}}"><button id="pSculpt" hidden title="{{ed.sculpt_title}}">{{ed.sculpt}}</button><button id="pPaint" hidden title="{{ed.tx_title}}">{{ed.tx}}</button><button id="pMesh" hidden title="{{ed.mx_title}}">{{ed.mx}}</button>
       <button id="pWeights" title="{{ed.colour_the_model_by_the_weights_of}}">{{ed.weights}}</button>
       <span class="legend" id="pLegend" hidden>0 <i></i> 1</span>
       <select id="pClip" hidden></select><button id="pPlay" hidden>{{ed.animation}}</button>
@@ -283,7 +312,9 @@
         <button id="faceAuto" title="{{ed.find_the_eyes_the_eyelid_edges_and}}">{{ed.find_automatically}}</button>
         <button id="faceClear">{{ed.remove}}</button>
         <label class="chk" title="{{ed.4_more_clicks_on_the_edge_of_the}}"><input type="checkbox" id="faceEyes" checked> {{ed.and_the_eye_outline}}</label>
+        <label class="chk" title="{{ed.face_sym_title}}"><input type="checkbox" id="faceSym" checked> {{ed.face_sym}}</label>
       </div>
+      <div id="faceLegend" title="{{ed.face_legend_title}}"></div>
       <div class="sub">{{ed.mouth_and_eyelids}}</div>
       <div class="row">
         <button id="ovalBtn" title="{{ed.a_mouth_template_of_rings_drag_the}}">{{ed.mouth_oval}}</button>
@@ -434,7 +465,7 @@ let bbox = new THREE.Box3(), H = 1, cx = 0;
 let worldVerts = new Float32Array(0);
 
 const S = {   // editor state (serialised)
-  phase: 'place', yaw: 0, sym: true, marks: {}, pos: {}, rot: {}, bend: {}, twist: {}, fist: {}, fistPose: {}, fmarks: {}, face: {},
+  phase: 'place', yaw: 0, sym: true, face_sym: true, marks: {}, pos: {}, rot: {}, bend: {}, twist: {}, fist: {}, fistPose: {}, fmarks: {}, face: {},
 };
 let current = null;       // landmark being placed
 let selected = null;      // joint selected in edit phase
@@ -488,6 +519,9 @@ function depthAt(x, y, t, full = false) {
 }
 const mirror = (v) => new THREE.Vector3(2 * cx - v.x, v.y, v.z);
 const lerp = (a, b, t) => a + (b - a) * t;
+// the face (eyes, mouth) mirrored on its own: a generated model's face is often not symmetric even when its body is
+const FSYM = () => S.sym && S.face_sym !== false;
+const symOf = (id) => (id && /^(jaw|jaw_end|eye_[LR]|eye_end_[LR])$/.test(id) ? FSYM() : S.sym);
 const activeMarks = () => MARKS.filter((m) => !(S.sym && m.id.endsWith('_R')));
 
 // glTF (Y up, +Z forward) <-> Blender (Z up, -Y forward): Blender = Rx(+90) * glTF
@@ -556,7 +590,7 @@ function derive() {
       P['heel_' + s] = new THREE.Vector3(ankle.x, ground, ankle.z - .03 * H);
     }
   }
-  if (S.sym) for (const j of JOINTS) if (j.id.endsWith('_R') && P[partner(j.id)]) P[j.id] = mirror(P[partner(j.id)]);
+  for (const j of JOINTS) if (symOf(j.id) && j.id.endsWith('_R') && P[partner(j.id)]) P[j.id] = mirror(P[partner(j.id)]);
   const fingers = Object.fromEntries(Object.entries(S.pos || {}).filter(([k]) => OPTIONAL(k)));
   S.pos = { ...Object.fromEntries(JOINTS.filter((j) => P[j.id]).map((j) => [j.id, arr(P[j.id])])), ...fingers };
   for (const s of SIDES) if (S.pos['middle1_' + s]) S.pos['hand_end_' + s] = S.pos['middle1_' + s];
@@ -625,7 +659,7 @@ function hingeFrame(id) {   // z: zero direction, p: bend direction perpendicula
 function bendWarnings() {
   const out = [];
   for (const jt of live()) {
-    if (S.sym && jt.id.endsWith('_R')) continue;
+    if (symOf(jt.id) && jt.id.endsWith('_R')) continue;
     const h = hingeFrame(jt.id); if (!h) continue;
     if (h.angle < h.L.min - .5 || h.angle > h.L.max + .5)
       out.push({ id: jt.id, text: `{{raw:ed.normal}}` });
@@ -689,6 +723,17 @@ const jointGroup = new THREE.Group(); scene.add(jointGroup);
 const sphereGeo = new THREE.SphereGeometry(1, 16, 12);
 const mat = (c) => new THREE.MeshBasicMaterial({ color: c, depthTest: false, transparent: true, opacity: .95 });
 const COL = { mark: mat(0xff7a2f), derived: mat(0x3f8fe6), end: mat(0x8a8f98), sel: mat(0xffd31a), place: mat(0xff7a2f), bad: mat(0xe5484d), mouth: mat(0xff5fa2) };
+// each kind of face point its own colour (on the model, in the list, in the legend): a point clicked in the wrong
+// place shows at once (the outer eye corner marked under the pupil was one colour among the others)
+const PT_COL = { eye: 0xffffff, eye_in: 0x3fbf6a, eye_top: 0x35c2e8, eye_out: 0xe5484d, eye_bot: 0xb36bff,
+  mouth_corner: 0xff9f1a, mouth_mid: 0x2fd3a5, mouth_c: 0x3f8fe6, lip_top: 0xff5fa2, lip_bot: 0xc2185b };
+const PT_NAME = { eye: '{{js:ed.pt_eye}}', eye_in: '{{js:ed.pt_eye_in}}', eye_top: '{{js:ed.pt_eye_top}}', eye_out: '{{js:ed.pt_eye_out}}',
+  eye_bot: '{{js:ed.pt_eye_bot}}', mouth_corner: '{{js:ed.pt_mouth_corner}}', mouth_mid: '{{js:ed.pt_mouth_mid}}', mouth_c: '{{js:ed.pt_mouth_c}}',
+  lip_top: '{{js:ed.pt_lip_top}}', lip_bot: '{{js:ed.pt_lip_bot}}' };
+const ptKind = (k) => k.replace(/_[LR]$/, ''), ptMats = {};
+const ptMat = (k) => { const c = PT_COL[ptKind(k)]; return c === undefined ? null : ptMats[c] || (ptMats[c] = mat(c)); };
+const ptHex = (k) => '#' + (PT_COL[ptKind(k)] || 0x888888).toString(16).padStart(6, '0');
+const ptSw = (k) => `<i class="sw" style="background:${ptHex(k)}"></i>`;
 const fanGroup = new THREE.Group(); scene.add(fanGroup);
 const fanMat = (c, o) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: o, depthTest: false, depthWrite: false, side: THREE.DoubleSide });
 const FAN = { ok: fanMat(0x3fbf6a, .3), okSel: fanMat(0x3fbf6a, .45), bad: fanMat(0xe5484d, .16), badSel: fanMat(0xe5484d, .3) };
@@ -711,7 +756,7 @@ function draw() {
   const r = .011 * H / Math.max(1, camera.zoom);
   const bad = new Set(S.phase === 'edit' ? bendWarnings().flatMap((w) => [w.id, S.sym ? partner(w.id) : null]) : []);
   if (S.phase === 'edit' && !fingerMode) for (const j of live()) {
-    const sel = selected && (j.id === selected || (S.sym && j.id === partner(selected)));
+    const sel = selected && (j.id === selected || (symOf(selected) && j.id === partner(selected)));
     if ((!$('showBends').checked || OPTIONAL(j.id)) && !sel) continue;
     const h = hingeFrame(j.id); if (!h) continue;
     const rr = Math.min(h.len * (sel ? .9 : .4), H * (sel ? .12 : .06) / Math.max(1, camera.zoom));
@@ -720,9 +765,9 @@ function draw() {
     fan(h, Math.max(h.L.min - 50, -180), h.L.min, rr, sel ? FAN.badSel : FAN.bad);
   }
   if (!faceMode && S.phase === 'edit' && !poseOn) for (const [k, v] of Object.entries(S.face || {}))   // placed face points, for checking
-    if (Array.isArray(v) && (k.startsWith('mouth') || (k.startsWith('eye_') && k !== 'eye_L' && k !== 'eye_R'))) { const sp = new THREE.Mesh(sphereGeo, COL.mouth); sp.scale.setScalar(r * .35); sp.position.copy(V(v)); sp.renderOrder = 999; jointGroup.add(sp); spheres['fm_face_' + k] = sp; }
+    if (Array.isArray(v) && (k.startsWith('mouth') || (k.startsWith('eye_') && k !== 'eye_L' && k !== 'eye_R'))) { const sp = new THREE.Mesh(sphereGeo, ptMat(k) || COL.mouth); sp.scale.setScalar(r * .35); sp.position.copy(V(v)); sp.renderOrder = 999; jointGroup.add(sp); spheres['fm_face_' + k] = sp; }
   if (faceMode) for (const [k, v] of Object.entries(S.face)) if (Array.isArray(v)) {
-    const sp = new THREE.Mesh(sphereGeo, k === faceMode.cur ? COL.sel : COL.place); sp.scale.setScalar(r * .5);
+    const sp = new THREE.Mesh(sphereGeo, k === faceMode.cur ? COL.sel : ptMat(k) || COL.place); sp.scale.setScalar(r * .5);
     sp.position.copy(V(v)); sp.renderOrder = 999; jointGroup.add(sp); spheres['fc_' + k] = sp;
   }
   if (fingerMode) for (const [k, v] of Object.entries(S.fmarks)) if (v && k.includes('_' + fingerMode.side)) {
@@ -768,7 +813,7 @@ function refreshList() {
       $('listTitle').textContent = '{{js:ed.face_click_on_the_model}}';
       for (const k of faceKeys()) {
         const b = document.createElement('button'); b.className = 'item' + (S.face[k] ? ' done' : '') + (k === faceMode.cur ? ' cur' : '');
-        b.innerHTML = `<span>${FACE_MARKS[k]}</span><span class="st">${S.face[k] ? '{{js:ed.done}}' : '—'}</span>`;
+        b.innerHTML = `<span>${ptSw(k)}${FACE_MARKS[k]}</span><span class="st">${S.face[k] ? '{{js:ed.done}}' : '—'}</span>`;
         b.onclick = () => { faceMode.cur = k; refreshAll(); };
         list.appendChild(b);
       }
@@ -796,7 +841,7 @@ function refreshList() {
       return;
     }
     for (const j of live()) {
-      if (S.sym && j.id.endsWith('_R')) continue;
+      if (symOf(j.id) && j.id.endsWith('_R')) continue;
       const b = document.createElement('button'); b.className = 'item' + (j.id === selected ? ' sel' : '');
       const kind = j.end ? '{{js:ed.end}}' : MMAP[j.id] ? '{{js:ed.landmark}}' : '{{js:ed.computed}}';
       b.innerHTML = `<span>${j.label}</span><span class="st">${kind}</span>`;
@@ -824,7 +869,7 @@ function refreshFields() {
   const on = S.phase === 'edit' && selected;
   for (const k of ids) $(k).disabled = !on;
   $('mMove').disabled = $('mRot').disabled = !on;
-  $('selName').textContent = on ? JMAP[selected].label + (S.sym && partner(selected) ? '{{js:ed.symmetric}}' : '') :
+  $('selName').textContent = on ? JMAP[selected].label + (symOf(selected) && partner(selected) ? '{{js:ed.symmetric}}' : '') :
     (S.phase === 'place' ? '{{js:ed.place_the_landmarks_first}}' : '{{js:ed.nothing_selected_click_a_joint}}');
   $('mMove').classList.toggle('on', tc.getMode() === 'translate'); $('mRot').classList.toggle('on', tc.getMode() === 'rotate');
   const hf = on ? hingeFrame(selected) : null;
@@ -857,7 +902,7 @@ function refreshAll() {
   $('fClear').hidden = !Object.keys(S.pos).some((k) => FINGER_RE.test(k));
   const w = (S.phase === 'edit' ? bendWarnings() : []).concat(markupMismatch ? [{ text: markupMismatch }] : []);
   $('warn').innerHTML = w.length ? w.map((x) => '⚠ ' + x.text).join('<br>') : (S.phase === 'edit' ? '{{js:ed.joint_bends_are_normal}}' : '');
-  $('sym').checked = S.sym; $('xray').classList.toggle('on', xray);
+  $('sym').checked = S.sym; $('faceSym').checked = S.face_sym !== false; $('faceSym').disabled = !S.sym; $('xray').classList.toggle('on', xray);
   $('yawTxt').textContent = S.yaw ? `{{raw:ed.model_turned_by}}` : '';
   $('rebuild').disabled = S.phase !== 'edit'; $('undo').disabled = poseOn && poseRoot ? !poseUndo.length : !undoStack.length; $('redo').disabled = poseOn && poseRoot ? !poseRedo.length : !redoStack.length;
   for (const [id, v] of [['vFront', 'front'], ['vSide', 'side'], ['vFree', 'free']]) $(id).classList.toggle('on', view === v);
@@ -877,7 +922,15 @@ const getRot = (id) => S.rot[id] ? new THREE.Quaternion(...S.rot[id]) : new THRE
 
 function setPos(id, p) {
   S.pos[id] = arr(p);
-  const o = S.sym && partner(id); if (o) S.pos[o] = arr(mirror(p));
+  const o = symOf(id) && partner(id); if (o) S.pos[o] = arr(mirror(p));
+}
+// a joint moved by hand: the eye's centre takes its cornea point along (the ball moves; moved alone the ball's radius
+// changed - the eye seemed to scale instead of moving)
+function moveJoint(id, p) {
+  const m = /^eye_([LR])$/.exec(id);
+  const to = p.isVector3 ? p.clone() : V(p);
+  if (m && S.pos['eye_end_' + m[1]]) setPos('eye_end_' + m[1], V(S.pos['eye_end_' + m[1]]).add(to.clone().sub(V(S.pos[id]))));
+  setPos(id, p);
 }
 // Rotate a joint's whole subtree about the joint; the mirrored side gets the reflected rotation.
 function rotateSubtree(id, dq, base) {
@@ -888,7 +941,7 @@ function rotateSubtree(id, dq, base) {
     const r = q.clone().multiply(r0); S.rot[jid] = [r.x, r.y, r.z, r.w];
   };
   apply(id, dq);
-  const o = S.sym && partner(id); if (o) apply(o, new THREE.Quaternion(dq.x, -dq.y, -dq.z, dq.w));
+  const o = symOf(id) && partner(id); if (o) apply(o, new THREE.Quaternion(dq.x, -dq.y, -dq.z, dq.w));
 }
 
 function select(id) {
@@ -904,7 +957,7 @@ let dragBase = null;
 tc.addEventListener('mouseDown', () => { pushUndo(); dragBase = JSON.parse(snap()); });
 tc.addEventListener('objectChange', () => {
   if (!selected || !dragBase) return;
-  if (tc.getMode() === 'translate') setPos(selected, handle.position);
+  if (tc.getMode() === 'translate') moveJoint(selected, handle.position);
   else {
     const q0 = dragBase.rot[selected] ? new THREE.Quaternion(...dragBase.rot[selected]) : new THREE.Quaternion();
     rotateSubtree(selected, handle.quaternion.clone().multiply(q0.invert()), dragBase);
@@ -917,7 +970,7 @@ function fieldChange() {
   if (!selected) return; pushUndo();
   const num = (k) => parseFloat($(k).value) || 0;
   const p = fromB(new THREE.Vector3(num('px'), num('py'), num('pz')));
-  if (p.distanceTo(V(S.pos[selected])) > 1e-6) setPos(selected, p);
+  if (p.distanceTo(V(S.pos[selected])) > 1e-6) moveJoint(selected, p);
   const qb = new THREE.Quaternion().setFromEuler(new THREE.Euler(...['rx', 'ry', 'rz'].map((k) => THREE.MathUtils.degToRad(num(k))), 'XYZ'));
   const q = Ci.clone().multiply(qb).multiply(C);
   const dq = q.clone().multiply(getRot(selected).invert());
@@ -946,7 +999,10 @@ function sync() {
   syncTimer = setTimeout(() => {
     const el = $('sync');
     if (S.phase !== 'edit') { el.textContent = '{{js:ed.the_markup_is_not_finished_yet}}'; el.className = 'sync'; return; }
-    const out = { version: 1, source: DATA.source, yaw: S.yaw, sym: S.sym, height: +H.toFixed(4), center_x: +cx.toFixed(5),
+    if (S.face && S.face.mouth_c && !S.pos.jaw) deriveJaw();   // a mouth marked without the eyes: the jaw all the same
+    if (S.face && !(ovalMode && ovalMode.drag) && eyeRimOrder()) {   // not mid-drag: the point would jump under the mouse
+      $('hint').hidden = false; $('hint').textContent = '{{js:ed.eye_rim_fixed}}'; refreshAll(); }
+    const out = { version: 1, source: DATA.source, yaw: S.yaw, sym: S.sym, face_sym: S.face_sym !== false, height: +H.toFixed(4), center_x: +cx.toFixed(5),
                   marks: S.marks, joints: S.pos, rot: S.rot, bend: S.bend, twist: S.twist, fist: S.fist, fistPose: S.fistPose, parents: Object.fromEntries(live().map((j) => [j.id, j.parent])),
                   ends: live().filter((j) => j.end).map((j) => j.id), fmarks: S.fmarks, face: S.face };
     const text = JSON.stringify(out);
@@ -971,8 +1027,8 @@ const FACE_MARKS = { eye_L: '{{js:ed.centre_of_the_left_eye_pupil_on_the}}', eye
   eye_in_R: '{{js:ed.right_eye_inner_corner}}', eye_top_R: '{{js:ed.right_eye_upper_eyelid}}', eye_out_R: '{{js:ed.right_eye_outer_corner}}',
   eye_bot_R: '{{js:ed.right_eye_lower_eyelid}}' };
 const EYE_RIM = ['eye_in', 'eye_top', 'eye_out', 'eye_bot'];
-const faceKeys = () => (S.sym ? ['eye_L', 'mouth_corner_L', 'mouth_mid_L', 'mouth_c'] : ['eye_L', 'eye_R', 'mouth_corner_L', 'mouth_mid_L', 'mouth_c', 'mouth_mid_R', 'mouth_corner_R'])
-  .concat(faceMode && faceMode.eyes ? EYE_RIM.map((k) => k + '_L').concat(S.sym ? [] : EYE_RIM.map((k) => k + '_R')) : []);
+const faceKeys = () => (FSYM() ? ['eye_L', 'mouth_corner_L', 'mouth_mid_L', 'mouth_c'] : ['eye_L', 'eye_R', 'mouth_corner_L', 'mouth_mid_L', 'mouth_c', 'mouth_mid_R', 'mouth_corner_R'])
+  .concat(faceMode && faceMode.eyes ? EYE_RIM.map((k) => k + '_L').concat(FSYM() ? [] : EYE_RIM.map((k) => k + '_R')) : []);
 function faceView(side) {   // the head close, from the front (or from the character's left: the teeth's depth)
   const hd = V(S.pos.head), top = V(S.pos.head_top), chin = S.marks.chin ? V(S.marks.chin) : hd;
   const c = new THREE.Vector3(hd.x, (top.y + chin.y) / 2 - (top.y - chin.y) * .1, hd.z), len = (top.y - chin.y) * 1.5;
@@ -1028,9 +1084,9 @@ function ovalPoint(P, ring, th) {
 const skinZ = (x, y, fb) => { const z = hitsAt(x, y); return z.length ? z[0] : fb; };
 // the skin layer nearest to a reference depth (under an overhanging nose the first hit is the nose tip)
 const skinNear = (x, y, ref) => { const z = hitsAt(x, y); if (!z.length) return ref; return z.reduce((a, b) => (Math.abs(b - ref) < Math.abs(a - ref) ? b : a)); };
-const EYE_HANDLES = () => ['eye_in_L', 'eye_top_L', 'eye_out_L', 'eye_bot_L'].concat(S.sym ? [] : ['eye_in_R', 'eye_top_R', 'eye_out_R', 'eye_bot_R']).filter((k) => S.face[k]);
+const EYE_HANDLES = () => ['eye_in_L', 'eye_top_L', 'eye_out_L', 'eye_bot_L'].concat(FSYM() ? [] : ['eye_in_R', 'eye_top_R', 'eye_out_R', 'eye_bot_R']).filter((k) => S.face[k]);
 // the eyeball = the eye joint (centre) and its end joint (the cornea): radius = their distance
-const EYEBALLS = () => ['eyeball_L'].concat(S.sym ? [] : ['eyeball_R']).filter((k) => S.pos['eye_' + k.slice(-1)]);
+const EYEBALLS = () => ['eyeball_L'].concat(FSYM() ? [] : ['eyeball_R']).filter((k) => S.pos['eye_' + k.slice(-1)]);
 // the top of the face mask (rebuilt skin with movable brows): a point at the hairline, the line across the forehead
 const FACE_TOP = () => (S.face.face_top ? ['face_top'] : []);
 // a mouth modelled half-open: the inner lip edges at the middle; the slit ring becomes the opening between them
@@ -1153,7 +1209,7 @@ function hairlineY(x, c, ipd) {
 function ovalInit() {
   const F = S.face;
   if (!F.face_top && F.eye_L) {   // at the hairline found in the texture; else 0.62 ipd above the eyes (face_topo.py)
-    const { c, ipd } = eyeMid(), x = S.sym ? cx : c.x;
+    const { c, ipd } = eyeMid(), x = FSYM() ? cx : c.x;
     const y = hairlineY(x, c, ipd) ?? c.y + .62 * ipd;
     F.face_top = [x, y, skinZ(x, y, c.z)];
   }
@@ -1164,10 +1220,10 @@ function ovalInit() {
     F.mouth_c = [cx, y, skinZ(cx, y, chin.z)];
     F.mouth_corner_L = [cx + .4 * ipd, y, skinZ(cx + .4 * ipd, y, chin.z)];
   }
-  if (!F.mouth_corner_R || S.sym) F.mouth_corner_R = arr(mirror(V(F.mouth_corner_L)));
+  if (!F.mouth_corner_R || FSYM()) F.mouth_corner_R = arr(mirror(V(F.mouth_corner_L)));
   const c = V(F.mouth_c), cl = V(F.mouth_corner_L), w = Math.abs(cl.x - cx) * 2;
   if (!F.mouth_mid_L) { const x = (c.x + cl.x) / 2, y = (c.y + cl.y) / 2 + .02 * w; F.mouth_mid_L = [x, y, skinZ(x, y, c.z)]; }
-  if (!F.mouth_mid_R || S.sym) F.mouth_mid_R = arr(mirror(V(F.mouth_mid_L)));
+  if (!F.mouth_mid_R || FSYM()) F.mouth_mid_R = arr(mirror(V(F.mouth_mid_L)));
   if (!F.lip_top) { const y = c.y + .16 * w; F.lip_top = [c.x, y, skinZ(c.x, y, c.z)]; }
   if (!F.lip_bot) { const y = c.y - .2 * w; F.lip_bot = [c.x, y, skinZ(c.x, y, c.z)]; }
   if (!F.mouth_limit_top) {   // under the nose: going up from the lip edge, the skin jumps forward at the nose base
@@ -1226,7 +1282,7 @@ function drawOval() {
   }
   const r = .006 * H / Math.max(1, camera.zoom);
   for (const k of ovalHandles()) {
-    const sp = new THREE.Mesh(sphereGeo, k === ovalMode.sel ? COL.sel : k === 'mouth_c' ? COL.derived : k === 'mouth_limit_top' || k === 'face_top' ? COL.bad : COL.place);
+    const sp = new THREE.Mesh(sphereGeo, k === ovalMode.sel ? COL.sel : ptMat(k) || (k === 'mouth_limit_top' || k === 'face_top' ? COL.bad : COL.place));
     sp.scale.setScalar(k === 'mouth_c' ? r * 1.3 : r); sp.position.copy(V(handlePos(k))); sp.renderOrder = 999; ovalGroup.add(sp);
   }
 }
@@ -1259,7 +1315,7 @@ function ovalSelect(k) {
 function ovalApply(k, w) {
   const F = S.face;
   if (k === 'teeth') {   // inside the head: height and depth as dragged (the middle with symmetry)
-    F.teeth_front = [S.sym ? cx : w.x, w.y, w.z].map((x) => +x.toFixed(5)); drawOval(); return;
+    F.teeth_front = [FSYM() ? cx : w.x, w.y, w.z].map((x) => +x.toFixed(5)); drawOval(); return;
   }
   if (k.startsWith('eyeball')) {   // moves the eye joint with its cornea point; the other eye mirrors
     const sd = k.slice(-1), d = w.clone().sub(V(S.pos['eye_' + sd]));
@@ -1273,14 +1329,14 @@ function ovalApply(k, w) {
   const put = (key, x, y) => { F[key] = [x, y, skinNear(x, y, ref(key))]; };
   if (k === 'mouth_c') {   // the centre moves the whole oval
     const dx = w.x - F.mouth_c[0], dy = w.y - F.mouth_c[1];
-    for (const kk of OVAL_KEYS.concat(OPEN_KEYS())) put(kk, F[kk][0] + (S.sym ? 0 : dx), F[kk][1] + dy);
-  } else if (k === 'mouth_limit_top') put(k, S.sym ? cx : w.x, Math.max(w.y, F.lip_top[1] + .002 * H));
-  else if (k === 'lip_top' || k === 'lip_bot') put(k, S.sym ? cx : w.x, w.y);
+    for (const kk of OVAL_KEYS.concat(OPEN_KEYS())) put(kk, F[kk][0] + (FSYM() ? 0 : dx), F[kk][1] + dy);
+  } else if (k === 'mouth_limit_top') put(k, FSYM() ? cx : w.x, Math.max(w.y, F.lip_top[1] + .002 * H));
+  else if (k === 'lip_top' || k === 'lip_bot') put(k, FSYM() ? cx : w.x, w.y);
   else if (k === 'mouth_open_top' || k === 'mouth_open_bot') {   // between the slit line and the outer lip edge
-    const P = ovalParams(F), x = S.sym ? cx : w.x, l = P.L(x);
+    const P = ovalParams(F), x = FSYM() ? cx : w.x, l = P.L(x);
     put(k, x, k === 'mouth_open_top' ? Math.min(Math.max(w.y, l), l + .9 * P.hu) : Math.max(Math.min(w.y, l), l - .9 * P.hl));
   }
-  else if (k === 'face_top') { const { c, ipd } = eyeMid(); put(k, S.sym ? cx : w.x, Math.max(w.y, c.y + .1 * ipd)); }
+  else if (k === 'face_top') { const { c, ipd } = eyeMid(); put(k, FSYM() ? cx : w.x, Math.max(w.y, c.y + .1 * ipd)); }
   else {
     let x = w.x, y = w.y;
     if (k.startsWith('eye_')) {   // an eyelid point keeps its role and stays near its eye
@@ -1294,7 +1350,7 @@ function ovalApply(k, w) {
       x = Math.min(Math.max(x, c.x - .45 * ipd), c.x + .45 * ipd);
     }
     put(k, x, y);
-    if (S.sym) { const o = k.endsWith('_L') ? k.slice(0, -1) + 'R' : k.slice(0, -1) + 'L'; F[o] = arr(mirror(V(F[k]))); }
+    if (FSYM()) { const o = k.endsWith('_L') ? k.slice(0, -1) + 'R' : k.slice(0, -1) + 'L'; F[o] = arr(mirror(V(F[k]))); }
   }
   drawOval();
 }
@@ -1305,7 +1361,7 @@ canvas.addEventListener('pointerdown', (e) => {
 }, true);
 function eyeScale(f) {   // grow or shrink the ball keeping the cornea: the centre moves back
   if (!ovalMode) return; pushUndo();
-  const sides = S.sym ? ['L'] : [ovalMode.sel && ovalMode.sel.endsWith('_R') ? 'R' : 'L'];
+  const sides = FSYM() ? ['L'] : [ovalMode.sel && ovalMode.sel.endsWith('_R') ? 'R' : 'L'];
   for (const sd of sides) {
     const c = V(S.pos['eye_' + sd]), e = V(S.pos['eye_end_' + sd]), r = c.distanceTo(e); if (!r) continue;
     setPos('eye_' + sd, e.clone().add(c.clone().sub(e).multiplyScalar(f)));
@@ -1375,9 +1431,29 @@ function faceProblem() {
   return null;
 }
 // eye centre one eyeball radius behind the cornea; jaw hinge in front of the ear, between mouth and eye height
+// the eye's outline points put where they lie (toward the nose = inner corner, up = top, away = outer, down = bottom),
+// as landmarks.eye_rim does on building: clicked in another order the opening was cut the wrong shape
+function eyeRimOrder() {   // true: points were swapped
+  let changed = false;
+  const F = S.face, want = [Math.PI, Math.PI / 2, 0, -Math.PI / 2];
+  const gap = (a, b) => Math.abs(((a - b + 3 * Math.PI) % (2 * Math.PI)) - Math.PI);
+  for (const sd of ['L', 'R']) {
+    const pts = EYE_RIM.map((k) => F[k + '_' + sd]); if (!pts.every(Boolean)) continue;
+    const c = F['eye_' + sd] || pts.reduce((a, p) => a.map((x, i) => x + p[i] / 4), [0, 0, 0]), out = c[0] >= cx ? 1 : -1;
+    const ang = pts.map((p) => Math.atan2(p[1] - c[1], (p[0] - c[0]) * out));
+    let best = null, bd = Infinity;
+    const perm = (a, k) => { if (k === 4) { const d = a.reduce((s_, o, i) => s_ + gap(ang[o], want[i]), 0); if (d < bd) { bd = d; best = a.slice(); } return; }
+      for (let i = k; i < 4; i++) { [a[k], a[i]] = [a[i], a[k]]; perm(a, k + 1); [a[k], a[i]] = [a[i], a[k]]; } };
+    perm([0, 1, 2, 3], 0);
+    if (best.some((o, i) => o !== i)) { changed = true; EYE_RIM.forEach((k, i) => { F[k + '_' + sd] = pts[best[i]]; }); }
+  }
+  return changed;
+}
+$('faceLegend').innerHTML = Object.keys(PT_COL).map((k) => `<span>${ptSw(k)}${PT_NAME[k]}</span>`).join('');
 function deriveFace() {
   const F = S.face;
-  if (S.sym) {
+  if (eyeRimOrder()) { $('hint').hidden = false; $('hint').textContent = '{{js:ed.eye_rim_fixed}}'; }
+  if (FSYM()) {
     F.eye_R = arr(mirror(V(F.eye_L))); F.mouth_corner_R = arr(mirror(V(F.mouth_corner_L)));
     if (F.mouth_mid_L) F.mouth_mid_R = arr(mirror(V(F.mouth_mid_L)));
     for (const k of EYE_RIM) if (F[k + '_L']) F[k + '_R'] = arr(mirror(V(F[k + '_L'])));
@@ -1388,9 +1464,16 @@ function deriveFace() {
     S.pos['eye_' + sd] = arr(e.clone().add(new THREE.Vector3(0, 0, -rEye)));
     S.pos['eye_end_' + sd] = arr(e);
   }
-  const hy = lerp(M.y, (eL.y + eR.y) / 2, .45);
+  deriveJaw();
+}
+// the jaw hinge in front of the ear, between the mouth and the eyes (no eyes marked: a little over the head joint),
+// its end at the chin. Without it the build has no jaw bone and its mouth cut does not open
+function deriveJaw() {
+  const F = S.face; if (!F.mouth_c || !S.pos.head) return;
+  const M = V(F.mouth_c), eyes = F.eye_L && F.eye_R;
+  const eY = eyes ? (V(F.eye_L).y + V(F.eye_R).y) / 2 : V(S.pos.head).y + .03 * H, hy = lerp(M.y, eY, .45);
   S.pos.jaw = arr(new THREE.Vector3(cx, hy, depthAt(cx, hy, .45, true)));
-  const chin = S.marks.chin ? V(S.marks.chin) : M.clone().add(new THREE.Vector3(0, -ipd * .6, 0));
+  const chin = S.marks.chin ? V(S.marks.chin) : M.clone().add(new THREE.Vector3(0, -(eyes ? .6 * V(F.eye_L).distanceTo(V(F.eye_R)) : .035 * H), 0));
   S.pos.jaw_end = arr(new THREE.Vector3(cx, chin.y, depthAt(cx, chin.y, .2, true)));
 }
 // ---------------------------------------------------------------- face points found from the front-view texture
@@ -1501,7 +1584,7 @@ $('faceAuto').onclick = () => {
   const F = {}, put = (k, p) => { F[k] = [p[0], p[1], skinZ(p[0], p[1], 0)]; };
   put('eye_L', f.eye.c); put('mouth_c', f.mouth.c); put('mouth_corner_L', f.mouth.corner); put('mouth_mid_L', f.mouth.mid);
   if ($('faceEyes').checked) { put('eye_in_L', f.eye.in); put('eye_top_L', f.eye.top); put('eye_out_L', f.eye.out); put('eye_bot_L', f.eye.bot); }
-  if (!S.sym) {   // the other side mirrored; the user moves it where the model is not symmetric
+  if (!FSYM()) {   // the other side mirrored; the user moves it where the model is not symmetric
     for (const k of Object.keys(F)) if (k.endsWith('_L')) { const p = mirror(V(F[k])); put(k.slice(0, -1) + 'R', [p.x, p.y]); }
   }
   S.face = F; deriveFace(); faceMode = null; refreshAll(); sync();
@@ -1702,7 +1785,7 @@ canvas.addEventListener('pointerup', (e) => {
     ray.setFromCamera(ndc, camera);
     const hit = ray.intersectObjects(Object.values(spheres), false)[0];
     let id = hit ? hit.object.userData.id : null;
-    if (id && S.sym && id.endsWith('_R')) id = partner(id);
+    if (id && symOf(id) && id.endsWith('_R')) id = partner(id);
     select(id);
   }
 });
@@ -1743,6 +1826,11 @@ $('sym').onchange = () => {
   if (S.phase === 'place') current = nextMark()?.id || null;
   if (selected && S.sym && selected.endsWith('_R')) select(partner(selected));
   refreshAll(); sync();
+};
+$('faceSym').onchange = () => {   // the face's right side mirrored from the left, or placed on its own
+  pushUndo(); S.face_sym = $('faceSym').checked;
+  if (FSYM() && S.face.eye_L && S.face.mouth_c) deriveFace();
+  refreshAll(); if (ovalMode) drawOval(); sync();
 };
 $('rebuild').onclick = () => {
   if (!confirm('{{js:ed.recompute_the_pelvis_spine_neck_2}}')) return;
@@ -1848,6 +1936,7 @@ async function loadRigged() {
   const url = new URL('/file=' + DATA.rigged + '?v=' + (DATA.rigged_v || 0), window.parent.location.href).href;   // ?v: no stale cache after a rebuild
   const gltf = await new GLTFLoader().loadAsync(url);
   poseRoot = gltf.scene; scene.add(poseRoot); poseRoot.updateMatrixWorld(true);
+  await txNames(gltf); $('pPaint').hidden = $('pMesh').hidden = DATA.mode === 'say' || DATA.mode === 'wear';
   poseRoot.traverse((o) => {   // which glTF mesh and primitive each three.js mesh is: the expression edits name them so
     const a = o.isMesh && gltf.parser.associations.get(o);
     if (a && a.meshes !== undefined) o.userData.gref = { mesh: gltf.parser.json.meshes[a.meshes].name || String(a.meshes), prim: a.primitives || 0 };
@@ -1877,14 +1966,15 @@ async function loadRigged() {
   const morphs = new Set();
   for (const m of poseMeshes) if (m.morphTargetDictionary) for (const k of Object.keys(m.morphTargetDictionary)) morphs.add(k);
   if (morphs.size) {
-    $('pMorph').innerHTML = [...morphs].map((k) => `<option>${k}</option>`).join('');
-    $('pMorph').hidden = $('pMorphV').hidden = false;
+    $('pMorph').innerHTML = `<option value="__basis">${keyLabel('__basis')}</option>` + [...morphs].map((k) => `<option value="${k}">${keyLabel(k)}</option>`).join('');
+    $('pMorph').value = [...morphs][0] || '__basis';
+    $('pMorph').hidden = $('pMorphV').hidden = $('pMorphLab').hidden = false;
     $('pSculpt').hidden = DATA.mode === 'say';   // the lipsync viewer only looks
   }
   const emos = (DATA.emotions || []).filter((e) => [...morphs].some((k) => emoValue(e.keys, k) > 0));
   if (emos.length) {
     $('pEmo').innerHTML = '{{js:ed.emotion}}' + emos.map((e) => `<option value="${e.name}">${e.label}</option>`).join('');
-    $('pEmo').hidden = $('pEmoV').hidden = false;
+    $('pEmo').hidden = $('pEmoV').hidden = $('pEmoLab').hidden = false;
   }
   skelHelp = new THREE.SkeletonHelper(poseRoot); skelHelp.material.depthTest = false; skelHelp.material.transparent = true;
   skelHelp.material.opacity = .5; skelHelp.renderOrder = 996; scene.add(skelHelp);
@@ -2019,6 +2109,7 @@ function paintWeights(bone) {
   }
 }
 function setWeights(on) {
+  if (on && typeof SC !== 'undefined') { scExit(); txExit(); mxExit(); }   // the weights colour the skin: no brush on it meanwhile
   weightsOn = on;
   for (const m of poseMeshes) {
     if (on) { if (!origMat.has(m)) origMat.set(m, m.material); m.material = wMat; }
@@ -2026,6 +2117,7 @@ function setWeights(on) {
   }
   if (on) paintWeights(weightBone);
   $('pWeights').classList.toggle('on', on); $('pLegend').hidden = !on;
+  if (on) { $('pInfo').textContent = '{{js:ed.weights_help}}'; $('pInfo').className = 'pinfo'; }
 }
 const boneLabel = (b) => b ? (BONE2ID.has(b) ? JMAP[BONE2ID.get(b)].label : b.name.replace(/^mixamorig/, '')) : '';
 // ---- animations stored in the file
@@ -2033,7 +2125,7 @@ let mixer = null, clips = [], action = null, playing = false; const clock = new 
 function stopClip() { if (action) action.stop(); action = null; playing = false; $('pPlay').textContent = '{{js:ed.animation}}'; }
 let pendingMove = null;
 canvas.addEventListener('pointermove', (e) => {
-  if (!poseOn || wearOn || SC.on) return;   // the armour mode picks the armour, the brush the skin, not the bones
+  if (!poseOn || wearOn || SC.on || TX.on || MX.on) return;   // the armour mode picks the armour, the brushes the skin, not the bones
   if (pendingMove) { pendingMove = e; return; }
   pendingMove = e;
   requestAnimationFrame(() => {
@@ -2074,7 +2166,7 @@ canvas.addEventListener('pointermove', (e) => {
   });
 });
 canvas.addEventListener('pointerdown', (e) => {
-  if (!poseOn || SC.on || e.button !== 0 || !hoverId || playing || tcW.axis || (wearOn && wear && !wear.fittedShown)) return;   // the armour is being placed
+  if (!poseOn || SC.on || TX.on || MX.on || e.button !== 0 || !hoverId || playing || tcW.axis || (wearOn && wear && !wear.fittedShown)) return;   // the armour is being placed
   posePush();
   dragId = hoverId; orbit.enabled = false; canvas.setPointerCapture(e.pointerId);
   dragStart = { x: e.clientX, y: e.clientY, dir: tailWorld(dragId).sub(PB[dragId].getWorldPosition(new V3)).normalize() };
@@ -2115,7 +2207,7 @@ async function setPose(on) {
     try { await loadRigged(); } catch (err) { $('msg').textContent = '{{js:ed.could_not_open_the_built_model}}' + err.message; return; }
     $('msg').hidden = true;
   }
-  if (!on && typeof SC !== 'undefined') scExit();
+  if (!on && typeof SC !== 'undefined') { scExit(); txExit(); mxExit(); }
   poseNote(on);
   poseOn = on; hoverId = dragId = null;
   model.visible = !on; jointGroup.visible = fanGroup.visible = !on; if (lines) lines.visible = !on;
@@ -2169,6 +2261,47 @@ function sayFrame() {
   for (const [k, arr] of Object.entries(clip.curves)) setMorph(k, arr[f]);
 }
 $('pSay').onclick = () => playLine();
+// the shape keys in words: «Рот открыт — jawOpen» (the ARKit name kept: the game and the lip sync use it)
+const KEYL = {
+  jawOpen: '{{js:ed.key_jawOpen}}',
+  jawForward: '{{js:ed.key_jawForward}}',
+  jawLeft: '{{js:ed.key_jawLeft}}',
+  jawRight: '{{js:ed.key_jawRight}}',
+  mouthClose: '{{js:ed.key_mouthClose}}',
+  mouthFunnel: '{{js:ed.key_mouthFunnel}}',
+  mouthPucker: '{{js:ed.key_mouthPucker}}',
+  mouthLeft: '{{js:ed.key_mouthLeft}}',
+  mouthRight: '{{js:ed.key_mouthRight}}',
+  mouthSmile: '{{js:ed.key_mouthSmile}}',
+  mouthFrown: '{{js:ed.key_mouthFrown}}',
+  mouthDimple: '{{js:ed.key_mouthDimple}}',
+  mouthStretch: '{{js:ed.key_mouthStretch}}',
+  mouthRollLower: '{{js:ed.key_mouthRollLower}}',
+  mouthRollUpper: '{{js:ed.key_mouthRollUpper}}',
+  mouthShrugLower: '{{js:ed.key_mouthShrugLower}}',
+  mouthShrugUpper: '{{js:ed.key_mouthShrugUpper}}',
+  mouthPress: '{{js:ed.key_mouthPress}}',
+  mouthLowerDown: '{{js:ed.key_mouthLowerDown}}',
+  mouthUpperUp: '{{js:ed.key_mouthUpperUp}}',
+  browDown: '{{js:ed.key_browDown}}',
+  browInnerUp: '{{js:ed.key_browInnerUp}}',
+  browOuterUp: '{{js:ed.key_browOuterUp}}',
+  cheekPuff: '{{js:ed.key_cheekPuff}}',
+  cheekSquint: '{{js:ed.key_cheekSquint}}',
+  noseSneer: '{{js:ed.key_noseSneer}}',
+  eyeBlink: '{{js:ed.key_eyeBlink}}',
+  eyeSquint: '{{js:ed.key_eyeSquint}}',
+  eyeWide: '{{js:ed.key_eyeWide}}',
+  eyeLookUp: '{{js:ed.key_eyeLookUp}}',
+  eyeLookDown: '{{js:ed.key_eyeLookDown}}',
+  eyeLookIn: '{{js:ed.key_eyeLookIn}}',
+  eyeLookOut: '{{js:ed.key_eyeLookOut}}',
+  tongueOut: '{{js:ed.key_tongueOut}}' };
+function keyLabel(k) {
+  if (k === '__basis') return '{{js:ed.key_rest}}';
+  const m = /^(.*?)(Left|Right)$/.exec(k), base = m ? m[1] : k, side = m ? (m[2] === 'Left' ? '{{js:ed.key_left}}' : '{{js:ed.key_right}}') : '';
+  return (KEYL[base] ? KEYL[base] + side : k) + ' — ' + k;
+}
 function setMorph(name, v) {
   for (const m of poseMeshes) if (m.morphTargetDictionary && name in m.morphTargetDictionary) m.morphTargetInfluences[m.morphTargetDictionary[name]] = v;
 }
@@ -2204,27 +2337,46 @@ let SCN = null;   // the face's points: { n, pos (world, now), rest (world, no k
 const scR = () => +$('scR').value / 100 * (PB.head && PB.neck ? Math.max(PB.head.getWorldPosition(new V3).distanceTo(PB.neck.getWorldPosition(new V3)) * 2, .05 * H) : .1 * H);
 const scS = () => +$('scS').value / 100;
 const scFall = (d, R) => { const t = d / R; return t >= 1 ? 0 : (1 - t * t) * (1 - t * t); };
+// «Покой (основная форма)»: the face at rest edited like a key (an eyelid lowered over the iris); every expression
+// starts from it. Kept per primitive: the rest as loaded and the offset added (shown in the mesh itself); leaving it,
+// the keys that move a point the same way are made shorter by as much (a blink still closes where it did), as
+// face_edits.py does on saving.
+const REST_KEY = '__basis';
+function scRest(m) {
+  if (!SC.rest) SC.rest = new Map();
+  let r = SC.rest.get(m.uuid);
+  if (!r) {
+    const pa = m.geometry.attributes.position, na = m.geometry.attributes.normal;
+    r = { base: pa.array.slice(), nbase: na ? na.array.slice() : null, off: new Float32Array(pa.array.length), noff: na ? new Float32Array(na.array.length) : null };
+    SC.rest.set(m.uuid, r);
+  }
+  return r;
+}
 function scFaceMeshes(key) {   // the face's primitives carrying the key: the mesh with the most keys (not the teeth)
-  const ms = poseMeshes.filter((m) => m.morphTargetDictionary && key in m.morphTargetDictionary && m.userData.gref);
+  const ms = poseMeshes.filter((m) => m.morphTargetDictionary && (key in m.morphTargetDictionary || key === REST_KEY) && m.userData.gref);
   const most = Math.max(0, ...ms.map((m) => Object.keys(m.morphTargetDictionary).length));
   return ms.filter((m) => Object.keys(m.morphTargetDictionary).length === most);
 }
 function scBuild(key) {
   SC.items = scFaceMeshes(key).map((m) => {
-    const t = m.morphTargetDictionary[key], g = m.geometry, pa = g.attributes.position, na = g.attributes.normal;
-    const arr = g.morphAttributes.position[t].array, narr = g.morphAttributes.normal ? g.morphAttributes.normal[t].array : null;
-    const it = { m, t, arr, narr, base0: pa.array.slice(), nbase0: na ? na.array.slice() : null, mw: m.matrixWorld.clone(),
-                 inv3: new THREE.Matrix3().setFromMatrix4(m.matrixWorld).invert(), index: g.index ? g.index.array : null };
+    const t = m.morphTargetDictionary[key], g = m.geometry, pa = g.attributes.position, na = g.attributes.normal, rest = key === REST_KEY ? scRest(m) : null;
+    const arr = rest ? rest.off : g.morphAttributes.position[t].array, narr = rest ? rest.noff : g.morphAttributes.normal ? g.morphAttributes.normal[t].array : null;
+    const it = { m, t, arr, narr, base0: rest ? rest.base : pa.array.slice(), nbase0: rest ? rest.nbase : na ? na.array.slice() : null, mw: m.matrixWorld.clone(),
+                 inv3: new THREE.Matrix3().setFromMatrix4(m.matrixWorld).invert(), index: g.index ? g.index.array : null, rest: !!rest };
     if (!SC.orig.has(key)) SC.orig.set(key, new Map());
     if (!SC.orig.get(key).has(m.uuid)) SC.orig.get(key).set(m.uuid, { arr: arr.slice(), narr: narr ? narr.slice() : null });
     return it;
   });
-  // the points: a vertex the mesh has twice (same rest place) is one point
+  // the points: a vertex the mesh has twice (same rest place, the same moves in every key: a UV seam) is one point.
+  // The two lips of a cut mouth share their places along the slit but not their moves: they stay two (glued, the
+  // brush drew the upper lip down with the lower and the mouth tore into strips)
   const q = H * 1e-5, ids = new Map(), owner = [];
   for (const [k, it] of SC.items.entries()) {
     const b = it.base0, n = b.length / 3; it.node = new Int32Array(n);
+    const mp = (it.m.geometry.morphAttributes.position || []).map((a) => a.array);
     for (let i = 0; i < n; i++) {
-      const h = Math.round(b[3 * i] / q) + ',' + Math.round(b[3 * i + 1] / q) + ',' + Math.round(b[3 * i + 2] / q);
+      let h = Math.round(b[3 * i] / q) + ',' + Math.round(b[3 * i + 1] / q) + ',' + Math.round(b[3 * i + 2] / q);
+      for (const d of mp) if (d[3 * i] || d[3 * i + 1] || d[3 * i + 2]) h += '|' + Math.round(d[3 * i] / q) + ',' + Math.round(d[3 * i + 1] / q) + ',' + Math.round(d[3 * i + 2] / q);
       let id = ids.get(h); if (id === undefined) { id = owner.length; ids.set(h, id); owner.push([]); }
       owner[id].push(k, i); it.node[i] = id;
     }
@@ -2237,18 +2389,20 @@ function scBuild(key) {
     pos.set([v.x, v.y, v.z], 3 * id);
   }
   // neighbours (for «Сгладить») from the triangles, over the points
-  const nb = Array.from({ length: n }, () => new Set());
+  const nb = Array.from({ length: n }, () => new Set()), tris = [];
   for (const it of SC.items) {
     const ix = it.index || Uint32Array.from({ length: it.node.length }, (_, i) => i);
     it.vtri = Array.from({ length: it.node.length }, () => []);
     for (let f = 0; f < ix.length; f += 3) {
       const a = it.node[ix[f]], b = it.node[ix[f + 1]], c = it.node[ix[f + 2]];
       nb[a].add(b).add(c); nb[b].add(a).add(c); nb[c].add(a).add(b);
+      if (a !== b && b !== c && a !== c) tris.push(a, b, c);
       it.vtri[ix[f]].push(f); it.vtri[ix[f + 1]].push(f); it.vtri[ix[f + 2]].push(f);
     }
   }
   const mid = PB.hips ? PB.hips.getWorldPosition(new V3).x : bbox.getCenter(new V3).x;
-  SCN = { n, pos, rest, owner, nb: nb.map((s_) => [...s_].filter((j) => j !== undefined)), mid, cell: .02 * H, grid: null, mirror: new Int32Array(n).fill(-2) };
+  SCN = { n, pos, rest, owner, nb: nb.map((s_) => [...s_].filter((j) => j !== undefined)), mid, cell: .02 * H, grid: null, mirror: new Int32Array(n).fill(-2),
+          tris: Int32Array.from(tris) };
   scGrid();
 }
 function scGrid() {
@@ -2324,8 +2478,9 @@ function scLight(codes) {   // the normals' displacement turned as the surface t
 function scBake(on) {   // the key drawn at full strength in the mesh itself (on), or back to a key (off)
   for (const it of SC.items) {
     const g = it.m.geometry, pa = g.attributes.position, na = g.attributes.normal;
-    for (let i = 0; i < pa.array.length; i++) pa.array[i] = it.base0[i] + (on ? it.arr[i] : 0);
-    if (na && it.nbase0) for (let i = 0; i < na.array.length; i++) na.array[i] = it.nbase0[i] + (on && it.narr ? it.narr[i] : 0);
+    const keep = on || it.rest;   // the rest's offset stays in the mesh when the brush is left
+    for (let i = 0; i < pa.array.length; i++) pa.array[i] = it.base0[i] + (keep ? it.arr[i] : 0);
+    if (na && it.nbase0) for (let i = 0; i < na.array.length; i++) na.array[i] = it.nbase0[i] + (keep && it.narr ? it.narr[i] : 0);
     pa.needsUpdate = true; if (na) na.needsUpdate = true;
     g.computeBoundingSphere(); g.computeBoundingBox();
     if (!on) g.dispose();   // the keys' texture is made again, with the edited key
@@ -2338,11 +2493,53 @@ function scHit(e) {
   return ray.intersectObjects(SC.items.map((it) => it.m), false)[0] || null;
 }
 const scNormal = (h) => (h.face ? h.face.normal.clone().transformDirection(h.object.matrixWorld) : camera.getWorldDirection(new V3).negate());
-function scDab(P, N) {   // «Поднять» / «Вдавить» / «Сгладить» at P (and mirrored)
+// «Выровнять» / «Вся губа»: the shape kept, its sharp points evened out (the lips after the cut: a point moved apart
+// from its neighbours in a key, a sliver of the cut). In a key it is the key's shift that is evened (the lip roll keeps
+// its curl, as blender_mouth_cut.lip_untangle does on building); at rest the places themselves. A point far from its
+// neighbours' middle (against the length of its edges) and every point of a triangle turned over or stretched four
+// times against the face at rest go toward that middle; a smooth surface hardly moves. ids: the points looked at;
+// s: how far (0..1) per pass; the count of points on triangles still turned over.
+function scEvenPass(ids, s, weight) {
+  const p = SCN.pos, r = SCN.rest, T = SCN.tris, inSet = new Set(ids), bad = new Set();
+  for (let t = 0; t < T.length; t += 3) {
+    const a = T[t], b = T[t + 1], c = T[t + 2]; if (!inSet.has(a) && !inSet.has(b) && !inSet.has(c)) continue;
+    const n0 = scTriN(r, a, b, c), n1 = scTriN(p, a, b, c), l0 = n0.length();
+    const e0 = Math.hypot(r[3 * a] - r[3 * b], r[3 * a + 1] - r[3 * b + 1], r[3 * a + 2] - r[3 * b + 2]);
+    if (l0 < .05 * e0 * e0) continue;   // a sliver of the cut: no shape of its own
+    const l1 = n1.length();
+    if (l1 < 1e-30 || n0.dot(n1) / (l0 * l1) < .3 || l1 > 4 * l0) { bad.add(a); bad.add(b); bad.add(c); }
+  }
+  const near = new Set(bad); for (const id of bad) for (const j of SCN.nb[id]) near.add(j);   // with a ring around
+  const moves = [], key = SC.key !== REST_KEY;   // a key: its shift (pos - rest); the rest: the places
+  const at = (j, e) => (key ? p[3 * j + e] - r[3 * j + e] : p[3 * j + e]);
+  for (const id of ids) {
+    const nb = SCN.nb[id]; if (!nb.length) continue;
+    const avg = new V3(); let el = 0;
+    for (const j of nb) {
+      avg.x += at(j, 0); avg.y += at(j, 1); avg.z += at(j, 2);
+      el += Math.hypot(r[3 * j] - r[3 * id], r[3 * j + 1] - r[3 * id + 1], r[3 * j + 2] - r[3 * id + 2]);
+    }
+    avg.multiplyScalar(1 / nb.length); el /= nb.length;
+    const L = avg.sub(new V3(at(id, 0), at(id, 1), at(id, 2))), sharp = L.length() / Math.max(el, 1e-9);
+    // a key: only the triangles that turn over (and a ring round them) - the lips' shift differs from their
+    // neighbours' by right at the corners; at rest: a point sticking out too (a smooth surface stays)
+    const k = near.has(id) ? 1 : key ? 0 : Math.min(1, Math.max(0, (sharp - .2) / .4));
+    if (k > 0 && s > 0) moves.push([id, L.multiplyScalar(k * s * (weight ? weight.get(id) : 1))]);
+  }
+  for (const [id, d] of moves) scMove(id, d);
+  return bad.size;
+}
+function scTriN(q, a, b, c) {
+  const ux = q[3 * b] - q[3 * a], uy = q[3 * b + 1] - q[3 * a + 1], uz = q[3 * b + 2] - q[3 * a + 2];
+  const vx = q[3 * c] - q[3 * a], vy = q[3 * c + 1] - q[3 * a + 1], vz = q[3 * c + 2] - q[3 * a + 2];
+  return new V3(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx);
+}
+function scDab(P, N) {   // «Поднять» / «Вдавить» / «Сгладить» / «Выровнять» at P (and mirrored)
   const R = scR(), s = scS(), spots = [[P, N, false]];
   if ($('scMirror').checked) spots.push([new V3(2 * SCN.mid - P.x, P.y, P.z), new V3(-N.x, N.y, N.z), true]);
   for (const [Q, n] of spots) {
     const near = scNear(Q, R);
+    if (SC.mode === 'even') { scEvenPass(near.map(([id]) => id), s * .8, new Map(near)); continue; }
     if (SC.mode === 'smooth') {
       const p = SCN.pos, r = SCN.rest, moves = [];
       for (const [id, w] of near) {
@@ -2368,7 +2565,7 @@ function scShowRing(h) {
   scRing.quaternion.setFromUnitVectors(new V3(0, 0, 1), n); scRing.visible = true;
 }
 canvas.addEventListener('pointerdown', (e) => {
-  if (!SC.on || e.button !== 0) return;
+  if (!SC.on || LC.on || e.button !== 0) return;   // the lip cage: its nodes, not the brush
   const h = scHit(e); if (!h) return;   // off the face: the view turns as always
   e.stopImmediatePropagation(); orbit.enabled = false; canvas.setPointerCapture(e.pointerId);
   SC.stroke = { old: new Map(), ids: new Set(), P0: h.point.clone(), last: h.point.clone(), applied: new Map(), grab: null };
@@ -2382,7 +2579,7 @@ canvas.addEventListener('pointerdown', (e) => {
   } else scDab(h.point, scNormal(h));
 }, true);
 canvas.addEventListener('pointermove', (e) => {
-  if (!SC.on) return;
+  if (!SC.on || LC.on) return;
   if (!SC.stroke) { scShowRing(scHit(e)); return; }
   e.stopImmediatePropagation();
   if (SC.mode === 'grab') {
@@ -2421,9 +2618,10 @@ function scSet(rec, which) {   // undo / redo of a stroke: every vertex back to 
     SCN.pos.set([q.x, q.y, q.z], 3 * id);
   }
   scFlush(); scLight(back); scGrid(); SC.dirty = true; scStatus();
+  if (LC.on) { LC.off.clear(); lcMeasure(); lcDraw(); }
 }
-function scUndo() { const r = SC.undo.pop(); if (!r || r.key !== SC.key) { if (r) SC.undo.push(r); return; } scSet(r, 'old'); SC.redo.push(r); }
-function scRedo() { const r = SC.redo.pop(); if (!r || r.key !== SC.key) { if (r) SC.redo.push(r); return; } scSet(r, 'now'); SC.undo.push(r); }
+function scUndo() { const r = SC.undo.pop(); if (!r || r.key !== SC.key) { if (r) SC.undo.push(r); return; } scSet(r, 'old'); SC.redo.push(r); scStatus(); }
+function scRedo() { const r = SC.redo.pop(); if (!r || r.key !== SC.key) { if (r) SC.redo.push(r); return; } scSet(r, 'now'); SC.undo.push(r); scStatus(); }
 addEventListener('keydown', (e) => {
   if (!SC.on || !(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'z' && e.key.toLowerCase() !== 'я') return;
   e.preventDefault(); e.stopImmediatePropagation(); if (e.shiftKey) scRedo(); else scUndo();
@@ -2434,7 +2632,9 @@ function scChanges() {   // {key: [{mesh, prim, v: [[i, rest x, y, z, offset x, 
     const groups = [];
     for (const m of poseMeshes) {
       const o = per.get(m.uuid); if (!o) continue;
-      const arr = m.geometry.morphAttributes.position[m.morphTargetDictionary[key]].array, b = SC.key === key && SC.on ? SC.items.find((it) => it.m === m).base0 : m.geometry.attributes.position.array, v = [];
+      const rest = key === REST_KEY ? scRest(m) : null;
+      const arr = rest ? rest.off : m.geometry.morphAttributes.position[m.morphTargetDictionary[key]].array,
+        b = rest ? rest.base : SC.key === key && SC.on ? SC.items.find((it) => it.m === m).base0 : m.geometry.attributes.position.array, v = [];
       for (let i = 0; i < arr.length / 3; i++) {
         const dx = arr[3 * i] - o.arr[3 * i], dy = arr[3 * i + 1] - o.arr[3 * i + 1], dz = arr[3 * i + 2] - o.arr[3 * i + 2];
         if (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) > 1e-9) v.push([i, b[3 * i], b[3 * i + 1], b[3 * i + 2], dx, dy, dz].map((x, k) => (k ? +x.toPrecision(7) : x)));
@@ -2451,29 +2651,468 @@ function scStatus(text) {
   $('scUndo').disabled = !SC.undo.some((r) => r.key === SC.key); $('scRedo').disabled = !SC.redo.some((r) => r.key === SC.key);
 }
 function scEnter(key) {
+  if (TX.on) txExit();
+  if (MX.on) mxExit();
+  if (key === REST_KEY) { SC.restAt = new Map(); for (const m of scFaceMeshes(key)) SC.restAt.set(m.uuid, scRest(m).off.slice()); }
+  if (weightsOn) setWeights(false);
   poseReset(); setMorph(key, 0); SC.key = key; scBuild(key); scBake(true); SC.on = true;
-  $('sculptBox').hidden = false; $('pSculpt').classList.add('on'); $('scKey').textContent = '{{js:ed.sc_editing}}'.replace('{0}', key);
+  // the mouth's insides (teeth, gums, tongue, the cavity) show the same key as the face baked: with them at rest the
+  // lower teeth stood up between the opened lips
+  for (const m of poseMeshes) if (m.morphTargetDictionary && key in m.morphTargetDictionary && !SC.items.some((it) => it.m === m))
+    m.morphTargetInfluences[m.morphTargetDictionary[key]] = 1;
+  $('sculptBox').hidden = false; $('pSculpt').classList.add('on'); $('scKey').textContent = '{{js:ed.sc_editing}}'.replace('{0}', keyLabel(key));
   hoverId = null; poseHighlight(); scStatus();
 }
 function scExit() {
   if (!SC.on) return;
+  if (SC.key === REST_KEY) scRestKeys();
+  if (LC.on) lcOff();
   scBake(false); SC.on = false; SC.stroke = null; scRing.visible = false;
   $('sculptBox').hidden = true; $('pSculpt').classList.remove('on');
-  setMorph(SC.key, 1); $('pMorph').value = SC.key; $('pMorphV').value = 1;
+  if (SC.key !== REST_KEY) { setMorph(SC.key, 1); $('pMorphV').value = 1; }
+  $('pMorph').value = SC.key;
+}
+function scRestKeys() {   // the rest moved since entering: the keys moving those points the same way made shorter by as much
+  for (const it of SC.items) {
+    const was = SC.restAt && SC.restAt.get(it.m.uuid); if (!was) continue;
+    const inc = it.arr.map((v, i) => v - was[i]), g = it.m.geometry; let changed = false;
+    for (const ma of g.morphAttributes.position || []) {
+      const d = ma.array;
+      for (let i = 0; i < d.length; i += 3) {
+        const dot = d[i] * inc[i] + d[i + 1] * inc[i + 1] + d[i + 2] * inc[i + 2]; if (dot <= 0) continue;
+        const dd = d[i] * d[i] + d[i + 1] * d[i + 1] + d[i + 2] * d[i + 2]; if (dd < 1e-20) continue;
+        const k = Math.min(1, dot / dd); d[i] *= 1 - k; d[i + 1] *= 1 - k; d[i + 2] *= 1 - k; changed = true;
+      }
+      ma.needsUpdate = true;
+    }
+    if (changed) g.dispose();   // the keys' texture made again
+  }
 }
 $('pSculpt').onclick = () => { if (SC.on) scExit(); else if ($('pMorph').value) scEnter($('pMorph').value); };
 $('pMorph').addEventListener('change', () => { if (SC.on && $('pMorph').value !== SC.key) { scExit(); scEnter($('pMorph').value); } });
 for (const b of $('scModes').querySelectorAll('button')) b.onclick = () => {
   SC.mode = b.dataset.m; for (const x of $('scModes').querySelectorAll('button')) x.classList.toggle('on', x === b);
+  if (LC.on) { lcOff(); scStatus(); }   // a brush chosen: the cage put away
 };
 const scLabels = () => { $('scRv').textContent = $('scR').value + '%'; $('scSv').textContent = $('scS').value + '%'; };
 $('scR').oninput = $('scS').oninput = scLabels; scLabels();
 $('scUndo').onclick = scUndo; $('scRedo').onclick = scRedo; $('scDone').onclick = scExit;
 $('scDrop').onclick = () => {   // every unsaved change of this key back
+  if (LC.on) lcOff();
   const o = SC.orig.get(SC.key); if (!o) return;
   for (const it of SC.items) { const w = o.get(it.m.uuid); it.arr.set(w.arr); if (it.narr && w.narr) it.narr.set(w.narr); }
   const key = SC.key; scBake(false); SC.on = false; SC.undo = SC.undo.filter((r) => r.key !== key); SC.redo = SC.redo.filter((r) => r.key !== key); scEnter(key);
 };
+// «👄 Каркас губ»: a regular grid laid over each lip, from the slit the cut made (inner row) to the lip's edge (outer
+// row, the yellow one: the markup's lip top / bottom at first, dragged onto the edge seen), NS spokes from corner to
+// corner. Each node is the lip's points round it averaged, points far off the rest (a shard, a spike) counting less
+// and less; a node standing out from its neighbours along the rows and the spokes (orange) is put back between them,
+// and in a key a lip folded over itself along a spoke is unfolded. Dragging a blue node changes the lip's shape there (the
+// other half too with the cage's own «Зеркально», off at first: a generated face is seldom symmetric). «Применить»: the lip's skin near the slit goes onto the grid's surface (the slit onto its inner row, so
+// the zigzag of the old mesh's edges goes), further off it keeps its shape and takes the grid's smooth shift; the lip
+// roll and what is behind the slit go with their slit point; then
+// what is still turned over is evened out. In a key the grid is the rest place plus the key's shift, round the corners
+// the shift is spread evenly up to the skin left as it was. At rest only the slit's line is made smooth (the grid there
+// is the places; the lip's rounded edge is finer than the grid). One undo step.
+const LC = { on: false, NS: 11, NR: 5, passes: 20, core: .97, border: null, off: new Map(), nodes: [], drag: null, grp: null, busy: false };
+const lcMat = (it) => { const mt = Array.isArray(it.m.material) ? it.m.material[0] : it.m.material; return (mt && mt.name) || ''; };
+const lcSm = (t) => { t = Math.min(1, Math.max(0, t)); return t * t * (3 - 2 * t); };
+function lcSetup() {   // the lips' points, which lip each is, and its place on the grid (u: corner to corner, v: slit to edge)
+  const r = SCN.rest, roll = new Set(), cav = new Set(), keep = new Set();
+  for (const it of SC.items) {
+    const nm = lcMat(it), into = nm.startsWith('lip_inner') ? roll : nm.startsWith('mouth_cavity') ? cav : keep;
+    for (const id of it.node) into.add(id);
+  }
+  if (!roll.size) return false;
+  let x0 = Infinity, x1 = -Infinity, ym = 0, zm = 0, c0 = -1, c1 = -1;
+  for (const id of roll) {
+    const x = r[3 * id]; ym += r[3 * id + 1]; zm += r[3 * id + 2];
+    if (x < x0) { x0 = x; c0 = id; } if (x > x1) { x1 = x; c1 = id; }
+  }
+  ym /= roll.size; zm /= roll.size;
+  const cx = (x0 + x1) / 2, hw = (x1 - x0) / 2, W = 2 * hw, NS = LC.NS, du = 2 / (NS - 1);
+  const F = S.face || {}, mc = F.mouth_c;
+  const hU0 = Math.min(.5 * W, Math.max(.06 * W, mc && F.lip_top ? F.lip_top[1] - mc[1] : .18 * W));
+  const hL0 = Math.min(.5 * W, Math.max(.06 * W, mc && F.lip_bot ? mc[1] - F.lip_bot[1] : .22 * W));
+  if (!LC.border || Math.abs(LC.border.W - W) > 1e-6 * H) {
+    const sh = (i) => Math.pow(Math.max(0, 1 - (-1 + i * du) ** 2), .55);
+    LC.border = { W, h: [Array.from({ length: NS }, (_, i) => hU0 * sh(i)), Array.from({ length: NS }, (_, i) => hL0 * sh(i))] };
+  }
+  const Z = [];
+  for (let id = 0; id < SCN.n; id++) {
+    if (cav.has(id) && !keep.has(id) && !roll.has(id)) continue;
+    const x = r[3 * id], y = r[3 * id + 1], z = r[3 * id + 2];
+    if (Math.abs(x - cx) <= 1.6 * hw && y >= ym - 2.2 * hL0 && y <= ym + 2.2 * hU0 && z >= zm - .5 * W) Z.push(id);
+  }
+  const inZ = new Set(Z);
+  // the slit: points the cut made twice (the same place, two lips); which lip by jawOpen (the lower one goes down)
+  // or else by the skin next to it
+  const q = H * 1e-5, groups = new Map();
+  for (const id of Z) {
+    if (Math.abs(r[3 * id] - cx) > 1.02 * hw) continue;
+    const h = Math.round(r[3 * id] / q) + ',' + Math.round(r[3 * id + 1] / q) + ',' + Math.round(r[3 * id + 2] / q);
+    let g = groups.get(h); if (!g) groups.set(h, g = []); g.push(id);
+  }
+  const m3 = new Map(), jawDy = (id) => {
+    const o = SCN.owner[id], it = SC.items[o[0]], t = it.m.morphTargetDictionary.jawOpen; if (t === undefined) return null;
+    if (!m3.has(it)) m3.set(it, new THREE.Matrix3().setFromMatrix4(it.mw));
+    const a = it.m.geometry.morphAttributes.position[t].array, i = o[1];
+    return new V3(a[3 * i], a[3 * i + 1], a[3 * i + 2]).applyMatrix3(m3.get(it)).y;
+  };
+  const src = new Map(), slit = [];
+  for (const g of groups.values()) {
+    if (g.length < 2) continue;
+    for (const id of g) slit.push(id);
+    const dy = g.map(jawDy);
+    if (dy.every((d) => d !== null) && Math.max(...dy) - Math.min(...dy) > 1e-3 * W) {
+      const top = Math.max(...dy); g.forEach((id, k) => src.set(id, dy[k] === top ? 1 : -1));
+    } else for (const id of g) {
+      let s_ = 0; for (const j of SCN.nb[id]) if (!roll.has(j)) s_ += r[3 * j + 1] - r[3 * id + 1];
+      src.set(id, s_ >= 0 ? 1 : -1);
+    }
+  }
+  if (!slit.length) return false;
+  // the slit's line per spoke (the corners: the roll's ends)
+  const ys = new Float64Array(NS), sx = .5 * hw * du;
+  for (let i = 0; i < NS; i++) {
+    if (i === 0) { ys[i] = r[3 * c0 + 1]; continue; } if (i === NS - 1) { ys[i] = r[3 * c1 + 1]; continue; }
+    const x = cx + hw * (-1 + i * du); let sw = 0, sy = 0;
+    for (const id of slit) { const w = Math.exp(-(((r[3 * id] - x) / sx) ** 2)); sw += w; sy += w * r[3 * id + 1]; }
+    ys[i] = sw > 1e-3 ? sy / sw : NaN;
+  }
+  for (let i = 1; i < NS - 1; i++) if (isNaN(ys[i])) { let a = i - 1, b = i + 1; while (isNaN(ys[b])) b++; ys[i] = ys[a] + (ys[b] - ys[a]) * (i - a) / (b - a); }
+  const lin = (arr, u) => { const t = (Math.min(1, Math.max(-1, u)) + 1) / du, i = Math.min(NS - 2, Math.floor(t)), f = t - i; return arr[i] * (1 - f) + arr[i + 1] * f; };
+  // which lip: the slit's nearest copy over the skin (Dijkstra), the rest by the slit's line
+  const dist = new Map(), lab = new Map(), from = new Map(), hp = [];
+  const push = (d, id) => { hp.push([d, id]); let i = hp.length - 1; while (i) { const p = (i - 1) >> 1; if (hp[p][0] <= hp[i][0]) break; [hp[p], hp[i]] = [hp[i], hp[p]]; i = p; } };
+  const pop = () => {
+    const top = hp[0], last = hp.pop();
+    if (hp.length) { hp[0] = last; let i = 0; for (;;) { const a = 2 * i + 1, b = a + 1; let m = i; if (a < hp.length && hp[a][0] < hp[m][0]) m = a; if (b < hp.length && hp[b][0] < hp[m][0]) m = b; if (m === i) break; [hp[m], hp[i]] = [hp[i], hp[m]]; i = m; } }
+    return top;
+  };
+  for (const [id, l] of src) { dist.set(id, 0); lab.set(id, l); from.set(id, id); push(0, id); }
+  while (hp.length) {
+    const [d, id] = pop(); if (d > dist.get(id)) continue;
+    for (const j of SCN.nb[id]) {
+      if (!inZ.has(j)) continue;
+      const nd = d + Math.hypot(r[3 * j] - r[3 * id], r[3 * j + 1] - r[3 * id + 1], r[3 * j + 2] - r[3 * id + 2]);
+      if (nd < (dist.has(j) ? dist.get(j) : Infinity)) { dist.set(j, nd); lab.set(j, lab.get(id)); from.set(j, from.get(id)); push(nd, j); }
+    }
+  }
+  const hMax = [Math.max(...LC.border.h[0]), Math.max(...LC.border.h[1])];
+  const ids = [], us = [], vs = [], ls = [], rl = [], fr = [], sl = [];
+  for (const id of Z) {
+    const u = (r[3 * id] - cx) / hw; if (Math.abs(u) > 1.5) continue;   // past 1 (and v past .85): the band round the grid
+    // which lip: near the slit (and on the roll) its nearest slit copy over the skin; further off the side of the
+    // slit's line (round the corners the upper lip's copies are as near to the chin as the lower one's)
+    const yi = lin(ys, u), y = r[3 * id + 1], gs = y >= yi ? 0 : 1, isRoll = roll.has(id) && !keep.has(id);
+    const near = isRoll || Math.abs(y - yi) < .3 * Math.max(lin(LC.border.h[gs], u), .3 * hMax[gs]);
+    const l = lab.has(id) && near ? (lab.get(id) > 0 ? 0 : 1) : gs;
+    const hb = Math.max(lin(LC.border.h[l], u), .3 * hMax[l]), v = src.has(id) ? 0 : (l ? yi - y : y - yi) / hb;   // the slit: the inner row
+    if (v > 1.8 || v < -.8) continue;
+    ids.push(id); us.push(u); vs.push(v); ls.push(l); rl.push(isRoll ? 1 : 0); fr.push(from.has(id) ? from.get(id) : -1); sl.push(src.has(id) ? 1 : 0);
+  }
+  // the front: a point within 0.06 of the mouth's width of the frontmost skin at its height and width. Behind the lip's
+  // face there may be more (its inner side, an old mouth's insides): they keep their shape and only follow the grid
+  const fc = .025 * W, zmax = new Map(), fk = (x, y) => Math.floor(x / fc) + ',' + Math.floor(y / fc), ft = [];
+  ids.forEach((id, k) => { if (rl[k]) return; const h = fk(r[3 * id], r[3 * id + 1]); zmax.set(h, Math.max(zmax.has(h) ? zmax.get(h) : -Infinity, r[3 * id + 2])); });
+  ids.forEach((id, k) => {
+    const gx = Math.floor(r[3 * id] / fc), gy = Math.floor(r[3 * id + 1] / fc); let m = -Infinity;
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) { const z = zmax.get((gx + a) + ',' + (gy + b)); if (z !== undefined && z > m) m = z; }
+    ft.push(!rl[k] && r[3 * id + 2] >= m - .06 * W ? 1 : 0);
+  });
+  // twins: points at one place on one lip (a UV seam whose copies differ a little in some key) move as one; the slit's
+  // two copies are two lips and stay apart
+  const tw = new Map(), byH = new Map();
+  ids.forEach((id, k) => {
+    if (src.has(id)) return;
+    const h = Math.round(r[3 * id] / q) + ',' + Math.round(r[3 * id + 1] / q) + ',' + Math.round(r[3 * id + 2] / q) + ',' + ls[k];
+    let g = byH.get(h); if (!g) byH.set(h, g = []); g.push(id);
+  });
+  for (const g of byH.values()) if (g.length > 1) for (const id of g) tw.set(id, g);
+  Object.assign(LC, { tw, ids: Int32Array.from(ids), u: Float32Array.from(us), v: Float32Array.from(vs), lab: Uint8Array.from(ls), roll: Uint8Array.from(rl), from: Int32Array.from(fr), slit: Uint8Array.from(sl), front: Uint8Array.from(ft),
+                      cx, hw, W, ys, corner: [c0, c1] });
+  return true;
+}
+function lcVal(id, out) {   // a key: the point's shift; the rest: its place
+  const p = SCN.pos, r = SCN.rest, k = SC.key !== REST_KEY ? 1 : 0;
+  return out.set(p[3 * id] - k * r[3 * id], p[3 * id + 1] - k * r[3 * id + 1], p[3 * id + 2] - k * r[3 * id + 2]);
+}
+function lcNode(cands) {   // [[id, weight]] -> {v, r, ok}: averaged, a point far from the others counting less (3 rounds)
+  const val = cands.map(([id]) => lcVal(id, new V3())), w = cands.map((c) => c[1]), est = new V3();
+  let sw = w.reduce((a, b) => a + b, 0);
+  if (sw < .25) return { v: new V3(), r: new V3(), ok: false };
+  for (let it = 0; it < 4; it++) {
+    est.set(0, 0, 0); sw = 0;
+    for (let k = 0; k < val.length; k++) { est.addScaledVector(val[k], w[k]); sw += w[k]; }
+    est.multiplyScalar(1 / sw);
+    if (it === 3) break;
+    const res = val.map((v_) => v_.distanceTo(est)); let sr = 0;
+    for (let k = 0; k < res.length; k++) sr += res[k] * cands[k][1];
+    const sg = 1.5 * sr / w.reduce((a, b, k) => a + cands[k][1], 0) + 1e-6 * H;
+    for (let k = 0; k < w.length; k++) w[k] = cands[k][1] / (1 + (res[k] / sg) ** 2);
+  }
+  const rp = new V3(), R = SCN.rest; let rw = 0;
+  for (let k = 0; k < cands.length; k++) { const id = cands[k][0]; rp.x += w[k] * R[3 * id]; rp.y += w[k] * R[3 * id + 1]; rp.z += w[k] * R[3 * id + 2]; rw += w[k]; }
+  return { v: est.clone(), r: rp.multiplyScalar(1 / rw), ok: true };
+}
+function lcMeasure() {   // the grid measured on the face now (raw), then its sharp nodes put back and evened (sm)
+  const NS = LC.NS, NR = LC.NR, du = 2 / (NS - 1), dv = 1 / (NR - 1), su = .6 * du, sv = .6 * dv, R = SCN.rest;
+  const raw = [[], []];
+  for (let l = 0; l < 2; l++) for (let i = 1; i < NS - 1; i++) {
+    raw[l][i] = [];
+    for (let j = 0; j < NR; j++) {
+      const ui = -1 + i * du, vj = j * dv, c = [];
+      for (let k = 0; k < LC.ids.length; k++) {
+        if (LC.lab[k] !== l || LC.roll[k] || LC.v[k] < -.05) continue;   // the lip's skin: not the roll, nothing behind the slit
+        if (!j && !LC.slit[k] || !LC.front[k] && !LC.slit[k]) continue;   // the inner row: the slit itself (the lip's real edge); the rest: the lip's face
+        const a = (LC.u[k] - ui) / su, b = (LC.v[k] - vj) / sv; if (a * a + b * b > 9) continue;
+        c.push([LC.ids[k], Math.exp(-a * a - b * b)]);
+      }
+      raw[l][i][j] = lcNode(c);
+    }
+  }
+  const corners = LC.corner.map((cid) => {
+    const c = [], s_ = .07 * LC.W;
+    for (let k = 0; k < LC.ids.length; k++) {
+      if (LC.roll[k]) continue; const id = LC.ids[k];
+      const d = Math.hypot(R[3 * id] - R[3 * cid], R[3 * id + 1] - R[3 * cid + 1], R[3 * id + 2] - R[3 * cid + 2]) / s_;
+      if (d < 3) c.push([id, Math.exp(-d * d)]);
+    }
+    const n = lcNode(c); if (!n.ok) { lcVal(cid, n.v); n.r.set(R[3 * cid], R[3 * cid + 1], R[3 * cid + 2]); n.ok = true; }
+    return n;
+  });
+  for (let l = 0; l < 2; l++) { raw[l][0] = Array(NR).fill(corners[0]); raw[l][NS - 1] = Array(NR).fill(corners[1]); }
+  // the evened grid: nodes with nothing under them filled from their neighbours, sharp ones put back, a light evening
+  const sm = raw.map((g) => g.map((col) => col.map((n) => ({ v: n.v.clone(), r: n.r.clone(), ok: n.ok }))));
+  for (let l = 0; l < 2; l++) { sm[l][0] = Array(NR).fill(sm[0][0][0]); sm[l][NS - 1] = Array(NR).fill(sm[0][NS - 1][0]); }
+  const at = (l, i, j) => sm[l][i][j];
+  for (let pass = 0; pass < 12; pass++) for (let l = 0; l < 2; l++) for (let i = 1; i < NS - 1; i++) for (let j = 0; j < NR; j++) {
+    const n = at(l, i, j); if (n.ok) continue;
+    const nb = [[i - 1, j], [i + 1, j], [i, j - 1], [i, j + 1]].filter(([a, b]) => b >= 0 && b < NR && at(l, a, b).ok);
+    if (!nb.length) continue;
+    n.v.set(0, 0, 0); n.r.set(0, 0, 0);
+    for (const [a, b] of nb) { n.v.add(at(l, a, b).v); n.r.add(at(l, a, b).r); }
+    n.v.multiplyScalar(1 / nb.length); n.r.multiplyScalar(1 / nb.length); n.ok = true;
+  }
+  const d2 = (l, i, j, f) => {   // the second differences along the spoke's row and along the spoke (where both sides are)
+    const c = at(l, i, j)[f], out = new V3(); let n = 0;
+    out.add(at(l, i - 1, j)[f]).add(at(l, i + 1, j)[f]).addScaledVector(c, -2); n++;
+    if (j > 0 && j < NR - 1) { out.add(at(l, i, j - 1)[f]).add(at(l, i, j + 1)[f]).addScaledVector(c, -2); n++; }
+    return out.multiplyScalar(.5 / n);
+  };
+  // a node standing out (four times the grid's usual bend) put back between its neighbours, once: the grid is not
+  // evened beyond that (evening a key flattens it: the jaw's opening fell off at the lip's middle and the lip rose
+  // over the teeth); the points' averaging and the smooth curves between the nodes are evenness enough
+  const flagged = new Set(), ss = [];
+  for (let l = 0; l < 2; l++) for (let i = 1; i < NS - 1; i++) for (let j = 0; j < NR; j++) ss.push([l, i, j, d2(l, i, j, 'v')]);
+  const len = ss.map((s_) => s_[3].length()).sort((a, b) => a - b), T = 4 * len[len.length >> 1] + 2e-3 * LC.W;
+  const spike = (l, i, j) => {   // past both neighbours along the row or along the spoke (a bend or a fall-off is not)
+    const c = at(l, i, j).v, out = (a, b) => [0, 1, 2].some((e) => (c.getComponent(e) - a.getComponent(e)) * (c.getComponent(e) - b.getComponent(e)) > 0
+      && Math.min(Math.abs(c.getComponent(e) - a.getComponent(e)), Math.abs(c.getComponent(e) - b.getComponent(e))) > .5 * T);
+    return out(at(l, i - 1, j).v, at(l, i + 1, j).v) || (j > 0 && j < NR - 1 && out(at(l, i, j - 1).v, at(l, i, j + 1).v));
+  };
+  const fix = ss.filter(([l, i, j, d]) => d.length() > T && spike(l, i, j));
+  for (const [l, i, j, d] of fix) at(l, i, j).v.add(d);
+  // a key: a spoke whose rows cross in the key is a lip folded over itself
+  // (its middle lagging behind its edge and the skin below: rough weights) - its middle rows spread evenly between
+  // the edge and the outer row
+  if (SC.key !== REST_KEY) for (let l = 0; l < 2; l++) for (let i = 1; i < NS - 1; i++) {
+    let fold = false;
+    for (let j = 0; j < NR - 1; j++) {
+      const a = at(l, i, j), b = at(l, i, j + 1), d0 = b.r.clone().sub(a.r), d1 = b.r.clone().add(b.v).sub(a.r).sub(a.v);
+      if (d1.dot(d0) < 0) fold = true;   // rows crossed (squashed only: the corners stretch so, it is no fold)
+    }
+    if (!fold) continue;
+    const s0 = at(l, i, 0).v, s1 = at(l, i, NR - 1).v;
+    for (let j = 1; j < NR - 1; j++) at(l, i, j).v.lerpVectors(s0, s1, j / (NR - 1));
+  }
+  // orange: a node «Применить» moves noticeably (0.004 of the mouth's width); once applied the grid measures as it
+  // is set and the node turns blue (the fold rule kept the corners' spokes orange for ever: the skin squashes there)
+  for (let l = 0; l < 2; l++) for (let i = 1; i < NS - 1; i++) for (let j = 0; j < NR; j++)
+    if (at(l, i, j).v.distanceTo(raw[l][i][j].v) > .004 * LC.W) flagged.add(l + ',' + i + ',' + j);
+  LC.raw = raw; LC.sm = sm; LC.flagged = flagged;
+}
+const lcKey = (l, i, j) => (i === 0 || i === LC.NS - 1 ? 'c' + i : l + ',' + i + ',' + j);
+function lcGet(which, l, i, j) {   // a node's value: 'raw', 'sm' (with what was dragged), 'r' (its rest place, evened)
+  const n = (which === 'raw' ? LC.raw : LC.sm)[l][i][j];
+  if (which === 'r') return n.r;
+  if (which === 'raw') return n.v;
+  const o = LC.off.get(lcKey(l, i, j)); return o ? n.v.clone().add(o) : n.v;
+}
+function lcAt(which, l, u, v, out) {   // the grid at (u, v): Catmull-Rom across the spokes and along them
+  const NS = LC.NS, NR = LC.NR, t = (Math.min(1, Math.max(-1, u)) + 1) / 2 * (NS - 1), s = Math.min(1, Math.max(0, v)) * (NR - 1);
+  const i0 = Math.min(NS - 2, Math.floor(t)), ft = t - i0, j0 = Math.min(NR - 2, Math.floor(s)), fs = s - j0;
+  const ci = (i) => Math.min(NS - 1, Math.max(0, i)), cj = (j) => Math.min(NR - 1, Math.max(0, j));
+  const cr = (a, b, c, d, f, o) => {
+    const f2 = f * f, f3 = f2 * f;
+    return o.set(0, 0, 0).addScaledVector(a, -.5 * f3 + f2 - .5 * f).addScaledVector(b, 1.5 * f3 - 2.5 * f2 + 1)
+      .addScaledVector(c, -1.5 * f3 + 2 * f2 + .5 * f).addScaledVector(d, .5 * f3 - .5 * f2);
+  };
+  const rows = [-1, 0, 1, 2].map((dj) => { const j = cj(j0 + dj); return cr(...[-1, 0, 1, 2].map((di) => lcGet(which, l, ci(i0 + di), j)), ft, new V3()); });
+  return cr(rows[0], rows[1], rows[2], rows[3], fs, out || new V3());
+}
+function lcShown(l, u, v, out) {   // where the grid is drawn: its rest place plus the key's shift (at rest: the place)
+  lcAt('sm', l, u, v, out);
+  return SC.key !== REST_KEY ? out.add(lcAt('r', l, u, v)) : out;
+}
+function lcDraw() {
+  if (LC.grp) { scene.remove(LC.grp); LC.grp.traverse((o) => o.geometry && o.geometry.dispose()); LC.grp = null; }
+  if (!LC.on) return;
+  const NS = LC.NS, NR = LC.NR, du = 2 / (NS - 1), dv = 1 / (NR - 1), seg = [], P = new V3(), Q2 = new V3();
+  for (let l = 0; l < 2; l++) {
+    for (let j = 0; j < NR; j++) for (let k = 0; k < 60; k++) {   // the rows
+      lcShown(l, -1 + k / 30, j * dv, P); lcShown(l, -1 + (k + 1) / 30, j * dv, Q2); seg.push(P.x, P.y, P.z, Q2.x, Q2.y, Q2.z);
+    }
+    for (let i = 1; i < NS - 1; i++) for (let k = 0; k < 8; k++) {   // the spokes
+      lcShown(l, -1 + i * du, k / 8, P); lcShown(l, -1 + i * du, (k + 1) / 8, Q2); seg.push(P.x, P.y, P.z, Q2.x, Q2.y, Q2.z);
+    }
+  }
+  const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(seg, 3));
+  const lines = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: 0x33ddff, depthTest: false, transparent: true, opacity: .75 }));
+  LC.nodes = []; const pp = [], cc = [], col = new THREE.Color();
+  const add = (l, i, j) => {
+    const p = lcShown(l, -1 + i * du, j * dv, new V3()); LC.nodes.push({ l, i, j, P: p }); pp.push(p.x, p.y, p.z);
+    col.setHex(LC.drag && LC.drag.n.l === l && LC.drag.n.i === i && LC.drag.n.j === j ? 0xffffff
+      : LC.flagged.has(l + ',' + i + ',' + j) ? 0xff8a00 : j === NR - 1 ? 0xffe14d : 0x33ddff);
+    cc.push(col.r, col.g, col.b);
+  };
+  add(0, 0, 0); add(0, NS - 1, 0);
+  for (let l = 0; l < 2; l++) for (let i = 1; i < NS - 1; i++) for (let j = 0; j < NR; j++) add(l, i, j);
+  const pg = new THREE.BufferGeometry(); pg.setAttribute('position', new THREE.Float32BufferAttribute(pp, 3)); pg.setAttribute('color', new THREE.Float32BufferAttribute(cc, 3));
+  const dots = new THREE.Points(pg, new THREE.PointsMaterial({ size: 9, sizeAttenuation: false, depthTest: false, transparent: true, vertexColors: true }));
+  lines.renderOrder = 998; dots.renderOrder = 999;
+  LC.grp = new THREE.Group(); LC.grp.add(lines, dots); scene.add(LC.grp);
+}
+function lcRefresh(setup) {   // setup: the points' places on the grid again (the edge moved, the face changed)
+  if (!LC.on) return;
+  if (setup && !lcSetup()) { lcOff(); scStatus('{{js:ed.sc_lip_none}}'); return; }
+  lcMeasure(); lcDraw();
+  $('scSt').textContent = '{{js:ed.sc_lip_on}}'.replace('{0}', LC.ids.length).replace('{1}', LC.flagged.size);
+}
+function lcOn() {
+  if (!SC.on) return;
+  LC.on = true; LC.off.clear(); scRing.visible = false;
+  if (!lcSetup()) { LC.on = false; scStatus('{{js:ed.sc_lip_none}}'); return; }
+  $('scLip').classList.add('on'); $('scLipGo').hidden = false; $('scLipMirrorL').hidden = false;
+  lcRefresh(false);
+}
+function lcOff() {
+  LC.on = false; LC.drag = null; lcDraw();
+  $('scLip').classList.remove('on'); $('scLipGo').hidden = true; $('scLipMirrorL').hidden = true;
+}
+function lcPick(e) {   // the node within 12 pixels of the mouse (-1: none)
+  const rc = canvas.getBoundingClientRect(); let best = -1, bd = 12;
+  LC.nodes.forEach((n, k) => {
+    const p = n.P.clone().project(camera), x = rc.left + (p.x + 1) / 2 * rc.width, y = rc.top + (1 - p.y) / 2 * rc.height;
+    const d = Math.hypot(x - e.clientX, y - e.clientY); if (d < bd) { bd = d; best = k; }
+  });
+  return best;
+}
+canvas.addEventListener('pointerdown', (e) => {
+  if (!SC.on || !LC.on || e.button !== 0) return;
+  const k = lcPick(e); if (k < 0) return;   // off the grid: the view turns as always
+  e.stopImmediatePropagation(); orbit.enabled = false; canvas.setPointerCapture(e.pointerId);
+  const n = LC.nodes[k];
+  LC.drag = { n, plane: new THREE.Plane().setFromNormalAndCoplanarPoint(camera.getWorldDirection(new V3), n.P), P0: n.P.clone(),
+              off0: (LC.off.get(lcKey(n.l, n.i, n.j)) || new V3()).clone(), h0: LC.border.h.map((a) => a.slice()) };
+  lcDraw();
+}, true);
+canvas.addEventListener('pointermove', (e) => {
+  if (!SC.on || !LC.on || !LC.drag) return;
+  e.stopImmediatePropagation();
+  const rc = canvas.getBoundingClientRect(), dr = LC.drag, n = dr.n, NS = LC.NS, mir = $('scLipMirror').checked;   // off: the lips of a generated face are seldom symmetric
+  ndc.set(((e.clientX - rc.left) / rc.width) * 2 - 1, -((e.clientY - rc.top) / rc.height) * 2 + 1); ray.setFromCamera(ndc, camera);
+  const X = ray.ray.intersectPlane(dr.plane, new V3); if (!X) return;
+  const D = X.sub(dr.P0), mi = NS - 1 - n.i;
+  if (n.j === LC.NR - 1 && n.i > 0 && n.i < NS - 1) {   // the edge row: where the lip ends
+    for (const i of mir ? [n.i, mi] : [n.i]) LC.border.h[n.l][i] = Math.max(.02 * LC.W, dr.h0[n.l][i] + (n.l ? -D.y : D.y));
+    if (!LC.busy) { LC.busy = true; requestAnimationFrame(() => { LC.busy = false; lcRefresh(true); }); }
+    return;
+  }
+  const o = dr.off0.clone().add(D);
+  if (mir && mi === n.i) o.x = 0;   // on the middle: no side-to-side
+  LC.off.set(lcKey(n.l, n.i, n.j), o);
+  if (mir && mi !== n.i) LC.off.set(lcKey(n.l, mi, n.j), new V3(-o.x, o.y, o.z));
+  lcDraw();
+}, true);
+addEventListener('pointerup', () => {
+  if (!LC.drag) return;
+  LC.drag = null; orbit.enabled = true; lcDraw();
+}, true);
+function lcApply() {
+  if (!SC.on || !LC.on) return;
+  const zone = [...LC.ids], before = scEvenPass(zone, 0), key = SC.key !== REST_KEY, cur = new V3(), t = new V3(), moves = [];
+  SC.stroke = { old: new Map(), ids: new Set() };
+  // the lip's skin onto the grid's surface (the slit onto its inner row: the zigzag of the old edges goes); the roll
+  // and what lies behind the slit go with their slit point, their own shape kept
+  const dOf = new Map(), behind = [], band = [];
+  if (!key) {   // the rest: the slit's line made smooth (up and down onto the grid's inner row), the skin next to it
+    // following less and less up to 0.3 of the lip, the roll with its slit point; the lip's volume as it was
+    for (let k = 0; k < zone.length; k++) if (LC.slit[k]) {
+      const id = zone[k], b = lcSm((1 - Math.abs(LC.u[k])) / .08); if (b <= 0) continue;
+      const d = new V3(0, (lcAt('sm', LC.lab[k], LC.u[k], 0, t).y - SCN.pos[3 * id + 1]) * b, 0);
+      dOf.set(id, d); moves.push([id, d]);
+    }
+    for (let k = 0; k < zone.length; k++) {
+      if (LC.slit[k]) continue; const d = dOf.get(LC.from[k]); if (!d) continue;
+      const f = LC.roll[k] || LC.v[k] < 0 ? 1 : 1 - lcSm(LC.v[k] / .3); if (f > 0) moves.push([zone[k], d.clone().multiplyScalar(f)]);
+    }
+  }
+  for (let k = 0; key && k < zone.length; k++) {
+    const u = LC.u[k], v = LC.v[k], l = LC.lab[k];
+    // a key: past the corners the band (below); under and over the lip the grid fades into the skin as it was
+    const corner = Math.abs(u) > LC.core && (Math.abs(u) > 1 || v > .85);
+    const b = corner ? 0 : lcSm(1 - (v - .85) / .45) * (Math.abs(u) <= 1 ? 1 : 0);
+    if (b <= 0) { if (corner && v <= 1.4) band.push(zone[k]); continue; }
+    if (LC.roll[k] || v < 0) { behind.push([k, b]); continue; }
+    // near the slit onto the grid's surface (the old edges' zigzag goes); further off (and behind the lip's face) the
+    // point keeps its own shape (a crease under the lip stays a crease) and takes the grid's shift
+    const id = zone[k], w = LC.front[k] || LC.slit[k] ? 1 - lcSm((v - .3) / .4) : 0, R = SCN.rest;
+    cur.set(SCN.pos[3 * id], SCN.pos[3 * id + 1], SCN.pos[3 * id + 2]);
+    const own = new V3(R[3 * id], R[3 * id + 1], R[3 * id + 2]);
+    const d = own.clone().add(lcAt('sm', l, u, v, t)).addScaledVector(lcAt('r', l, u, v).sub(own), w).sub(cur).multiplyScalar(b);
+    dOf.set(zone[k], d); moves.push([zone[k], d]);
+  }
+  for (const [k, b] of behind) {
+    const d = dOf.get(LC.from[k]);
+    if (d) moves.push([zone[k], d.clone().multiplyScalar(b)]);
+    else band.push(zone[k]);
+  }
+  for (const [id, d] of moves) scMove(id, d);
+  let moved = moves.length; moves.length = 0;
+  if (band.length) {   // a key: round the corners the shift spread evenly between the grid and the skin left as it
+    // was: the corner stretches instead of tearing into flaps
+    const P = SCN.pos, R = SCN.rest, sh = new Map(), inBand = new Set(band);
+    for (const id of band) sh.set(id, [P[3 * id] - R[3 * id], P[3 * id + 1] - R[3 * id + 1], P[3 * id + 2] - R[3 * id + 2]]);
+    const at = (j, e) => (inBand.has(j) ? sh.get(j)[e] : P[3 * j + e] - R[3 * j + e]);
+    const nbs = new Map(band.map((id) => [id, LC.tw.has(id) ? [...new Set([...SCN.nb[id], ...LC.tw.get(id).filter((j) => j !== id)])] : SCN.nb[id]]));
+    for (let it = 0; it < 120; it++) for (const id of band) {
+      const nb = nbs.get(id); if (!nb.length) continue;
+      const s_ = sh.get(id);
+      for (let e = 0; e < 3; e++) { let a = 0; for (const j of nb) a += at(j, e); s_[e] = a / nb.length; }
+    }
+    for (const id of band) { const s_ = sh.get(id); moves.push([id, new V3(s_[0] - P[3 * id] + R[3 * id], s_[1] - P[3 * id + 1] + R[3 * id + 1], s_[2] - P[3 * id + 2] + R[3 * id + 2])]); }
+  }
+  for (const [id, d] of moves) scMove(id, d);
+  moved += moves.length;
+  for (let i = 0; key && i < LC.passes; i++) if (!scEvenPass(zone, .5)) break;   // what is still turned over
+  for (const g of new Set(LC.tw.values())) {   // twins at one place again
+    const m = new V3(); for (const id of g) m.x += SCN.pos[3 * id] / g.length, m.y += SCN.pos[3 * id + 1] / g.length, m.z += SCN.pos[3 * id + 2] / g.length;
+    for (const id of g) scMove(id, m.clone().sub(new V3(SCN.pos[3 * id], SCN.pos[3 * id + 1], SCN.pos[3 * id + 2])));
+  }
+  const left = scEvenPass(zone, 0), st = SC.stroke; SC.stroke = null; scFlush();
+  if (st.old.size) {
+    scLight(st.old);
+    const now = new Map(); for (const code of st.old.keys()) { const it = SC.items[Math.floor(code / 1e7)], i = code % 1e7; now.set(code, [it.arr[3 * i], it.arr[3 * i + 1], it.arr[3 * i + 2]]); }
+    SC.undo.push({ key: SC.key, old: st.old, now }); if (SC.undo.length > 60) SC.undo.shift(); SC.redo.length = 0;
+    scGrid();
+  }
+  LC.off.clear(); lcMeasure(); lcDraw(); scStatus();
+  $('scSt').textContent = '{{js:ed.sc_lip_done}}'.replace('{0}', moved).replace('{1}', before).replace('{2}', left);
+}
+$('scLip').onclick = () => { if (LC.on) { lcOff(); scStatus(); } else lcOn(); };
+$('scLipGo').onclick = lcApply;
 async function scSend(extra, wait) {
   const js = await wearSend('face_edit', Object.assign({ item: 'face_edits' }, extra), wait);
   $('scSt').textContent = js ? js.log : $('wStatus').textContent;
@@ -2484,16 +3123,429 @@ $('scSave').onclick = async () => {
   const js = await scSend({ changes }, '{{js:ed.sc_saving}}');
   if (js && js.ok) {   // what is saved is the new start: the next save sends only what changes after it
     for (const [key, per] of SC.orig) for (const m of poseMeshes) {
-      const o = per.get(m.uuid); if (!o) continue; const t = m.morphTargetDictionary[key];
+      const o = per.get(m.uuid); if (!o) continue;
+      if (key === REST_KEY) { o.arr = scRest(m).off.slice(); continue; }
+      const t = m.morphTargetDictionary[key];
       o.arr = m.geometry.morphAttributes.position[t].array.slice(); if (o.narr) o.narr = m.geometry.morphAttributes.normal[t].array.slice();
     }
     if (js.v) DATA.rigged_v = js.v;
   }
 };
-window.sf3dSculpt = { SC, get SCN() { return SCN; }, changes: scChanges, faceView: () => faceView() };   // for the tests
+// ---------------------------------------------------------------- the texture brush: paint over what the model's
+// pictures show (a painted eye left on the skin round the real eyeball, an eyelid's line): «Кисть» paints the colour
+// chosen (the pipette takes it off the model: Alt+click), «Ластик» brings back the picture as it was when opened; soft
+// round dabs as big as the brush on the surface (pixels per metre from the triangle under it), mirrored on the other
+// half of the face. «Сохранить» sends what was painted as a see-through layer per picture (face_edits.paint_save lays
+// it on the model as built and keeps it in <stem>_tex/, so a rebuild gets it again).
+const TX = { on: false, mode: 'paint', imgs: new Map(), undo: [], redo: [], stroke: null, dirty: false, names: new Map() };
+// TX.imgs: name -> { cv (shown), base (ImageData as opened), layer (canvas: the strokes since), maps: [textures] }
+async function txNames(gltf) {   // the glTF picture's name of every texture's picture
+  const js = gltf.parser.json;
+  for (let i = 0; i < (js.textures || []).length; i++) {
+    try { const t = await gltf.parser.getDependency('texture', i); const src = js.textures[i].source;
+      if (t && t.image && src !== undefined) TX.names.set(t.image, (js.images[src] && js.images[src].name) || ('image' + src)); } catch (e) { /* not a picture */ }
+  }
+}
+const txPaintables = () => poseMeshes.filter((m) => [].concat(m.material).some((mt) => mt && mt.map && (mt.map.userData.txName || TX.names.has(mt.map.image))));
+function txImg(map) {   // the picture under a texture, as a canvas the brush paints (made on the first dab)
+  const name = map.userData.txName || TX.names.get(map.image); if (!name) return null;
+  let e = TX.imgs.get(name);
+  if (!e) {
+    const im = map.image, w = im.width, h = im.height, cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+    const cx2 = cv.getContext('2d', { willReadFrequently: true }); cx2.drawImage(im, 0, 0);
+    const layer = document.createElement('canvas'); layer.width = w; layer.height = h;
+    e = { name, cv, ctx: cx2, base: cx2.getImageData(0, 0, w, h), layer, lctx: layer.getContext('2d', { willReadFrequently: true }), maps: [], w, h };
+    TX.imgs.set(name, e);
+  }
+  if (!e.maps.includes(map)) { e.maps.push(map); map.userData.txName = name; map.image = e.cv; map.needsUpdate = true; }
+  return e;
+}
+function txHit(origin, dir) {
+  if (dir) ray.set(origin, dir); else ray.setFromCamera(origin, camera);
+  return ray.intersectObjects(txPaintables(), false).find((h) => h.uv && h.face) || null;
+}
+function txScale(h, e) {   // pixels of the picture per metre of the surface at the hit (its triangle)
+  const m = h.object, ix = m.geometry.index, uv = m.geometry.attributes.uv, a = h.face.a, b = h.face.b, c = h.face.c;
+  const P = [a, b, c].map((i) => m.getVertexPosition(i, new V3()).applyMatrix4(m.matrixWorld));
+  const U = [a, b, c].map((i) => new THREE.Vector2(uv.getX(i) * e.w, uv.getY(i) * e.h));
+  const aw = P[1].clone().sub(P[0]).cross(P[2].clone().sub(P[0])).length() / 2;
+  const au = Math.abs((U[1].x - U[0].x) * (U[2].y - U[0].y) - (U[2].x - U[0].x) * (U[1].y - U[0].y)) / 2;
+  return aw > 1e-14 ? Math.sqrt(au / aw) : 1000;
+}
+const txR = () => +$('txR').value / 100 * .05 * H;   // the slider: 1..100 % of 5 % of the height
+function txDab(h) {
+  const mat = [].concat(h.object.material)[h.face.materialIndex || 0] || [].concat(h.object.material)[0];
+  if (!mat || !mat.map) return;
+  const e = txImg(mat.map); if (!e) return;
+  const r = Math.max(1.5, txR() * txScale(h, e)), x = h.uv.x * e.w, y = h.uv.y * e.h, s = +$('txS').value / 100;
+  const x0 = Math.max(0, Math.floor(x - r)), y0 = Math.max(0, Math.floor(y - r)), x1 = Math.min(e.w, Math.ceil(x + r)), y1 = Math.min(e.h, Math.ceil(y + r));
+  if (x1 <= x0 || y1 <= y0) return;
+  const st = TX.stroke;
+  if (st) st.patches.push({ e, x0, y0, d: e.ctx.getImageData(x0, y0, x1 - x0, y1 - y0), l: e.lctx.getImageData(x0, y0, x1 - x0, y1 - y0) });
+  const g = (ctx, inner) => { const gr = ctx.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, inner); gr.addColorStop(.55, inner);
+    gr.addColorStop(1, inner.replace(/[\d.]+\)$/, '0)')); return gr; };
+  if (TX.mode === 'erase') {   // the picture as opened comes back, softly; the layer loses what was painted there
+    const tmp = document.createElement('canvas'); tmp.width = x1 - x0; tmp.height = y1 - y0; const t = tmp.getContext('2d');
+    t.putImageData(e.base, -x0, -y0, x0, y0, x1 - x0, y1 - y0);   // only the dab's part of the picture as opened
+    t.globalCompositeOperation = 'destination-in'; t.translate(-x0, -y0); t.fillStyle = g(t, `rgba(0,0,0,${s})`); t.fillRect(x0, y0, x1 - x0, y1 - y0);
+    e.ctx.drawImage(tmp, x0, y0);
+    e.lctx.save(); e.lctx.globalCompositeOperation = 'destination-out'; e.lctx.fillStyle = g(e.lctx, `rgba(0,0,0,${s})`); e.lctx.fillRect(x0, y0, x1 - x0, y1 - y0); e.lctx.restore();
+  } else {
+    const c = new THREE.Color($('txC').value), col = `rgba(${Math.round(c.r * 255)},${Math.round(c.g * 255)},${Math.round(c.b * 255)},${s})`;
+    for (const ctx of [e.ctx, e.lctx]) { ctx.fillStyle = g(ctx, col); ctx.fillRect(x0, y0, x1 - x0, y1 - y0); }
+  }
+  for (const mp of e.maps) mp.needsUpdate = true;
+  TX.dirty = true;
+}
+function txAt(e) {   // the dab under the mouse and its mirror
+  const rc = canvas.getBoundingClientRect();
+  ndc.set(((e.clientX - rc.left) / rc.width) * 2 - 1, -((e.clientY - rc.top) / rc.height) * 2 + 1);
+  const h = txHit(ndc); if (!h) return null;
+  txDab(h);
+  if ($('txMirror').checked) {   // the same ray mirrored over the face's middle
+    const mid = PB.hips ? PB.hips.getWorldPosition(new V3).x : bbox.getCenter(new V3).x, o = ray.ray.origin.clone(), d = ray.ray.direction.clone();
+    o.x = 2 * mid - o.x; d.x = -d.x; const h2 = txHit(o, d); if (h2) txDab(h2);
+  }
+  return h;
+}
+function txPick(e) {   // the pipette: the colour under the mouse (a 5 x 5 mean)
+  const rc = canvas.getBoundingClientRect();
+  ndc.set(((e.clientX - rc.left) / rc.width) * 2 - 1, -((e.clientY - rc.top) / rc.height) * 2 + 1);
+  const h = txHit(ndc); if (!h) return;
+  const mat = [].concat(h.object.material)[h.face.materialIndex || 0] || [].concat(h.object.material)[0]; const im = mat && mat.map && txImg(mat.map); if (!im) return;
+  const x = Math.max(0, Math.min(im.w - 5, Math.round(h.uv.x * im.w) - 2)), y = Math.max(0, Math.min(im.h - 5, Math.round(h.uv.y * im.h) - 2));
+  const d = im.ctx.getImageData(x, y, 5, 5).data; let r = 0, g = 0, b = 0; for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; }
+  const n = d.length / 4; $('txC').value = '#' + [r, g, b].map((v) => Math.round(v / n).toString(16).padStart(2, '0')).join('');
+  if (TX.mode === 'pick') txMode('paint');
+}
+canvas.addEventListener('pointerdown', (e) => {
+  if (!TX.on || e.button !== 0) return;
+  if (TX.mode === 'pick' || e.altKey) { e.stopImmediatePropagation(); txPick(e); return; }
+  TX.stroke = { patches: [], last: null };
+  const h = txAt(e); if (!h) { TX.stroke = null; return; }   // off the model: the view turns as always
+  e.stopImmediatePropagation(); orbit.enabled = false; canvas.setPointerCapture(e.pointerId); TX.stroke.last = h.point.clone();
+}, true);
+function txRing(e) {   // the brush's circle on the surface under the mouse (as big as it paints), or none off the model
+  const rc = canvas.getBoundingClientRect();
+  ndc.set(((e.clientX - rc.left) / rc.width) * 2 - 1, -((e.clientY - rc.top) / rc.height) * 2 + 1);
+  const h = TX.mode === 'pick' ? null : txHit(ndc);
+  if (!h) { scRing.visible = false; return; }
+  scRing.position.copy(h.point); scRing.scale.setScalar(txR());
+  scRing.quaternion.setFromUnitVectors(new V3(0, 0, 1), scNormal(h)); scRing.visible = true;
+}
+canvas.addEventListener('pointermove', (e) => {
+  if (TX.on) txRing(e);
+  if (!TX.on || !TX.stroke || !TX.stroke.last) return;
+  e.stopImmediatePropagation();
+  const rc = canvas.getBoundingClientRect();
+  ndc.set(((e.clientX - rc.left) / rc.width) * 2 - 1, -((e.clientY - rc.top) / rc.height) * 2 + 1);
+  const h = txHit(ndc); if (!h || h.point.distanceTo(TX.stroke.last) < txR() * .25) return;   // a dab every quarter radius
+  TX.stroke.last.copy(h.point); txAt(e);
+}, true);
+addEventListener('pointerup', () => {
+  if (!TX.on || !TX.stroke) return;
+  const st = TX.stroke; TX.stroke = null; orbit.enabled = true;
+  if (!st.patches.length) return;
+  const after = st.patches.map((p) => ({ e: p.e, x0: p.x0, y0: p.y0, d: p.e.ctx.getImageData(p.x0, p.y0, p.d.width, p.d.height), l: p.e.lctx.getImageData(p.x0, p.y0, p.l.width, p.l.height) }));
+  TX.undo.push({ before: st.patches, after }); if (TX.undo.length > 30) TX.undo.shift(); TX.redo.length = 0; txStatus();
+}, true);
+function txPut(patches, reverse) {
+  const list = reverse ? [...patches].reverse() : patches;
+  for (const p of list) { p.e.ctx.putImageData(p.d, p.x0, p.y0); p.e.lctx.putImageData(p.l, p.x0, p.y0); for (const mp of p.e.maps) mp.needsUpdate = true; }
+}
+function txUndo() { const r = TX.undo.pop(); if (!r) return; txPut(r.before, true); TX.redo.push(r); txStatus(); }
+function txRedo() { const r = TX.redo.pop(); if (!r) return; txPut(r.after, false); TX.undo.push(r); txStatus(); }
+addEventListener('keydown', (e) => {
+  if (!TX.on || !(e.ctrlKey || e.metaKey) || (e.key.toLowerCase() !== 'z' && e.key.toLowerCase() !== 'я')) return;
+  e.preventDefault(); e.stopImmediatePropagation(); if (e.shiftKey) txRedo(); else txUndo();
+}, true);
+function txStatus(text) {
+  $('txSt').textContent = text || (TX.dirty ? '{{js:ed.tx_unsaved}}' : '{{js:ed.sc_nothing_unsaved}}');
+  $('txUndo').disabled = !TX.undo.length; $('txRedo').disabled = !TX.redo.length;
+}
+function txMode(m) { TX.mode = m; for (const x of $('txModes').querySelectorAll('button')) x.classList.toggle('on', x.dataset.m === m); }
+function txEnter() {
+  if (SC.on) scExit();
+  if (MX.on) mxExit();
+  if (weightsOn) setWeights(false);
+  TX.on = true; $('texBox').hidden = false; $('pPaint').classList.add('on'); hoverId = null; poseHighlight();
+  if (!txPaintables().length) txStatus('{{js:ed.tx_no_pictures}}'); else txStatus();
+}
+function txExit() { if (!TX.on) return; TX.on = false; TX.stroke = null; scRing.visible = false; $('texBox').hidden = true; $('pPaint').classList.remove('on'); }
+$('pPaint').onclick = () => { if (TX.on) txExit(); else txEnter(); };
+for (const b of $('txModes').querySelectorAll('button')) b.onclick = () => txMode(b.dataset.m);
+$('txUndo').onclick = txUndo; $('txRedo').onclick = txRedo; $('txDone').onclick = txExit;
+const txLabels = () => { $('txRv').textContent = $('txR').value + '%'; $('txSv').textContent = $('txS').value + '%'; };
+$('txR').oninput = $('txS').oninput = txLabels; txLabels();
+$('txSave').onclick = async () => {
+  const layers = [...TX.imgs.values()].filter((e) => e.lctx.getImageData(0, 0, e.w, e.h).data.some((v, i) => i % 4 === 3 && v > 0))
+    .map((e) => ({ name: e.name, png: e.layer.toDataURL('image/png').split(',')[1] }));
+  if (!layers.length) { txStatus(); return; }
+  const js = await wearSend('tex_edit', { item: 'tex_edits', layers }, '{{js:ed.tx_saving}}');
+  $('txSt').textContent = js ? js.log : $('wStatus').textContent;
+  if (js && js.ok) {   // what is saved is the new start: the layers empty, the eraser brings this back
+    for (const e of TX.imgs.values()) { e.lctx.clearRect(0, 0, e.w, e.h); e.base = e.ctx.getImageData(0, 0, e.w, e.h); }
+    TX.dirty = false; TX.undo.length = TX.redo.length = 0; if (js.v) DATA.rigged_v = js.v; $('txUndo').disabled = $('txRedo').disabled = true;
+  }
+};
+$('txClear').onclick = async () => {   // the pictures as built: the saved layers go; the pictures shown are read again
+  if (!confirm('{{js:ed.tx_clear_confirm}}')) return;
+  const js = await wearSend('tex_edit', { item: 'tex_edits', reset: true }, '{{js:ed.tx_saving}}');
+  if (!js || !js.ok) { $('txSt').textContent = js ? js.log : $('wStatus').textContent; return; }
+  if (js.v) DATA.rigged_v = js.v;
+  const url = new URL('/file=' + DATA.rigged + '?v=' + Date.now(), window.parent.location.href).href;
+  const g = await new GLTFLoader().loadAsync(url), names = new Map(), pj = g.parser.json;
+  for (let i = 0; i < (pj.textures || []).length; i++) { try { const t = await g.parser.getDependency('texture', i); const src = pj.textures[i].source; names.set((pj.images[src] && pj.images[src].name) || ('image' + src), t.image); } catch (e) { /* */ } }
+  for (const m of txPaintables()) for (const mt of [].concat(m.material)) if (mt && mt.map) txImg(mt.map);   // every picture, painted this time or not
+  for (const e of TX.imgs.values()) {
+    const im = names.get(e.name); if (!im) continue;
+    e.ctx.clearRect(0, 0, e.w, e.h); e.ctx.drawImage(im, 0, 0, e.w, e.h); e.base = e.ctx.getImageData(0, 0, e.w, e.h); e.lctx.clearRect(0, 0, e.w, e.h);
+    for (const mp of e.maps) mp.needsUpdate = true;
+  }
+  TX.dirty = false; TX.undo.length = TX.redo.length = 0; txStatus(js.log);
+};
+// ---------------------------------------------------------------- the mesh by hand: torn flaps away, holes patched
+// «▦ Сетка» shows the mesh's wires; «Убрать» takes the triangles under the brush away (a flap of the old eyelid left by
+// the eye's cut); «Залатать»: a click by a hole lights its rim (points the mesh keeps twice, on a UV seam, are one, so
+// a seam is no hole), «Залатать» closes it with a patch of the colour round it. «Сохранить» writes it into the model
+// (face_edits.mesh_save: the triangles by place, the patch a primitive of its own with the rim's weights and keys).
+const MX = { on: false, mode: 'cut', wires: [], cuts: new Map(), fills: [], undo: [], redo: [], loop: null, stroke: null, data: null, patches: [] };
+const MX_SKIP = /^(Eye_[LR]|Teeth_|Gum_|Tongue|MouthCavity)/;   // the eyeballs and the mouth's insides are not the skin
+const mxMeshes = () => poseMeshes.filter((m) => m.userData.gref && m.geometry.index && m.visible !== false && !MX_SKIP.test(m.userData.gref.mesh));
+const mxR = () => +$('mxR').value / 100 * .05 * H;
+function mxWorld(m, i, out) { return out.fromBufferAttribute(m.geometry.attributes.position, i).applyMatrix4(m.matrixWorld); }
+function mxBuild() {   // per mesh: the triangles' middles (world) on a grid; the rims of the holes, per glTF mesh
+  const cell = .01 * H, grid = new Map(), v = new V3(), a = new V3(), b = new V3(), c = new V3();
+  for (const m of mxMeshes()) {
+    const ix = m.geometry.index.array, n = ix.length / 3;
+    for (let f = 0; f < n; f++) {
+      if (ix[3 * f] === ix[3 * f + 1] && ix[3 * f] === ix[3 * f + 2]) continue;   // taken away
+      mxWorld(m, ix[3 * f], a); mxWorld(m, ix[3 * f + 1], b); mxWorld(m, ix[3 * f + 2], c); v.copy(a).add(b).add(c).multiplyScalar(1 / 3);
+      const h = Math.floor(v.x / cell) + ',' + Math.floor(v.y / cell) + ',' + Math.floor(v.z / cell);
+      let l = grid.get(h); if (!l) grid.set(h, l = []); l.push([m, f, v.x, v.y, v.z]);
+    }
+  }
+  // the rims: edges with one triangle once the points at one place are one (per glTF mesh, so the face and an eye
+  // socket are not joined); a rim's points keep one vertex each to copy
+  const q = H * 1e-5, rims = new Map();
+  for (const m of mxMeshes()) {
+    const name = m.userData.gref.mesh, ix = m.geometry.index.array, pa = m.geometry.attributes.position.array;
+    let R = rims.get(name); if (!R) rims.set(name, R = { id: new Map(), pts: [], edges: new Map() });
+    const node = (i) => { const k = Math.round(pa[3 * i] / q) + ',' + Math.round(pa[3 * i + 1] / q) + ',' + Math.round(pa[3 * i + 2] / q);
+      let id = R.id.get(k); if (id === undefined) { id = R.pts.length; R.id.set(k, id); R.pts.push({ m, i }); } return id; };
+    for (let f = 0; f < ix.length; f += 3) {
+      const t = [node(ix[f]), node(ix[f + 1]), node(ix[f + 2])]; if (t[0] === t[1] || t[1] === t[2] || t[0] === t[2]) continue;
+      for (let e = 0; e < 3; e++) { const u = t[e], w = t[(e + 1) % 3], k = u < w ? u + '_' + w : w + '_' + u; R.edges.set(k, (R.edges.get(k) || 0) + 1); }
+    }
+    for (const pt of R.pts) if (!pt.w) pt.w = mxWorld(pt.m, pt.i, new V3());
+  }
+  MX.data = { grid, cell, rims };
+}
+function mxWires(on) {
+  for (const w of MX.wires) { w.parent && w.parent.remove(w); w.geometry.dispose(); } MX.wires = [];
+  if (!on) return;
+  const mat = new THREE.LineBasicMaterial({ color: 0x1a1a1a, transparent: true, opacity: .35 });
+  for (const m of mxMeshes()) {   // the wires at rest, in the mesh's own place
+    const w = new THREE.LineSegments(new THREE.WireframeGeometry(m.geometry), mat);
+    w.matrixAutoUpdate = false; w.matrix.copy(m.matrixWorld); w.renderOrder = 997; scene.add(w); MX.wires.push(w);
+  }
+}
+function mxHit(e) {
+  const rc = canvas.getBoundingClientRect();
+  ndc.set(((e.clientX - rc.left) / rc.width) * 2 - 1, -((e.clientY - rc.top) / rc.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  return ray.intersectObjects(mxMeshes(), false)[0] || null;
+}
+function mxCutAt(P) {   // the triangles whose middle is under the brush (and their mirror) taken away
+  const R = mxR(), d = MX.data, r = Math.ceil(R / d.cell) + 1, spots = [P];
+  if ($('mxMirror').checked) { const mid = PB.hips ? PB.hips.getWorldPosition(new V3).x : bbox.getCenter(new V3).x; spots.push(new V3(2 * mid - P.x, P.y, P.z)); }
+  const changed = new Set();
+  for (const Q of spots) {
+    const cx_ = Math.floor(Q.x / d.cell), cy = Math.floor(Q.y / d.cell), cz = Math.floor(Q.z / d.cell);
+    for (let a = -r; a <= r; a++) for (let b = -r; b <= r; b++) for (let c = -r; c <= r; c++) {
+      const l = d.grid.get((cx_ + a) + ',' + (cy + b) + ',' + (cz + c)); if (!l) continue;
+      for (const it of l) {
+        const [m, f, x, y, z] = it; if (it.gone || Math.hypot(x - Q.x, y - Q.y, z - Q.z) > R) continue;
+        const ix = m.geometry.index.array, tri = [ix[3 * f], ix[3 * f + 1], ix[3 * f + 2]];
+        if (tri[0] === tri[1] && tri[1] === tri[2]) continue;
+        MX.stroke.push([m, f, tri]); ix[3 * f + 1] = ix[3 * f + 2] = ix[3 * f]; it.gone = true; changed.add(m);
+        if (!MX.cuts.has(m.uuid)) MX.cuts.set(m.uuid, new Map()); MX.cuts.get(m.uuid).set(f, tri);
+      }
+    }
+  }
+  for (const m of changed) m.geometry.index.needsUpdate = true;
+}
+function mxLoopAt(rr) {   // the rim nearest the click's ray (a click into a hole goes through it), in order, or null
+  let best = null, bd = Math.max(mxR(), .004 * H) * 1.5, bt = Infinity;
+  for (const [name, R] of MX.data.rims) for (const [k, cnt] of R.edges) {
+    if (cnt !== 1) continue; const [u, w] = k.split('_').map(Number);
+    const mpt = R.pts[u].w.clone().add(R.pts[w].w).multiplyScalar(.5), dd = rr.distanceToPoint(mpt), t = mpt.clone().sub(rr.origin).dot(rr.direction);
+    if (dd < bd * .999 || (dd < bd && t < bt)) { if (dd < bd * .999) bd = dd; bt = t; best = { name, R, u, w }; }
+  }
+  if (!best) return null;
+  const { R } = best, nb = new Map();   // the rim's edges round from the nearest
+  for (const [k, cnt] of R.edges) { if (cnt !== 1) continue; const [u, w] = k.split('_').map(Number);
+    (nb.get(u) || nb.set(u, []).get(u)).push(w); (nb.get(w) || nb.set(w, []).get(w)).push(u); }
+  const loop = [best.u]; let prev = best.u, cur = best.w;
+  while (cur !== best.u && loop.length < 2000) { loop.push(cur); const nx = (nb.get(cur) || []).find((x) => x !== prev); if (nx === undefined) return null; prev = cur; cur = nx; }
+  if (cur !== best.u) return null;
+  return { name: best.name, R, ids: loop };
+}
+let mxLine = null, mxHover = null;
+function mxPreview(lp) {
+  if (mxHover) { scene.remove(mxHover); mxHover.geometry.dispose(); mxHover = null; }
+  if (!lp || (MX.loop && MX.loop.ids[0] === lp.ids[0] && MX.loop.name === lp.name)) return;
+  const pts = []; for (const id of lp.ids.concat([lp.ids[0]])) { const w = lp.R.pts[id].w; pts.push(w.x, w.y, w.z); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  mxHover = new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0xffe680, depthTest: false, transparent: true, opacity: .55 })); mxHover.renderOrder = 998; scene.add(mxHover);
+}
+function mxShowLoop(lp) {
+  if (mxLine) { scene.remove(mxLine); mxLine.geometry.dispose(); mxLine = null; }
+  MX.loop = lp; $('mxFill').hidden = !lp;
+  if (!lp) return;
+  const pts = []; for (const id of lp.ids.concat([lp.ids[0]])) { const w = lp.R.pts[id].w; pts.push(w.x, w.y, w.z); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  mxLine = new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0xffd400, depthTest: false })); mxLine.renderOrder = 999; scene.add(mxLine);
+  lp.eye = mxAroundEye(lp);   // the eye's own cut, not a hole: closed only when asked again
+  $('mxSt').textContent = (lp.eye ? '{{js:ed.mx_eye_rim}}' : lp.ids.length > 300 ? '{{js:ed.mx_big_rim}}' : '{{js:ed.mx_rim}}').replace('{0}', lp.ids.length);
+  $('mxFill').textContent = lp.eye ? '{{js:ed.mx_fill_anyway}}' : '{{js:ed.mx_fill}}';
+  $('mxC').value = '#' + mxColour(lp).map((x) => Math.round(x * 255).toString(16).padStart(2, '0')).join('');
+}
+function mxAroundEye(lp) {   // an eye's centre inside the rim (seen along the rim's own normal)
+  const W3 = lp.ids.map((id) => lp.R.pts[id].w), c = W3.reduce((s_, p) => s_.add(p), new V3()).multiplyScalar(1 / W3.length);
+  const n = new V3(); for (let k = 0; k < W3.length; k++) { const a = W3[k], b = W3[(k + 1) % W3.length]; n.x += (a.y - b.y) * (a.z + b.z); n.y += (a.z - b.z) * (a.x + b.x); n.z += (a.x - b.x) * (a.y + b.y); }
+  n.normalize(); const u = new V3().crossVectors(n, Math.abs(n.y) < .9 ? new V3(0, 1, 0) : new V3(1, 0, 0)).normalize(), v = new V3().crossVectors(n, u);
+  const poly = W3.map((p) => [p.clone().sub(c).dot(u), p.clone().sub(c).dot(v)]);
+  const inside = (x, y) => { let r = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi + 1e-12) + xi) r = !r; } return r; };
+  for (const sd of ['L', 'R']) { const e = PB['eye_' + sd]; if (!e) continue; const q = e.getWorldPosition(new V3()).sub(c);
+    if (inside(q.dot(u), q.dot(v))) return true; }
+  return false;
+}
+function mxColour(lp) {   // the mean colour of the texture at the rim's points
+  let r = 0, g = 0, b = 0, n = 0;
+  for (const id of lp.ids) {
+    const { m, i } = lp.R.pts[id], mat = [].concat(m.material)[0], uv = m.geometry.attributes.uv;
+    if (!mat || !mat.map || !uv) continue; const e = txImg(mat.map); if (!e) continue;
+    const x = Math.min(e.w - 1, Math.max(0, Math.round(uv.getX(i) * e.w))), y = Math.min(e.h - 1, Math.max(0, Math.round(uv.getY(i) * e.h)));
+    const d = e.ctx.getImageData(x, y, 1, 1).data; r += d[0]; g += d[1]; b += d[2]; n++;
+  }
+  return n ? [r / n / 255, g / n / 255, b / n / 255] : [0.6, 0.5, 0.4];
+}
+function mxFill() {
+  const lp = MX.loop; if (!lp) return;
+  const W3 = lp.ids.map((id) => lp.R.pts[id].w), c = W3.reduce((s, p) => s.add(p), new V3()).multiplyScalar(1 / W3.length);
+  const nrm = new V3(); for (let k = 0; k < W3.length; k++) { const a = W3[k], b = W3[(k + 1) % W3.length]; nrm.x += (a.y - b.y) * (a.z + b.z); nrm.y += (a.z - b.z) * (a.x + b.x); nrm.z += (a.x - b.x) * (a.y + b.y); }
+  nrm.normalize(); const u = new V3().crossVectors(nrm, Math.abs(nrm.y) < .9 ? new V3(0, 1, 0) : new V3(1, 0, 0)).normalize(), v = new V3().crossVectors(nrm, u);
+  const flat = W3.map((p) => new THREE.Vector2(p.clone().sub(c).dot(u), p.clone().sub(c).dot(v)));
+  const tris = THREE.ShapeUtils.triangulateShape(flat, []); if (!tris.length) { $('mxSt').textContent = '{{js:ed.mx_cannot}}'; return; }
+  // the triangles turned to face out like the skin at the rim (its normals): facing in, the patch was lit as a back face
+  const out = new V3(), nm = new V3();
+  for (const id of lp.ids) { const { m, i } = lp.R.pts[id], na = m.geometry.attributes.normal; if (na) out.add(nm.fromBufferAttribute(na, i).transformDirection(m.matrixWorld)); }
+  const t0 = tris.reduce((s_, [a, b, c]) => s_.add(W3[b].clone().sub(W3[a]).cross(W3[c].clone().sub(W3[a]))), new V3());
+  if (t0.dot(out) < 0) for (const t of tris) t.reverse();
+  const cc = new THREE.Color($('mxC').value), col = [cc.r, cc.g, cc.b], geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(W3.flatMap((p) => [p.x, p.y, p.z]), 3)); geo.setIndex(tris.flat()); geo.computeVertexNormals();
+  const patch = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: new THREE.Color(...col), roughness: .75, side: THREE.DoubleSide })); scene.add(patch);
+  const pa = (pt) => { const a = pt.m.geometry.attributes.position; return [a.getX(pt.i), a.getY(pt.i), a.getZ(pt.i)]; };
+  const fill = { mesh: lp.name, loop: lp.ids.map((id) => pa(lp.R.pts[id])), tris: tris.flat(), colour: col.map((x) => +x.toFixed(4)) };
+  MX.fills.push(fill); MX.patches.push(patch); MX.undo.push({ fill, patch }); MX.redo.length = 0;
+  mxShowLoop(null); $('mxSt').textContent = '{{js:ed.mx_patched}}'.replace('{0}', tris.length);
+}
+canvas.addEventListener('pointerdown', (e) => {
+  if (!MX.on || e.button !== 0) return;
+  const h = mxHit(e);
+  if (MX.mode === 'fill') {   // (mxHit set the ray from the click)
+    const lp = mxLoopAt(ray.ray.clone());
+    mxShowLoop(lp); mxPreview(null); if (!MX.loop) $('mxSt').textContent = '{{js:ed.mx_no_rim}}';   // an answer to every click
+    if (lp || h) e.stopImmediatePropagation();   // off the model and far from a rim the view still turns
+    return;
+  }
+  if (!h) return;
+  e.stopImmediatePropagation();
+  orbit.enabled = false; canvas.setPointerCapture(e.pointerId); MX.stroke = []; mxCutAt(h.point); MX.last = h.point.clone();
+}, true);
+canvas.addEventListener('pointermove', (e) => {
+  if (!MX.on) return;
+  const h = mxHit(e);
+  if (h) { scRing.position.copy(h.point); scRing.scale.setScalar(MX.mode === 'cut' ? mxR() : Math.max(mxR(), .004 * H) * 1.5);
+    scRing.quaternion.setFromUnitVectors(new V3(0, 0, 1), scNormal(h)); scRing.visible = true; } else scRing.visible = false;
+  if (MX.mode === 'fill' && !MX.stroke) {   // the rim a click here would take, shown pale before the click
+    const now = performance.now(); if (now - (MX.hoverAt || 0) > 90) { MX.hoverAt = now; mxPreview(mxLoopAt(ray.ray.clone())); }
+  }
+  if (!MX.stroke) return; e.stopImmediatePropagation();
+  if (h && h.point.distanceTo(MX.last) > mxR() * .25) { MX.last.copy(h.point); mxCutAt(h.point); }
+}, true);
+addEventListener('pointerup', () => {
+  if (!MX.on || !MX.stroke) return;
+  const st = MX.stroke; MX.stroke = null; orbit.enabled = true;
+  if (!st.length) return;
+  MX.undo.push({ cut: st }); MX.redo.length = 0; mxBuild(); mxWires($('mxWire').checked); $('mxSt').textContent = '{{js:ed.mx_cut}}'.replace('{0}', st.length);
+}, true);
+function mxUndo() {
+  const r = MX.undo.pop(); if (!r) return; MX.redo.push(r);
+  if (r.cut) { for (const [m, f, tri] of r.cut) { const ix = m.geometry.index.array; ix[3 * f] = tri[0]; ix[3 * f + 1] = tri[1]; ix[3 * f + 2] = tri[2]; m.geometry.index.needsUpdate = true; MX.cuts.get(m.uuid) && MX.cuts.get(m.uuid).delete(f); } mxBuild(); mxWires($('mxWire').checked); }
+  else { r.patch.visible = false; MX.fills = MX.fills.filter((x) => x !== r.fill); }
+}
+function mxRedo() {
+  const r = MX.redo.pop(); if (!r) return; MX.undo.push(r);
+  if (r.cut) { for (const [m, f, tri] of r.cut) { const ix = m.geometry.index.array; ix[3 * f + 1] = ix[3 * f + 2] = ix[3 * f]; m.geometry.index.needsUpdate = true; if (!MX.cuts.has(m.uuid)) MX.cuts.set(m.uuid, new Map()); MX.cuts.get(m.uuid).set(f, tri); } mxBuild(); mxWires($('mxWire').checked); }
+  else { r.patch.visible = true; MX.fills.push(r.fill); }
+}
+addEventListener('keydown', (e) => {
+  if (!MX.on || !(e.ctrlKey || e.metaKey) || (e.key.toLowerCase() !== 'z' && e.key.toLowerCase() !== 'я')) return;
+  e.preventDefault(); e.stopImmediatePropagation(); if (e.shiftKey) mxRedo(); else mxUndo();
+}, true);
+function mxMode(m) { MX.mode = m; for (const x of $('mxModes').querySelectorAll('button')) x.classList.toggle('on', x.dataset.m === m); mxShowLoop(null);
+  $('mxSt').textContent = m === 'fill' ? '{{js:ed.mx_fill_help}}' : '{{js:ed.mx_cut_help}}'; }
+function mxEnter() {
+  if (SC.on) scExit(); if (TX.on) txExit(); if (weightsOn) setWeights(false);
+  poseReset(); MX.on = true; $('meshBox').hidden = false; $('pMesh').classList.add('on'); hoverId = null; poseHighlight();
+  mxBuild(); mxWires($('mxWire').checked); mxMode(MX.mode);
+}
+function mxExit() { if (!MX.on) return; MX.on = false; MX.stroke = null; scRing.visible = false; mxShowLoop(null); mxPreview(null); mxWires(false); $('meshBox').hidden = true; $('pMesh').classList.remove('on'); }
+$('pMesh').onclick = () => { if (MX.on) mxExit(); else mxEnter(); };
+for (const b of $('mxModes').querySelectorAll('button')) b.onclick = () => mxMode(b.dataset.m);
+$('mxWire').onchange = () => mxWires($('mxWire').checked);
+$('mxC').oninput = () => { for (const p of MX.patches) if (p.visible && p === MX.patches[MX.patches.length - 1]) p.material.color.set($('mxC').value); };
+$('mxFill').onclick = mxFill; $('mxUndo').onclick = mxUndo; $('mxRedo').onclick = mxRedo; $('mxDone').onclick = mxExit;
+$('mxR').oninput = () => { $('mxRv').textContent = $('mxR').value + '%'; }; $('mxRv').textContent = $('mxR').value + '%';
+$('mxSave').onclick = async () => {
+  const cut = {};
+  for (const m of mxMeshes()) {
+    const cs = MX.cuts.get(m.uuid); if (!cs || !cs.size) continue;
+    const pa = m.geometry.attributes.position, tris = [];
+    for (const tri of cs.values()) for (const i of tri) tris.push([pa.getX(i), pa.getY(i), pa.getZ(i)]);
+    (cut[m.userData.gref.mesh] = cut[m.userData.gref.mesh] || []).push({ prim: m.userData.gref.prim, tris });
+  }
+  const fill = {}; for (const f of MX.fills) (fill[f.mesh] = fill[f.mesh] || []).push({ loop: f.loop, tris: f.tris, colour: f.colour });
+  if (!Object.keys(cut).length && !Object.keys(fill).length) { $('mxSt').textContent = '{{js:ed.sc_nothing_unsaved}}'; return; }
+  const js = await wearSend('mesh_edit', { item: 'mesh_edits', cut, fill }, '{{js:ed.mx_saving}}');
+  $('mxSt').textContent = js ? js.log : $('wStatus').textContent;
+  if (js && js.ok) { MX.cuts.clear(); MX.fills = []; MX.undo.length = MX.redo.length = 0; if (js.v) DATA.rigged_v = js.v; }
+};
+$('mxClear').onclick = async () => {
+  if (!confirm('{{js:ed.mx_clear_confirm}}')) return;
+  const js = await wearSend('mesh_edit', { item: 'mesh_edits', reset: true }, '{{js:ed.mx_saving}}');
+  $('mxSt').textContent = js ? js.log + ' ' + '{{js:ed.mx_reopen}}' : $('wStatus').textContent;
+};
+window.sf3dSculpt = { SC, TX, MX, LC, get SCN() { return SCN; }, changes: scChanges, faceView: () => faceView() };   // for the tests
 $('scClear').onclick = async () => {   // the key as the build made it: the saved edits go too
-  if (!confirm('{{js:ed.sc_clear_confirm}}'.replace('{0}', SC.key))) return;
+  if (!confirm('{{js:ed.sc_clear_confirm}}'.replace('{0}', keyLabel(SC.key)))) return;
   const key = SC.key, js = await scSend({ reset: [key], want: key }, '{{js:ed.sc_saving}}');
+  if (js && js.ok && key === REST_KEY) {   // the rest as built: the shown model had the saved offsets; they go, the unsaved too
+    scBake(false); SC.on = false;
+    for (const m of poseMeshes) {
+      if (!SC.rest || !SC.rest.has(m.uuid)) continue;
+      const r = SC.rest.get(m.uuid); r.off.fill(0); if (r.noff) r.noff.fill(0);
+      const g = (js.saved_rest || []).find((x) => m.userData.gref && x.mesh === m.userData.gref.mesh && x.prim === m.userData.gref.prim);
+      if (g) for (const row of g.v) for (let e = 0; e < 3; e++) r.off[3 * row[0] + e] = -row[4 + e];
+      const o = SC.orig.get(key) && SC.orig.get(key).get(m.uuid); if (o) o.arr = r.off.slice();
+    }
+    SC.undo = SC.undo.filter((r) => r.key !== key); SC.redo = SC.redo.filter((r) => r.key !== key);
+    if (js.v) DATA.rigged_v = js.v;
+    scEnter(key); scStatus(js.log); return;
+  }
   if (!js || !js.ok || !js.built) return;
   scBake(false); SC.on = false;
   for (const m of poseMeshes) {   // the key's displacement as built, sent back sparse
@@ -4047,7 +5099,7 @@ addEventListener('keydown', (e) => {   // G / R / S like the joints
     model.add(gltf.scene);
     gltf.scene.traverse((o) => { if (o.isMesh) { meshes.push(o); o.geometry.computeBoundsTree(); for (const mt of [].concat(o.material)) mt.side = THREE.DoubleSide; } });
     if (DATA.state && DATA.state.joints) {
-      Object.assign(S, { phase: 'edit', yaw: DATA.state.yaw || 0, sym: DATA.state.sym !== false, marks: DATA.state.marks || {},
+      Object.assign(S, { phase: 'edit', yaw: DATA.state.yaw || 0, sym: DATA.state.sym !== false, face_sym: DATA.state.face_sym !== false, marks: DATA.state.marks || {},
                          pos: DATA.state.joints, rot: DATA.state.rot || {}, bend: DATA.state.bend || {}, twist: DATA.state.twist || {}, fist: DATA.state.fist || {}, fistPose: DATA.state.fistPose || {}, fmarks: DATA.state.fmarks || {}, face: DATA.state.face || {} });
       cx = DATA.state.center_x || 0;
     }

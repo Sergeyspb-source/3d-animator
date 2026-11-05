@@ -117,6 +117,9 @@ def skin_y(x, z):
 
 # ------------------------------------------------------------------ 1. cut along the line
 bm = bmesh.new(); bm.from_mesh(face.data)
+# which lip a point is on, for the lip bones (step 4b): the layer is made now, before any vertex is held - a layer
+# added later frees every BMVert the script holds (the slit's copies died and the lip roll found no edge to roll)
+LIP_SIDE = bm.verts.layers.int.get("lip_side") or bm.verts.layers.int.new("lip_side")
 dl = bm.verts.layers.deform.verify()
 P = lambda v: fw @ v.co
 gi = {g.name: g.index for g in face.vertex_groups}
@@ -507,6 +510,51 @@ if not OVAL:
             bridge.append(f)
     bmesh.ops.delete(bm, geom=bridge, context="FACES")
     report["bridge_faces_removed"] = len(bridge)
+
+# the mouth the source has inside (a model sculpted with the lips a little apart: their inner sides, joined upper to
+# lower behind the slit): the cut goes through the outer skin only, so that joint stayed whole and stretched into
+# strips across the open mouth. Its faces near the slit go - behind the outer skin there, between the corners -; the
+# roll, the cavity and the teeth of the steps below take their place.
+inner = []
+_mats = face.data.materials
+for f in bm.faces:   # the source's own skin only: a rebuilt face mask lies a little inside the old lips and is not it
+    _m = _mats[f.material_index] if f.material_index < len(_mats) else None
+    if _m and _m.name.startswith(("lip_inner", "face_mask")):
+        continue
+    c = fw @ f.calc_center_median()
+    if abs(c.x - cx) > (x1 - x0) / 2 + 0.04 * W or abs(side(c)) > 0.15 * W or c.y > M.y + 0.9 * W:
+        continue
+    sy = skin_y(c.x, c.z)   # the outer skin seen from the front there (the lips)
+    if sy is None or c.y < sy + 0.03 * W:
+        continue
+    ps = [P(v) for v in f.verts]
+    if max(side(p) for p in ps) > -0.002 * W and min(side(p) for p in ps) < 0.002 * W:   # it reaches across the slit
+        inner.append(f)
+bmesh.ops.delete(bm, geom=inner, context="FACES_ONLY")   # (the vertices stay: the slit's lists still name some)
+report["inner_mouth_faces_removed"] = len(inner)
+# deeper in, the source's mouth inside (its cheeks' inner sides, 0.35 W and more behind the lips, near the slit's
+# height) need not reach across the slit to show: half on the head, half on the jaw, they stretched into thin strips
+# beside the teeth as the mouth opened. They go too; the cavity, the gums and the tongue are there
+deep = []
+for f in bm.faces:
+    _m = _mats[f.material_index] if f.material_index < len(_mats) else None
+    if _m and _m.name.startswith(("lip_inner", "face_mask")):
+        continue
+    c = fw @ f.calc_center_median()
+    if abs(c.x - cx) > (x1 - x0) / 2 + 0.04 * W or abs(side(c)) > 0.35 * W or c.y > M.y + 0.9 * W:
+        continue
+    sy = skin_y(c.x, c.z)
+    if sy is not None and c.y > sy + 0.35 * W and all(P(v).y > sy + 0.25 * W for v in f.verts):
+        deep.append(f)
+bmesh.ops.delete(bm, geom=deep, context="FACES_ONLY")
+report["deep_inner_faces_removed"] = len(deep)
+# a face holding a vertex of the upper lip's slit side and one of the lower's spans the slit, wherever the line runs
+# (lips meeting a little above the clicked line left such a face whole: it stretched into a strip)
+_up, _lo = {v for v in upper if v.is_valid}, {v for v in lower if v.is_valid}
+across = [f for f in bm.faces if any(v in _up for v in f.verts) and any(v in _lo for v in f.verts)
+          and not any(v in CORNERS for v in f.verts)]   # at the corners the lips meet: those stay
+bmesh.ops.delete(bm, geom=across, context="FACES_ONLY")
+report["slit_spanning_faces_removed"] = len(across)
 upper = [v for v in upper if v.is_valid]; lower = [v for v in lower if v.is_valid]
 for v in upper:
     copy_weights(v, 1)
@@ -557,21 +605,128 @@ if HEAD != JAW:
             v[dl][jj] = w
             v[dl][hj] = max(0.0, v[dl].get(hj, 0.0) - (w - old))
     report["jaw_smoothed_verts"] = len(zone)
-    # the lower lip itself goes fully with the jaw (fading over 0.35 W below the slit), so the mouth opens wide
+    # the lower lip itself goes fully with the jaw (fading over 0.35 W below the slit), so the mouth opens wide. Across
+    # the mouth the opening is an oval: the jaw's weight goes as sqrt(1 - u^2) (the lip's edge an ellipse's arc) and
+    # fades only right at the corners (0.2 W). (1 - u^2) with a 0.35 W fade opened a V: the middle dropped, the sides
+    # stayed up and the lower lip looked pulled down into a point
+    def open_profile(p):
+        u = min(1.0, abs(p.x - cx) / (0.5 * (x1 - x0)))
+        dc = min(1.0, min((p - CL).length, (p - CR).length) / (0.2 * W))
+        return math.sqrt(max(0.0, 1 - u * u)) * dc * dc * (3 - 2 * dc)
     lips = 0
-    for v in bm.verts:
-        p = P(v); d = -side(p)
+    lower_set = set(lower)   # the lower copies on the slit lie on the line itself: half of them a hair above it were
+    for v in bm.verts:       # left out, kept the head's weight taken from the inside of the mouth, and the roll made
+        p = P(v); d = max(0.0, -side(p)) if v in lower_set else -side(p)   # of them stayed while the jaw opened
         if v not in upper_set and 0 <= d < 0.6 * W and abs(p.x - cx) < 0.5 * (x1 - x0) and p.y < front_limit:
-            u = abs(p.x - cx) / (0.5 * (x1 - x0))
-            dc = min((p - CL).length, (p - CR).length) / (0.35 * W)            # near a corner: soft, the corner stretches
-            corner = min(1.0, dc) ** 2 * (3 - 2 * min(1.0, dc))
-            target = (1.0 - max(0.0, (d - 0.35 * W) / (0.25 * W))) * (1 - u ** 2) * corner
+            target = (1.0 - max(0.0, (d - 0.35 * W) / (0.25 * W))) * open_profile(p)   # near a corner soft: it stretches
             old = v[dl].get(jj, 0.0)
-            if target > old:
-                v[dl][jj] = target
-                v[dl][hj] = max(0.0, v[dl].get(hj, 0.0) - (target - old))
+            # the lip itself (0.3 W from the slit) takes the smooth field as it is: the source's own weights there
+            # went up and down between neighbours, and the small triangles along the slit turned over into shards
+            # as the jaw opened; further down the larger of the two, fading into the source's own
+            k = min(1.0, max(0.0, (d - 0.3 * W) / (0.15 * W)))
+            want = target if k <= 0 else (1 - k) * target + k * max(target, old)
+            if abs(want - old) > 1e-5:
+                v[dl][jj] = want
+                v[dl][hj] = max(0.0, v[dl].get(hj, 0.0) + (old - want))
                 lips += 1
     report["lower_lip_full_jaw"] = lips
+    # which lip a point near the slit belongs to: over the mesh, the nearer slit edge (its upper or lower copies;
+    # the cut parted them). By position alone the lower lip's top behind the slit edge (and the lips' inner sides,
+    # the source's mouth curling in) lies above the clicked line and was given to the head: its neighbours turned
+    # with the jaw and the inside of the lower lip shredded into shards as the mouth opened. Every point of that band
+    # (and of the inner sides behind the skin) now gets its lip's smooth field: the upper none, the lower the same as
+    # the lower lip's skin, then evened out.
+    import heapq
+    walls = set()
+    for v in bm.verts:
+        if v in upper_set or v in lower_set:
+            continue
+        p = P(v)
+        if abs(p.x - cx) > 0.6 * (x1 - x0) or abs(side(p)) > 0.4 * W or p.y > M.y + 1.0 * W:
+            continue
+        if abs(side(p)) < 0.25 * W:
+            walls.add(v)
+            continue
+        sy = skin_y(p.x, p.z)
+        if sy is not None and p.y > sy + 0.02 * W:
+            walls.add(v)
+
+    lower_field = open_profile   # the lower lip's jaw weight by place (as for its skin above)
+
+    if walls:
+        twin_of = lambda v: twins[tuple(round(c / q) for c in v.co)]
+        best, heap, cnt = {}, [], 0   # point -> (distance over the mesh, lower lip?)
+        for v in list(upper_set) + list(lower_set):
+            # a point joined to both lips' copies is a corner (the lips meet there): it says nothing of which lip;
+            # taken for the upper, the lower lip's end round it stayed on the head
+            if v.is_valid and not (v in CORNERS or any(e.other_vert(v) in (upper_set if v in lower_set else lower_set) for e in v.link_edges)):
+                best[v] = (0.0, v in lower_set)
+                heap.append((0.0, cnt, v)); cnt += 1
+        heapq.heapify(heap)
+        while heap:
+            d0, _, v = heapq.heappop(heap)
+            if d0 > best[v][0] + 1e-12 or d0 > 0.6 * W:
+                continue
+            # UV-seam twins join the band, but never across the slit (its upper and lower copies share places)
+            nbs = [(e.other_vert(v), e.calc_length()) for e in v.link_edges] + \
+                  ([(t, 0.0) for t in twin_of(v) if t is not v] if v in walls else [])
+            for o, ln in nbs:
+                if o not in walls:
+                    continue
+                nd = d0 + ln
+                if o not in best or nd < best[o][0] - 1e-12:
+                    best[o] = (nd, best[v][1]); heapq.heappush(heap, (nd, cnt, o)); cnt += 1
+        got = {}
+        for v in walls:
+            if v in best:
+                p = P(v); d = max(0.0, -side(p))
+                fade = 1.0 - max(0.0, (d - 0.35 * W) / (0.25 * W)) if not (sy_ := skin_y(p.x, p.z)) or p.y <= sy_ + 0.02 * W else 1.0
+                got[v] = lower_field(p) * max(0.0, fade) if best[v][1] else 0.0
+        lip_of = {v: best[v][1] for v in got}
+        # evened out within each lip, over the mesh and its UV-seam twins (a mesh of loose quads has no other way
+        # across: each quad evened on its own and the lip opened in tiles); the slit copies stay as they are
+        nbl = {}
+        for v in got:
+            vs_ = [v] + [t for t in twin_of(v) if t is not v and t in got and lip_of[t] == lip_of[v]]
+            nbl[v] = [e.other_vert(u) for u in vs_ for e in u.link_edges] + vs_[1:]
+        for _ in range(6):
+            new = {}
+            for v in got:
+                vals = []
+                for o in nbl[v]:
+                    if o in got and lip_of[o] == lip_of[v]:
+                        vals.append(got[o])
+                    elif o in (lower_set if lip_of[v] else upper_set):
+                        vals.append(o[dl].get(jj, 0.0))
+                if vals:
+                    new[v] = 0.5 * got[v] + 0.5 * sum(vals) / len(vals)
+            got.update(new)
+        for grp in {id(twin_of(v)): twin_of(v) for v in got}.values():   # twins end equal
+            g_ = [t for t in grp if t in got]
+            for lw in (True, False):
+                same = [t for t in g_ if lip_of[t] == lw]
+                if len(same) > 1:
+                    m_ = sum(got[t] for t in same) / len(same)
+                    for t in same:
+                        got[t] = m_
+        for v, w in got.items():
+            old = v[dl].get(jj, 0.0)
+            v[dl][jj] = w
+            v[dl][hj] = max(0.0, v[dl].get(hj, 0.0) + (old - w))
+            if v[dl][jj] < 1e-5:
+                del v[dl][jj]
+        report["lip_band_weighted"] = {"upper": sum(1 for v in got if not lip_of[v]), "lower": sum(1 for v in got if lip_of[v])}
+        # kept for the lip bones (step 4b): which lip, over the mesh (1 upper, -1 lower, 0 not near the slit)
+        lay = LIP_SIDE
+        for v in upper_set:
+            if v.is_valid:
+                v[lay] = 1
+        for v in lower_set:
+            if v.is_valid:
+                v[lay] = -1
+        for v, lw in lip_of.items():
+            if v.is_valid:
+                v[lay] = -1 if lw else 1
 
 # ------------------------------------------------------------------ 2. roll the lips inward
 lip_mat = bpy.data.materials.new("lip_inner"); lip_mat.use_nodes = True
@@ -658,7 +813,11 @@ def skin(o, fn):
 cav_c = Vector((cx, M.y + 0.42 * W, line_z(cx) - 0.04 * W))
 bpy.ops.mesh.primitive_uv_sphere_add(segments=32, ring_count=16, radius=1)
 cav = bpy.context.active_object; cav.name = cav.data.name = "MouthCavity"
-cav.data.transform(Matrix.Diagonal((0.52 * W, 0.50 * W, 0.40 * W, 1)))
+# the sides nearly upright (the width going as (1 - y^2)^0.15, not a ball's sqrt): a ball's sides closed in towards
+# the back and stood in front of the side teeth, two dark panels stretched between the jaws as the mouth opened wide
+for v in cav.data.vertices:
+    v.co.x *= max(1e-3, 1 - v.co.y ** 2) ** -0.35 if abs(v.co.y) < 0.999 else 1.0
+cav.data.transform(Matrix.Diagonal((0.56 * W, 0.50 * W, 0.40 * W, 1)))
 bm = bmesh.new(); bm.from_mesh(cav.data)
 bmesh.ops.delete(bm, geom=[f for f in bm.faces if f.calc_center_median().y < -0.30 * W], context="FACES")
 bmesh.ops.reverse_faces(bm, faces=bm.faces[:])
@@ -792,17 +951,25 @@ if job.get("lip_bones", True):
     gh, gj = face.vertex_groups[HEAD], face.vertex_groups.get(JAW)
     sig = 0.35 * half
     moved = 0
+    _ls = face.data.attributes.get("lip_side")
     for v in face.data.vertices:
         p = fw @ v.co
         if p.y > front_limit + 0.3 * W or abs(side(p)) > 0.5 * W or abs(p.x - cx) > half * 1.25:
             continue
         fall = max(0.0, 1.0 - abs(side(p)) / (0.5 * W))
-        up = side(p) >= 0
+        # which lip: as the cut parted them (step 1), else by the line (the lower lip's top behind the slit edge lies
+        # above the line: by the line alone it took the upper bones, children of the head, and stayed as the jaw opened)
+        lab = _ls.data[v.index].value if _ls is not None else 0
+        up = lab > 0 if lab else side(p) >= 0
         src = gh if (up or gj is None) else gj
         sw = next((g.weight for g in v.groups if g.group == src.index), 0.0)
         if sw <= 1e-4:
             continue
-        cands = {n: math.exp(-((p.x - c.x) / sig) ** 2) for n, (c, sd) in LIP_BONES.items() if sd == 0 or (sd > 0) == up}
+        # the corner bones are the head's: the lower lip's jaw weight never goes to them (it stayed in place)
+        cands = {n: math.exp(-((p.x - c.x) / sig) ** 2) for n, (c, sd) in LIP_BONES.items()
+                 if (sd == 0 and up) or (sd != 0 and (sd > 0) == up)}
+        # the two nearest only: with the head, the jaw and more bones, the limit of 4 below dropped the jaw itself
+        cands = dict(sorted(cands.items(), key=lambda kv: -kv[1])[:2])
         tot = sum(cands.values())
         if tot <= 1e-6:
             continue
@@ -847,12 +1014,36 @@ def add_key(o, name, fn):
     return k
 
 
+LIP_LEAN = float(job.get("lip_lean", 0.8))   # how far the lower lip leans back onto the teeth as the jaw opens (of its turn)
+LIP_RISE = float(job.get("lip_rise", 0.08))  # and how much it stays up over the lower teeth (of W, the jaw open full)
+_ls_attr = face.data.attributes.get("lip_side")
+_ls = [a.value for a in _ls_attr.data] if _ls_attr is not None and len(_ls_attr.data) == len(face.data.vertices) else None
+
+
 def open_jaw(o, v, p):   # rotation about the hinge (lateral axis), by the vertex's jaw weight
     w = jaw_w(o, v)
     if w <= 1e-4:
         return None
     R = Matrix.Rotation(theta * w, 4, "X")
-    return hinge + (R @ (p - hinge).to_4d()).to_3d()
+    q = hinge + (R @ (p - hinge).to_4d()).to_3d()
+    # the lower lip (0.2 W from the slit, its roll too) goes down as a whole, as the lower teeth's front does at the
+    # slit's height, a little higher (LIP_RISE: over the teeth's roots), and leans back onto the teeth (LIP_LEAN of the
+    # jaw's turn, about the lip's foot 0.25 W below the slit). Turned with the jaw it tilted its top forward and looked
+    # thick and turned out; moved as its own edge it still dropped below the teeth and showed the gum. The jaw's turn is taken over 0.2 W further down, to the chin
+    if o is face and abs(p.x - cx) < 0.5 * (x1 - x0) + 0.1 * W:
+        lower = _ls[v.index] < 0 if _ls is not None and _ls[v.index] != 0 else side(p) < 0
+        if lower:
+            t = min(1.0, max(0.0, (max(0.0, -side(p)) - 0.2 * W) / (0.2 * W)))
+            k = 1 - t * t * (3 - 2 * t)
+            if k > 0:
+                lz = line_z(p.x)
+                E = Vector((p.x, max(p.y, _front.y), lz))   # the teeth's depth (the lip is in front of them)
+                d = hinge + (R @ (E - hinge).to_4d()).to_3d() - E
+                B = Vector((p.x, p.y, lz - 0.25 * W))
+                Rl = Matrix.Rotation(-LIP_LEAN * theta * w, 4, "X")
+                lean = (Rl @ (p - B).to_4d()).to_3d() - (p - B)
+                q = q.lerp(p + d + lean + Vector((0, 0, LIP_RISE * W * w)), k)
+    return q
 
 
 for o in jaw_objs:
@@ -1129,6 +1320,87 @@ def brow_keys():
         add_key(face, name, fn)
     return [k for k, _ in keys]
 
+
+def lip_untangle(o, names, rounds=40):
+    """The lips in every mouth key, made even (the shape of the lip kept, its sharp points evened out): a triangle of
+    the lips that turns over or stretches four times in a key (a point of it moved apart from its neighbours: the
+    source's rough weights, a cut sliver beside it) gets its points' displacement drawn toward their neighbours',
+    with a ring around, until nothing turns over. Points the mesh keeps twice (UV seams) move as one; the two lips of
+    the slit share places but not weights, so they never mix. Slivers of the cut (no area) are not looked at."""
+    kbs = o.data.shape_keys.key_blocks
+    base = kbs[0]
+    n = len(o.data.vertices)
+    q_ = W * 1e-4
+    key = [tuple(round(c / q_) for c in base.data[i].co) + (round(jaw_w(o, o.data.vertices[i]), 1),) for i in range(n)]
+    nbr = {}
+    for e in o.data.edges:
+        a_, b_ = key[e.vertices[0]], key[e.vertices[1]]
+        if a_ != b_:
+            nbr.setdefault(a_, set()).add(b_); nbr.setdefault(b_, set()).add(a_)
+    mw = o.matrix_world
+    bpos = {}
+    for i in range(n):
+        bpos.setdefault(key[i], base.data[i].co.copy())
+    half_ = (x1 - x0) / 2
+    zone = {k for k, b0 in bpos.items()
+            if abs(side(mw @ b0)) < 0.5 * W and abs((mw @ b0).x - cx) < half_ + 0.3 * W and (mw @ b0).y < M.y + 1.0 * W}
+    o.data.calc_loop_triangles()
+    tris = [tuple(key[v] for v in t.vertices) for t in o.data.loop_triangles]
+    tris = [t for t in tris if all(k in zone for k in t) and len(set(t)) == 3]
+    area0 = []
+    for t in tris:
+        a0, b0, c0 = (bpos[k] for k in t)
+        area0.append((b0 - a0).cross(c0 - a0))
+    big = 4e-5 * W * W
+    out = {}
+    for name in names:
+        kb = kbs.get(name)
+        if kb is None:
+            continue
+        disp = {}
+        for i in range(n):
+            if key[i] in zone:
+                disp.setdefault(key[i], kb.data[i].co - base.data[i].co)
+
+        def bad_points():
+            bad = set()
+            for t, n0 in zip(tris, area0):
+                if n0.length < big:
+                    continue
+                a1, b1, c1 = (bpos[k] + disp[k] for k in t)
+                n1 = (b1 - a1).cross(c1 - a1)
+                if n1.length < 1e-14 or n0.normalized().dot(n1.normalized()) < 0.3 or n1.length > 4 * n0.length:
+                    bad.update(t)
+            return bad
+        before = left = len(bad_points())
+        for _ in range(rounds):
+            bad = bad_points()
+            left = len(bad)
+            if not bad:
+                break
+            grow = set(bad)
+            for k in bad:
+                grow |= {j for j in nbr.get(k, ()) if j in zone}
+            for _ in range(3):
+                new = {}
+                for k in grow:
+                    nb = [j for j in nbr.get(k, ()) if j in disp]
+                    if nb:
+                        new[k] = disp[k].lerp(sum((disp[j] for j in nb), Vector()) / len(nb), 0.6)
+                disp.update(new)
+        left = len(bad_points())
+        if left >= before:   # no better (a key with hardly anything turned over: the evening only spread it): kept as built
+            if before:
+                out[name] = [before, before]
+            continue
+        for i in range(n):
+            if key[i] in disp:
+                kb.data[i].co = base.data[i].co + disp[key[i]]
+        out[name] = [before, left]
+    return out
+
+
+report["lip_points_evened"] = lip_untangle(face, [k.name for k in face.data.shape_keys.key_blocks[1:]])   # [before, after]
 
 if FACE_TOPO:
     report["brow_keys"] = brow_keys()

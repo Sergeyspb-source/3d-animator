@@ -244,7 +244,7 @@ def rig_summary(glb) -> dict:
     meshes = [m.get("name", "") for m in j.get("meshes", [])]
     return {"bones": max((len(sk.get("joints", [])) for sk in j.get("skins", [])), default=0),
             "keys": max((len((m.get("extras") or {}).get("targetNames") or []) for m in j.get("meshes", [])), default=0),
-            "mouth": "cut" if any(x.startswith("lip_inner") for x in mats) else "plate" if "Mouth" in meshes else None,
+            "mouth": "cut" if any(x.startswith("lip_inner") for x in mats) or "MouthCavity" in meshes else "plate" if "Mouth" in meshes else None,
             "retopo": any(x.startswith("face_mask") for x in mats),
             "eyes": any(x in ("Eye_L", "Eye_R") or x.startswith("Eye_L.") for x in meshes)}
 
@@ -458,6 +458,8 @@ def wear(cfg, text):
     try:
         res = (wardrobe(cfg, rigged) if action == "wardrobe" else _repaint(cfg, req, rigged, item) if action == "repaint"
                else _hollow(cfg, req, rigged, item) if action == "hollow" else _face_edit(req, rigged) if action == "face_edit"
+               else _tex_edit(req, rigged) if action == "tex_edit"
+               else _mesh_edit(req, rigged) if action == "mesh_edit"
                else _wear(cfg, req, rigged, item, action == "wear"))
     except Exception as e:  # noqa: BLE001  (the editor must hear back, or it waits for minutes)
         res = {"ok": False, "log": _t("lm.error", e)}
@@ -465,16 +467,39 @@ def wear(cfg, text):
     return res["log"]
 
 
+def _mesh_edit(req, rigged: Path) -> dict:
+    """The mesh tool («Поза» → «▦ Сетка»): {cut, fill, reset} (face_edits.mesh_save). The editor waits for
+    <stem>_wear_mesh_edits.wear.json."""
+    import face_edits as FE
+    res = FE.mesh_save(rigged, req.get("cut") or {}, req.get("fill") or {}, bool(req.get("reset")))
+    m = res.get("mesh") or {}
+    return {"ok": True, "log": _t("lm.mesh_edits_saved", m.get("cut", 0), m.get("filled", 0)) + (" " + _t("lm.mesh_edits_missed", m["missed"]) if m.get("missed") else ""),
+            "v": int(rigged.stat().st_mtime)}
+
+
+def _tex_edit(req, rigged: Path) -> dict:
+    """The texture brush («Поза» → «🖌 Текстура»): {layers: [{name, png}], reset} laid over the model's images as built
+    and kept in <stem>_tex/ (face_edits.paint_save). The editor waits for <stem>_wear_tex_edits.wear.json."""
+    import face_edits as FE
+    res = FE.paint_save(rigged, req.get("layers") or [], bool(req.get("reset")))
+    return {"ok": True, "log": _t("lm.tex_edits_saved", res["painted"], ", ".join(res["layers"]) or "—"),
+            "v": int(rigged.stat().st_mtime), "layers": res["layers"]}
+
+
 def _face_edit(req, rigged: Path) -> dict:
     """The expression brush's edits («Поза» → «Править выражение»): {changes: {key: [groups]}, reset: [keys]} laid on
     the model as built and kept next to it (face_edits.py). The editor waits for <stem>_wear_face_edits.wear.json."""
     import face_edits as FE
+    # the face at rest: what was saved goes back from the shown model (it has it), so the editor gets it before the reset
+    saved_rest = (FE.load(rigged).get("keys") or {}).get(FE.BASIS, []) if req.get("want") == FE.BASIS else None
     res = FE.save(rigged, req.get("changes") or {}, req.get("reset") or [])
     log = _t("lm.face_edits_saved", res["sent"], len(res["keys"]), ", ".join(res["keys"]) or "—")
     if res["missed"]:
         log += " " + _t("lm.face_edits_missed", res["missed"])
     out = {"ok": True, "log": log, "v": int(rigged.stat().st_mtime), "keys": res["keys"]}
-    if req.get("want"):   # the key as it is now in the model (after a reset: as built), sparse, for the editor to show
+    if saved_rest is not None:   # the rest shape: the offsets that were saved (the editor takes them away)
+        out["saved_rest"] = saved_rest
+    elif req.get("want"):   # the key as it is now in the model (after a reset: as built), sparse, for the editor to show
         out["built"] = FE.key_data(rigged, req["want"])
     return out
 
@@ -796,6 +821,12 @@ def parse(text):
     return data
 
 
+def _built_at(rigged: Path) -> float:
+    """When the skeleton was built: the model as built (kept by the hand edits beside it), not the last edit's save."""
+    noedit = rigged.with_name(rigged.stem + ".noedit.glb")
+    return (noedit if noedit.exists() else rigged).stat().st_mtime
+
+
 def editor_eyes(cfg, kit="") -> tuple[Path, float] | None:
     """(eyes.glb, eye radius) the markup shows the eyeballs with: the face-parts set chosen for the build, else the
     standard one (made once in work_dir/face_parts_default, or taken from a build that made it already)."""
@@ -837,7 +868,7 @@ def editor_page(src: Path, state: dict | None, rigged: Path | None = None, mode:
             "emotions": emotion_presets() if rigged and Path(rigged).exists() else [],
             "fits": saved_fits(Path(rigged)) if rigged and Path(rigged).exists() else [],
             # the build the pose mode shows: when, and what it has (the markup page says it over the pose)
-            "build": ({"date": datetime.fromtimestamp(Path(rigged).stat().st_mtime).strftime("%d.%m %H:%M"), **rig_summary(rigged)}
+            "build": ({"date": datetime.fromtimestamp(_built_at(Path(rigged))).strftime("%d.%m %H:%M"), **rig_summary(rigged)}
                       if rigged and Path(rigged).exists() else None),
             # eyes: (eyes.glb, radius) of editor_eyes, drawn for the eyeballs of the markup
             "eyes": {"b64": base64.b64encode(Path(eyes[0]).read_bytes()).decode("ascii"), "r": eyes[1]} if eyes else None}
@@ -949,6 +980,24 @@ def face_kit_eyes(cfg, kit, work):
     return out / "eyes.glb", 0.012
 
 
+def eye_rim(face, s, cx=0.0):
+    """The eye's outline [inner corner, top, outer corner, bottom] as it lies around the eye, whatever the markup calls
+    each point: clicked in another order (the outer corner marked as the bottom) the eye opening was cut the wrong
+    shape and strips of skin stayed over the eyeball. Each point goes to the place its direction from the eye shows
+    (toward the nose, up, away from it, down), the best of the 24 ways."""
+    import itertools, math
+    pts = [face.get(f"{k}_{s}") for k in ("eye_in", "eye_top", "eye_out", "eye_bot")]
+    if not all(pts):
+        return pts
+    c = face.get(f"eye_{s}") or [sum(p[i] for p in pts) / 4 for i in range(3)]
+    out = 1.0 if c[0] >= cx else -1.0
+    ang = [math.atan2(p[1] - c[1], (p[0] - c[0]) * out) for p in pts]
+    want = [math.pi, math.pi / 2, 0.0, -math.pi / 2]   # in, top, out, bottom
+    gap = lambda a, b: abs((a - b + math.pi) % (2 * math.pi) - math.pi)
+    best = min(itertools.permutations(range(4)), key=lambda o: sum(gap(ang[o[k]], want[k]) for k in range(4)))
+    return [pts[i] for i in best]
+
+
 def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=True, kit="", face_topo=False, smooth=1,
           eye_colour=True):
     """Generator of log lines; the last item is a dict with the result paths."""
@@ -998,6 +1047,8 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=T
     if face_topo and mouth != "cut":
         yield _t("lm.face_retopology_works_only_with_the")
     if mouth == "cut" and has_mouth:
+        if "jaw" not in (landmarks.get("joints") or {}):   # no jaw bone: the slit is cut but nothing opens it
+            yield _t("lm.mouth_cut_without_jaw")
         yield _t("lm.cutting_the_mouth_along_the_lip_line")
         names = bone_names(naming)
         kd, kinfo = face_kit(cfg, kit, work)
@@ -1010,8 +1061,8 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=T
               "face_smooth": 1 if int(smooth) > 0 else 0, "face_relax": [0, 8, 16, 30][max(0, min(3, int(smooth)))],
               "eyes_open": bool(eyes and face.get("eye_in_L") and face.get("eye_bot_L")),
               "eye_L": face.get("eye_L"), "eye_R": face.get("eye_R"), "chin": landmarks.get("marks", {}).get("chin"),
-              "eye_rim_L": [face.get(k + "_L") for k in ("eye_in", "eye_top", "eye_out", "eye_bot")] if face.get("eye_in_L") else None,
-              "eye_rim_R": [face.get(k + "_R") for k in ("eye_in", "eye_top", "eye_out", "eye_bot")] if face.get("eye_in_R") else None,
+              "eye_rim_L": eye_rim(face, "L", landmarks.get("center_x", 0)) if face.get("eye_in_L") else None,
+              "eye_rim_R": eye_rim(face, "R", landmarks.get("center_x", 0)) if face.get("eye_in_R") else None,
               "hinge": landmarks["joints"].get("jaw"), "head_bone": names["head"],
               "jaw_bone": names["jaw"] if "jaw" in landmarks["joints"] else "",
               "teeth_glb": str(kd / "teeth.glb"), "tongue_glb": str(kd / "tongue.glb"),
@@ -1060,8 +1111,8 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=T
         else:
             fail = next((x for x in r.stdout.splitlines() if x.startswith("MOUTH_FAIL")), (r.stdout + r.stderr)[-600:])
             yield _t("lm.the_speech_mouth_failed_the_model_is") + fail
-    rim = {s: [face.get(f"{k}_{s}") for k in ("eye_in", "eye_top", "eye_out", "eye_bot")] for s in "LR"}
-    rim = {s: pts for s, pts in rim.items() if all(pts)}
+    rim = {s: eye_rim(face, s, landmarks.get("center_x", 0)) for s in "LR"}
+    rim = {s: pts for s, pts in rim.items() if pts and all(pts)}
     if eyes and not rim and face:
         yield (_t("lm.eyeballs_not_inserted_the_face"))
     if eyes and rim:
@@ -1072,7 +1123,8 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=T
               "open_rim": topo_done,   # the face retopology already cut the eye openings
               # the iris colour is read from the painted eyes of the rigged model, before any cut
               "iris_from": str(work / "model.glb") if eye_colour else "",
-              "head_bone": names["head"], "sym": bool(landmarks.get("sym", True)), "report": str(work / "eyes_report.json"),
+              "head_bone": names["head"], "sym": bool(landmarks.get("sym", True) and landmarks.get("face_sym", True)),
+              "report": str(work / "eyes_report.json"),
               "preview": str(work / "eyes.png"),
               "sides": {s: {"outline": pts, "bone": names[f"eye_{s}"] if f"eye_{s}" in landmarks["joints"] else "",
                             # the eye joint is the ball centre, its end joint the cornea
@@ -1098,7 +1150,12 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=T
         import face_edits as FE
         fe = FE.reapply(final)
         if fe:
-            yield _t("lm.face_edits_reapplied", fe["points"], fe["points"] + fe["missed"], ", ".join(fe["keys"]))
+            if fe["keys"]:
+                yield _t("lm.face_edits_reapplied", fe["points"], fe["points"] + fe["missed"], ", ".join(fe["keys"]))
+            if fe.get("painted"):
+                yield _t("lm.tex_edits_reapplied", fe["painted"])
+            if (fe.get("mesh") or {}).get("cut") or (fe.get("mesh") or {}).get("filled"):
+                yield _t("lm.mesh_edits_reapplied", fe["mesh"]["cut"], fe["mesh"]["filled"], fe["mesh"].get("missed", 0))
     except Exception as e:  # noqa: BLE001 — the skeleton is built; the edits stay in their file
         yield _t("lm.face_edits_reapply_failed", e)
     scene = godot_scene(final)
