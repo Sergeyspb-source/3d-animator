@@ -839,6 +839,8 @@
  "ed.mouth_check_open": "Amount",
  "ed.mouth_check_marks": "Stretched in red",
  "ed.mouth_check_close": "Close",
+ "ed.seam_line": "Cut line",
+ "ed.seam_line_title": "Where the mouth cut will go: the lips' seam found over the skin (as the build finds it). Orange: the cut follows your line; red: it leaves it for the lips' real seam. Redone as you drag the points. Again: hide.",
  "ed.weights_help": "Weights: hover an arm, a leg, the head or the body — the model is coloured by that bone: red, the skin follows the bone fully; blue, it does not move with it; yellow and green, partly. This only shows them; the weights are fixed on the «Weight fixing» tab.",
  "ed.key_amount_title": "How much the chosen shape key is on: 0 none, 1 full (how it looks in «✎ Edit»)",
  "ed.key_amount_short": "how much",

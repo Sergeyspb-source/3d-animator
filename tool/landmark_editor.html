@@ -330,6 +330,7 @@
         <button id="mouthOpenBtn" title="{{ed.the_mouth_on_the_model_is_slightly}}" hidden>{{ed.mouth_slightly_open}}</button>
         <button id="teethBtn" title="{{ed.teeth_title}}" hidden>{{ed.teeth}}</button><button id="teethNarrow" title="{{ed.teeth_narrower}}" hidden>{{ed.teeth_minus}}</button><button id="teethWide" title="{{ed.teeth_wider}}" hidden>{{ed.teeth_plus}}</button>
         <button id="mouthCheck" title="{{ed.mouth_check_title}}" hidden>{{ed.mouth_check}}</button>
+        <button id="seamBtn" class="on" title="{{ed.seam_line_title}}" hidden>{{ed.seam_line}}</button>
       </div>
       <div id="mcStatus" class="small" hidden></div>
     </div>
@@ -909,6 +910,7 @@ function refreshAll() {
   $('teethBtn').hidden = !ovalMode; $('teethBtn').classList.toggle('on', !!S.face.teeth_front);
   $('teethNarrow').hidden = $('teethWide').hidden = !ovalMode || !S.face.teeth_front;
   $('mouthCheck').hidden = !ovalMode; if (!ovalMode) $('mcStatus').hidden = true;
+  $('seamBtn').hidden = !ovalMode; $('seamBtn').classList.toggle('on', SEAM.on);
   $('faceClear').hidden = !S.pos.jaw;
   $('fClear').hidden = !Object.keys(S.pos).some((k) => FINGER_RE.test(k));
   const w = (S.phase === 'edit' ? bendWarnings() : []).concat(markupMismatch ? [{ text: markupMismatch }] : []);
@@ -1255,6 +1257,7 @@ function openCheck(F) {   // once per markup: the user may take the points away 
   ovalAutoOpen = true;
 }
 function drawOval() {
+  seamUpdate();
   for (const c of [...ovalGroup.children]) { ovalGroup.remove(c); if (c.geometry && !c.userData.shared) c.geometry.dispose(); }
   if (!ovalMode || !OVAL_KEYS.every((k) => S.face[k])) return;
   const P = ovalParams(S.face), zf = V(S.face.mouth_c).z, N = 48;
@@ -1305,6 +1308,130 @@ function ovalPick(e) {
   }
   return best;
 }
+// ---------------------------------------------------------------- the lips' seam, live: where the mouth cut will go
+// The build (blender_mouth_cut.py, step 0) does not cut on the clicked line alone: two walks over the skin, from the
+// upper lip's front and from the lower lip's (0.12 W off the line, across the mouth), give each point near the mouth
+// the lip it is nearer to along the surface, and near the front the cut follows that seam. The same here, on the mesh
+// the editor holds (points welded by place: glTF splits them on UV seams), redone as the mouth points move: the line
+// is where the side changes - orange on the clicked line, red where the cut leaves it for the lips' real seam.
+var SEAM = { on: true, g: null, grp: null, timer: 0, busy: false };
+function seamGraph() {
+  if (SEAM.g) return SEAM.g;
+  const q = Math.max(H * 2e-5, 1e-7), key = new Map(), pos = [], adj = [], tris = [], nodeOf = [], v = new V3();
+  for (const m of meshes) {
+    m.updateMatrixWorld();
+    const P = m.geometry.attributes.position, ids = new Int32Array(P.count);
+    for (let i = 0; i < P.count; i++) {
+      v.fromBufferAttribute(P, i).applyMatrix4(m.matrixWorld);
+      const k = Math.round(v.x / q) + ',' + Math.round(v.y / q) + ',' + Math.round(v.z / q);
+      let id = key.get(k);
+      if (id === undefined) { id = pos.length / 3; key.set(k, id); pos.push(v.x, v.y, v.z); adj.push([]); }
+      ids[i] = id;
+    }
+    nodeOf.push(ids);
+    const I = m.geometry.index, n = I ? I.count : P.count;
+    for (let t = 0; t + 2 < n; t += 3) {
+      const a = ids[I ? I.getX(t) : t], b = ids[I ? I.getX(t + 1) : t + 1], c = ids[I ? I.getX(t + 2) : t + 2];
+      if (a === b || b === c || a === c) continue;
+      tris.push(a, b, c); adj[a].push(b, c); adj[b].push(a, c); adj[c].push(a, b);
+    }
+  }
+  SEAM.g = { pos: new Float64Array(pos), adj, tris: new Int32Array(tris), nodeOf, n: pos.length / 3 };
+  return SEAM.g;
+}
+function seamClear() { if (SEAM.grp) for (const c of [...SEAM.grp.children]) { SEAM.grp.remove(c); c.geometry.dispose(); } }
+function seamUpdate() {
+  if (!ovalMode || !SEAM.on || !['mouth_c', 'mouth_corner_L', 'mouth_corner_R'].every((k) => S.face[k])) { seamClear(); return; }
+  if (SEAM.timer) return;
+  SEAM.timer = setTimeout(() => { SEAM.timer = 0; try { seamDraw(); } catch (e) { console.warn('seam', e); } }, ovalMode.drag ? 150 : 0);
+}
+function seamDraw() {
+  if (!ovalMode || !SEAM.on) { seamClear(); return; }
+  const F = S.face, g = seamGraph(), P = g.pos;
+  const CL = V(F.mouth_corner_L), CR = V(F.mouth_corner_R), M = V(F.mouth_c), W = CL.distanceTo(CR) || 1e-3;
+  const pts = ['mouth_corner_R', 'mouth_mid_R', 'mouth_c', 'mouth_mid_L', 'mouth_corner_L'].filter((k) => F[k]).map((k) => V(F[k])).sort((a, b) => a.x - b.x);
+  const line = (x) => {   // the clicked line (as the build reads it: straight between the points)
+    if (x <= pts[0].x) return pts[0].y;
+    for (let i = 1; i < pts.length; i++) if (x <= pts[i].x) { const t = (x - pts[i - 1].x) / Math.max(pts[i].x - pts[i - 1].x, 1e-9); return pts[i - 1].y + (pts[i].y - pts[i - 1].y) * t; }
+    return pts[pts.length - 1].y;
+  };
+  const x0 = Math.min(CL.x, CR.x), x1 = Math.max(CL.x, CR.x), cx_ = (x0 + x1) / 2, half = (x1 - x0) / 2;
+  const zFront = Math.min(CL.z, CR.z) - .5 * W;           // "near the front" (the build's front_limit + 0.15 W)
+  const inReg = (i) => Math.abs(P[3 * i] - cx_) < 1.6 * half && Math.abs(P[3 * i + 1] - M.y) < W && P[3 * i + 2] > M.z - 2.5 * W;
+  // seeds: what a ray from the front meets 0.12 W over and under the line, across the mouth
+  const zTop = Math.max(...meshes.map((m) => new THREE.Box3().setFromObject(m).max.z)) + W;
+  const seeds = (dy) => {
+    const out = new Set();
+    for (let i = 0; i <= 40; i++) {
+      const x = x0 + (.08 + .84 * i / 40) * (x1 - x0);
+      ray.set(new V3(x, line(x) + dy, zTop), new V3(0, 0, -1));
+      const h = ray.intersectObjects(meshes, false)[0]; if (!h || !h.face) continue;
+      const ids = g.nodeOf[meshes.indexOf(h.object)]; if (!ids) continue;
+      let best = -1, bd = Infinity;
+      for (const vi of [h.face.a, h.face.b, h.face.c]) { const id = ids[vi], d = (P[3 * id] - h.point.x) ** 2 + (P[3 * id + 1] - h.point.y) ** 2 + (P[3 * id + 2] - h.point.z) ** 2; if (d < bd) { bd = d; best = id; } }
+      if (best >= 0 && inReg(best)) out.add(best);
+    }
+    return out;
+  };
+  const walk = (src) => {   // Dijkstra over the region (a binary heap of [d, node])
+    const dist = new Float64Array(g.n).fill(Infinity), heap = [];
+    const push = (d, n) => { heap.push([d, n]); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
+    const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+    for (const s_ of src) { dist[s_] = 0; push(0, s_); }
+    while (heap.length) {
+      const [d, n] = pop(); if (d > dist[n]) continue;
+      for (const m of g.adj[n]) {
+        if (!inReg(m)) continue;
+        const nd = d + Math.hypot(P[3 * n] - P[3 * m], P[3 * n + 1] - P[3 * m + 1], P[3 * n + 2] - P[3 * m + 2]);
+        if (nd < dist[m]) { dist[m] = nd; push(nd, m); }
+      }
+    }
+    return dist;
+  };
+  const su = seeds(.12 * W), sl = seeds(-.12 * W), du = walk(su), dl = walk(sl);
+  const side = new Float64Array(g.n), moved = new Uint8Array(g.n);
+  for (let i = 0; i < g.n; i++) {
+    if (!inReg(i)) continue;
+    let sv = P[3 * i + 1] - line(P[3 * i]);
+    if (P[3 * i + 2] > zFront && Math.abs(P[3 * i] - cx_) < 1.05 * half && isFinite(du[i]) && isFinite(dl[i])) {
+      const sf = (dl[i] - du[i]) / 2;
+      if (Math.abs(sf) > .01 * W && (sf > 0) !== (sv > 0)) { sv = Math.sign(sf) * Math.max(Math.abs(sv), .006 * W); moved[i] = 1; }
+    }
+    side[i] = sv;
+  }
+  // the cut: where the side changes in a triangle near the front of the mouth
+  const lift = .01 * W;   // a hair toward the viewer: drawn with depth, the skin hides what is behind it
+  const seg = [], col = [], T = g.tris, cOn = new THREE.Color(0xff8a00), cOff = new THREE.Color(0xe5484d);
+  for (let t = 0; t < T.length; t += 3) {
+    const a = T[t], b = T[t + 1], c = T[t + 2];
+    if (!inReg(a) || !inReg(b) || !inReg(c)) continue;
+    // the skin the walks went over only: a piece of its own (a source's mouth bag behind the lips) crossed the line
+    // too and, drawn over everything, stood in loops round the mouth
+    if (!isFinite(du[a]) || !isFinite(du[b]) || !isFinite(du[c])) continue;
+    const zc = (P[3 * a + 2] + P[3 * b + 2] + P[3 * c + 2]) / 3, xc = (P[3 * a] + P[3 * b] + P[3 * c]) / 3;
+    if (zc < zFront || Math.abs(xc - cx_) > 1.1 * half) continue;
+    const s3 = [side[a], side[b], side[c]], n3 = [a, b, c], cr = [];
+    for (let k = 0; k < 3; k++) {
+      const i = n3[k], j = n3[(k + 1) % 3], si = s3[k], sj = s3[(k + 1) % 3];
+      if ((si > 0) === (sj > 0)) continue;
+      const f = si / (si - sj);
+      cr.push(P[3 * i] + (P[3 * j] - P[3 * i]) * f, P[3 * i + 1] + (P[3 * j + 1] - P[3 * i + 1]) * f, P[3 * i + 2] + (P[3 * j + 2] - P[3 * i + 2]) * f + lift);
+    }
+    if (cr.length !== 6) continue;
+    const off = moved[a] || moved[b] || moved[c];
+    seg.push(...cr); const cc = off ? cOff : cOn; col.push(cc.r, cc.g, cc.b, cc.r, cc.g, cc.b);
+  }
+  SEAM.dbg = { segments: seg.length / 6, off: col.filter((c_, k) => k % 6 === 0 && c_ === cOff.r).length };
+  seamClear();
+  if (!SEAM.grp) { SEAM.grp = new THREE.Group(); scene.add(SEAM.grp); }
+  if (!seg.length) return;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(seg, 3)); geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  const ln = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: .95 }));
+  ln.renderOrder = 999; SEAM.grp.add(ln);
+}
+$('seamBtn').onclick = () => { SEAM.on = !SEAM.on; $('seamBtn').classList.toggle('on', SEAM.on); seamUpdate(); };
+window.sf3dSeam = { get SEAM() { return SEAM; }, draw: () => seamDraw(), drawOval: () => drawOval() };   // for the tests
 // handles move with their own axis gizmo, like the joints (smaller, X/Y only: the depth is taken from the skin)
 const ovalHelper = new THREE.Object3D(); scene.add(ovalHelper);
 const tcO = new TransformControls(camera, canvas);
