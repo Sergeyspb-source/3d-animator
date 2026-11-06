@@ -2556,12 +2556,14 @@ function scDab(P, N) {   // «Поднять» / «Вдавить» / «Сгла
     const near = scNear(Q, R);
     if (SC.mode === 'even') { scEvenPass(near.map(([id]) => id), s * .8, new Map(near)); continue; }
     if (SC.mode === 'smooth') {
-      const p = SCN.pos, r = SCN.rest, moves = [];
+      // a key: its shift evened with the neighbours'; the rest has no shift - there the places themselves (the skin's
+      // bumps and folds; on the rest it changed nothing at all)
+      const p = SCN.pos, r = SCN.rest, moves = [], o = SC.key === REST_KEY ? 0 : 1;
       for (const [id, w] of near) {
         const nb = SCN.nb[id]; if (!nb.length) continue;
-        const avg = new V3(); for (const j of nb) avg.x += p[3 * j] - r[3 * j], avg.y += p[3 * j + 1] - r[3 * j + 1], avg.z += p[3 * j + 2] - r[3 * j + 2];
+        const avg = new V3(); for (const j of nb) avg.x += p[3 * j] - o * r[3 * j], avg.y += p[3 * j + 1] - o * r[3 * j + 1], avg.z += p[3 * j + 2] - o * r[3 * j + 2];
         avg.multiplyScalar(1 / nb.length);
-        const cur = new V3(p[3 * id] - r[3 * id], p[3 * id + 1] - r[3 * id + 1], p[3 * id + 2] - r[3 * id + 2]);
+        const cur = new V3(p[3 * id] - o * r[3 * id], p[3 * id + 1] - o * r[3 * id + 1], p[3 * id + 2] - o * r[3 * id + 2]);
         moves.push([id, avg.sub(cur).multiplyScalar(w * s * .6)]);
       }
       for (const [id, d] of moves) scMove(id, d);
