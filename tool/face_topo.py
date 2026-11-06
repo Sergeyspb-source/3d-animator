@@ -54,6 +54,13 @@ def build(C):
     if bm.verts.layers.int.get("ftag") is None:
         bm.verts.layers.int.new("ftag")
     dl = bm.verts.layers.deform.verify()
+    # one surface: a mesh exported as separate pieces (goblin_hero_2: 29 648 quads, none sharing a point) has every
+    # edge on a border, so the hole's rim could not be walked round, it was sorted by angle into a zig-zag and the new
+    # mask tore into flaps with the old skin showing through. Points at one place become one (UVs stay per corner)
+    if job.get("face_weld", True):
+        _n0 = len(bm.verts)
+        bmesh.ops.remove_doubles(bm, verts=list(bm.verts), dist=W * 1e-4)
+        report["mask_welded_points"] = _n0 - len(bm.verts)
     me = face.data
     tris = list(me.loop_triangles)
     wv = [fw @ v.co for v in me.vertices]
@@ -105,13 +112,14 @@ def build(C):
     EL, ER = bl(job["eye_L"]), bl(job["eye_R"])
     ipd = (EL - ER).length
     s = ipd * float(job.get("face_density", 0.11))          # target edge length
-    rims = {}
+    rims, rims_y = {}, {}
     for sd, ec in (("L", EL), ("R", ER)):
         pts = [bl(p) for p in job.get("eye_rim_" + sd) or []]
         if len(pts) < 4:
             w_, h_ = 0.22 * ipd, 0.09 * ipd
             pts = [ec + Vector((-w_, 0, 0)), ec + Vector((0, 0, h_)), ec + Vector((w_, 0, 0)), ec + Vector((0, 0, -h_))]
         rims[sd] = catmull_closed([Vector((p.x, p.z)) for p in pts], 6)
+        rims_y[sd] = catmull_closed([p.y for p in pts], 6)      # the lid edge's depth, as clicked
     chin = bl(job["chin"]) if job.get("chin") else Vector((cx, 0, M.z - 0.6 * ipd))
     # centre inside the head, behind the face: every mask point is placed by a ray from here outward, so it lands on
     # the surface itself - also under the chin and on the side of the cheeks, where a front ray cannot reach
@@ -141,7 +149,24 @@ def build(C):
             if h2[1].dot(d) > 0:   # leaving the solid outward: a skin surface
                 best = h2
             p = h2[0] + d * (W * 1e-4)
-        return best
+        # a source with insides of its own (goblin_hero_2: a mouth modelled a little open, the eye sockets) has walls
+        # between the centre and the skin: the mask was laid on them, inside the head, and the cheek and the lids showed
+        # holes. The first surface seen from outside along the ray, facing out and on the face's own shell, is the
+        # skin - unless it is off the skin colour (a lock of hair over the skin). (Taking it only when no other solid
+        # lay between, or far out, put neighbouring points over the brows now on the ridge, now under it: a comb.)
+        # (on the face only: in front of the centre, above the chin - below it the chest is first from outside)
+        far2 = 2.5 * R0
+        if (best[0] - o).length > far2 or d.y > 0:
+            return best
+        ho = skin_bvh.ray_cast(o + d * far2, -d, far2)
+        if ho[0] is None or ho[1].dot(d) <= 0.3 or (ho[0] - o).length < (best[0] - o).length + 0.05 * ipd \
+                or ho[0].z < chin.z - 0.25 * ipd:
+            return best
+        cq = colour_at(ho[0], ho[2]) if skin_col is not None else None
+        if cq is not None and (cq - skin_col).length > 0.2:
+            return best
+        report["mask_points_off_insides"] = report.get("mask_points_off_insides", 0) + 1
+        return ho
 
     def ray_rad(u, v):
         return outer_hit(C, dir_of(u, v), ipd * 6)
@@ -162,6 +187,7 @@ def build(C):
             nv_[dl][k] = w
         return nv_
 
+    skin_col = None   # (set below, from the skin colour; outer_hit reads it)
     # ------------------------------------------------------------ skin colour (hair fused to the face is told by colour)
     tex_px = {}
 
@@ -346,10 +372,46 @@ def build(C):
         q = to_uv(p)
         return inside(poly, q.x, q.y)
 
+    def inner_layer(p):
+        """skin of its own farther out along the line from the centre with no other solid between: p is one of the
+        source's insides or a layer under the skin"""
+        d_ = (p - C).normalized(); q = p + d_ * (W * 1e-3)
+        for _ in range(8):
+            h = skin_bvh.ray_cast(q, d_, 0.6 * ipd)
+            if h[0] is None or h[1].dot(d_) < 0:   # air, or into another solid (the chest past the throat, a lock)
+                return False
+            if h[1].dot(d_) > 0.2:
+                return True
+            q = h[0] + d_ * (W * 1e-3)
+        return False
     def front(p):   # on the outer skin as seen from the centre (not inner folds, not the back of an ear)
         d = p - C
         h = skin_bvh.ray_cast(C, d.normalized(), d.length + 0.3 * W)
-        return h[0] is not None and abs((h[0] - C).length - d.length) < 0.15 * W
+        if h[0] is not None and abs((h[0] - C).length - d.length) < 0.15 * W:
+            return True
+        # ... or the first thing seen from outside along the same line: a source with insides of its own (a mouth
+        # modelled a little open, the eye sockets: goblin_hero_2) has walls between the centre and the skin, and the
+        # cheek and the lids behind them stayed in shreds over the new mask
+        # (facing out along the line: from outside the chest under the chin is first too, but it faces the other way;
+        # and only the face itself - above the chin, in front of the centre: the shoulders and the neck face out as well.
+        # Not by distance from the centre: the brows and the forehead lie farther than the chin's sides)
+        if d.y > 0 or d.length > 2.5 * R0:
+            return False
+        if p.z < chin.z - 0.25 * ipd:
+            # under the chin: the first outer surface out from the centre, past the source's insides - the chest
+            # farther along is not the face (from outside it is first)
+            q, dd = C, d.normalized()
+            for _ in range(10):
+                h = skin_bvh.ray_cast(q, dd, 2.5 * R0)
+                if h[0] is None:
+                    return False
+                if h[1].dot(dd) > 0 and not inner_layer(h[0]):
+                    return abs((h[0] - C).length - d.length) < 0.15 * W
+                q = h[0] + dd * (W * 1e-4)
+            return False
+        far = d.length + 2.0 * ipd
+        h = skin_bvh.ray_cast(C + d.normalized() * far, -d.normalized(), far)
+        return h[0] is not None and abs((h[0] - C).length - d.length) < 0.15 * W and h[1].dot(d.normalized()) > 0.3
 
     def hair_sheet(f, c, n):
         """a thin sheet painted in hair colour (a lock fused to the forehead): never part of the mask"""
@@ -361,7 +423,10 @@ def build(C):
         cq = colour_at(hq[0], hq[2]) if hq[0] is not None else None
         if cq is None or (cq - skin_col).length <= 0.2:
             return False
-        return skin_bvh.ray_cast(c - n * (W * 1e-3), -n, 0.25 * ipd)[0] is not None
+        # its own back right behind it (facing away): not some other wall (the cheek over a source's mouth insides,
+        # darker in its folds, stayed over the new mask as shreds)
+        hb = skin_bvh.ray_cast(c - n * (W * 1e-3), -n, 0.25 * ipd)
+        return hb[0] is not None and hb[1].dot(-n) > 0
 
     def skin_face(f):
         """the face is skin the mask replaces: seen first from the centre, or - hidden behind something, like a brow
@@ -463,25 +528,30 @@ def build(C):
     rim = [v for v in rim if v.is_valid]
     bmesh.ops.remove_doubles(bm, verts=rim, dist=W * 2e-4)     # UV-seam twins on the rim become one vertex
     rim = list({v for v in rim if v.is_valid})
-    # order the rim by walking the hole's boundary edges (angle sorting zig-zags on an uneven outline)
-    rs_ = set(rim)
-    nbr = {v: [e.other_vert(v) for e in v.link_edges if e.is_boundary and e.other_vert(v) in rs_] for v in rim}
-    best = []
-    for st in rim[:20]:
-        loop, seen, cur, prev = [st], {st}, st, None
-        while True:
-            nx = [w for w in nbr[cur] if w is not prev and w not in seen]
-            if not nx:
-                break
-            prev, cur = cur, nx[0]
-            loop.append(cur); seen.add(cur)
-        if len(loop) > len(best):
-            best = loop
-    report["mask_rim_walk"] = [len(best), len(rim)]
-    if len(best) < 0.8 * len(rim):
-        rim.sort(key=lambda v: math.atan2(to_uv(P(v)).y - mcz, to_uv(P(v)).x - mcx))
-    else:
-        rim = best
+    # order the rim along the outline itself: every cut point lies on it (the crossings are bisected onto it), so its
+    # place along the outline's polygon gives the order whatever the old mesh's shape. (A walk over the hole's border
+    # broke into 20 loops on goblin_hero_2: the outline also cuts the source's insides - a mouth modelled a little
+    # open, the eye sockets - that join the skin all round; the rim sorted by angle then zig-zagged and the mask's edge
+    # stood in spikes.) Cut points on such insides, not on the outer skin, are left out: the mask joins the skin only.
+    def along(q):
+        best_ = (1e18, 0.0)
+        n_ = len(poly)
+        for k_ in range(n_):
+            ax, az = poly[k_]; bx, bz = poly[(k_ + 1) % n_]
+            vx, vz = bx - ax, bz - az
+            t_ = max(0.0, min(1.0, ((q.x - ax) * vx + (q.y - az) * vz) / max(vx * vx + vz * vz, 1e-18)))
+            dd = (q.x - ax - t_ * vx) ** 2 + (q.y - az - t_ * vz) ** 2
+            if dd < best_[0]:
+                best_ = (dd, k_ + t_)
+        return best_[1]
+    n_all = len(rim)
+    def on_skin(p):   # where the mask's own points go along this line (outer_hit): the cut point is on that skin
+        d_ = p - C
+        h = outer_hit(C, d_.normalized(), ipd * 6)
+        return h[0] is not None and abs((h[0] - C).length - d_.length) < 0.2 * ipd
+    rim = [v for v in rim if on_skin(P(v))]
+    rim.sort(key=lambda v: along(to_uv(P(v))))
+    report["mask_rim_inner_left_out"] = n_all - len(rim)
     report["mask_rim"] = len(rim)
     report["mask_deleted_faces"] = len(kill)
     if len(rim) < 12:
@@ -509,11 +579,24 @@ def build(C):
         loops = []
         # depth chained loop by loop from the eye's own surface (like the mouth rings): above the lid a front ray hits
         # the overhanging brow ridge first, which left shards along the upper lid
-        h0 = ray(c2.x, c2.y)
-        prev = [h0[0].y if h0[0] is not None else M.y] * len(rim2)
+        # from the lid edge as clicked (its depth with it): a front ray at the eye's centre went through the slit of
+        # lids a little open into the socket's own ball (goblin_hero_2), and the whole eye region was built deep in
+        # the head, the mask diving in like a beak
+        prev = list(rims_y[sd])
         for sc in EYE_SCALES:
             lp = [new_vert(*eye_grow(c2, p, sc), ref_y=prev[i]) for i, p in enumerate(rim2)]
             if sc > 1.0:
+                # a point the chained depth put on the eye socket's insides (goblin_hero_2) lies near the centre: seen
+                # from it, it flew far out of place, the loop crossed the mask's outline and the brows tore into a
+                # comb. It goes onto the skin the front ray meets there
+                for i, v in enumerate(lp):
+                    gx, gz = eye_grow(c2, rim2[i], sc)
+                    qf = front_hit(gx, gz)
+                    if qf is not None and (to_uv(P(v)) - to_uv(qf)).length > 0.25 * ipd:
+                        nv_ = new_vert(gx, gz)
+                        bm.verts.remove(v)
+                        lp[i] = nv_
+                        report["eye_loops_off_insides"] = report.get("eye_loops_off_insides", 0) + 1
                 # under an overhanging brow the chained loop stays on the lid while the fill beyond lies on the brow,
                 # which tore into shards between them: the outer loops go up onto the overhang like the fill, so the
                 # fold is one clean band between the lid rim and the next loop
@@ -555,13 +638,16 @@ def build(C):
                 return True
         return False
     rim2d = [to_uv(P(v)) for v in rim]
+    # the new skin fills the hole as cut (the rim in order), not all of the outline: where the outline found no skin
+    # to cut (under goblin_hero_2's jutting chin the rays pass on to the neck) the mask hung below the chin in a tab
+    fill_poly = [(p_.x, p_.y) for p_ in rim2d]
     xs = [p[0] for p in poly]; zs = [p[1] for p in poly]
     z = min(zs); row = 0
     while z < max(zs):
         x = min(xs) + (s / 2 if row % 2 else 0)
         while x < max(xs):
             q = Vector((x, z))
-            if inside(poly, x, z) and not in_hole(x, z, 1.12) and min((q - r).length for r in rim2d) > 0.55 * s:
+            if inside(fill_poly, x, z) and not in_hole(x, z, 1.12) and min((q - r).length for r in rim2d) > 0.55 * s:
                 pts2.append((x, z)); kind.append(("free", None))
             x += s
         z += s * 0.866; row += 1
@@ -580,7 +666,7 @@ def build(C):
     faces2 = []
     for f in out_f:
         cxy = sum((Vector(out_v[i]) for i in f), Vector((0, 0))) / 3
-        if inside(poly, cxy.x, cxy.y) and not in_hole(cxy.x, cxy.y):
+        if inside(fill_poly, cxy.x, cxy.y) and not in_hole(cxy.x, cxy.y):
             faces2.append([to_in[i] for i in f])
     # Laplacian smoothing of the free points (2D)
     nb = {}
@@ -722,7 +808,6 @@ def build(C):
             for k, w in weights_at(h[0], h[2]).items():
                 v[dl][k] = w
     report["mask_smoothed_points"] = len(movable)
-
     # ------------------------------------------------------------ orientation like the skin
     nf = [f for f in new_faces if f.is_valid]
     flipped = 0
