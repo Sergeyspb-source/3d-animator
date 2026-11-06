@@ -13,7 +13,8 @@ var clip: FaceCurvesClip
 ## Audio time of the current evaluation; < 0 means idle (face at rest).
 var time: float = -1.0
 var _was_playing: bool = false
-## Per mesh: curve name -> blend shape index.
+## Per mesh: curve name -> blend shape indices (one, or a Left/Right pair for a curve made before the face's mouth
+## keys were split by side: an older clip's mouthSmile drives mouthSmileLeft and mouthSmileRight).
 var _targets: Array[Dictionary] = []
 var _meshes: Array[MeshInstance3D] = []
 
@@ -31,7 +32,12 @@ func _ready() -> void:
 		for key: StringName in clip.curves:
 			var index: int = mi.find_blend_shape_by_name(key)
 			if index >= 0:
-				map[key] = index
+				map[key] = [index]
+			else:
+				var l: int = mi.find_blend_shape_by_name(StringName(String(key) + "Left"))
+				var r: int = mi.find_blend_shape_by_name(StringName(String(key) + "Right"))
+				if l >= 0 and r >= 0:
+					map[key] = [l, r]
 		if not map.is_empty():
 			_meshes.append(mi)
 			_targets.append(map)
@@ -71,10 +77,12 @@ func evaluate(t: float) -> void:
 	for m: int in _meshes.size():
 		var map: Dictionary = _targets[m]
 		for key: StringName in map:
-			_meshes[m].set_blend_shape_value(map[key], values[key])
+			for index: int in map[key]:
+				_meshes[m].set_blend_shape_value(index, values[key])
 
 
 func _apply_rest() -> void:
 	for m: int in _meshes.size():
-		for index: int in _targets[m].values():
-			_meshes[m].set_blend_shape_value(index, 0.0)
+		for indices: Array in _targets[m].values():
+			for index: int in indices:
+				_meshes[m].set_blend_shape_value(index, 0.0)

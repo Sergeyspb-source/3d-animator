@@ -2318,7 +2318,9 @@ function setMorph(name, v) {
   // the key being edited is baked into the face at full strength (its insides at 1): applied again on top it opened
   // the jaw twice and left the teeth behind — the slider, an emotion or «Открыть рот» leave it as it is
   if (SC.on && name === SC.key) return;
-  for (const m of poseMeshes) if (m.morphTargetDictionary && name in m.morphTargetDictionary) m.morphTargetInfluences[m.morphTargetDictionary[name]] = v;
+  // a key the face has only by side now (an older lip-sync clip's mouthSmile): both halves
+  const names = poseMeshes.some((m) => m.morphTargetDictionary && name in m.morphTargetDictionary) ? [name] : [name + 'Left', name + 'Right'];
+  for (const n of names) for (const m of poseMeshes) if (m.morphTargetDictionary && n in m.morphTargetDictionary) m.morphTargetInfluences[m.morphTargetDictionary[n]] = v;
 }
 $('pMorph').onchange = () => { const n = $('pMorph').value; const m = poseMeshes.find((x) => x.morphTargetDictionary && n in x.morphTargetDictionary);
   $('pMorphV').value = m ? m.morphTargetInfluences[m.morphTargetDictionary[n]] : 0; };
