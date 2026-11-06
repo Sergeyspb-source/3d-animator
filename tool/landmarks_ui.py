@@ -266,6 +266,49 @@ def mount_rig_pose(config_loader, char):
     char.change(lambda r: ("", ""), char, [editor, note], show_progress="hidden")   # another character: open it anew
     data.change(keep, [char, data], note, show_progress="hidden")
 
+    # ---- the face on an auto-rig: marked here, built onto its skeleton (LM.build_face_on_rig)
+    gr.Markdown(_t("lm.rig_face_info"))
+    with gr.Row():
+        face_open = gr.Button(_t("lm.rig_face_open"))
+        face_go = gr.Button(_t("lm.rig_face_build"), variant="primary")
+    face_data = gr.Textbox(elem_id=LM.TARGET_ID + "_rigface", elem_classes=["sf3d-hidden"], show_label=False)
+    face_log = gr.Textbox(label=_t("face.progress"), lines=6, interactive=False)
+
+    def face_mark(rigged):
+        rigged = Path(rigged) if rigged else None
+        if not LM.is_rig(rigged):
+            return _t("lm.rig_pose_needs_a_skeleton"), ""
+        if LM.is_landmark_rig(rigged):
+            return "", _t("lm.rig_face_landmark")
+        plain = rigged.with_name(LM._stem(rigged) + "_rigged.noface.glb")   # marked on the rig as it came
+        page = LM.editor_page(plain if plain.exists() else rigged, LM.rig_face_state(rigged), rigged, target=LM.TARGET_ID + "_rigface")
+        return _frame(page), _t("lm.rig_face_mark_hint")
+
+    def face_build(rigged, text):
+        rigged = Path(rigged) if rigged else None
+        if not LM.is_rig(rigged) or LM.is_landmark_rig(rigged):
+            yield gr.update(), _t("lm.rig_face_landmark") if rigged and LM.is_landmark_rig(rigged) else _t("lm.rig_pose_needs_a_skeleton")
+            return
+        cfg = config_loader()
+        opt = _options(cfg)
+        lines = []
+        try:
+            # the editor's markup (all of it; only the face and its joints are used), else the face marked before
+            marks = json.loads(text) if (text or "").strip() else LM.rig_face_state(rigged)
+            for step in LM.build_face_on_rig(rigged, marks, cfg, (opt.get("kit") or "").strip(), bool(opt.get("eyes", True)),
+                                             bool(opt.get("eye_colour", True)), int(opt.get("face_smooth", 1))):
+                if isinstance(step, dict):   # the face built: the pose of the character, to try the mouth and the eyes
+                    yield _frame(LM.editor_page(rigged, LM.rig_state(rigged), rigged, mode="view", target=LM.TARGET_ID + "_pose")), "\n".join(lines)
+                else:
+                    lines.append(step)
+                    yield gr.update(), "\n".join(lines)
+        except Exception as e:  # noqa: BLE001
+            lines.append(_t("lm.error_2") + str(e))
+            yield gr.update(), "\n".join(lines)
+
+    face_open.click(face_mark, char, [editor, face_log])
+    face_go.click(face_build, [char, face_data], [editor, face_log], concurrency_id="face_on_rig", concurrency_limit=1)
+
 
 def _say_frame(page):   # the lipsync viewer: it may play the line's sound at once (the click was on this page)
     return ('<iframe allow="autoplay" srcdoc="%s" style="width:100%%;height:max(560px,62vh);border:0;border-radius:10px"></iframe>'

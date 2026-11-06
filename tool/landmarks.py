@@ -1044,45 +1044,78 @@ def eye_rim(face, s, cx=0.0):
     return [pts[i] for i in best]
 
 
-def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=True, kit="", face_topo=False, smooth=1,
-          eye_colour=True):
-    """Generator of log lines; the last item is a dict with the result paths."""
+FACE_JOINTS = ("jaw", "jaw_end", "eye_L", "eye_end_L", "eye_R", "eye_end_R")
+
+
+def rig_face_state(rigged: Path) -> dict:
+    """The editor's state for marking the face on an auto-rig: its joints off the bones, with the face and the face
+    joints marked before (kept in its passport <name>_rig.json)."""
+    st = rig_state(rigged) or {}
+    if not is_landmark_rig(rigged):
+        meta = _read_meta(rigged)
+        st["joints"] = {**(st.get("joints") or {}), **(meta.get("face_joints") or {})}
+        st["face"] = meta.get("face") or {}
+        st.pop("auto", None)   # the markup page: the face is marked here
+    return st
+
+
+def build_face_on_rig(rigged: Path, landmarks: dict, cfg, kit="", eyes=True, eye_colour=True, smooth=1):
+    """The face on an auto-rig: the face bones (jaw, eyes) added to its skeleton where the face was marked, the jaw's
+    skin from the head's, then the face steps of a markup build (mouth cut, brows, eyeballs and lids). The rig as it
+    came is kept once as <name>_rigged.noface.glb, so a new build starts from it; the face and the face joints go
+    into the passport. Generator of log lines; the last item is {"glb", "work", "images"}."""
+    rigged = Path(rigged)
     blender = cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe"
-    final, saved = output_paths(src, cfg["export_dir"])
-    work = Path(cfg["work_dir"]) / "landmark_rig" / (src.stem + "_" + datetime.now().strftime("%Y%m%d_%H%M%S"))
+    face = landmarks.get("face") or {}
+    joints = landmarks.get("joints") or {}
+    if not all(face.get(k) for k in ("mouth_c", "mouth_corner_L", "mouth_corner_R")) or "jaw" not in joints:
+        raise RuntimeError(_t("lm.face_on_rig_needs_the_face"))
+    stem = _stem(rigged)
+    plain = rigged.with_name(stem + "_rigged.noface.glb")
+    if not plain.exists():
+        shutil.copyfile(rigged, plain)
+    work = Path(cfg["work_dir"]) / "landmark_rig" / (stem + "_face_" + datetime.now().strftime("%Y%m%d_%H%M%S"))
     work.mkdir(parents=True, exist_ok=True)
-    job = {"source": str(clean_glb(src)), "out_dir": str(work), "landmarks": landmarks, "names": bone_names(naming)}
-    (work / "job.json").write_text(json.dumps(job, ensure_ascii=False, indent=1), encoding="utf-8")
-    yield _t("lm.blender_building_the_skeleton_and")
-    with (work / "blender.log").open("w", encoding="utf-8") as log:
-        r = subprocess.run([blender, "-b", "--factory-startup", "-P", str(ROOT / "blender_landmark_rig.py"), "--",
-                            str(work / "job.json")], stdout=log, stderr=subprocess.STDOUT, timeout=1200,
-                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-    text = (work / "blender.log").read_text(encoding="utf-8", errors="replace")
-    line = next((x for x in text.splitlines() if x.startswith("LANDMARK_RIG_OK")), None)
-    if r.returncode != 0 or line is None or not (work / "model.glb").exists():
-        raise RuntimeError(_t("lm.blender_did_not_build_the_skeleton") + text[-2500:])
-    report = json.loads(line.split(" ", 1)[1])
-    fb = report["fallback_vertices"]
-    extra = []
-    if report.get("heel_bones"):
-        extra.append(_t("lm.heel_bones_without_weights_for_foot", report['heel_bones']))
-    if report.get("prebend"):
-        extra.append(_t("lm.nearly_straight_elbows_knees_are") + ", ".join(report["prebend"]))
-    yield (_t("lm.skeleton_bones_vertices", report['bones'] + report.get('heel_bones', 0), report['vertices'])
-           + ("; ".join(extra) + ". " if extra else "")
-           + (_t("lm.blender_s_automatic_weights_failed", fb)
-              if fb else _t("lm.blender_s_automatic_weights_worked")))
-    model = work / "model.glb"
-    if weld:
-        from rigging import weld_seams
-        yield _t("lm.stitching_the_seams_between_the")
-        st = weld_seams(model, work / "model_seams.glb", blender, eps=0.0005 * max(report.get("height", 1.0), 1e-6))
-        if st:
-            model = work / "model_seams.glb"
-            yield _t("lm.seams_found_their_weights_evened_out", st['clusters'])
-        else:
-            yield _t("lm.no_seams_between_parts")
+    naming = rig_naming(rigged)
+    names = bone_names(naming)
+    job = {"source": str(plain), "out": str(work / "model.glb"), "joints": {k: joints[k] for k in FACE_JOINTS if k in joints},
+           "face": {k: face.get(k) for k in ("mouth_c", "mouth_corner_L", "mouth_corner_R")},
+           "names": {k: names[k] for k in ("head", "neck", "jaw", "eye_L", "eye_R") if k in names},
+           "report": str(work / "face_bones.json")}
+    (work / "face_bones_job.json").write_text(json.dumps(job, ensure_ascii=False), encoding="utf-8")
+    yield _t("lm.face_on_rig_bones")
+    r = subprocess.run([blender, "-b", "--factory-startup", "-P", str(ROOT / "blender_face_bones.py"), "--", str(work / "face_bones_job.json")],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=900,
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    line = next((x for x in r.stdout.splitlines() if x.startswith("FACEBONES_OK")), None)
+    if not line or not (work / "model.glb").exists():
+        fail = next((x for x in r.stdout.splitlines() if x.startswith("FACEBONES_FAIL")), (r.stdout + r.stderr)[-600:])
+        raise RuntimeError(_t("lm.face_on_rig_bones_failed") + fail)
+    rep = json.loads(line.split(" ", 1)[1])
+    yield _t("lm.face_on_rig_bones_done", ", ".join(rep.get("bones") or []), rep.get("jaw_vertices", 0))
+    model, images = yield from _face_steps(work / "model.glb", work, landmarks, naming, cfg, "cut", eyes, kit, False, smooth,
+                                           eye_colour)
+    rigged.write_bytes(Path(model).read_bytes())
+    try:   # the expressions corrected by hand before: on the new model again
+        import face_edits as FE
+        fe = FE.reapply(rigged)
+        if fe and fe.get("keys"):
+            yield _t("lm.face_edits_reapplied", fe["points"], fe["points"] + fe["missed"], ", ".join(fe["keys"]))
+    except Exception as e:  # noqa: BLE001
+        yield _t("lm.face_edits_reapply_failed", e)
+    meta_p = rig_meta(rigged)
+    meta = _read_meta(rigged)
+    meta["face"] = face
+    meta["face_joints"] = {k: joints[k] for k in FACE_JOINTS if k in joints}
+    meta_p.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    yield _t("lm.face_on_rig_done", rigged.name, plain.name)
+    yield {"glb": str(rigged), "work": str(work), "images": [p for p in images if Path(p).exists()]}
+
+
+def _face_steps(model: Path, work: Path, landmarks: dict, naming, cfg, mouth, eyes, kit, face_topo, smooth, eye_colour):
+    """The face on a skinned model (the skeleton built from the markup, or an auto-rig with its face bones added): the
+    speech mouth (cut or plate), the eyeballs and lids. Generator of log lines; returns (model, preview images)."""
+    blender = cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe"
     face = landmarks.get("face") or {}
     images_extra = []
     mouth = "plate" if mouth is True else (mouth or "none")
@@ -1193,6 +1226,50 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=T
         else:
             fail = next((x for x in r.stdout.splitlines() if x.startswith("EYES_FAIL")), (r.stdout + r.stderr)[-600:])
             yield _t("lm.eyeballs_failed_the_model_is_without") + fail
+    return model, images_extra
+
+
+def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=True, kit="", face_topo=False, smooth=1,
+          eye_colour=True):
+    """Generator of log lines; the last item is a dict with the result paths."""
+    blender = cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe"
+    final, saved = output_paths(src, cfg["export_dir"])
+    work = Path(cfg["work_dir"]) / "landmark_rig" / (src.stem + "_" + datetime.now().strftime("%Y%m%d_%H%M%S"))
+    work.mkdir(parents=True, exist_ok=True)
+    job = {"source": str(clean_glb(src)), "out_dir": str(work), "landmarks": landmarks, "names": bone_names(naming)}
+    (work / "job.json").write_text(json.dumps(job, ensure_ascii=False, indent=1), encoding="utf-8")
+    yield _t("lm.blender_building_the_skeleton_and")
+    with (work / "blender.log").open("w", encoding="utf-8") as log:
+        r = subprocess.run([blender, "-b", "--factory-startup", "-P", str(ROOT / "blender_landmark_rig.py"), "--",
+                            str(work / "job.json")], stdout=log, stderr=subprocess.STDOUT, timeout=1200,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    text = (work / "blender.log").read_text(encoding="utf-8", errors="replace")
+    line = next((x for x in text.splitlines() if x.startswith("LANDMARK_RIG_OK")), None)
+    if r.returncode != 0 or line is None or not (work / "model.glb").exists():
+        raise RuntimeError(_t("lm.blender_did_not_build_the_skeleton") + text[-2500:])
+    report = json.loads(line.split(" ", 1)[1])
+    fb = report["fallback_vertices"]
+    extra = []
+    if report.get("heel_bones"):
+        extra.append(_t("lm.heel_bones_without_weights_for_foot", report['heel_bones']))
+    if report.get("prebend"):
+        extra.append(_t("lm.nearly_straight_elbows_knees_are") + ", ".join(report["prebend"]))
+    yield (_t("lm.skeleton_bones_vertices", report['bones'] + report.get('heel_bones', 0), report['vertices'])
+           + ("; ".join(extra) + ". " if extra else "")
+           + (_t("lm.blender_s_automatic_weights_failed", fb)
+              if fb else _t("lm.blender_s_automatic_weights_worked")))
+    model = work / "model.glb"
+    if weld:
+        from rigging import weld_seams
+        yield _t("lm.stitching_the_seams_between_the")
+        st = weld_seams(model, work / "model_seams.glb", blender, eps=0.0005 * max(report.get("height", 1.0), 1e-6))
+        if st:
+            model = work / "model_seams.glb"
+            yield _t("lm.seams_found_their_weights_evened_out", st['clusters'])
+        else:
+            yield _t("lm.no_seams_between_parts")
+    model, images_extra = yield from _face_steps(model, work, landmarks, naming, cfg, mouth, eyes, kit, face_topo, smooth,
+                                                 eye_colour)
     final.parent.mkdir(parents=True, exist_ok=True)
     final.write_bytes(model.read_bytes())
     try:   # the expressions corrected by hand before: on the new model again, their points found by place
