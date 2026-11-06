@@ -572,6 +572,63 @@ def build(C):
             MR[k].append(v_)
     mouth_outer = [tuple(to_uv(P(v))) for v in MR[4]]
     EYE_SCALES = [1.0, 1.3, 1.65, 2.0]
+
+    def eyelid_rows(sd, rim2, loops):
+        """The eyelids as a topology of their own (like the lips): with the ball known (the markup's eye joint and its
+        radius), the lid's edge lies on it (1.03 r) along the eye outline as clicked, and two rows of lid skin go up
+        (16 and 32 degrees) or down (9 and 18) from it about the ball's lateral axis, a little off the ball (1.10 r,
+        1.15 r) - cloth over the eye. At the corners the turn fades to nothing, so the rows meet there like at a real
+        corner of the eye. The outer loop stays on the skin (the brow's front, the cheek); the band between it and the
+        last row is the lid's crease. Blinking (blender_eye_insert.py) turns the lid about the same axis, so the rows
+        slide over the ball and the lid's skin stretches over it. (From the old surface instead, the lid was what the
+        source had there - a painted eye, its folds - and closed into a blot over the eye; goblin_hero_2)
+        Experimental, off by default (job "eyelids"): with the blink keys as they are the lid did not cover the ball
+        and the crease's texture smeared - it wants its own blink and texture, see docs/ROADMAP.md."""
+        c3, rb = bl(job["eye_ball_" + sd]), float(job["eye_ball_r_" + sd])
+        n_ = len(rim2)
+        # corners: the outline's farthest points sideways; upper side: above the line between them
+        ia = min(range(n_), key=lambda i: rim2[i].x); ib = max(range(n_), key=lambda i: rim2[i].x)
+        A, B = rim2[ia], rim2[ib]
+        zl = lambda x: A.y + (B.y - A.y) * (x - A.x) / ((B.x - A.x) or 1e-9)
+        half = max(abs(B.x - A.x) / 2, 1e-9); xm = (A.x + B.x) / 2
+
+        def on_ball(x, z, R):   # the front of the sphere R round the ball's centre at (x, z), or its rim seen from the front
+            dx, dz = x - c3.x, z - c3.z
+            d2 = math.hypot(dx, dz)
+            if d2 > 0.985 * R:
+                dx, dz = dx * 0.985 * R / d2, dz * 0.985 * R / d2
+            return Vector((c3.x + dx, c3.y - math.sqrt(max(R * R - dx * dx - dz * dz, 0.0)), c3.z + dz))
+
+        def turn(q0, a, R):   # q0 turned about the lateral axis through the centre by a (+ = up), at distance R
+            q = q0 - c3
+            phi = math.atan2(q.z, -q.y) + a
+            rho = math.hypot(q.y, q.z)
+            d = Vector((q.x, -rho * math.cos(phi), rho * math.sin(phi))).normalized()
+            return c3 + d * R
+
+        def vert_at(p3):
+            v = bm.verts.new(finv @ p3)
+            h = skin_bvh.find_nearest(p3)
+            if h[2] is not None:
+                for g_, w_ in weights_at(h[0], h[2]).items():
+                    v[dl][g_] = w_
+            return v
+        margin = [on_ball(q.x, q.y, 1.03 * rb) for q in rim2]
+        rows = [margin]
+        for k, (au, al, Rk) in enumerate(((16.0, 9.0, 1.10 * rb), (32.0, 18.0, 1.15 * rb))):
+            row = []
+            for i, q in enumerate(rim2):
+                up = q.y >= zl(q.x)
+                fade = math.sin(math.pi / 2 * max(0.0, min(1.0, 1.0 - abs(q.x - xm) / half))) ** 0.7
+                row.append(turn(margin[i], math.radians(au if up else -al) * fade, Rk))
+            rows.append(row)
+        for k, row in enumerate(rows):
+            if k >= len(loops) - 1:
+                break
+            for i, p3 in enumerate(row):
+                bm.verts.remove(loops[k][i])
+                loops[k][i] = vert_at(p3)
+        report["eyelid_rows"] = report.get("eyelid_rows", 0) + 1
     ER_ = {}
     eye_outer = {}
     for sd, rim2 in rims.items():
@@ -586,31 +643,23 @@ def build(C):
         for sc in EYE_SCALES:
             lp = [new_vert(*eye_grow(c2, p, sc), ref_y=prev[i]) for i, p in enumerate(rim2)]
             if sc > 1.0:
-                # a point the chained depth put on the eye socket's insides (goblin_hero_2) lies near the centre: seen
-                # from it, it flew far out of place, the loop crossed the mask's outline and the brows tore into a
-                # comb. It goes onto the skin the front ray meets there
+                # the outer loops on the skin the front ray meets first, like the mouth's rings: under an overhanging
+                # brow that is the brow's front, and the fold is one band from the lid's edge up under the overhang,
+                # hidden by it. (Placed by rays from the head's centre they ran behind the brow into the forehead,
+                # and the band twisted into shards over the lid; goblin_hero_2)
                 for i, v in enumerate(lp):
                     gx, gz = eye_grow(c2, rim2[i], sc)
-                    qf = front_hit(gx, gz)
-                    if qf is not None and (to_uv(P(v)) - to_uv(qf)).length > 0.25 * ipd:
-                        nv_ = new_vert(gx, gz)
-                        bm.verts.remove(v)
-                        lp[i] = nv_
-                        report["eye_loops_off_insides"] = report.get("eye_loops_off_insides", 0) + 1
-                # under an overhanging brow the chained loop stays on the lid while the fill beyond lies on the brow,
-                # which tore into shards between them: the outer loops go up onto the overhang like the fill, so the
-                # fold is one clean band between the lid rim and the next loop
-                for i, v in enumerate(lp):
-                    pv = P(v)
-                    u_ = to_uv(pv)
-                    h = ray_rad(u_.x, u_.y)
-                    if h[0] is not None and (h[0] - C).length > (pv - C).length + 0.1 * ipd:
-                        nv_ = new_vert_uv(u_.x, u_.y)
-                        bm.verts.remove(v)
-                        lp[i] = nv_
-                        report["eye_loops_on_brow"] = report.get("eye_loops_on_brow", 0) + 1
+                    if front_hit(gx, gz) is None:
+                        continue
+                    nv_ = new_vert(gx, gz)
+                    if (P(nv_) - P(v)).length > 0.02 * ipd:
+                        report["eye_loops_front"] = report.get("eye_loops_front", 0) + 1
+                    bm.verts.remove(v)
+                    lp[i] = nv_
             prev = [P(v).y for v in lp]
             loops.append(lp)
+        if job.get("eye_ball_" + sd) and job.get("eye_ball_r_" + sd) and job.get("eyelids", False):   # experimental: see eyelid_rows
+            eyelid_rows(sd, rim2, loops)
         ER_[sd] = (c2, loops)
         eye_outer[sd] = [tuple(to_uv(P(v))) for v in loops[-1]]
 

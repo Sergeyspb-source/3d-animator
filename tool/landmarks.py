@@ -1109,6 +1109,9 @@ def build(src: Path, landmarks: dict, naming, cfg, weld=True, mouth=True, eyes=T
               "eye_L": face.get("eye_L"), "eye_R": face.get("eye_R"), "chin": landmarks.get("marks", {}).get("chin"),
               "eye_rim_L": eye_rim(face, "L", landmarks.get("center_x", 0)) if face.get("eye_in_L") else None,
               "eye_rim_R": eye_rim(face, "R", landmarks.get("center_x", 0)) if face.get("eye_in_R") else None,
+              # the balls as marked (their joints and radii): face_topo.py lays the eyelids on them
+              **{f"eye_ball_{s}": landmarks["joints"].get(f"eye_{s}") for s in "LR"},
+              **{f"eye_ball_r_{s}": _dist(landmarks["joints"].get(f"eye_{s}"), landmarks["joints"].get(f"eye_end_{s}")) for s in "LR"},
               "hinge": landmarks["joints"].get("jaw"), "head_bone": names["head"],
               "jaw_bone": names["jaw"] if "jaw" in landmarks["joints"] else "",
               "teeth_glb": str(kd / "teeth.glb"), "tongue_glb": str(kd / "tongue.glb"),

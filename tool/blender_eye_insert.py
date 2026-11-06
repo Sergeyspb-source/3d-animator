@@ -353,6 +353,10 @@ for side, sv in solved.items():
     sg = sock.vertex_groups.new(name=job["head_bone"]); sg.add(list(range(len(sock.data.vertices))), 1.0, "REPLACE")
     sm_ = sock.modifiers.new("Armature", "ARMATURE"); sm_.object = arm
     sock.parent = arm; sock.matrix_parent_inverse = arm.matrix_world.inverted()
+    if job.get("lid_shells", True):
+        # with the eyelid shells the opening round the ball is theirs: the cup's front lip, at the opening's edge,
+        # stood out in front of an uneven skin in dark flaps over the eye (women_young, man_young)
+        bpy.data.objects.remove(sock, do_unlink=True)
     report["eyes"][side] = {"radius": round(r, 4), "opening_width": round(width, 4), "deleted_faces": sv["kill"],
                             "rim_off_ball_mean": round(sum(rim_err) / len(rim_err), 4)}
 bpy.data.objects.remove(kit, do_unlink=True)
@@ -445,7 +449,11 @@ def lid_keys():
                         dist[t_] = d1
                     heapq.heappush(heap, (d1, j))
         name = {"L": "Left", "R": "Right"}.get(side, side)
-        for key, a_up, a_lo in (("eyeBlink", 1.0, 1.0), ("eyeSquint", 0.18, 0.55), ("eyeWide", -0.35, -0.12)):
+        # with the eyelid shells (lid_shells) closing the eye, the skin stays: turned all the way, the source's ragged
+        # cut edge closed in teeth and pieces far from the ball flew forward (women_young); even a quarter of the way
+        # it lay in stripes over the closed shell (man_young)
+        sk = float(job.get("skin_lid_share", 0.0 if job.get("lid_shells", True) else 1.0))
+        for key, a_up, a_lo in (("eyeBlink", sk, sk), ("eyeSquint", 0.18 * sk, 0.55 * sk), ("eyeWide", -0.35 * sk, -0.12 * sk)):
             mv = moves.setdefault(key + name, {})
             for i, gd in dist.items():
                 p = pts[i]
@@ -480,6 +488,155 @@ def lid_keys():
 
 if face is not None and job.get("lid_keys", True):
     report["lid_keys"] = lid_keys()
+
+
+# ------------------------------------------------------------------ eyelid shells (the user's idea)
+def lid_shells():
+    """Eyelids of their own over each ball (the user's idea): an upper and a lower shell, parts of spheres just over
+    the eye (1.05 and 1.02 times its cornea's bulge), skin coloured, with a dark rim, behind the face's skin - seen only through the eye
+    opening. Blinking turns the upper shell down about the ball's lateral axis and the lower one a little up; the
+    upper, the bigger, closes over the lower: the closing line is the upper shell's smooth edge, whatever the face's
+    mesh round the eye is like (the skin itself stays, lid_keys). Squint and wide turn them part way. Meshes of their own (EyeLid_L / _R) on the head
+    bone, with the keys of the skin's names, so the editor, lip sync and Godot drive them with the face."""
+    made = []
+    uvl = face.data.uv_layers.active
+    for side, sv in solved.items():
+        c, r, curve, width = sv["centre"], sv["r_ball"], sv["curve"], sv["width"]
+        ci, co = sv["corners"]
+        z_mid = lambda x: ci.z + (co.z - ci.z) * (x - ci.x) / ((co.x - ci.x) or 1e-9)
+        up = sorted([p for p in curve if p.z >= z_mid(p.x)], key=lambda p: p.x)
+        lo = sorted([p for p in curve if p.z < z_mid(p.x)], key=lambda p: p.x)
+        if len(up) < 3 or len(lo) < 3:
+            continue
+        ang = lambda q: math.atan2(q.z - c.z, c.y - q.y)        # elevation about the ball's centre (forward = -y)
+
+        def at(seq, x, f):
+            if x <= seq[0].x:
+                return f(seq[0])
+            for a_, b_ in zip(seq, seq[1:]):
+                if x <= b_.x:
+                    t = (x - a_.x) / ((b_.x - a_.x) or 1e-9)
+                    return f(a_) * (1 - t) + f(b_) * t
+            return f(seq[-1])
+        e_up, e_lo = (lambda x: at(up, x, ang)), (lambda x: at(lo, x, ang))
+        meet = lambda x, k: e_lo(x) + k * (e_up(x) - e_lo(x))
+        # just over the ball, the upper over the lower; behind the face's skin, seen only through the eye opening.
+        # (Sized to the opening's own edge they stood in front of the face as domes and boxes and never blended in)
+        # (from the eye's mesh as built: its cornea bulges past the ball's radius and showed through a shell of 1.06 r)
+        bulge = max([(v.co - c).length for b_, _bn, cc, _r in balls if (cc - c).length < 1e-6 for v in b_.data.vertices] or [r])
+        R_lo, R_up = 1.02 * bulge, 1.05 * bulge
+        # the face's skin, seen from the front: away from its edge a shell stays behind it
+        fv = [face.matrix_world @ v.co for v in face.data.vertices]
+        face.data.calc_loop_triangles()
+        sbvh = BVHTree.FromPolygons(fv, [tuple(t.vertices) for t in face.data.loop_triangles])
+        ymin_ = min(v.y for v in fv)
+
+        def behind_skin(p, rmin):   # p pulled in toward the centre until the skin is in front of it (not inside rmin)
+            h = sbvh.ray_cast(Vector((p.x, ymin_ - 20 * width, p.z)), Vector((0, 1, 0)), 80 * width)
+            if h[0] is None or h[0].y >= p.y - 0.004 * width:
+                return p
+            q = p - c
+            for k_ in range(12):
+                L = q.length * (1 - 0.03 * (k_ + 1))
+                if L <= rmin:
+                    return c + q.normalized() * rmin
+                p2 = c + q.normalized() * L
+                h = sbvh.ray_cast(Vector((p2.x, ymin_ - 20 * width, p2.z)), Vector((0, 1, 0)), 80 * width)
+                if h[0] is None or h[0].y < p2.y - 0.004 * width:
+                    return p2
+            return c + q.normalized() * rmin
+        # the skin's colour over the eye (the face's own texture, round the upper lid and below the brow)
+        cols = []
+        if uvl is not None:
+            for poly in face.data.polygons:
+                q = face.matrix_world @ poly.center
+                if not (up[0].x < q.x < up[-1].x) or q.y > c.y:
+                    continue
+                # under the brow and on the cheek under the eye (not just over it: the crease and the lashes are dark;
+                # not one side only: a light patch over one eye made that lid pale)
+                zu, zl_ = at(up, q.x, lambda p_: p_.z), at(lo, q.x, lambda p_: p_.z)
+                if not (zu + 0.4 * r < q.z < zu + 1.3 * r or zl_ - 1.2 * r < q.z < zl_ - 0.4 * r):
+                    continue
+                pix = base_pixels(face.data.materials[poly.material_index] if poly.material_index < len(face.data.materials) else None)
+                if pix is None:
+                    continue
+                arr, w_, h_ = pix[0], pix[1], pix[2]
+                uv = sum((uvl.data[li].uv for li in poly.loop_indices), Vector((0, 0))) / poly.loop_total
+                cols.append(arr[int(min(h_ - 1, max(0, (uv.y % 1.0) * h_))), int(min(w_ - 1, max(0, (uv.x % 1.0) * w_)))])
+        col = [sorted(c_[k] for c_ in cols)[len(cols) // 2] for k in range(3)] if cols else [0.55, 0.45, 0.3]
+        # the texture's pixels are sRGB, a material's colour is linear (taken as it is, the lid came out pale cream)
+        col = [((v + 0.055) / 1.055) ** 2.4 if v > 0.04045 else v / 12.92 for v in col]
+        NC, NR = 33, 10
+        bm = bmesh.new()
+        lay = []   # (column x, rows of verts) per shell
+        for sgn, R, edge, far in ((1, R_up, e_up, math.radians(125)), (-1, R_lo, e_lo, math.radians(-110))):
+            grid = []
+            for i in range(NC):
+                th = math.radians(-82 + 164 * i / (NC - 1))
+                qx, rho = R * math.sin(th), R * math.cos(th)
+                e = edge(c.x + qx)
+                row = []
+                for j in range(NR):
+                    ph = e + (far - e) * (j / (NR - 1)) ** 1.3
+                    p3 = c + Vector((qx, -rho * math.cos(ph), rho * math.sin(ph)))
+                    row.append(bm.verts.new(p3 if j == 0 or not job.get("lid_tuck", False) else behind_skin(p3, 1.01 * r)))
+                grid.append(row)
+            for i in range(NC - 1):
+                for j in range(NR - 1):
+                    f = bm.faces.new((grid[i][j], grid[i + 1][j], grid[i + 1][j + 1], grid[i][j + 1]))
+                    f.material_index = 1 if j == 0 else 0           # the edge row darker: the lid's rim, the lashes
+                    f.smooth = True
+            lay.append((sgn, R, grid))
+        bm.normal_update()
+        for f in bm.faces:   # outward, away from the ball
+            if f.normal.dot(f.calc_center_median() - c) < 0:
+                f.normal_flip()
+        bm.verts.index_update()
+        idx = [(sgn, [[v.index for v in col_] for col_ in grid]) for sgn, R, grid in lay]
+        me = bpy.data.meshes.new(f"EyeLid_{side}")
+        bm.to_mesh(me); bm.free()
+        ob = bpy.data.objects.new(me.name, me); bpy.context.scene.collection.objects.link(ob)
+        for name_, f_ in (("eyelid_skin", 1.0), ("eyelid_rim", 0.45)):
+            m = bpy.data.materials.new(f"{name_}_{side}"); m.use_nodes = True
+            bs = next(n for n in m.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
+            bs.inputs["Base Color"].default_value = (col[0] * f_, col[1] * f_, col[2] * f_, 1.0)
+            bs.inputs["Roughness"].default_value = 0.6
+            me.materials.append(m)
+        g = ob.vertex_groups.new(name=job["head_bone"])
+        g.add(list(range(len(me.vertices))), 1.0, "REPLACE")
+        md = ob.modifiers.new("Armature", "ARMATURE"); md.object = arm
+        ob.parent = arm; ob.matrix_parent_inverse = arm.matrix_world.inverted()
+        # keys: the upper shell turns down as far as the lid's middle needs to pass just under the line where the
+        # lids meet (a quarter up from the lower lid), the lower up to that line
+        ob.shape_key_add(name="Basis")
+        name = {"L": "Left", "R": "Right"}.get(side, side)
+        turns = {}
+        for sgn, cols_i in idx:
+            xs_ = [me.vertices[col_[0]].co.x for col_ in cols_i]
+            # like a real blink: the upper lid goes all the way down to the lower lid's edge, the lower comes up a
+            # little (an eighth of the opening); the upper, the bigger, closes over it (met in the middle, a white
+            # slit showed between them on man_young)
+            need = [(e_up(x) - meet(x, 0.0)) if sgn > 0 else (meet(x, 0.12) - e_lo(x)) for x in xs_]
+            # one turn for the whole shell: per column (by the outline) the closing line came out wavy; turned whole,
+            # it is the shell's smooth edge carried down - an arch, like a closed eye's
+            top = sorted(need)[len(need) // 2] if sgn < 0 else max(need)
+            turns[sgn] = [top] * len(need)
+        for key, ku, kl in (("eyeBlink", 1.0, 1.0), ("eyeSquint", 0.18, 0.55), ("eyeWide", -0.35, -0.12)):
+            kb = ob.shape_key_add(name=key + name, from_mix=False)
+            for sgn, cols_i in idx:
+                for i, col_ in enumerate(cols_i):
+                    d = turns[sgn][i] * (ku if sgn > 0 else -kl)       # + = down
+                    for vi in col_:
+                        q = me.vertices[vi].co - c
+                        rho_, ph = math.hypot(q.y, q.z), math.atan2(q.z, -q.y) - d
+                        kb.data[vi].co = c + Vector((q.x, -rho_ * math.cos(ph), rho_ * math.sin(ph)))
+            kb.value = 0.0
+        made.append(me.name)
+    return made
+
+
+if face is not None and job.get("lid_shells", True):
+    report["lid_shells"] = lid_shells()
 
 # eye bones to the ball centres (only the balls are weighted to them)
 bpy.ops.object.select_all(action="DESELECT"); arm.select_set(True); bpy.context.view_layer.objects.active = arm
