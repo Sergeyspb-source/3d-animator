@@ -460,11 +460,57 @@ def wear(cfg, text):
                else _hollow(cfg, req, rigged, item) if action == "hollow" else _face_edit(req, rigged) if action == "face_edit"
                else _tex_edit(req, rigged) if action == "tex_edit"
                else _mesh_edit(req, rigged) if action == "mesh_edit"
+               else _mouth_check(cfg, req) if action == "mouth_check"
                else _wear(cfg, req, rigged, item, action == "wear"))
     except Exception as e:  # noqa: BLE001  (the editor must hear back, or it waits for minutes)
         res = {"ok": False, "log": _t("lm.error", e)}
     status.write_text(json.dumps({"id": req.get("id"), **res}, ensure_ascii=False), encoding="utf-8")
     return res["log"]
+
+
+CHECK_FACE = {"mouth_c": "mouth_c", "corner_L": "mouth_corner_L", "corner_R": "mouth_corner_R", "mid_L": "mouth_mid_L",
+              "mid_R": "mouth_mid_R", "lip_top": "lip_top", "lip_bot": "lip_bot", "limit_top": "mouth_limit_top",
+              "open_top": "mouth_open_top", "open_bot": "mouth_open_bot", "teeth_front": "teeth_front"}
+
+
+def _mouth_check(cfg, req) -> dict:
+    """«Проверить рот» (the markup's mouth oval): the mouth cut again, on the last build's model, with the mouth points
+    as they are now in the editor ({source, face}); the build's other choices (face retopology, the face parts set)
+    from its cut_job.json. The result goes to <build>/mouth_check/check.glb with the triangles some key stretches
+    painted red; the character itself does not change. The editor waits for <stem>_wear_mouth_check.wear.json."""
+    src, face = Path(req.get("source") or ""), req.get("face") or {}
+    if not all(face.get(k) for k in ("mouth_c", "mouth_corner_L", "mouth_corner_R")):
+        return {"ok": False, "log": _t("lm.mouth_check_no_mouth")}
+    jobs = sorted((Path(cfg["work_dir"]) / "landmark_rig").glob(glob.escape(src.stem) + "_*/cut_job.json"),
+                  key=lambda p: p.stat().st_mtime)
+    jobs = [j for j in jobs if Path(json.loads(j.read_text(encoding="utf-8")).get("source", "")).exists()]
+    if not jobs:
+        return {"ok": False, "log": _t("lm.mouth_check_no_build")}
+    cj = json.loads(jobs[-1].read_text(encoding="utf-8"))
+    out = jobs[-1].parent / "mouth_check"
+    out.mkdir(exist_ok=True)
+    for k, f in CHECK_FACE.items():
+        cj[k] = face.get(f)
+    cj["teeth_scale"] = float(face.get("teeth_scale") or 1.0)
+    cj.update(out=str(out / "check.glb"), report=str(out / "report.json"), check=True)
+    cj.pop("preview", None)
+    (out / "job.json").write_text(json.dumps(cj, ensure_ascii=False), encoding="utf-8")
+    blender = cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe"
+    r = subprocess.run([blender, "-b", "--factory-startup", "-P", str(ROOT / "blender_mouth_cut.py"), "--", str(out / "job.json")],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=900,
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    line = next((x for x in r.stdout.splitlines() if x.startswith("CUT_OK")), None)
+    if not line:
+        fail = next((x for x in r.stdout.splitlines() if x.startswith("CUT_FAIL")), (r.stdout + r.stderr)[-600:])
+        return {"ok": False, "log": _t("lm.mouth_check_failed") + fail}
+    rep = json.loads(line.split(" ", 1)[1])
+    st = rep.get("check_stretch") or {}
+    worst = ", ".join(f"{k} {n}" for k, n in sorted(st.items(), key=lambda kv: -kv[1])[:5])
+    log = (_t("lm.mouth_check_stretched", sum(st.values()), worst) if st else _t("lm.mouth_check_clean"))
+    if rep.get("seam_points_moved"):
+        log += " " + _t("lm.mouth_check_seam", rep["seam_points_moved"])
+    return {"ok": True, "log": log, "glb": (out / "check.glb").resolve().as_posix(), "slit": rep.get("check_slit") or [],
+            "stretch": st, "built": jobs[-1].parent.name}
 
 
 def _mesh_edit(req, rigged: Path) -> dict:

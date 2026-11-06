@@ -122,6 +122,14 @@
   .sculptbox { position:absolute; right:10px; top:44px; z-index:6; width:250px; background:var(--panel); border:1px solid var(--line);
     border-radius:10px; padding:10px; display:flex; flex-direction:column; gap:7px; font-size:12px; }
   .sculptbox .seg { display:flex; flex-wrap:wrap; gap:4px; }
+  /* «Проверить рот»: the mouth as cut with the markup as it is now, over the whole page */
+  .mcbox { position:fixed; inset:12px; z-index:40; background:var(--panel); border:1px solid var(--line); border-radius:10px;
+    display:flex; flex-direction:column; overflow:hidden; box-shadow:0 8px 30px rgba(0,0,0,.45); }
+  .mcbox .bar { display:flex; flex-wrap:wrap; gap:10px; align-items:center; padding:8px 12px; font-size:13px; border-bottom:1px solid var(--line); }
+  .mcbox .bar label { display:flex; align-items:center; gap:6px; }
+  .mcbox .bar .log { flex:1; min-width:200px; color:var(--muted); font-size:12px; }
+  .mcbox canvas { position:static; inset:auto; flex:1; min-height:0; width:100%; height:auto; display:block; background:#2a2d33; }   /* not the stage's canvas rule */
+  #mcStatus { margin-top:4px; color:var(--muted); }
   .sculptbox .seg button.on { background:var(--accent); color:var(--accent-fg); }
   .sculptbox label { display:flex; align-items:center; gap:6px; }
   .sculptbox input[type=range] { flex:1; }
@@ -321,7 +329,9 @@
         <button id="eyeSmall" title="{{ed.smaller_eyeball}}" hidden>{{ed.eye}}</button><button id="eyeBig" title="{{ed.bigger_eyeball}}" hidden>{{ed.eye_2}}</button>
         <button id="mouthOpenBtn" title="{{ed.the_mouth_on_the_model_is_slightly}}" hidden>{{ed.mouth_slightly_open}}</button>
         <button id="teethBtn" title="{{ed.teeth_title}}" hidden>{{ed.teeth}}</button><button id="teethNarrow" title="{{ed.teeth_narrower}}" hidden>{{ed.teeth_minus}}</button><button id="teethWide" title="{{ed.teeth_wider}}" hidden>{{ed.teeth_plus}}</button>
+        <button id="mouthCheck" title="{{ed.mouth_check_title}}" hidden>{{ed.mouth_check}}</button>
       </div>
+      <div id="mcStatus" class="small" hidden></div>
     </div>
     <div class="box" id="selBox">
       <div class="grp">{{ed.selected_joint}}</div>
@@ -898,6 +908,7 @@ function refreshAll() {
   $('mouthOpenBtn').hidden = !ovalMode; $('mouthOpenBtn').classList.toggle('on', !!S.face.mouth_open_top);
   $('teethBtn').hidden = !ovalMode; $('teethBtn').classList.toggle('on', !!S.face.teeth_front);
   $('teethNarrow').hidden = $('teethWide').hidden = !ovalMode || !S.face.teeth_front;
+  $('mouthCheck').hidden = !ovalMode; if (!ovalMode) $('mcStatus').hidden = true;
   $('faceClear').hidden = !S.pos.jaw;
   $('fClear').hidden = !Object.keys(S.pos).some((k) => FINGER_RE.test(k));
   const w = (S.phase === 'edit' ? bendWarnings() : []).concat(markupMismatch ? [{ text: markupMismatch }] : []);
@@ -995,7 +1006,7 @@ function finishPlacing() {
 // ---------------------------------------------------------------- sync to the SF3D textbox
 let syncTimer = 0;
 function sync() {
-  clearTimeout(syncTimer);
+  clearTimeout(syncTimer); mcSlitClear();   // the checked cut's line was for the markup as it was
   syncTimer = setTimeout(() => {
     const el = $('sync');
     if (S.phase !== 'edit') { el.textContent = '{{js:ed.the_markup_is_not_finished_yet}}'; el.className = 'sync'; return; }
@@ -4908,17 +4919,90 @@ function wearGizmo(mode) {
   wear.sel = -1; wear.points = false; $('wPoints').classList.remove('on');
   tcW.setMode(mode); tcW.attach(wearHelper); $({ translate: 'wMove', rotate: 'wRot', scale: 'wScale' }[mode]).classList.add('on'); wearDraw();
 }
+// ---------------------------------------------------------------- «Проверить рот»: the mouth cut with the markup as it is now
+// SF3D cuts the mouth again on the last build's model (landmarks._mouth_check; the character stays as it is) and answers
+// with the result (the triangles some key stretches painted red, material "check_stretch") and the line the cut follows
+// (the lips' seam): the line is drawn on the face here, the model opens in a window over the page.
+const mc = { renderer: null, scene: null, camera: null, orbit: null, root: null, meshes: [], js: null };
+var mcSlit = null;   // var: sync() clears it and may run before this line
+function mcSlitClear() { if (mcSlit) for (const c of [...mcSlit.children]) { mcSlit.remove(c); c.geometry.dispose(); } }
+function mcSlitDraw(pts) {
+  mcSlitClear(); if (!pts || pts.length < 2) return;
+  if (!mcSlit) { mcSlit = new THREE.Group(); scene.add(mcSlit); }
+  const ln = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts.map((p) => new V3(p[0], p[1], p[2]))),
+    new THREE.LineBasicMaterial({ color: 0xff8a00, depthTest: false, transparent: true, opacity: .95 }));
+  ln.renderOrder = 999; mcSlit.add(ln);
+}
+$('mouthCheck').onclick = async () => {
+  const btn = $('mouthCheck'), st = $('mcStatus'); if (!ovalMode || btn.disabled) return;
+  st.hidden = false;
+  if (!DATA.rigged) { st.textContent = '{{js:ed.mouth_check_build_first}}'; return; }
+  btn.disabled = true;
+  try {
+    const js = await wearSend('mouth_check', { item: 'mouth_check', source: DATA.source, face: S.face }, '{{js:ed.mouth_check_wait}}', st);
+    if (js && js.ok) { mcSlitDraw(js.slit); await mcShow(js); }
+  } catch (e) { st.textContent = '{{js:ed.could_not_send_to_sf3d}}' + e.message; }
+  finally { btn.disabled = false; }
+};
+function mcDraw() {
+  if (!mc.renderer || $('mcBox').hidden) return;
+  const c = $('mcCanvas'), w = c.clientWidth, h = c.clientHeight; if (!w || !h) return;
+  mc.renderer.setSize(w, h, false); mc.camera.aspect = w / h; mc.camera.updateProjectionMatrix();
+  mc.renderer.render(mc.scene, mc.camera);
+}
+function mcApply() {   // the chosen key at the slider's value, every other key at 0; the red marks on or off
+  const key = $('mcKey').value, v = +$('mcOpen').value, marks = $('mcMarks').checked;
+  for (const m of mc.meshes) {
+    if (m.morphTargetDictionary) { m.morphTargetInfluences.fill(0); if (key in m.morphTargetDictionary) m.morphTargetInfluences[m.morphTargetDictionary[key]] = v; }
+    if (m.userData.mcSkin) m.material = marks ? m.userData.mcRed : m.userData.mcSkin;
+  }
+  mcDraw();
+}
+async function mcShow(js) {
+  mc.js = js; $('mcBox').hidden = false; $('mcLog').textContent = js.log;
+  if (!mc.renderer) {
+    mc.renderer = new THREE.WebGLRenderer({ canvas: $('mcCanvas'), antialias: true }); mc.renderer.setPixelRatio(devicePixelRatio);
+    mc.scene = new THREE.Scene(); mc.scene.background = new THREE.Color(0x2a2d33);
+    mc.scene.add(new THREE.HemisphereLight(0xffffff, 0x50505a, 2.0));
+    const d = new THREE.DirectionalLight(0xffffff, 1.4); d.position.set(.4, .8, 1.5); mc.scene.add(d);
+    mc.camera = new THREE.PerspectiveCamera(28, 1, .001, 100);
+    mc.orbit = new OrbitControls(mc.camera, $('mcCanvas')); mc.orbit.addEventListener('change', mcDraw);
+    addEventListener('resize', mcDraw);
+  }
+  if (mc.root) { mc.scene.remove(mc.root); mc.root.traverse((o) => { if (o.isMesh) o.geometry.dispose(); }); }
+  const g = await new GLTFLoader().loadAsync(fileUrl(js.glb) + '?t=' + Date.now());
+  mc.root = g.scene; mc.scene.add(mc.root); mc.root.updateMatrixWorld(true); mc.meshes = [];
+  mc.root.traverse((o) => { if (o.isMesh) { mc.meshes.push(o); for (const mt of [].concat(o.material)) mt.side = THREE.DoubleSide; } });
+  for (const m of mc.meshes) {   // a red primitive: its skin is the material of the biggest other primitive of the same mesh
+    if (!m.material || m.material.name !== 'check_stretch' || !m.parent) continue;
+    const sib = m.parent.children.filter((o) => o.isMesh && o !== m && o.material && o.material.map)
+      .sort((a, b) => b.geometry.attributes.position.count - a.geometry.attributes.position.count)[0];
+    if (sib) { m.userData.mcRed = m.material; m.userData.mcSkin = sib.material; }
+  }
+  const keys = new Set(); for (const m of mc.meshes) for (const k in (m.morphTargetDictionary || {})) keys.add(k);
+  const st = js.stretch || {}, order = [...keys].sort((a, b) => (st[b] || 0) - (st[a] || 0) || (b === 'jawOpen') - (a === 'jawOpen') || a.localeCompare(b));
+  $('mcKey').innerHTML = order.map((k) => `<option value="${k}">${k}${st[k] ? ' — ' + st[k] : ''}</option>`).join('');
+  $('mcKey').value = keys.has('jawOpen') ? 'jawOpen' : order[0] || ''; $('mcOpen').value = 1;
+  const F = S.face, M = V(F.mouth_c), w = V(F.mouth_corner_L).distanceTo(V(F.mouth_corner_R)) || .05;
+  const tgt = M.clone().add(new V3(0, -.3 * w, 0));
+  mc.orbit.target.copy(tgt); mc.camera.position.copy(tgt).add(new V3(0, .1 * w, 3.4 * w)); mc.camera.near = w * .02; mc.camera.far = w * 400;
+  mc.orbit.update(); requestAnimationFrame(mcApply);
+}
+$('mcKey').onchange = () => { $('mcOpen').value = 1; mcApply(); };
+$('mcOpen').oninput = mcApply; $('mcMarks').onchange = mcApply;
+$('mcClose').onclick = () => { $('mcBox').hidden = true; };
+
 // SF3D does the work: the request goes through a hidden textbox and button, the answer comes back as a status file
 // next to the character (<stem>_wear_<item>.wear.json, <stem>_wardrobe.wear.json for the Godot fitting room)
-async function wearSend(action, extra, wait) {
+async function wearSend(action, extra, wait, out = $('wStatus')) {   // out: where the progress and the answer are shown
   const req = Object.assign({ id: Date.now(), action, rigged: DATA.rigged }, extra);
   try {
     const ta = window.parent.document.querySelector('#' + DATA.wear_target + ' textarea');
     ta.value = JSON.stringify(req); ta.dispatchEvent(new Event('input', { bubbles: true }));
     await new Promise((r) => setTimeout(r, 400));
     window.parent.document.querySelector('#' + DATA.wear_go).click();
-  } catch (e) { $('wStatus').textContent = '{{js:ed.could_not_send_to_sf3d}}' + e.message; return null; }
-  $('wStatus').textContent = wait;
+  } catch (e) { out.textContent = '{{js:ed.could_not_send_to_sf3d}}' + e.message; return null; }
+  out.textContent = wait;
   const stem = DATA.rigged.split('/').pop().replace(/_(landmarks_)?rigged\.glb$/i, '').replace(/\.glb$/i, '');
   const status = DATA.rigged.replace(/[^/]*$/, '') + stem + (action === 'wardrobe' ? '_wardrobe' : '_wear_' + req.item) + '.wear.json';
   for (let k = 0; k < 400; k++) {
@@ -4926,7 +5010,7 @@ async function wearSend(action, extra, wait) {
     let js = null;
     try { const r = await fetch(fileUrl(status) + '?t=' + Date.now()); if (r.ok) js = await r.json(); } catch (e) { /* not yet */ }
     if (!js || js.id !== req.id) continue;
-    $('wStatus').textContent = js.log;
+    out.textContent = js.log;
     if (js.fit) {   // the saved fitting: into the list (replacing the same item)
       const i = wearFits.findIndex((f) => f.item === js.fit.item);
       if (i >= 0) wearFits[i] = js.fit; else wearFits.push(js.fit);
@@ -4934,7 +5018,7 @@ async function wearSend(action, extra, wait) {
     }
     return js;
   }
-  $('wStatus').textContent = '{{js:ed.sf3d_did_not_answer_see_the_armour}}';
+  out.textContent = '{{js:ed.sf3d_did_not_answer_see_the_armour}}';
   return null;
 }
 const wearArmJoints = () => ['L', 'R'].map((sd) => jointAt('arm', sd)).filter(Boolean).map((a) => V(a).toArray());   // a cuirass's sides fit closely towards them
@@ -5149,5 +5233,16 @@ renderer.setAnimationLoop(() => {
   renderer.render(scene, camera);
 });
 </script>
+<div class="mcbox" id="mcBox" hidden>
+  <div class="bar">
+    <b>{{ed.mouth_check_head}}</b>
+    <label>{{ed.mouth_check_key}} <select id="mcKey"></select></label>
+    <label>{{ed.mouth_check_open}} <input type="range" id="mcOpen" min="0" max="1" step="0.01" value="1"></label>
+    <label><input type="checkbox" id="mcMarks" checked> {{ed.mouth_check_marks}}</label>
+    <span class="log" id="mcLog"></span>
+    <button id="mcClose">{{ed.mouth_check_close}}</button>
+  </div>
+  <canvas id="mcCanvas"></canvas>
+</div>
 </body>
 </html>

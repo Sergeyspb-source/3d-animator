@@ -941,6 +941,14 @@ for f in ([] if OVAL else bm.faces):
 report["lip_shelf_faces"] = shelf_n
 bmesh.ops.delete(bm, geom=blob, context="FACES_ONLY")   # (the vertices stay: the slit's lists still name some)
 report["lips_inside_removed"] = len(blob)
+if job.get("check"):   # «Проверить рот»: the cut's line for the editor (glTF axes), the upper lip's cut edge at rest
+    _bins = {}
+    for v in upper:   # the foremost point in each of 48 strips across the mouth (the edge also runs inside)
+        if v.is_valid:
+            p = P(v); b_ = int((p.x - x0) / max(x1 - x0, 1e-9) * 48)
+            if b_ not in _bins or p.y < _bins[b_].y:
+                _bins[b_] = p
+    report["check_slit"] = [[round(p.x, 5), round(p.z, 5), round(-p.y, 5)] for _, p in sorted(_bins.items())]
 bm.to_mesh(face.data); bm.free()
 # smooth normals for the rebuilt area: the source mesh carries custom split normals and new vertices get none, which
 # shades every new triangle differently. Loops of faces touching the new area get the area-weighted normal of all
@@ -1836,6 +1844,31 @@ if _wa is not None and face.data.shape_keys:
             for i, ws in _anc.items():
                 kb.data[i].co = _b0[i].co + sum(((kb.data[a_].co - _b0[a_].co) * w for a_, w in ws), Vector())
         report["seam_upper_points_in_keys"] = len(_anc)
+
+# ------------------------------------------------------------------ 6c. the check («Проверить рот» in the markup)
+# job "check": the face's triangles near the mouth that some key stretches (an edge over 0.12 W and 2.5 times its
+# length at rest) get a material of their own, "check_stretch", bright red: the editor shows the model as cut with
+# them marked. The report says how many per key.
+if job.get("check") and face.data.shape_keys:
+    red = bpy.data.materials.new("check_stretch"); red.use_nodes = True
+    _rb = next(n for n in red.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
+    _rb.inputs["Base Color"].default_value = (1.0, 0.05, 0.03, 1.0)
+    face.data.materials.append(red); _red = len(face.data.materials) - 1
+    _kbs = face.data.shape_keys.key_blocks
+    _near = [p for p in face.data.polygons if (fw @ p.center - M).length < 3.0 * W]
+    _vi = sorted({i for p in _near for i in p.vertices})
+    _pos = lambda kb: {i: fw @ kb.data[i].co for i in _vi}
+    _b = _pos(_kbs[0]); _st = {}
+    _lr = {p.index: max((_b[p.vertices[i]] - _b[p.vertices[i - 1]]).length for i in range(len(p.vertices))) for p in _near}
+    for kb in _kbs[1:]:
+        k_ = _pos(kb); n_ = 0
+        for p in _near:
+            lk = max((k_[p.vertices[i]] - k_[p.vertices[i - 1]]).length for i in range(len(p.vertices)))
+            if lk > 0.12 * W and lk > 2.5 * _lr[p.index]:
+                p.material_index = _red; n_ += 1
+        if n_:
+            _st[kb.name] = n_
+    report["check_stretch"] = _st
 
 for o in bpy.data.objects:     # rest = all keys at 0 (Blender 5 adds new keys at 1 -> glTF default weights)
     if o.type == "MESH" and o.data.shape_keys:
