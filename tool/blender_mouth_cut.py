@@ -16,7 +16,8 @@ Recipe of the game's 3d-animator facial-rig.md §16, for gameplay distance:
 4. the face-parts teeth and tongue scaled to the mouth width behind the lips: upper teeth + gum on the head, lower
    teeth + gum + tongue on the jaw.
 5. shape keys with the mouth plate's names, so lip sync is the same: jawOpen = everything on the jaw turned about
-   the hinge; mouthSmile, mouthStretch, mouthFunnel, mouthPucker, mouthUpperUp, mouthLowerDown move the lips.
+   the hinge; mouthSmile, mouthStretch, mouthFunnel, mouthPucker, mouthUpperUp, mouthLowerDown move the lips (the
+   one-sided ones split into ...Left / ...Right); cheekSquint / noseSneer Left and Right when the eyes are marked.
 """
 import json
 import math
@@ -24,6 +25,7 @@ import sys
 from pathlib import Path
 
 import bmesh
+import bisect
 import bpy
 from mathutils import Matrix, Vector
 sys.path.insert(0, str(Path(__file__).resolve().parent))   # Blender does not put the script's folder on the path
@@ -115,12 +117,108 @@ def skin_y(x, z):
     return None if h[0] is None else h[0].y
 
 
+# ------------------------------------------------------------------ 0. the seam: which lip each point is on
+# The clicked line is where the lips meet seen from the front; inside they may meet elsewhere. On a mouth sculpted shut
+# the upper lip's underside dips under the line before it turns into the head (women_young: on the jaw's side of a
+# plane through the line, it went down with the jaw and stood as a brown jagged shelf on the lower lip), and a line
+# clicked a little high leaves a strip of the upper lip to the lower one. Two walks over the skin (points welded by
+# place: glTF splits them on UV seams), from the upper lip's front and from the lower's (0.12 W off the line, across
+# the mouth), give each point near the mouth the lip it is nearer to along the surface. Where that disagrees with the
+# line near the cut, the point goes to that lip's side. side() is from here on "which side of the seam": the cut goes
+# round the fold and leaves it with the upper lip, and every later step (weights, lip bones, keys) sees it so.
+# (Moving the fold over to the upper lip after the cut instead - its faces on the upper edge's twins, its motion in
+# the keys taken from that edge - stretched it on man-young, whose upper edge partly goes with the jaw.)
+side_line = side
+SEAM_ON = bool(job.get("seam_follow", True)) and not (job.get("face_topo") or job.get("oval_mesh"))
+SP = [side_line(p) for p in _wv]   # per source point: the side it goes to
+_seam_moved = 0
+if SEAM_ON:
+    import heapq
+    _me = face.data
+    _q = W * 1e-4
+    _node, _np, _vn = {}, [], []
+    for p in _wv:
+        k_ = (round(p.x / _q), round(p.y / _q), round(p.z / _q))
+        if k_ not in _node:
+            _node[k_] = len(_np); _np.append(p)
+        _vn.append(_node[k_])
+    _half = (x1 - x0) / 2
+    _reg = lambda p: abs(p.x - cx) < 1.6 * _half and abs(p.z - M.z) < 1.0 * W and p.y < M.y + 2.5 * W
+    _adj = {}
+    for e in _me.edges:
+        a_, b_ = _vn[e.vertices[0]], _vn[e.vertices[1]]
+        if a_ != b_ and _reg(_np[a_]) and _reg(_np[b_]):
+            d_ = (_np[a_] - _np[b_]).length
+            _adj.setdefault(a_, []).append((b_, d_)); _adj.setdefault(b_, []).append((a_, d_))
+
+    def _seeds(dz):
+        out = set()
+        for i in range(41):
+            x = x0 + (0.08 + 0.84 * i / 40) * (x1 - x0)
+            h = skin_bvh.ray_cast(Vector((x, _ymin - 20 * W, line_z(x) + dz)), Vector((0, 1, 0)), 80 * W)
+            if h[0] is not None:
+                tri = _me.loop_triangles[h[2]]
+                out.add(min((_vn[i_] for i_ in tri.vertices), key=lambda n: (_np[n] - h[0]).length))
+        return out
+
+    def _walk(src):
+        dist = {s_: 0.0 for s_ in src}; hq = [(0.0, s_) for s_ in src]
+        while hq:
+            d_, n = heapq.heappop(hq)
+            if d_ > dist.get(n, 1e18):
+                continue
+            for m, w in _adj.get(n, []):
+                nd = d_ + w
+                if nd < dist.get(m, 1e18):
+                    dist[m] = nd; heapq.heappush(hq, (nd, m))
+        return dist
+    _du, _dd = _walk(_seeds(0.12 * W)), _walk(_seeds(-0.12 * W))
+    for vi, p in enumerate(_wv):
+        a_, b_ = _du.get(_vn[vi]), _dd.get(_vn[vi])
+        if a_ is None or b_ is None:
+            continue
+        sf = (b_ - a_) / 2          # > 0: nearer the upper lip along the skin
+        if p.y < front_limit + 0.15 * W and abs(p.x - cx) < 1.05 * _half and abs(sf) > 0.01 * W \
+                and (sf > 0) != (SP[vi] > 0):
+            SP[vi] = math.copysign(max(abs(SP[vi]), 0.006 * W), sf); _seam_moved += 1
+    report["seam_points_moved"] = _seam_moved
+
+
+def _side_from(pairs):
+    """side() looked up: the nearest point's side (exact on the mesh's own points), the line's away from them"""
+    from mathutils.kdtree import KDTree
+    kd = KDTree(len(pairs))
+    for i, (p, _) in enumerate(pairs):
+        kd.insert(p, i)
+    kd.balance()
+    vals = [v for _, v in pairs]
+
+    def f(p):
+        co, i, d = kd.find(p)
+        return side_line(p) if i is None or d > 0.1 * W else vals[i]
+    return f
+
+
+if _seam_moved:
+    side = _side_from(list(zip(_wv, SP)))
+
+
 # ------------------------------------------------------------------ 1. cut along the line
 bm = bmesh.new(); bm.from_mesh(face.data)
 # which lip a point is on, for the lip bones (step 4b): the layer is made now, before any vertex is held - a layer
 # added later frees every BMVert the script holds (the slit's copies died and the lip roll found no edge to roll)
 LIP_SIDE = bm.verts.layers.int.get("lip_side") or bm.verts.layers.int.new("lip_side")
+SS = bm.verts.layers.float.get("seam_side") or bm.verts.layers.float.new("seam_side")   # step 0: each point's side
+SEAM_UP = bm.verts.layers.int.get("seam_up") or bm.verts.layers.int.new("seam_up")   # 1 given to the upper lip, 2 its edge
 dl = bm.verts.layers.deform.verify()
+bm.verts.ensure_lookup_table()
+for v in bm.verts:
+    v[SS] = SP[v.index]
+    v[SEAM_UP] = 1 if SP[v.index] > 0 and side_line(_wv[v.index]) <= 0 else 0
+# a point's side: from the seam's layer when the seam moved any (the cut's own points are given 0 there); else, as
+# before, by where it is (the rebuilt face mask's points have no value in the layer: read as 0, they found no
+# neighbours to take weights from, and fairy's lower lip opened in a notch)
+sv = (lambda v: v[SS]) if _seam_moved else (lambda v: side(P(v)))
 P = lambda v: fw @ v.co
 gi = {g.name: g.index for g in face.vertex_groups}
 if HEAD not in gi:
@@ -395,7 +493,7 @@ if not OVAL:
     cross = []
     for e in bm.edges:
         a, b = P(e.verts[0]), P(e.verts[1])
-        sa, sb = side(a), side(b)
+        sa, sb = sv(e.verts[0]), sv(e.verts[1])
         if sa * sb < 0 and (in_zone(a) or in_zone(b)):
             t = sa / (sa - sb)
             q = a.lerp(b, t)
@@ -405,10 +503,11 @@ if not OVAL:
     for e, t in cross:
         v0 = e.verts[0]
         ne, nv = bmesh.utils.edge_split(e, v0, t)
+        nv[SS] = 0.0
         new_verts.add(nv)
     for v in bm.verts:   # original vertices lying on the line itself are cut points too (else their faces bridge the slit)
         p = P(v)
-        if abs(side(p)) < W * 0.004 and in_zone(p):
+        if abs(sv(v)) < W * 0.004 and in_zone(p):
             new_verts.add(v)
     report["crossed_edges"] = len(cross)
     if len(new_verts) < 6:
@@ -432,7 +531,7 @@ if not OVAL:
         if not f.is_valid:
             continue
         ps = [P(v) for v in f.verts]
-        sd = [side(q) for q in ps]
+        sd = [sv(v) for v in f.verts]
         if not (max(sd) > W * 0.004 and min(sd) < -W * 0.004 and all(q.y < front_limit for q in ps)
                 and x0 < sum(q.x for q in ps) / len(ps) < x1):
             continue
@@ -443,9 +542,10 @@ if not OVAL:
             for e in list(f.edges):
                 if on[0] in e.verts:
                     continue
-                sa_, sb_ = side(P(e.verts[0])), side(P(e.verts[1]))
+                sa_, sb_ = sv(e.verts[0]), sv(e.verts[1])
                 if sa_ * sb_ < 0:
                     _, nv_ = bmesh.utils.edge_split(e, e.verts[0], sa_ / (sa_ - sb_))
+                    nv_[SS] = 0.0
                     new_verts.add(nv_)
                     on.append(nv_)
                     break
@@ -460,18 +560,31 @@ if not OVAL:
             second += 1
     report["second_pass_faces"] = second
     for e in bm.edges:
-        if all(v in new_verts for v in e.verts) and all(abs(side(P(v))) < W * 0.004 for v in e.verts):
+        if all(v in new_verts for v in e.verts) and all(abs(sv(v)) < W * 0.004 for v in e.verts):
             line_edges.add(e)
     res = bmesh.ops.split_edges(bm, edges=[e for e in line_edges if e.is_valid])
     # classify the copies on the line: upper lip or lower lip, from their faces
     bm.verts.ensure_lookup_table()
-    on_line = [v for v in bm.verts if (abs(side(P(v))) < W * 0.004 and in_zone(P(v))) or v in new_verts]
+    on_line = [v for v in bm.verts if (abs(sv(v)) < W * 0.004 and in_zone(P(v))) or v in new_verts]
     upper, lower = [], []
     for v in set(on_line):
         if not v.link_faces:
             continue
-        c = sum((fw @ f.calc_center_median() for f in v.link_faces), Vector()) / len(v.link_faces)
-        (upper if side(c) > 0 else lower).append(v)
+        # by the seam's sides of its faces' points off the line (a face's centre fell either side of the seam)
+        vals = [sv(o) for f in v.link_faces for o in f.verts if abs(sv(o)) >= W * 0.004]
+        if vals:
+            (upper if sum(vals) > 0 else lower).append(v)
+        else:
+            c = sum((fw @ f.calc_center_median() for f in v.link_faces), Vector()) / len(v.link_faces)
+            (upper if side(c) > 0 else lower).append(v)
+    if _seam_moved:   # the cut's own points in the lookup too (on the seam)
+        side = _side_from([(P(v), sv(v)) for v in bm.verts])
+        _lo_ = set(lower)
+        for v in bm.verts:   # the cut's copies took the mark of the point they came from: only points off it keep it
+            if v[SEAM_UP] == 1 and (sv(v) < W * 0.004 or v in new_verts or v in _lo_):
+                v[SEAM_UP] = 0
+        for v in upper:
+            v[SEAM_UP] = 2
 else:
     if FACE_TOPO:   # the whole face mask rebuilt (tool/face_topo.py), slit included
         sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -490,7 +603,7 @@ def copy_weights(v, from_side):
     best, bd = None, 1e9
     for e in v.link_edges:
         o = e.other_vert(v)
-        sp = side(P(o))
+        sp = sv(o)
         if (sp > 0) == (from_side > 0) and abs(sp) > W * 1e-4:
             d = (P(o) - P(v)).length
             if d < bd:
@@ -506,7 +619,7 @@ if not OVAL:
     bridge = []
     for f in bm.faces:
         ps = [P(v) for v in f.verts]
-        if all(in_zone(p) for p in ps) and max(side(p) for p in ps) > W * 0.004 and min(side(p) for p in ps) < -W * 0.004             and abs(sum(p.x for p in ps) / len(ps) - cx) < (x1 - x0) / 2 - 0.08 * W:
+        if all(in_zone(p) for p in ps) and max(sv(v) for v in f.verts) > W * 0.004 and min(sv(v) for v in f.verts) < -W * 0.004             and abs(sum(p.x for p in ps) / len(ps) - cx) < (x1 - x0) / 2 - 0.08 * W:
             bridge.append(f)
     bmesh.ops.delete(bm, geom=bridge, context="FACES")
     report["bridge_faces_removed"] = len(bridge)
@@ -528,7 +641,7 @@ for f in bm.faces:   # the source's own skin only: a rebuilt face mask lies a li
     if sy is None or c.y < sy + 0.03 * W:
         continue
     ps = [P(v) for v in f.verts]
-    if max(side(p) for p in ps) > -0.002 * W and min(side(p) for p in ps) < 0.002 * W:   # it reaches across the slit
+    if max(sv(v) for v in f.verts) > -0.002 * W and min(sv(v) for v in f.verts) < 0.002 * W:   # it reaches across the slit
         inner.append(f)
 bmesh.ops.delete(bm, geom=inner, context="FACES_ONLY")   # (the vertices stay: the slit's lists still name some)
 report["inner_mouth_faces_removed"] = len(inner)
@@ -541,7 +654,12 @@ for f in bm.faces:
     if _m and _m.name.startswith(("lip_inner", "face_mask")):
         continue
     c = fw @ f.calc_center_median()
-    if abs(c.x - cx) > (x1 - x0) / 2 + 0.04 * W or abs(side(c)) > 0.35 * W or c.y > M.y + 0.9 * W:
+    # a band about the slit, reaching up only 0.12 W: above it, under a big low nose, the skin lies as deep behind the
+    # nose's tip and its faces went too (holes under goblin_hero_2's nose)
+    # below the slit 1.25 W deep: the source's mouth floor about 1 W behind the lips, half on the jaw, stretched into
+    # grey teeth hanging in the open mouth (women_young); above it the palate stays still and stays
+    if abs(c.x - cx) > (x1 - x0) / 2 + 0.04 * W or not -0.3 * W < side(c) < 0.12 * W \
+            or c.y > M.y + (1.25 if side(c) < 0 else 0.9) * W:
         continue
     sy = skin_y(c.x, c.z)
     if sy is not None and c.y > sy + 0.35 * W and all(P(v).y > sy + 0.25 * W for v in f.verts):
@@ -762,13 +880,74 @@ for verts_side, sgn in ((set(upper), 1), (set(lower), -1)):
             roll_faces.append(f)
         edges = [e for e in ne if e.is_boundary and all(v in nv for v in e.verts)]
 bm.normal_update()
+# 2b. where the closed lips touch: on a source sculpted with the mouth shut the skin folds deep into the head between
+# them - the lips' insides, a jagged lump, painted with the skin (on women_young 0.12-0.45 W behind the cut, part of the
+# lower lip's front hidden under the upper lip's overhang). Opened, the jaw showed it as a brown jagged shelf between
+# the lower lip and the teeth. What lies deep behind the cut goes (the roll is the lips' inside); the rest of what is
+# hidden at rest takes the lip's inner colour: a material of its own ("lip_shelf"), so the roll's rules (kept still,
+# pinned when pressed, the lip cage) do not take it. The upper lip's underside just under the line is the upper lip's
+# already: the seam (step 0) left it there.
+shelf_mat = bpy.data.materials.new("lip_shelf"); shelf_mat.use_nodes = True
+sb_ = next(n for n in shelf_mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
+sb_.inputs["Base Color"].default_value = lb.inputs["Base Color"].default_value[:]
+sb_.inputs["Roughness"].default_value = 0.35
+face.data.materials.append(shelf_mat)
+shelf_idx = len(face.data.materials) - 1
+_nrm = fw.to_3x3().inverted().transposed()
+def _depth_along(vs):   # a lip's cut edge: how deep it is along x (its foremost point near x)
+    pts = sorted((P(v).x, P(v).y) for v in vs if v.is_valid)
+    def at(x):
+        lo, hi = bisect.bisect_left(pts, (x - 0.04 * W, -1e9)), bisect.bisect_right(pts, (x + 0.04 * W, 1e9))
+        if hi > lo:
+            return min(q[1] for q in pts[lo:hi])
+        i = bisect.bisect_left(pts, (x, -1e9))
+        near = [pts[k] for k in (i - 1, i) if 0 <= k < len(pts)]
+        return min(near, key=lambda q: abs(q[0] - x))[1] if near else None
+    return at
+slit_y = {-1: _depth_along(lower), 1: _depth_along(upper)}
+rim = {lv: {f for v in vs if v.is_valid for f in v.link_faces} for lv, vs in ((-1, lower), (1, upper))}   # on the slit
+shelf_n = {"lower": 0, "upper": 0}
+blob = []
+# (a rebuilt face mask has no source fold: it lies a little inside the old skin, so "hidden at rest" took its lips and
+# its philtrum - pink plates on fairy and goblin_1)
+for f in ([] if OVAL else bm.faces):
+    if f.material_index in (lip_idx, shelf_idx):
+        continue
+    c = fw @ f.calc_center_median()
+    u = (c.x - x0) / max(x1 - x0, 1e-9)
+    # not at the corners; near the slit's height only (up to 0.12 W: above, the skin under a big low nose is as
+    # hidden, behind the nose's tip, and went pink on goblin_hero_2)
+    if not 0.03 < u < 0.97 or not -0.3 * W < side(c) < 0.12 * W:
+        continue
+    # which lip by where it is (the band's own mark said "upper" for part of the lump below the slit: it went down with
+    # the jaw all the same)
+    lv = -1 if side(c) < 0 else 1
+    n = (_nrm @ f.normal).normalized()
+    if not all(v[LIP_SIDE] for v in f.verts):   # the lips' band only
+        continue
+    sy = skin_y(c.x, c.z)
+    hid = None if sy is None else c.y - sy
+    sl = slit_y[lv](c.x)
+    # the lips' inside proper goes: a jagged lump 0.12-0.45 W deep behind the cut, its faces every way, its top above
+    # the roll - it stood in the open mouth whatever its colour; the roll is the lips' inside now. Near the cut's depth
+    # it stays (the lower lip's front under an overhanging upper lip, facing the viewer: the lip itself, no hole in it)
+    if hid is not None and hid > 0.03 * W and sl is not None and (c.y > sl + 0.08 * W or lv == -1 and n.y > -0.5):
+        blob.append(f)
+    # hidden behind the skin at rest (the texture there is whatever the painter never saw); on the slit, turned up or
+    # down into the fold, a little behind is enough. Never what the closed mouth shows: by the corners, and on a lip
+    # seen from below, it went pink
+    elif hid is not None and (hid > 0.03 * W or f in rim[lv] and hid > 0.008 * W and abs(n.z) > 0.3 and 0.12 < u < 0.88):
+        f.material_index = shelf_idx; shelf_n["lower" if lv == -1 else "upper"] += 1
+report["lip_shelf_faces"] = shelf_n
+bmesh.ops.delete(bm, geom=blob, context="FACES_ONLY")   # (the vertices stay: the slit's lists still name some)
+report["lips_inside_removed"] = len(blob)
 bm.to_mesh(face.data); bm.free()
 # smooth normals for the rebuilt area: the source mesh carries custom split normals and new vertices get none, which
 # shades every new triangle differently. Loops of faces touching the new area get the area-weighted normal of all
 # faces at that position (welded across UV-seam twins); the rest of the body keeps its own normals.
 if OVAL:
     me_ = face.data
-    new_mats = {i for i, m in enumerate(me_.materials) if m and m.name.startswith(("face_mask", "lip_inner"))}
+    new_mats = {i for i, m in enumerate(me_.materials) if m and m.name.startswith(("face_mask", "lip_inner", "lip_shelf"))}
     if new_mats:
         q_ = W * 1e-4
         key = [tuple(round(c / q_) for c in v.co) for v in me_.vertices]
@@ -1262,6 +1441,70 @@ for name, fn in (("mouthSmile", k_smile), ("mouthStretch", k_stretch), ("mouthFu
     add_key(face, name, fn)
 
 
+# ARKit's Left / Right: the mouth keys that move one side are split by a soft middle (0.3 W wide; the character's left
+# is the corner_L side), so an emotion lifts one corner (a smirk, a sneer) and lip sync drives the sides apart; the
+# two halves add up to the key as made. Cheek squint and nose sneer per side where the eyes are marked (they place the
+# cheek under the eye and the nose wing)
+LSX = 1.0 if CL.x > cx else -1.0
+
+
+def side_mask(p):   # 1 on the character's left, 0 on the right
+    t = max(0.0, min(1.0, 0.5 + (p.x - cx) * LSX / (0.3 * W)))
+    return t * t * (3 - 2 * t)
+
+
+def split_key(o, name):
+    kbs = o.data.shape_keys.key_blocks
+    kb = kbs.get(name)
+    if kb is None:
+        return False
+    base, mw = kbs[0], o.matrix_world
+    n = len(kb.data)
+    d = [kb.data[i].co - base.data[i].co for i in range(n)]
+    m = [side_mask(mw @ base.data[i].co) for i in range(n)]
+    for sd, f in (("Left", lambda x: x), ("Right", lambda x: 1.0 - x)):
+        nk = o.shape_key_add(name=name + sd, from_mix=False)
+        for i in range(n):
+            if d[i].length_squared > 0:
+                nk.data[i].co = base.data[i].co + d[i] * f(m[i])
+    o.shape_key_remove(kb)
+    return True
+
+
+PAIRED_MOUTH = ("mouthSmile", "mouthFrown", "mouthStretch", "mouthUpperUp", "mouthLowerDown", "mouthPress")
+report["keys_split"] = [k for k in PAIRED_MOUTH if split_key(face, k)]
+if job.get("eye_L") and job.get("eye_R"):
+    _EL, _ER = bl(job["eye_L"]), bl(job["eye_R"])
+    _ipd = (_EL - _ER).length
+    _mid = (_EL.x + _ER.x) / 2
+
+    def k_cheek(E):   # the cheek under the eye goes up (and a touch forward), the lower lid with it: a squint
+        sx = 1.0 if E.x > _mid else -1.0
+        C = E + Vector((sx * 0.05 * _ipd, 0, -0.42 * _ipd))
+
+        def f(o, v, p):
+            if p.y > E.y + 0.35 * _ipd:   # behind the face
+                return None
+            w = math.exp(-((p - C).length / (0.3 * _ipd)) ** 2)
+            return p + Vector((0, -0.03 * _ipd, 0.11 * _ipd)) * w if w > 1e-3 else None
+        return f
+
+    def k_sneer(E):   # the nose wing up and a little in, the skin beside it wrinkling up
+        sx = 1.0 if E.x > _mid else -1.0
+        nx, nz = _mid + sx * 0.2 * _ipd, M.z + 0.42 * (E.z - M.z)
+
+        def f(o, v, p):
+            if p.y > E.y:   # the nose is in front of the eyes
+                return None
+            w = math.exp(-((p.x - nx) ** 2 + (p.z - nz) ** 2) / (0.22 * _ipd) ** 2)
+            return p + Vector((-sx * 0.02 * _ipd, -0.015 * _ipd, 0.10 * _ipd)) * w if w > 1e-3 else None
+        return f
+    for sd, E in (("Left", _EL), ("Right", _ER)):
+        add_key(face, "cheekSquint" + sd, k_cheek(E))
+        add_key(face, "noseSneer" + sd, k_sneer(E))
+    report["keys_added"] = ["cheekSquintLeft", "noseSneerLeft", "cheekSquintRight", "noseSneerRight"]
+
+
 def brow_keys():
     """ARKit brow keys on the rebuilt forehead (lipsync.py drives them from emotions): browInnerUp, browOuterUp and
     browDown per side. Each moves the brow over its eye with a soft falloff: nothing at the eyelid rim (the eyeball
@@ -1568,6 +1811,32 @@ check["after"] = _count(_found)
 check["rows_moved"] = {k: round(v / W, 3) for k, v in _moved_rows.items()}
 report["through_skin"] = check
 
+# ------------------------------------------------------------------ 6b. what the seam gave the upper lip moves with it
+# (step 0) the keys spread the jaw's motion over the points near the lips whatever their weights: the fold the seam
+# left with the upper lip went partly down with the jaw and hung from the open upper lip in flaps. In every key each of
+# those points takes the motion of the upper lip's cut edge near it (the six nearest, by inverse distance)
+_wa = face.data.attributes.get("seam_up")
+if _wa is not None and face.data.shape_keys:
+    from mathutils.kdtree import KDTree
+    _fv = [i for i, d in enumerate(_wa.data) if d.value == 1]
+    _av = [i for i, d in enumerate(_wa.data) if d.value == 2]
+    if _fv and _av:
+        _kbs = face.data.shape_keys.key_blocks; _b0 = _kbs[0].data
+        _kd = KDTree(len(_av))
+        for n_, i in enumerate(_av):
+            _kd.insert(_b0[i].co, n_)
+        _kd.balance()
+        _anc = {}
+        for i in _fv:
+            got = _kd.find_n(_b0[i].co, 6)
+            ws = [(_av[n_], 1.0 / max(d_, 1e-9)) for _co, n_, d_ in got]
+            t_ = sum(w for _, w in ws)
+            _anc[i] = [(a_, w / t_) for a_, w in ws]
+        for kb in _kbs[1:]:
+            for i, ws in _anc.items():
+                kb.data[i].co = _b0[i].co + sum(((kb.data[a_].co - _b0[a_].co) * w for a_, w in ws), Vector())
+        report["seam_upper_points_in_keys"] = len(_anc)
+
 for o in bpy.data.objects:     # rest = all keys at 0 (Blender 5 adds new keys at 1 -> glTF default weights)
     if o.type == "MESH" and o.data.shape_keys:
         for kb in o.data.shape_keys.key_blocks[1:]:
@@ -1596,8 +1865,8 @@ if job.get("preview"):
     shots = []
     for key, view in (("closed", "front"), ("jawOpen", "front"), ("jawOpen", "side"), ("mouthSmile", "front")):
         for o in keyed:
-            for kb in o.data.shape_keys.key_blocks[1:]:
-                kb.value = 1.0 if kb.name == key else 0.0
+            for kb in o.data.shape_keys.key_blocks[1:]:   # a split key shows both its sides
+                kb.value = 1.0 if kb.name in (key, key + "Left", key + "Right") else 0.0
         if view == "front":
             cam.location = (cx, M.y - W * 100, line_z(cx) - W * 0.2); cam.rotation_euler = (math.radians(90), 0, 0)
         else:

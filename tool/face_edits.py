@@ -185,7 +185,9 @@ def apply(base_glb, out_glb, edits, tex_dir: Path | None = None) -> dict:
                 continue
             mi, m = hit
             names = (m.get("extras") or {}).get("targetNames") or []
-            if (key != BASIS and key not in names) or g.get("prim", 0) >= len(m["primitives"]):
+            # a key since split into ...Left / ...Right (the mouth's one-sided keys): its edits go to both by side
+            split = key != BASIS and key not in names and key + "Left" in names and key + "Right" in names
+            if (key != BASIS and key not in names and not split) or g.get("prim", 0) >= len(m["primitives"]):
                 missed += len(g.get("v") or [])
                 continue
             prim = m["primitives"][g["prim"]]
@@ -202,17 +204,24 @@ def apply(base_glb, out_glb, edits, tex_dir: Path | None = None) -> dict:
             if key == BASIS:
                 _rest(j, bin_, prim, base, where[use], rows[use, 4:7])
                 continue
-            t = names.index(key)
-            tg = prim["targets"][t]
-            dpos = accessor(j, bin_, tg["POSITION"])
-            new = dpos.copy()
-            np.add.at(new, where[use], rows[use, 4:7])
-            if "NORMAL" in tg:   # the light: the normals' displacement turned as the edit turns the surface
-                tris = _tris(j, bin_, prim, len(base))
-                dn = accessor(j, bin_, tg["NORMAL"])
-                dn += vertex_normals(base + new, tris) - vertex_normals(base + dpos, tris)
-                tg["NORMAL"] = sparse_accessor(j, bin_, dn, 1e-6)
-            tg["POSITION"] = sparse_accessor(j, bin_, new)
+            if split:   # the character's left is +x (glTF faces +z); a soft middle as the build splits them
+                mid = float(b0[:, 0].min() + b0[:, 0].max()) / 2
+                left = np.clip(0.5 + (rows[use, 1] - mid) / (0.008 * size), 0.0, 1.0)
+                left = left * left * (3 - 2 * left)
+                parts = [(key + "Left", left), (key + "Right", 1.0 - left)]
+            else:
+                parts = [(key, np.ones(int(use.sum())))]
+            for kname, share in parts:
+                tg = prim["targets"][names.index(kname)]
+                dpos = accessor(j, bin_, tg["POSITION"])
+                new = dpos.copy()
+                np.add.at(new, where[use], rows[use, 4:7] * share[:, None])
+                if "NORMAL" in tg:   # the light: the normals' displacement turned as the edit turns the surface
+                    tris = _tris(j, bin_, prim, len(base))
+                    dn = accessor(j, bin_, tg["NORMAL"])
+                    dn += vertex_normals(base + new, tris) - vertex_normals(base + dpos, tris)
+                    tg["NORMAL"] = sparse_accessor(j, bin_, dn, 1e-6)
+                tg["POSITION"] = sparse_accessor(j, bin_, new)
     mesh = mesh_apply(j, bin_, edits.get("mesh")) if edits.get("mesh") else {"cut": 0, "filled": 0, "missed": 0}
     painted = _paint(j, bin_, tex_dir)
     write_glb(out_glb, j, bin_)

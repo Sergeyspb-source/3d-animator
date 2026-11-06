@@ -2014,6 +2014,7 @@ function poseReset() {
   stopClip(); if (mixer) mixer.stopAllAction();
   for (const m of poseMeshes) if (m.morphTargetInfluences) m.morphTargetInfluences.fill(0);
   if ($('pMorphV')) $('pMorphV').value = 0;
+  if (SC.on) scInsides();   // a key being edited: its insides stay with the baked face
   for (const [b, q] of REST) b.quaternion.copy(q);
   for (const [b, p] of RESTP) b.position.copy(p); poseRoot.updateMatrixWorld(true);
 }
@@ -2303,6 +2304,9 @@ function keyLabel(k) {
   return (KEYL[base] ? KEYL[base] + side : k) + ' — ' + k;
 }
 function setMorph(name, v) {
+  // the key being edited is baked into the face at full strength (its insides at 1): applied again on top it opened
+  // the jaw twice and left the teeth behind — the slider, an emotion or «Открыть рот» leave it as it is
+  if (SC.on && name === SC.key) return;
   for (const m of poseMeshes) if (m.morphTargetDictionary && name in m.morphTargetDictionary) m.morphTargetInfluences[m.morphTargetDictionary[name]] = v;
 }
 $('pMorph').onchange = () => { const n = $('pMorph').value; const m = poseMeshes.find((x) => x.morphTargetDictionary && n in x.morphTargetDictionary);
@@ -2656,15 +2660,19 @@ function scEnter(key) {
   if (key === REST_KEY) { SC.restAt = new Map(); for (const m of scFaceMeshes(key)) SC.restAt.set(m.uuid, scRest(m).off.slice()); }
   if (weightsOn) setWeights(false);
   poseReset(); setMorph(key, 0); SC.key = key; scBuild(key); scBake(true); SC.on = true;
-  // the mouth's insides (teeth, gums, tongue, the cavity) show the same key as the face baked: with them at rest the
-  // lower teeth stood up between the opened lips
-  for (const m of poseMeshes) if (m.morphTargetDictionary && key in m.morphTargetDictionary && !SC.items.some((it) => it.m === m))
-    m.morphTargetInfluences[m.morphTargetDictionary[key]] = 1;
+  scInsides(); $('pMorphV').value = 0; $('pMorphV').disabled = true;
   $('sculptBox').hidden = false; $('pSculpt').classList.add('on'); $('scKey').textContent = '{{js:ed.sc_editing}}'.replace('{0}', keyLabel(key));
   hoverId = null; poseHighlight(); scStatus();
 }
+function scInsides() {
+  // the mouth's insides (teeth, gums, tongue, the cavity) show the same key as the face baked: with them at rest the
+  // lower teeth stood up between the opened lips
+  for (const m of poseMeshes) if (m.morphTargetDictionary && SC.key in m.morphTargetDictionary && !SC.items.some((it) => it.m === m))
+    m.morphTargetInfluences[m.morphTargetDictionary[SC.key]] = 1;
+}
 function scExit() {
   if (!SC.on) return;
+  $('pMorphV').disabled = false;
   if (SC.key === REST_KEY) scRestKeys();
   if (LC.on) lcOff();
   scBake(false); SC.on = false; SC.stroke = null; scRing.visible = false;
@@ -2689,7 +2697,9 @@ function scRestKeys() {   // the rest moved since entering: the keys moving thos
   }
 }
 $('pSculpt').onclick = () => { if (SC.on) scExit(); else if ($('pMorph').value) scEnter($('pMorph').value); };
-$('pMorph').addEventListener('change', () => { if (SC.on && $('pMorph').value !== SC.key) { scExit(); scEnter($('pMorph').value); } });
+$('pMorph').addEventListener('change', () => {   // scExit puts the list back on the edited key: the new one kept first
+  const k = $('pMorph').value; if (SC.on && k !== SC.key) { scExit(); $('pMorph').value = k; scEnter(k); $('pMorphV').value = 0; }
+});
 for (const b of $('scModes').querySelectorAll('button')) b.onclick = () => {
   SC.mode = b.dataset.m; for (const x of $('scModes').querySelectorAll('button')) x.classList.toggle('on', x === b);
   if (LC.on) { lcOff(); scStatus(); }   // a brush chosen: the cage put away
