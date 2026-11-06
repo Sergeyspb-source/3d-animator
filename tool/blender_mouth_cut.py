@@ -1185,7 +1185,19 @@ def jaw_w(o, v):
     return min(1.0, sum(x.weight for x in v.groups if x.group in ids))
 
 
+# keys only emotions use (lip sync's mouth shapes stay as they are) go further: at the old reach the emotions, mixed in
+# at 0.04-0.5 of them, hardly showed (the brows moved 7-8 mm on a human-sized face)
+EXPRESS = float(job.get("face_expressivity", 1.6))
+EXPRESS_KEYS = ("brow", "cheekSquint", "noseSneer", "mouthFrown")
+
+
 def add_key(o, name, fn):
+    if EXPRESS != 1.0 and name.startswith(EXPRESS_KEYS):
+        fn0 = fn
+
+        def fn(o_, v_, p_):
+            q_ = fn0(o_, v_, p_)
+            return None if q_ is None else p_ + (q_ - p_) * EXPRESS
     if o.data.shape_keys is None:
         o.shape_key_add(name="Basis")
     old = o.data.shape_keys.key_blocks.get(name)
@@ -1514,7 +1526,7 @@ if job.get("eye_L") and job.get("eye_R"):
 
 
 def brow_keys():
-    """ARKit brow keys on the rebuilt forehead (lipsync.py drives them from emotions): browInnerUp, browOuterUp and
+    """ARKit brow keys on the forehead (lipsync.py drives them from emotions): browInnerUp, browOuterUp and
     browDown per side. Each moves the brow over its eye with a soft falloff: nothing at the eyelid rim (the eyeball
     fits there), full at the brow line, fading again up the forehead. Hair strands lying over the brow move along."""
     EL_, ER_ = bl(job["eye_L"]), bl(job["eye_R"])
@@ -1653,7 +1665,7 @@ def lip_untangle(o, names, rounds=40):
 
 report["lip_points_evened"] = lip_untangle(face, [k.name for k in face.data.shape_keys.key_blocks[1:]])   # [before, after]
 
-if FACE_TOPO:
+if job.get("eye_L") and job.get("eye_R"):   # (not only on a rebuilt face: without it the emotions' brows stood still)
     report["brow_keys"] = brow_keys()
 
 

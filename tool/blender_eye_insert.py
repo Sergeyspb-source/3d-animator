@@ -449,11 +449,13 @@ def lid_keys():
                         dist[t_] = d1
                     heapq.heappush(heap, (d1, j))
         name = {"L": "Left", "R": "Right"}.get(side, side)
-        # with the eyelid shells (lid_shells) closing the eye, the skin stays: turned all the way, the source's ragged
-        # cut edge closed in teeth and pieces far from the ball flew forward (women_young); even a quarter of the way
-        # it lay in stripes over the closed shell (man_young)
+        # with the eyelid shells (lid_shells) closing the eye, the skin stays on a blink: turned all the way, the
+        # source's ragged cut edge closed in teeth and pieces far from the ball flew forward (women_young); even a
+        # quarter of the way it lay in stripes over the closed shell (man_young). Squint and wide are the skin's own
+        # (the shells lie behind it: without the skin those two keys showed nothing)
         sk = float(job.get("skin_lid_share", 0.0 if job.get("lid_shells", True) else 1.0))
-        for key, a_up, a_lo in (("eyeBlink", sk, sk), ("eyeSquint", 0.18 * sk, 0.55 * sk), ("eyeWide", -0.35 * sk, -0.12 * sk)):
+        ex = float(job.get("lid_expressivity", 1.5))   # squint and wide further than they were (they hardly showed)
+        for key, a_up, a_lo in (("eyeBlink", sk, sk), ("eyeSquint", 0.18 * ex, 0.55 * ex), ("eyeWide", -0.35 * ex, -0.12 * ex)):
             mv = moves.setdefault(key + name, {})
             for i, gd in dist.items():
                 p = pts[i]
@@ -621,7 +623,8 @@ def lid_shells():
             # it is the shell's smooth edge carried down - an arch, like a closed eye's
             top = sorted(need)[len(need) // 2] if sgn < 0 else max(need)
             turns[sgn] = [top] * len(need)
-        for key, ku, kl in (("eyeBlink", 1.0, 1.0), ("eyeSquint", 0.18, 0.55), ("eyeWide", -0.35, -0.12)):
+        ex = float(job.get("lid_expressivity", 1.5))
+        for key, ku, kl in (("eyeBlink", 1.0, 1.0), ("eyeSquint", 0.18 * ex, 0.55 * ex), ("eyeWide", -0.35 * ex, -0.12 * ex)):
             kb = ob.shape_key_add(name=key + name, from_mix=False)
             for sgn, cols_i in idx:
                 for i, col_ in enumerate(cols_i):

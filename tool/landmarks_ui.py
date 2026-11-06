@@ -65,7 +65,7 @@ def mount(config_loader, asset, upload, accordion=True):
                 eyecol = gr.Checkbox(value=opt.get("eye_colour", True), label=_t("lm.iris_colour_from_the_model_s_painted"),
                                      info=_t("lm.off_the_colour_from_the_face_parts"))
             with gr.Row():
-                ftopo = gr.Checkbox(value=bool(opt.get("face_topo", True)) and m0 == "cut", interactive=m0 == "cut",
+                ftopo = gr.Checkbox(value=bool(opt.get("face_topo", False)) and m0 == "cut", interactive=m0 == "cut",
                                     label=_t("lm.face_retopology_an_even_mesh_around"), info=_t("lm.rebuilds_the_face_mesh_in_rings"))
                 fsmooth = gr.Slider(0, 3, value=opt.get("face_smooth", 2), step=1, label=_t("lm.face_mesh_smoothing_0_off"))
                 kit = gr.Dropdown(choices=_kit_choices(config_loader(), opt.get("kit", "")), value=opt.get("kit", ""),
@@ -165,7 +165,7 @@ def mount(config_loader, asset, upload, accordion=True):
         ref_btn.click(open_view, ref_file, editor)
         # retopology needs the cut mouth: keep the two consistent
         # the retopology needs the cut mouth: off (and greyed) without it, back to the last choice with it
-        mouth.change(lambda m: gr.update(interactive=m == "cut", value=bool(_options(config_loader()).get("face_topo", True)) and m == "cut"),
+        mouth.change(lambda m: gr.update(interactive=m == "cut", value=bool(_options(config_loader()).get("face_topo", False)) and m == "cut"),
                      mouth, ftopo, show_progress="hidden")
 
         def _store(**kv):

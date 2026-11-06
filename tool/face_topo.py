@@ -960,4 +960,15 @@ def build(C):
         bpy.data.meshes.remove(d)
     sc.render.engine = "BLENDER_WORKBENCH"
     report["mask_bake_px"] = res_px
+    # a lip line: the slit's two rows were one line on the skin and the closed mouth looked glued shut (women_young).
+    # They part a hair (upper up, lower down) and sink a little into the mouth, fading to nothing at the corners
+    gap_, sink_ = float(job.get("slit_gap", 0.0015)) * W, float(job.get("slit_sink", 0.03)) * W
+    if gap_ or sink_:
+        to_loc = finv.to_3x3()
+        for vs, sg in ((U[1:NM // 2], 1.0), ([D[i] for i in range(NM // 2 + 1, NM)], -1.0)):
+            for v in vs:
+                q = P(v)
+                f_ = math.sin(math.pi / 2 * max(0.0, min(1.0, 1.0 - abs(q.x - cx) / max(half, 1e-9)))) ** 0.6
+                v.co += to_loc @ Vector((0, sink_ * f_, sg * gap_ * f_))
+        report["slit_line"] = [round(gap_ / W, 4), round(sink_ / W, 4)]
     return U[1:NM // 2], [D[i] for i in range(NM // 2 + 1, NM)], {U[0], U[NM // 2]}, set(U) | set(D.values())
