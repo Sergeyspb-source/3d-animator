@@ -119,6 +119,7 @@
       <div class="row" style="margin-top:6px" id="savedRow" hidden>
         <span class="note">{{ag.saved}}</span><select id="saved" class="grow"></select><button id="savedDel" title="{{ag.remove_title}}">{{ag.remove_piece}}</button>
       </div>
+      <div class="row" style="margin-top:6px" id="layersRow" hidden><button id="layersGo" title="{{ag.layers_rebuild_info}}">{{ag.layers_rebuild}}</button></div>
     </div>
     <div id="groups"></div>
     <div class="box" id="pinchBox">
@@ -264,9 +265,17 @@ async function loadCharacter() {
   BONES = boneNames.map((n) => byName[n]);
   SKEL = new THREE.Skeleton(BONES, BONES.map((b) => b.matrixWorld.clone().invert()));
 }
-// the order layers go on in, whichever is made first: trousers, a brayette over them, a skirt, a cuirass over the
-// skirt's top («torso»: a breastplate fitted in «Armour»), pauldrons; a piece of a higher layer is over the new one
-const LAYER = { undercloth: .5, trousers: 1, brayette: 2, tassets: 3, cuirass: 4, torso: 4, pauldron: 5 };
+// the order layers go on in, whichever is made first: the clothes under the armour, trousers, shoes, a brayette, the
+// limbs' plates (a gauntlet's cuff over the vambrace, the elbow cops over them), a skirt, a cuirass over the skirt's
+// top, pauldrons, then the cloth over it all (a tabard, a skirt of cloth, a cloak); a piece of a higher layer is over
+// the new one: the new one is fitted under it (Profile.shell keeps it inside that one's inner wall). The pieces fitted
+// in «Armour» are known by their body part («torso»: a breastplate). A piece made under others already worn: those
+// were fitted without it - «Rebuild by layers» makes them again over it.
+const LAYER = { undercloth: .5, trousers: 1, footwear: 1.5, foot: 1.5, brayette: 2, bracer: 3, rerebrace: 3, greave: 3, cuisse: 3,
+  forearm: 3, upperarm: 3, arm: 3, leg: 3, upleg: 3, tassets: 3, hips: 3, glove: 3.2, hand: 3.2, elbow: 3.5, cuirass: 4, torso: 4,
+  pauldron: 5, shoulder: 5, helmet: 5, head: 5, tabard: 6, skirt: 6, cloak: 7 };
+const CLOTH_KINDS = ['cloak', 'skirt', 'tabard'];   // over the new piece: not a wall to keep it under (the cloth is made again over it)
+let UNDER_T = 0;   // the piece being built: its thickness as a share of a profile's size (kept so far inside a wall over it)
 // a weapon or a shield in the hand is only shown with the rest: nothing is fitted over or under it, and a held piece
 // is fitted over nothing
 const HELD = ['weapon', 'shield', 'sheath'], layerOf = (w) => !HELD.includes(w.piece) && !['weapon', 'shield'].includes(S.piece);   // a belt goes over the armour ticked
@@ -278,10 +287,10 @@ const isOuter = (w) => (S.piece === 'helmet' ? ['helmet', 'head'].includes(w.pie
 let outerGeo = null, bodyFor = null;
 function buildBody() {
   const pos = [], idx = [], vb = [], vw = [], id = new Map(boneNames.map((n, i) => [n, i])), v = new V3();
-  const on = [...WORN.values()].filter((w) => w.on && layerOf(w)), meshes = [...charMeshes, ...on.filter((w) => !isOuter(w)).flatMap((w) => w.meshes)];
+  const on = [...WORN.values()].filter((w) => w.on && layerOf(w)), meshes = [...charMeshes, ...on.filter((w) => !isOuter(w)).flatMap((w) => w.meshes)];   // (a cloth one over it: neither)
   bodyFor = S.piece;
   const op = [];
-  for (const o of on.filter(isOuter).flatMap((w) => w.meshes)) {
+  for (const o of on.filter((w) => isOuter(w) && !CLOTH_KINDS.includes(w.piece)).flatMap((w) => w.meshes)) {
     o.updateMatrixWorld(true);
     const P = o.geometry.attributes.position, full = o.geometry.index ? o.geometry.index.array : null;
     const pts = Array.from({ length: P.count }, (_, i) => v.fromBufferAttribute(P, i).applyMatrix4(o.matrixWorld).toArray());
@@ -443,7 +452,7 @@ class Profile {   // the skin around an axis: distances from it, rows along, the
   //     axis is between the legs, in a loincloth: from there only the legs' inner sides are seen)}
   constructor(limb, t0, t1, o) {
     const NA = this.NA = 72;
-    this.limb = limb; this.t0 = t0; this.t1 = t1;
+    this.limb = limb; this.t0 = t0; this.t1 = t1; this.ray = o.ray || null;
     this.ts = Array.from({ length: 40 }, (_, i) => t0 + (t1 - t0) * i / 39);
     const faces = this.ts.map(() => new Int32Array(NA).fill(-1));
     this.tag = Object.fromEntries(Object.keys(o.tags || {}).map((k) => [k, this.ts.map(() => new Uint8Array(NA))]));
@@ -506,6 +515,31 @@ class Profile {   // the skin around an axis: distances from it, rows along, the
     let inner = this.skin.map((rs, i) => rs.map((s, j) => Math.max(relief * s + (1 - relief) * smooth[i][j] + gap * R, s + .5 * gap * R)));
     inner = blur(inner, 1);
     this.inner = inner.map((rx, i) => rx.map((x, j) => Math.max(x, this.skin[i][j] + .5 * gap * R)));
+    // under a piece worn over it (a greave over the trousers, a cuirass over their waist): its outside (the piece's
+    // thickness out) inside that one's inner wall - the nearest of the ray's neighbours: none pokes out between them -
+    // never into the skin
+    const c = this.ceil();
+    if (c) {
+      const n = this.ts.length, NA = this.NA, out = UNDER_T * R + .01 * R;
+      this.inner = this.inner.map((rx, i) => rx.map((x, j) => {
+        const w = Math.min(c[i][j], c[i][(j + 1) % NA], c[i][(j + NA - 1) % NA], c[Math.max(0, i - 1)][j], c[Math.min(n - 1, i + 1)][j]);
+        return w === Infinity ? x : Math.max(Math.min(x, w - out), this.skin[i][j] + .005 * R);
+      }));
+    }
+  }
+  ceil() {   // per ray: how far out the inner wall of the pieces worn over this one is (Infinity: none), or null
+    if (!outerGeo) return null;
+    if (!this._ceil || this._ceilOf !== outerGeo) {
+      this._ceilOf = outerGeo;
+      this._ceil = this.ts.map((t) => {
+        const org = this.ray ? null : this.limb.axis(t);
+        return Array.from({ length: this.NA }, (_, j) => {
+          const [o2, d] = this.ray ? this.ray(t, j / this.NA * TAU) : [org, this.limb.out(j / this.NA * TAU)];
+          const h = castOuter(o2, d, 3 * this.limb.len); return h ? h.distance : Infinity;
+        });
+      });
+    }
+    return this._ceil;
   }
   cell(t, ang) {
     const n = this.ts.length, x = Math.min(n - 1, Math.max(0, (t - this.t0) / (this.t1 - this.t0) * (n - 1)));
@@ -3841,6 +3875,7 @@ function rebuild() {
   let info = null;
   try {
     const p = fractions(S.p);
+    UNDER_T = (p.surface === 'mail' ? .5 : 1) * (p.thickness || 0) + (p.straps ? .08 : 0);
     applyLook(S.p, LOOK.R);
     parts = buildPiece(S.piece, sides, p);
     if (parts.length && Math.abs(parts[0].R - (LOOK.R || 0)) > .01 * parts[0].R) {   // the texture units follow the part's size
@@ -4829,8 +4864,38 @@ async function make() {
     resultMask = js.mask ? await loadMask(js.mask) : null;
     const wi = DATA.worn.find((w) => w.item === item); if (wi) wi.mask = js.mask;
     await loadResult(js.glb);
+    // pieces worn over it were fitted without it (a cuirass made before these trousers): said, and «Rebuild by layers»
+    const over = DATA.worn.filter((w) => w.item !== item && WORN.get(w.item) && WORN.get(w.item).on && layerOf(w) && isOuter(w)
+      && !CLOTH_KINDS.includes(w.piece) && DATA.saved.some((x) => x.item === w.item)).map((w) => w.item);
+    if (over.length && !REBUILDING) $('status').textContent += '\n' + '{{js:ag.layers_stale}}'.replace('{0}', over.join(', '));
   }
   return js;
+}
+// «Rebuild by layers»: every piece made here again, from the innermost layer out (LAYER), each with its own settings
+// and over every piece worn under it - so the order they were first made in no longer matters. The pieces made by
+// Blender's generators (a helmet, elbows, shoes: fitted to the body alone) and the held ones stay as they are.
+let REBUILDING = false;
+async function rebuildLayers() {
+  if (busy || REBUILDING) return;
+  const order = DATA.saved.map((x, i) => [x, i]).filter(([x]) => !HELD.includes(x.piece) && !MADE.includes(x.piece) && PIECES[x.piece])
+    .sort(([a, i], [b, j]) => ((LAYER[a.piece] || 0) - (LAYER[b.piece] || 0)) || i - j).map(([x]) => x);
+  if (!order.length || !confirm('{{js:ag.layers_confirm}}'.replace('{0}', order.length).replace('{1}', order.map((x) => x.item).join(', ')))) return;
+  REBUILDING = true; $('layersGo').disabled = true;
+  const done = [];
+  try {
+    for (const [k, x] of order.entries()) {
+      S.p = { ...DEFAULTS, ...PIECES[x.piece].defaults, ...x.params }; S.sides = x.sides && x.sides.length ? [...x.sides] : ['L', 'R'];
+      S.name = x.item; S.nameTouched = true; setPiece(x.piece, true); listSaved(x.item);
+      for (const w of DATA.worn) if (w.item !== x.item && layerOf(w) && !(WORN.get(w.item) && WORN.get(w.item).on)) await wearPiece(w, true);   // everything else on
+      rebuild();
+      const js = await make();
+      if (!js || !js.ok) { $('status').textContent = '{{js:ag.layers_stopped}}'.replace('{0}', x.item) + '\n' + ($('status').textContent || ''); return; }
+      done.push(x.item);
+      const w = DATA.worn.find((y) => y.item === x.item); if (w) await wearPiece(w, true);   // on: the next ones go over it
+      $('status').textContent = '{{js:ag.layers_progress}}'.replace('{0}', k + 1).replace('{1}', order.length).replace('{2}', x.item);
+    }
+    $('status').textContent = '{{js:ag.layers_done}}'.replace('{0}', done.join(' → '));
+  } finally { REBUILDING = false; $('layersGo').disabled = false; }
 }
 // the check in motion: the piece made (first, if it changed), then Blender plays the character's clips with it on;
 // where the skin came out through it is marked here (red, on the rest pose)
@@ -4893,6 +4958,7 @@ async function loadResult(glb) {   // the baked piece, on the character's own bo
 }
 function listSaved(sel) {
   $('savedRow').hidden = !DATA.saved.length;
+  $('layersRow').hidden = DATA.saved.filter((x) => !HELD.includes(x.piece) && !MADE.includes(x.piece)).length < 2;
   $('saved').innerHTML = `<option value="">{{js:ag.saved_new}}</option>` + DATA.saved.map((x, i) => `<option value="${i}">${x.item} — ${LABEL[x.piece] || x.piece}</option>`).join('');
   $('saved').value = sel ? String(DATA.saved.findIndex((x) => x.item === sel)) : '';
 }
@@ -4907,6 +4973,7 @@ async function removePiece(item) {
   if (item === itemName() && resultRoot) setShow(false);
   listWorn(); listSaved(); restPose(); buildBody(); hideBody(); changed('worn');
 }
+$('layersGo').addEventListener('click', () => rebuildLayers().catch((er) => { console.error(er); $('status').textContent = er.message; }));
 $('savedDel').addEventListener('click', () => { const x = DATA.saved[+$('saved').value]; removePiece(x ? x.item : ''); });
 $('saved').addEventListener('change', (e) => {
   const x = DATA.saved[+e.target.value]; if (e.target.value === '' || !x) return;
