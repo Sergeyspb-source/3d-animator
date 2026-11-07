@@ -4969,7 +4969,7 @@ function listSaved(sel) {
   $('saved').innerHTML = `<option value="">{{js:ag.saved_new}}</option>` + DATA.saved.map((x, i) => `<option value="${i}">${x.item} — ${LABEL[x.piece] || x.piece}</option>`).join('');
   $('saved').value = sel ? String(DATA.saved.findIndex((x) => x.item === sel)) : '';
 }
-// a piece taken off for good (its files into work/trash, from where they can be put back): out of the scene and the lists
+// a piece deleted for good (asked first): its files erased, it goes out of the scene and the lists
 async function removePiece(item) {
   if (!item || !confirm('{{js:ag.remove_confirm}}'.replace('{0}', item))) return;
   const js = await send('remove', { item }, '{{js:ag.removing}}', '_remove_' + item);

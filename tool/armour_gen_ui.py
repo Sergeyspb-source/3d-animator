@@ -7,6 +7,7 @@ import base64
 import html as _html
 import json
 import re
+import glob
 import shutil
 import subprocess
 from datetime import datetime
@@ -183,25 +184,18 @@ def worn(rigged: Path) -> list:
 WEAR_FILES = (".glb", ".src.glb", ".mask.json", ".fit.json", ".wear.json")   # a piece put on: its result and what goes with it
 
 
-def trash_dir(cfg, name: str) -> Path:
-    """Where something taken away goes: work/trash/<time>_<name>/ (not deleted - moved back, it is there again)."""
-    d = Path(cfg["work_dir"]) / "trash" / f"{datetime.now():%Y%m%d-%H%M%S}_{name}"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
-
-
-def remove_piece(cfg, rigged: Path, item: str) -> dict:
-    """A piece taken off the character for good: its files (<stem>_wear_<item>.*, by the exact name: «proc_a» is not
-    «proc_a_2»; its check's answer) moved into the trash. The Godot fitting room drops its copy when next opened."""
+def remove_piece(rigged: Path, item: str) -> dict:
+    """A piece taken off the character for good (asked first in the page): its files (<stem>_wear_<item>.*, by the
+    exact name: «proc_a» is not «proc_a_2»; its check's answer) deleted. The Godot fitting room drops its copy when
+    next opened."""
     stem = LM._stem(rigged)
     files = [rigged.parent / f"{stem}_wear_{item}{x}" for x in WEAR_FILES] + [rigged.parent / f"{stem}_qa_{item}.wear.json"]
     files = [f for f in files if f.is_file()]
     if not item or not files:
         return {"ok": False, "log": _t("ag.remove_none", item)}
-    d = trash_dir(cfg, stem)
     for f in files:
-        shutil.move(str(f), str(d / f.name))
-    return {"ok": True, "log": _t("ag.removed", item, d)}
+        f.unlink()
+    return {"ok": True, "log": _t("ag.removed", item)}
 
 
 DECALS = ROOT / "decals"   # the shared emblems and digits (decals/make_decals.py draws them)
@@ -403,11 +397,13 @@ def handle(cfg, text):
     if req.get("action") == "remove":   # answered in <stem>_remove_<item>.wear.json
         rigged = Path(req["rigged"])
         item = re.sub(r"[^A-Za-z0-9_-]+", "_", req.get("item") or "").strip("_")
+        for old in rigged.parent.glob(f"{glob.escape(LM._stem(rigged))}_remove_*.wear.json"):   # the answers to earlier ones: read
+            old.unlink(missing_ok=True)
         try:
-            res = remove_piece(cfg, rigged, item)
+            res = remove_piece(rigged, item)
         except Exception as e:  # noqa: BLE001
             res = {"ok": False, "log": _t("lm.error", e)}
-        (rigged.parent / f"{LM._stem(rigged)}_remove_{item}.wear.json").write_text(
+        (rigged.parent / f"{LM._stem(rigged)}_remove_{item}.wear.json").write_text(   # (its answer: the page reads it, then it is not needed)
             json.dumps({"id": req.get("id"), **res}, ensure_ascii=False), encoding="utf-8")
         return res["log"], None
     if req.get("action") == "made_preview":   # answered in <stem>_helmet_<style>.wear.json

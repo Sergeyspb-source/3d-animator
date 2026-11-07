@@ -906,13 +906,14 @@ def char_open_folder(value):
 
 
 def char_delete(value):
-    """The current character taken away (its «Delete» confirmed in the page): its folder moved into work/trash/<time>_<name>/
-    - put back, it is there again. The list then shows the first other character with a skeleton."""
+    """The current character deleted for good (its «Delete» confirmed in the page): its folder under export/ - the
+    models, skeleton, face, pieces and clips made here; the file it was loaded from stays where it was. The list then
+    shows the first other character with a skeleton."""
     f = _char_files(value)
     root = Path(T.load_config()["export_dir"]).resolve()
     if not f or not f["dir"].is_dir() or f["dir"].resolve().parent.parent != root:   # only a character's own folder
         return gr.update()
-    shutil.move(str(f["dir"]), str(armour_gen_ui.trash_dir(T.load_config(), f["name"]) / f["dir"].name))
+    shutil.rmtree(f["dir"])
     return gr.update(choices=_characters(), value=_char_default())
 
 
