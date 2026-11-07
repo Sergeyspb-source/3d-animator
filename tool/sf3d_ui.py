@@ -1114,6 +1114,13 @@ def preview_pick(upload, asset):
     return str(src) if src and src.exists() else None
 
 
+def rig_upload_view(upload, asset):
+    """«Skeleton»'s one-off GLB in the bar's view. Without one the view is left alone: the upload is cleared when the
+    character changes, while its picker («asset») may still hold the old one - the old model was put in the view after
+    the new (the character's own view comes from char_info, and from the upload's «clear»)."""
+    return preview_pick(upload, asset) if upload else gr.update()
+
+
 def creature_run(upload, asset, line_mm=0, hinge_mm=0):
     """'Создать скелет' for creatures: UniRig skeleton, automatic bone names, a jaw from the mouth line."""
     import rigging as RG
@@ -2075,7 +2082,31 @@ UI_HEAD = """<script>document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   for (const b of document.querySelectorAll('.dlg-close')) if (b.offsetParent) { b.click(); break; } });</script>
 <script>/* Gradio's own texts (upload areas, buttons) follow the browser's language: make it the interface's */
-for (const k of ['language', 'languages']) Object.defineProperty(navigator, k, { get: () => k === 'language' ? '@@LANG@@' : ['@@LANG@@'] });</script>""".replace("@@LANG@@", i18n.LANG)
+for (const k of ['language', 'languages']) Object.defineProperty(navigator, k, { get: () => k === 'language' ? '@@LANG@@' : ['@@LANG@@'] });</script>
+<script>/* Gradio 4.41's 3D view (Model3D) clears its scene in a forEach over the array the disposal shrinks (half the old
+model stays) and appends each model as it comes (a load that finishes late lands over the newer): the old character
+was seen under the new one. Its loads go through SceneLoader.Append once Babylon is there: each into a container, put
+in the scene only if it is still the latest, after everything the scene held but its camera and lights is gone. */
+(function patch3d() {
+  const B = window.BABYLON;
+  if (!B || !B.SceneLoader || !B.SceneLoader.LoadAssetContainer) { setTimeout(patch3d, 300); return; }
+  if (B.SceneLoader.__sf3d) return;
+  B.SceneLoader.__sf3d = true;
+  const clear = (sc) => {
+    for (const a of sc.animationGroups.slice()) a.dispose();
+    for (const m of sc.meshes.slice()) if (!m.isDisposed()) m.dispose(false, true);
+    for (const t of sc.transformNodes.slice()) t.dispose();
+    for (const k of sc.skeletons.slice()) k.dispose();
+  };
+  B.SceneLoader.Append = function (root, file, scene, onOk, onProgress, onError, ext) {
+    const token = (scene.__sf3dLoad = (scene.__sf3dLoad || 0) + 1);
+    return B.SceneLoader.LoadAssetContainer(root, file, scene, (box) => {
+      if (scene.__sf3dLoad !== token || scene.isDisposed) { box.dispose(); return; }   // a newer model was asked for
+      clear(scene); box.addAllToScene();
+      if (onOk) onOk(scene);
+    }, onProgress, onError, ext);
+  };
+})();</script>""".replace("@@LANG@@", i18n.LANG)
 
 RIG_MODES = [_t("ui.automatic_unirig_needs_a_gpu"), _t("ui.by_hand_with_landmarks_like_mixamo")]
 
@@ -2655,7 +2686,8 @@ def build():
 
         # rigging
         rig_refresh_btn.click(rig_refresh, None, rig_asset)
-        rig_upload.change(preview_pick, [rig_upload, rig_asset], char_view, show_progress="hidden")
+        rig_upload.change(rig_upload_view, [rig_upload, rig_asset], char_view, show_progress="hidden")
+        rig_upload.clear(lambda v: char_info(v)[1], char_dd, char_view, show_progress="hidden")   # the one-off GLB taken away: the character again
         # a GLB loaded here becomes a character (its own folder export/character/<name>) and the current one: the bar,
         # the view, the markup and the build all on it
         rig_upload.upload(char_add, rig_upload, char_dd)
