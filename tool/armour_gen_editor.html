@@ -2776,14 +2776,20 @@ function buildPiece(kind, sides, p) {
   if (fam === 'limb' && kind !== 'pauldron') for (const side of sides) {
     // the edges: at the joint end the outer (front) side reaches further and the inner one is cut back («top_cut»);
     // at the far end the outer (front) side comes down further (a greave over the instep, «bottom_cut»)
-    const tA = p.t0 - .65 * p.top_cut, tB = p.t1 + .65 * p.bottom_cut;
+    const lvl = kind === 'greave' ? .08 : 0;   // a greave's bottom kept level (below): room for it on the profile
+    const tA = p.t0 - .65 * p.top_cut, tB = p.t1 + .65 * p.bottom_cut + lvl;
     // over pieces worn under it (a sleeve): the outermost of the surfaces round the limb, not the skin under them
     const under = [...WORN.values()].some((w) => w.on && layerOf(w) && !isOuter(w));
     const { limb } = limbOf(kind, side), P = profile(kind + side, limb, tA, tB, { foreign: P0.foreign, limbOnly: true, ...(under ? { over: 1.6 } : {}) });
     P.shell(p.gap, p.relief);
     const acc = new Acc(); acc.w = weigher(fam, PB[P0.joints[2] + '_' + side], p.rigidity);
     const mid = look(limb, side), R = P.R, thick = p.thickness * R;
-    const c = (a) => (1 + Math.cos(a - mid)) / 2, lo = (a) => p.t0 - p.top_cut * (c(a) - .35), hi = (a) => p.t1 + p.bottom_cut * (c(a) - .35);
+    // a greave's bottom level with the floor, not square to the shin (it leans forward and out, and the edge went
+    // round the leg at a slant): each side moved along the shin to the height of the edge's middle; the cut over the
+    // instep stays as it was
+    const level = lvl && Math.abs(limb.u.y) > .5
+      ? (a) => Math.max(-lvl, Math.min(lvl, P.rIn(p.t1, a) * limb.out(a).y / (-limb.u.y * limb.len))) : () => 0;
+    const c = (a) => (1 + Math.cos(a - mid)) / 2, lo = (a) => p.t0 - p.top_cut * (c(a) - .35), hi = (a) => p.t1 + p.bottom_cut * (c(a) - .35) + level(a);
     const flare = (t, a) => { const e = Math.min(t - lo(a), hi(a) - t) / (hi(a) - lo(a)); return p.flare * .3 * R * Math.max(0, 1 - e / .18) ** 2; };
     const mailT = p.mail_under ? .5 * thick : 0;
     if (p.mail_under) surface(acc, { limb, P, ta: p.t0, tb: p.t1, lo: (a) => lo(a) - .02, hi: (a) => hi(a) + .02, top: 'a', arcs: arcsOf(mid, 360, 0),
@@ -4061,6 +4067,7 @@ function skin(s) {
 }
 $('views').addEventListener('click', (e) => e.target.dataset.v && view(e.target.dataset.v));
 window.agView = (v, eye, whole) => view(v, eye, whole);
+window.agParts = () => parts.map((x) => ({ side: x.side, v: Array.from(x.acc.v) }));   // the tests measure what is built
 window.agReach = () => reach.last || null;
 window.agBones = (re) => { const out = {}; for (const part of parts) { const a = part.acc; for (let i = 0; i < a.bi.length; i++) if (a.bw[i] > .05) { const n = boneNames[a.bi[i]]; if (!re || new RegExp(re).test(n)) out[n] = (out[n] || 0) + 1; } } return out; };   // for the tests: vertices per bone
 window.agNaN = () => ({ parts: parts.map((x) => [x.acc.v.length / 3, x.acc.v.filter((v) => !Number.isFinite(v)).length, Math.max(...x.acc.f.flat())]), meshes: pieceGroup.children.map((m) => [m.userData.part, m.geometry.attributes.position.count, [...m.geometry.attributes.position.array].filter((v) => !Number.isFinite(v)).length]) });   // for the tests

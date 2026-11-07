@@ -921,6 +921,9 @@ def char_add(upload):
     if not upload:
         return gr.update()
     src = Path(upload if isinstance(upload, str) else upload.name)
+    if "_wear_" in src.stem or src.name.endswith(".src.glb"):   # a piece put on a character (its result, its source): not a character
+        gr.Warning(_t("ui.char_add_piece", src.name))
+        return gr.update()
     stem = re.sub(r"_(landmarks_)?rigged$", "", src.stem)
     root = Path(T.load_config()["export_dir"]) / "character"
     # its folder: one of the file's own name if there is one already (a build of the same file made it), else the

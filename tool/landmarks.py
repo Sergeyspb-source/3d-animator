@@ -455,6 +455,12 @@ def wear(cfg, text):
     action = req.get("action") or "wear"
     item = re.sub(r"[^\w-]+", "_", req.get("item") or "item").strip("_") or "item"
     status = rigged.parent / f"{_stem(rigged)}_{'wardrobe' if action == 'wardrobe' else 'wear_' + item}.wear.json"
+    own = f"{_stem(rigged)}_wear_"
+    if action in ("wear", "save") and item.startswith(own):   # a piece of this character's own file (its result or
+        # its .src.glb) put on again: a second copy over the first (trousers fitted over their own skirt) - refused
+        status.write_text(json.dumps({"id": req.get("id"), "ok": False, "log": _t("lm.wear_own_piece", re.sub(r"_src$", "", item[len(own):]))},
+                                     ensure_ascii=False), encoding="utf-8")
+        return _t("lm.wear_own_piece", re.sub(r"_src$", "", item[len(own):]))
     try:
         res = (wardrobe(cfg, rigged) if action == "wardrobe" else _repaint(cfg, req, rigged, item) if action == "repaint"
                else _hollow(cfg, req, rigged, item) if action == "hollow" else _face_edit(req, rigged) if action == "face_edit"
