@@ -905,6 +905,17 @@ def char_open_folder(value):
             pass
 
 
+def char_delete(value):
+    """The current character taken away (its «Delete» confirmed in the page): its folder moved into work/trash/<time>_<name>/
+    - put back, it is there again. The list then shows the first other character with a skeleton."""
+    f = _char_files(value)
+    root = Path(T.load_config()["export_dir"]).resolve()
+    if not f or not f["dir"].is_dir() or f["dir"].resolve().parent.parent != root:   # only a character's own folder
+        return gr.update()
+    shutil.move(str(f["dir"]), str(armour_gen_ui.trash_dir(T.load_config(), f["name"]) / f["dir"].name))
+    return gr.update(choices=_characters(), value=_char_default())
+
+
 def char_add(upload):
     """A model loaded as a new character: export/character/<name>/<name>.glb."""
     if not upload:
@@ -2371,6 +2382,7 @@ def build():
                             char_refresh = gr.Button(_t("ui.refresh"), scale=1)
                             char_up = gr.UploadButton(_t("ui.char_add"), file_types=[".glb"], type="filepath", scale=2)
                             char_dir = gr.Button(_t("ui.char_open_folder"), scale=1)
+                            char_del = gr.Button(_t("ui.char_delete"), scale=1, variant="stop")
                         char_md = gr.Markdown(char_info(_char_default())[0])
                     with gr.Column(scale=2):
                         char_view = gr.Model3D(value=char_info(_char_default())[1], label=_t("ui.model"), height=230,
@@ -2682,6 +2694,8 @@ def build():
         char_refresh.click(lambda v: gr.update(choices=_characters(), value=v), char_dd, char_dd)
         char_up.upload(char_add, char_up, char_dd)
         char_dir.click(char_open_folder, char_dd, None)
+        char_del.click(char_delete, char_dd, char_dd,   # asked first in the page: «cancel» sends nothing to remove
+                       js="(v) => (v && confirm(%s.replace('{0}', v.split('/').pop()))) ? v : null" % json.dumps(_t("ui.char_delete_confirm")))
         ui.load(char_for_tabs, char_dd, [rig_asset, ha_asset, fx_asset, out_body, char_rig], show_progress="hidden")
 
         # rigging

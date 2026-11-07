@@ -52,6 +52,8 @@
   .sl input[type=range] { grid-column:1 / 3; width:100%; accent-color:var(--accent); margin:2px 0 0; }
   .sl .inf { grid-column:1 / 3; font-size:11.5px; color:var(--muted); }
   label.chk { display:flex; align-items:center; gap:6px; margin:6px 0; }
+  .wdel { margin-left:4px; padding:0 5px; font-size:11px; line-height:16px; opacity:.55; }
+  .wdel:hover { opacity:1; color:#b3261e; }
   .foot { position:sticky; bottom:0; box-shadow:0 -6px 8px -6px rgba(0,0,0,.25); }
   .status { font-size:12px; color:var(--muted); white-space:pre-wrap; margin-top:6px; max-height:9em; overflow:auto; }
   .note { font-size:11.5px; color:var(--muted); }
@@ -115,7 +117,7 @@
       </div>
       <div id="wornRow" style="margin-top:8px" hidden><div class="note" id="wornNote">{{ag.worn}}</div><div class="row" id="worn"></div></div>
       <div class="row" style="margin-top:6px" id="savedRow" hidden>
-        <span class="note">{{ag.saved}}</span><select id="saved" class="grow"></select>
+        <span class="note">{{ag.saved}}</span><select id="saved" class="grow"></select><button id="savedDel" title="{{ag.remove_title}}">{{ag.remove_piece}}</button>
       </div>
     </div>
     <div id="groups"></div>
@@ -4752,7 +4754,7 @@ function listWorn() {   // the pieces already on the character, a tick each — 
   const rows = DATA.worn.map((w, i) => [w, i]).filter(([w]) => w.item !== me);
   $('wornRow').hidden = !rows.length;
   $('wornNote').textContent = ['weapon', 'shield'].includes(S.piece) ? '{{js:ag.worn_held}}' : '{{js:ag.worn}}';
-  $('worn').innerHTML = rows.map(([w, i]) => `<label class="chk" style="margin:2px 8px 2px 0" title="${LABEL[w.piece] || ''}"><input type="checkbox" data-w="${i}" ${WORN.get(w.item) && WORN.get(w.item).on ? 'checked' : ''}> ${w.item}${!isHeld() && HELD.includes(w.piece) ? '{{js:ag.worn_shown}}' : ''}</label>`).join('');
+  $('worn').innerHTML = rows.map(([w, i]) => `<label class="chk" style="margin:2px 8px 2px 0" title="${LABEL[w.piece] || ''}"><input type="checkbox" data-w="${i}" ${WORN.get(w.item) && WORN.get(w.item).on ? 'checked' : ''}> ${w.item}${!isHeld() && HELD.includes(w.piece) ? '{{js:ag.worn_shown}}' : ''}<button class="wdel" data-del="${i}" title="{{js:ag.remove_title}}">✕</button></label>`).join('');
 }
 const b64 = (ta) => { const u = new Uint8Array(ta.buffer, ta.byteOffset, ta.byteLength); let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
 function payload() {   // every part in one mesh: positions (glTF axes), faces (sizes, vertices, material slots), texture
@@ -4894,6 +4896,18 @@ function listSaved(sel) {
   $('saved').innerHTML = `<option value="">{{js:ag.saved_new}}</option>` + DATA.saved.map((x, i) => `<option value="${i}">${x.item} — ${LABEL[x.piece] || x.piece}</option>`).join('');
   $('saved').value = sel ? String(DATA.saved.findIndex((x) => x.item === sel)) : '';
 }
+// a piece taken off for good (its files into work/trash, from where they can be put back): out of the scene and the lists
+async function removePiece(item) {
+  if (!item || !confirm('{{js:ag.remove_confirm}}'.replace('{0}', item))) return;
+  const js = await send('remove', { item }, '{{js:ag.removing}}', '_remove_' + item);
+  if (!js || !js.ok) return;
+  const e = WORN.get(item);
+  if (e) { scene.remove(e.root); WORN.delete(item); }
+  DATA.worn = DATA.worn.filter((w) => w.item !== item); DATA.saved = DATA.saved.filter((w) => w.item !== item);
+  if (item === itemName() && resultRoot) setShow(false);
+  listWorn(); listSaved(); restPose(); buildBody(); hideBody(); changed('worn');
+}
+$('savedDel').addEventListener('click', () => { const x = DATA.saved[+$('saved').value]; removePiece(x ? x.item : ''); });
 $('saved').addEventListener('change', (e) => {
   const x = DATA.saved[+e.target.value]; if (e.target.value === '' || !x) return;
   S.p = { ...DEFAULTS, ...PIECES[x.piece].defaults, ...x.params }; S.sides = x.sides && x.sides.length ? [...x.sides] : ['L', 'R'];
@@ -4902,6 +4916,7 @@ $('saved').addEventListener('change', (e) => {
 
 // ------------------------------------------------------------------ start
 buildPanel(); syncPanel(); listSaved(); listWorn(); wornListed = true;
+$('worn').addEventListener('click', (e) => { const i = e.target.dataset.del; if (i === undefined) return; e.preventDefault(); removePiece((DATA.worn[+i] || {}).item); });
 $('worn').addEventListener('change', (e) => { const i = e.target.dataset.w; if (i !== undefined) wearPiece(DATA.worn[+i], e.target.checked).catch((er) => console.error(er)); });
 try {
   await loadCharacter();

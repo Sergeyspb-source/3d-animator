@@ -180,6 +180,30 @@ def worn(rigged: Path) -> list:
             for f in sorted(rigged.parent.glob(f"{stem}_wear_*.glb")) if not f.name.endswith(".src.glb")]
 
 
+WEAR_FILES = (".glb", ".src.glb", ".mask.json", ".fit.json", ".wear.json")   # a piece put on: its result and what goes with it
+
+
+def trash_dir(cfg, name: str) -> Path:
+    """Where something taken away goes: work/trash/<time>_<name>/ (not deleted - moved back, it is there again)."""
+    d = Path(cfg["work_dir"]) / "trash" / f"{datetime.now():%Y%m%d-%H%M%S}_{name}"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def remove_piece(cfg, rigged: Path, item: str) -> dict:
+    """A piece taken off the character for good: its files (<stem>_wear_<item>.*, by the exact name: «proc_a» is not
+    «proc_a_2»; its check's answer) moved into the trash. The Godot fitting room drops its copy when next opened."""
+    stem = LM._stem(rigged)
+    files = [rigged.parent / f"{stem}_wear_{item}{x}" for x in WEAR_FILES] + [rigged.parent / f"{stem}_qa_{item}.wear.json"]
+    files = [f for f in files if f.is_file()]
+    if not item or not files:
+        return {"ok": False, "log": _t("ag.remove_none", item)}
+    d = trash_dir(cfg, stem)
+    for f in files:
+        shutil.move(str(f), str(d / f.name))
+    return {"ok": True, "log": _t("ag.removed", item, d)}
+
+
 DECALS = ROOT / "decals"   # the shared emblems and digits (decals/make_decals.py draws them)
 
 
@@ -374,6 +398,16 @@ def handle(cfg, text):
             res = {"ok": False, "log": _t("lm.error", e)}
         item = re.sub(r"[^A-Za-z0-9_-]+", "_", req.get("item") or "").strip("_")
         (rigged.parent / f"{LM._stem(rigged)}_qa_{item}.wear.json").write_text(
+            json.dumps({"id": req.get("id"), **res}, ensure_ascii=False), encoding="utf-8")
+        return res["log"], None
+    if req.get("action") == "remove":   # answered in <stem>_remove_<item>.wear.json
+        rigged = Path(req["rigged"])
+        item = re.sub(r"[^A-Za-z0-9_-]+", "_", req.get("item") or "").strip("_")
+        try:
+            res = remove_piece(cfg, rigged, item)
+        except Exception as e:  # noqa: BLE001
+            res = {"ok": False, "log": _t("lm.error", e)}
+        (rigged.parent / f"{LM._stem(rigged)}_remove_{item}.wear.json").write_text(
             json.dumps({"id": req.get("id"), **res}, ensure_ascii=False), encoding="utf-8")
         return res["log"], None
     if req.get("action") == "made_preview":   # answered in <stem>_helmet_<style>.wear.json
