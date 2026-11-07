@@ -267,7 +267,8 @@ def generate(cfg, req) -> dict:
            "mesh": str(work / "mesh.json"), "mask": str(work / "mask.json"), "wear": float(params.get("wear", .35)), "tex": int(params.get("tex", 1024)),
            "seed": int(params.get("seed", 1)), "fist": LM.fist_hand(rigged),
            "two": req.get("two") if re.fullmatch(r"[LR](_-?\d+){9}", str(req.get("two") or "")) else "",
-           "point": req.get("point") if re.fullmatch(r"-?\d+(_-?\d+){2}", str(req.get("point") or "")) else ""}
+           "point": req.get("point") if re.fullmatch(r"-?\d+(_-?\d+){2}", str(req.get("point") or "")) else "",
+           "fist_grip": piece == "shield" and bool(params.get("s_hand"))}   # a shield held by its bar: the fingers close as on a weapon
     if piece == "undercloth":
         job["style"] = params.get("cloth_style")
     if PIECES[piece][5] in ("held", "cloak"):   # held, not worn (the fingers round a grip stay); a cloak swings off the body
