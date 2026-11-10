@@ -347,6 +347,7 @@
  "ag.s_hand": "Bar in the fist (no forearm straps)",
  "ag.saved": "Made before",
  "ag.saved_new": "— a new piece —",
+ "ag.idle_info": "Choose a piece on the right or open a made one — the character wears only what is ticked in «Worn» for now",
  "ag.worn_open": "Open this piece above (the tick only puts it on or takes it off)",
  "ag.worn_not_here": "«{0}» was not made here (fitted in «Armour») — open it there.",
  "ag.layers_none": "Every piece is made over the ones under it: nothing to rebuild.",

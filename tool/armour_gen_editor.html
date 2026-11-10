@@ -116,7 +116,7 @@
         <span class="seg"><button data-side="L" class="on">{{ag.left}}</button><button data-side="R" class="on">{{ag.right}}</button></span>
       </div>
       <div id="styleRow" style="margin-top:8px"><div class="note">{{ag.style}}</div><span class="seg" id="styleSeg"></span></div>
-      <div class="row" style="margin-top:8px">
+      <div class="row" style="margin-top:8px" hidden>   <!-- the name is given by the rule (autoName): not asked -->
         <span class="note">{{ag.name}}</span><input type="text" id="name" class="grow">
       </div>
       <div id="wornRow" style="margin-top:8px" hidden><div class="note" id="wornNote">{{ag.worn}}</div><div class="row" id="worn"></div></div>
@@ -3712,7 +3712,9 @@ const DEFAULTS = Object.assign({ gap: 8, thickness: 12, relief: .35, step: 5, ri
   cloth_style: 'shirt', cloth_quilt: false, quilt_lines: false, pinches: [], paints: [],
   weapon: 'sword', shield: 'round', w_len: 100, w_width: 100, w_guard: 100, w_grip: 100, w_grip_r: 100, w_head: 100, grip_along: 0, grip_out: 0,
   grip_tilt: 15, grip_roll: 0, w_two: 0, arrows: 12, cloak_len: 60, cloak_wrap: 172, cloak_flare: 25, cloak_lift: 5, cloak_nape: 120, cloak_gap: .5, skirt_len: 30, skirt_flare: 30, skirt_lift: 6, skirt_slit: 0, skirt_gap: .5, tabard_len: 50, tabard_belt: 8, tabard_flare: 15, tabard_lift: 2, tabard_gap: 1, s_size: 100, s_curve: 30, s_rim: 100, s_boss: 100, s_along: 0, s_out: 0, s_turn: 0, s_hand: false }, PIECES.bracer.defaults);
-const S = { piece: 'bracer', sides: ['L', 'R'], name: '', nameTouched: false, p: { ...DEFAULTS }, armour: null };
+// idle: no piece being made (the editor opens so: the character as it is, its worn pieces to tick) until a kind is
+// chosen or a made piece opened - a new bracer shown from the start went on beside the worn one
+const S = { piece: 'bracer', idle: true, sides: ['L', 'R'], name: '', nameTouched: false, p: { ...DEFAULTS }, armour: null };
 let clampTo = 0, curView = 'front';   // clampTo: a cuirass's top, held under the armpits (%)
 
 const fmt = (key, x) => {
@@ -3834,14 +3836,17 @@ function syncPanel() {
   $('i_tint').value = S.p.tint; $('i_cloth').value = S.p.cloth; $('i_tex').value = String(S.p.tex); $('i_seed').value = S.p.seed;
   for (const b of $('matSeg').children) b.classList.toggle('on', b.dataset.mat === S.p.material);
   for (const b of $('surfSeg').children) b.classList.toggle('on', b.dataset.surf === S.p.surface);
-  for (const b of $('pieces').querySelectorAll('button')) b.classList.toggle('on', b.dataset.piece === S.piece);
+  for (const b of $('pieces').querySelectorAll('button')) b.classList.toggle('on', !S.idle && b.dataset.piece === S.piece);
   for (const b of $('sidesRow').querySelectorAll('button')) b.classList.toggle('on', S.sides.includes(b.dataset.side));
   $('sidesRow').hidden = !['limb', 'joint', 'glove', 'held'].includes(PIECES[S.piece].family);
   if (!S.nameTouched) S.name = autoName();   // a new piece: named by the rule as its kind and style change
   $('name').value = S.name;
   pinchSync();
+  if (S.idle) { $('sidesRow').hidden = true; $('styleRow').hidden = true; }   // nothing being made: only the piece's choice
+  $('groups').hidden = S.idle; $('pinchBox').hidden = S.idle;
 }
 function setPiece(k, keep) {
+  S.idle = false;
   const was = S.piece;
   S.piece = k;
   if (!keep) {   // trousers are cloth: the armour's own material and surface come back after them
@@ -3892,6 +3897,12 @@ function rebuild() {
   for (const m of [...pieceGroup.children]) { pieceGroup.remove(m); m.geometry.dispose(); }
   parts = [];
   if (helmetObj) { helmetObj.removeFromParent(); helmetObj = null; }
+  if (S.idle) {   // nothing being made: the character with what is ticked
+    if (previewMask) { previewMask = null; hideBody(); }
+    lastBuild = null; $('info').textContent = '{{js:ag.idle_info}}'; $('warn').hidden = true;
+    $('go').disabled = true; $('qa').disabled = true; clothStop(); applyPose(); return;
+  }
+  $('qa').disabled = busy;
   if (isMade()) { rebuildMade(); return; }
   if (previewMask) { previewMask = null; hideBody(); }
   const sides = ['limb', 'glove', 'held'].includes(PIECES[S.piece].family) ? S.sides : ['C'];
@@ -4766,7 +4777,7 @@ $('pinchClear').addEventListener('click', () => { if ((S.p.pinches || []).length
 const HIST = { undo: [], redo: [], at: null, timer: 0, restoring: false };
 // (the name with the piece: an undo back to another piece kept the opened item's name, and «Generate» then made that
 // item as the other piece - a bracer saved as a greave)
-const snapS = () => JSON.stringify({ piece: S.piece, sides: S.sides, style: S.style, p: S.p, name: S.name, touched: S.nameTouched });
+const snapS = () => JSON.stringify({ piece: S.piece, idle: S.idle, sides: S.sides, style: S.style, p: S.p, name: S.nameTouched ? S.name : '', touched: S.nameTouched });   // (a name by the rule is worked out again: not a step)
 function histNote(what) {
   if (HIST.restoring) return;
   clearTimeout(HIST.timer);
@@ -4788,7 +4799,8 @@ function histStep(from, to) {
   try {
     S.p = x.p; S.sides = x.sides; S.style = x.style;
     if (x.name !== undefined) { S.name = x.name; S.nameTouched = x.touched; $('name').value = S.name; listWorn(); }
-    if (x.piece !== S.piece) setPiece(x.piece, true); else changed('history');
+    if (x.piece !== S.piece) setPiece(x.piece, true);
+    S.idle = !!x.idle; changed('history');
   }
   finally { HIST.restoring = false; }
   histSync();
@@ -4886,7 +4898,7 @@ const madeAsShown = () => { const e = DATA.saved.find((x) => x.item === itemName
 $('go').addEventListener('click', () => make());
 let overwriteOk = '';   // the item a second «Generate» may make over (another kind's piece of that name)
 async function make() {
-  if (!lastBuild || busy) return null;
+  if (!lastBuild || busy || S.idle) return null;
   const was = DATA.saved.find((x) => x.item === itemName() && x.piece !== S.piece);
   if (was && overwriteOk !== itemName() + '/' + S.piece) {   // asked first: the first press only warns
     overwriteOk = itemName() + '/' + S.piece;
@@ -4915,15 +4927,17 @@ async function make() {
     const now = Math.round(Date.now() / 1000);   // (seconds, as the server's file times)
     if (!DATA.worn.some((w) => w.item === item)) DATA.worn.push({ item, glb: js.glb, v: now, piece: S.piece });
     else Object.assign(DATA.worn.find((w) => w.item === item), { v: now, piece: S.piece });
+    layersSync();   // (its time is new now: the pieces over it are out of date - at once, not after it is shown)
     listWorn();
     resultMask = js.mask ? await loadMask(js.mask) : null;
     const wi = DATA.worn.find((w) => w.item === item); if (wi) wi.mask = js.mask;
     await loadResult(js.glb);
     // pieces worn over it were fitted without it (a cuirass made before these trousers): said, and «Rebuild by layers»
+    const mine = regionsOf(S.piece, S.p);   // (only where they meet it on the body)
     const over = DATA.worn.filter((w) => w.item !== item && WORN.get(w.item) && WORN.get(w.item).on && layerOf(w) && isOuter(w)
-      && !CLOTH_KINDS.includes(w.piece) && DATA.saved.some((x) => x.item === w.item)).map((w) => w.item);
+      && !CLOTH_KINDS.includes(w.piece) && DATA.saved.some((x) => x.item === w.item)
+      && meet(mine, regionsOf(w.piece, (DATA.saved.find((x) => x.item === w.item) || {}).params))).map((w) => w.item);
     if (over.length && !REBUILDING) $('status').textContent += '\n' + '{{js:ag.layers_stale}}'.replace('{0}', over.join(', '));
-    layersSync();   // (its time is new now: the pieces over it are out of date)
   }
   return js;
 }
@@ -4935,13 +4949,28 @@ async function make() {
 // alone) and the held ones stay as they are.
 const ownKind = (x) => !HELD.includes(x.piece) && !MADE.includes(x.piece) && !!PIECES[x.piece];
 const madeAt = (item) => (DATA.worn.find((w) => w.item === item) || {}).v || 0;   // seconds
+// where on the body a piece is: a lower layer counts for a piece only where they meet (a coif is no reason to make
+// the trousers again, and through them all the armour over them)
+const REGIONS = { trousers: 'hips legs', brayette: 'hips', footwear: 'feet legs', bracer: 'arms', rerebrace: 'arms', elbow: 'arms',
+  glove: 'hands arms', greave: 'legs feet', cuisse: 'legs', tassets: 'hips legs', cuirass: 'torso hips', pauldron: 'torso arms', helmet: 'head',
+  tabard: 'torso hips legs', skirt: 'hips legs', cloak: 'torso arms hips legs', torso: 'torso hips', forearm: 'arms', upperarm: 'arms', arm: 'arms',
+  leg: 'legs feet', upleg: 'legs', foot: 'feet', hand: 'hands', head: 'head', hips: 'hips legs', shoulder: 'torso arms' };
+function regionsOf(kind, p) {
+  if (kind === 'undercloth') {
+    const st = (p || {}).cloth_style;
+    return new Set((st === 'coif' ? 'head' : /^braies/.test(st || '') ? 'hips legs' : st === 'vest' ? 'torso hips' : 'torso arms hips').split(' '));
+  }
+  return new Set((REGIONS[kind] || 'torso arms hips legs feet hands head').split(' '));
+}
+const meet = (a, b) => [...a].some((r) => b.has(r));
 function staleList() {
   const order = DATA.saved.map((x, i) => [x, i]).filter(([x]) => ownKind(x))
     .sort(([a, i], [b, j]) => ((LAYER[a.piece] || 0) - (LAYER[b.piece] || 0)) || i - j).map(([x]) => x);
   const out = [];
   for (const x of order) {
-    const lx = LAYER[x.piece] || 0;
-    const under = DATA.worn.filter((w) => w.item !== x.item && !HELD.includes(w.piece) && (LAYER[w.piece] || 0) < lx);
+    const lx = LAYER[x.piece] || 0, rx = regionsOf(x.piece, x.params);
+    const paramsOf = (w) => (DATA.saved.find((y) => y.item === w.item) || {}).params;
+    const under = DATA.worn.filter((w) => w.item !== x.item && !HELD.includes(w.piece) && (LAYER[w.piece] || 0) < lx && meet(rx, regionsOf(w.piece, paramsOf(w))));
     if (under.some((w) => out.some((y) => y.item === w.item) || madeAt(w.item) > madeAt(x.item) + 1 || !(x.under || []).includes(w.item))) out.push(x);
   }
   return out;
@@ -4959,7 +4988,7 @@ async function rebuildLayers() {
   const list = staleList();
   if (!list.length || !confirm('{{js:ag.layers_confirm}}'.replace('{0}', list.length).replace('{1}', list.map((x) => x.item).join(', ')))) return;
   REBUILDING = true; $('layersGo').disabled = true;
-  const keep = { piece: S.piece, p: S.p, sides: S.sides, name: S.name, touched: S.nameTouched, style: S.style };
+  const keep = { piece: S.piece, idle: S.idle, p: S.p, sides: S.sides, name: S.name, touched: S.nameTouched, style: S.style };
   for (const w of DATA.worn) if (layerOf(w) && !WORN.get(w.item)) await wearPiece(w, false);   // every worn one loaded (off, as it was)
   const was = new Map(WORN), on = new Map([...WORN].map(([k, e]) => [k, e.on]));
   const jobs = [], temp = [];
@@ -4968,7 +4997,7 @@ async function rebuildLayers() {
     for (const x of list) {
       for (const [k, e] of WORN) e.on = k !== x.item;   // every other one on
       S.piece = x.piece; S.p = { ...DEFAULTS, ...PIECES[x.piece].defaults, ...x.params }; S.sides = x.sides && x.sides.length ? [...x.sides] : ['L', 'R'];
-      S.name = x.item; S.nameTouched = true;
+      S.name = x.item; S.nameTouched = true; S.idle = false;
       buildBody(); rebuild();
       if (!parts.length || !lastBuild) throw new Error('{{js:ag.layers_stopped}}'.replace('{0}', x.item));
       jobs.push({ item: x.item, piece: x.piece, style: x.style || null, sides: lastBuild.sides.filter((q) => q !== 'C'), params: { ...S.p }, mesh: payload(),
@@ -4979,7 +5008,7 @@ async function rebuildLayers() {
   } catch (er) { $('status').textContent = er.message; console.error(er); jobs.length = 0; }
   finally {   // the editor as it was
     WORN.clear(); for (const [k, e] of was) { e.on = on.get(k); WORN.set(k, e); }
-    S.piece = keep.piece; S.p = keep.p; S.sides = keep.sides; S.name = keep.name; S.nameTouched = keep.touched; S.style = keep.style;
+    S.piece = keep.piece; S.idle = keep.idle; S.p = keep.p; S.sides = keep.sides; S.name = keep.name; S.nameTouched = keep.touched; S.style = keep.style;
     HIST.restoring = false; REBUILDING = false;
     for (const m of temp) m.geometry.dispose();
     restPose(); buildBody(); hideBody(); changed('worn');
