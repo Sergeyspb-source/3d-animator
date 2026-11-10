@@ -3900,7 +3900,9 @@ function rebuild() {
   if (S.idle) {   // nothing being made: the character with what is ticked
     if (previewMask) { previewMask = null; hideBody(); }
     lastBuild = null; $('info').textContent = '{{js:ag.idle_info}}'; $('warn').hidden = true;
-    $('go').disabled = true; $('qa').disabled = true; clothStop(); applyPose(); return;
+    $('go').disabled = true; $('qa').disabled = true; clothStop(); applyPose();
+    if (!framed) { framed = true; view(curView, null, true); }   // the camera on the whole character (no piece to look at)
+    return;
   }
   $('qa').disabled = busy;
   if (isMade()) { rebuildMade(); return; }
