@@ -583,6 +583,9 @@ function ceiling(P, outT) {
 // ------------------------------------------------------------------ weights: from the skin under the piece, as the game will move it
 const LIMB_WORDS = ['Arm', 'Hand', 'Leg', 'Foot', 'Toe'];
 let BONES = [], SKEL = null, HEIGHT = 1;
+// real millimetres on this character (as on a man 1.75 m tall): leather and a buckle's wire are as thin as they are,
+// whatever the part's girth (a strap 5% of the part's radius was 5-7 mm on a waist: a rope, not a belt)
+const MM = (x) => x / 1000 * HEIGHT / 1.75, STRAP_T = 2.5, BUCKLE_T = 1.2;   // a strap's thickness; a buckle's bar: half its thickness
 function famMask(fam, main) {   // the bones a piece may follow
   if (fam === 'limb') {
     const keep = new Set([main.name]); main.traverse((b) => { if (b.isBone) keep.add(b.name); });
@@ -806,7 +809,7 @@ function surfSheet(acc, sh, p) {   // one sheet: mail and quilting are its textu
   }
   sh.outer = (t, ang) => sh.r(t, ang) + thick;
   if (p.hem_band) {   // the bottom edge and an open sheet's sides bound in leather ('bottom', 'sides': only those)
-    const st = .05 * sh.R, bw = .09 * sh.R / sh.len, at = sh.top === 'a' ? sh.tb : sh.ta, rows2 = sh.top === 'a' ? [at - bw, at] : [at, at + bw];
+    const st = MM(3), bw = .09 * sh.R / sh.len, at = sh.top === 'a' ? sh.tb : sh.ta, rows2 = sh.top === 'a' ? [at - bw, at] : [at, at + bw];
     for (const arc of sh.arcs) {
       const cols = colsOf(arc);
       if (p.hem_band !== 'sides') solid(acc, rows2, cols, arc[2], (i, j, s) => pt(sh, rows2[i], cols[j], sh.r(rows2[i], cols[j]) + thick * .6 + (s ? st : 0)), LEATHER, 'strap',
@@ -906,10 +909,10 @@ function surfScales(acc, sh, p) {
 // straps round the part at the given rows (round the back of an open piece), with buckles on the outer side
 function straps(acc, sh, p, ts, side, mid) {
   prepShell(sh);
-  const { R, limb } = sh, w = p.strap_width * R * .5 / sh.len, st = .05 * R;
+  const { R, limb } = sh, w = p.strap_width * R * .5 / sh.len, st = MM(STRAP_T);
   for (const tc of ts) {
     const rows = [tc - w, tc, tc + w], sa = lin(0, TAU, 73);
-    const base = (t, ang) => (inArcs(sh.arcs, ang) ? sh.outer(t, ang) + .2 * st
+    const base = (t, ang) => (inArcs(sh.arcs, ang) ? sh.outer(t, ang) + MM(1)
       : Math.max(sh.P.rSkin(sh.T(t, ang), ang) + .25 * p.gap * R, sh.r(t, ang) - .5 * p.gap * R));
     let brad = rows.map((t) => sa.map((a) => base(t, a)));
     brad = brad.map((row) => row.map((x, j) => Math.max(x, row[(j + 71) % 72], row[(j + 1) % 72])));
@@ -920,8 +923,12 @@ function straps(acc, sh, p, ts, side, mid) {
       const full = sh.arcs.length === 1 && sh.arcs[0][2], span = full ? 0 : sh.arcs.at(-1)[1] - sh.arcs[0][0];
       const ang = mid + (full ? THREE.MathUtils.degToRad(70) : Math.min(span, THREE.MathUtils.degToRad(300)) / 2 + THREE.MathUtils.degToRad(15)) * (side !== 'R' ? 1 : -1);
       const j = Math.round((((ang % TAU) + TAU) % TAU) / TAU * 72) % 72;
-      const nrm = sh.dirAt(tc, ang), al = sh.along(tc, ang), pc = sh.axis(tc, ang).addScaledVector(nrm, brad[1][j] + st), tan = al.clone().cross(nrm).normalize();
-      const hw = 1.25 * w * sh.len, hh = .9 * w * sh.len, bt = .35 * st, f = sh.face(tc, ang);
+      // on the strap's face as it slopes (a belt on the hips is a cone: square to the axis, its lower bar went in)
+      const P0 = pt(sh, rows[0], ang, brad[0][j] + st), P2 = pt(sh, rows[2], ang, brad[2][j] + st), al = P2.clone().sub(P0).normalize();
+      const nrm = sh.dirAt(tc, ang); nrm.addScaledVector(al, -nrm.dot(al)).normalize();
+      const ctr = P0.clone().add(P2).multiplyScalar(.5), pc = ctr.clone().addScaledVector(nrm, Math.max(0, pt(sh, tc, ang, brad[1][j] + st).sub(ctr).dot(nrm)));
+      const tan = al.clone().cross(nrm).normalize();
+      const hw = 1.25 * w * sh.len, hh = .9 * w * sh.len, bt = MM(BUCKLE_T), f = sh.face(tc, ang);
       for (const c of [pc.clone().addScaledVector(al, hw), pc.clone().addScaledVector(al, -hw)])
         box(acc, c.addScaledVector(nrm, bt), [tan, al, nrm], hh, bt, bt * 1.2, DETAIL, 'buckle', f);
       for (const c of [pc.clone().addScaledVector(tan, hh), pc.clone().addScaledVector(tan, -hh)])
@@ -932,7 +939,7 @@ function straps(acc, sh, p, ts, side, mid) {
 }
 function buckle(acc, sh, tc, ang, rad, w, st) {   // a frame of four bars on a strap
   const nrm = sh.dirAt(tc, ang), al = sh.along(tc, ang), pc = sh.axis(tc, ang).addScaledVector(nrm, rad), tan = al.clone().cross(nrm).normalize();
-  const hw = 1.25 * w * sh.len, hh = .9 * w * sh.len, bt = .35 * st, f = sh.face(tc, ang);
+  const hw = 1.25 * w * sh.len, hh = .9 * w * sh.len, bt = MM(BUCKLE_T), f = sh.face(tc, ang);
   for (const c of [pc.clone().addScaledVector(al, hw), pc.clone().addScaledVector(al, -hw)])
     box(acc, c.addScaledVector(nrm, bt), [tan, al, nrm], hh, bt, bt * 1.2, DETAIL, 'buckle', f);
   for (const c of [pc.clone().addScaledVector(tan, hh), pc.clone().addScaledVector(tan, -hh)])
@@ -942,8 +949,8 @@ function buckle(acc, sh, tc, ang, rad, w, st) {   // a frame of four bars on a s
 // riveted to both edges with a buckle over the gap, or a cord laced criss-cross between the edges
 function closure(acc, sh, p, ts, kind) {
   prepShell(sh);
-  const { R, limb } = sh, D = THREE.MathUtils.degToRad, g0 = sh.arcs.at(-1)[1], g1 = sh.arcs[0][0] + TAU, st = .05 * R;
-  const edgeR = (t, a) => sh.outer(t, a) + .2 * st;
+  const { R, limb } = sh, D = THREE.MathUtils.degToRad, g0 = sh.arcs.at(-1)[1], g1 = sh.arcs[0][0] + TAU, st = MM(STRAP_T);
+  const edgeR = (t, a) => sh.outer(t, a) + MM(1);
   if (kind === 'lace') { laceAt(acc, sh, g0 - D(4), g1 + D(4), sh.ta + .05 * (sh.tb - sh.ta), sh.tb - .05 * (sh.tb - sh.ta), edgeR); return; }
   const w = p.strap_width * R * .5 / sh.len, ov = D(22);
   for (const tc of ts) {
@@ -1885,7 +1892,7 @@ function shield(side, p) {   // on the forearm's outer side, its face out, its l
   // on its back two leather straps round the forearm (by the elbow, by the wrist), each following the arm's own section
   // (rays in to the skin round the far side) from the back face to the back face
   const side2 = new V3().crossVectors(u, out).normalize(), loc = (X) => { const d = X.clone().sub(Fr.C); return [d.dot(Fr.A), d.dot(Fr.E), d.dot(Fr.S)]; };
-  const sw = .022 * HEIGHT, st = .004 * HEIGHT, gap = .005 * HEIGHT;
+  const sw = .022 * HEIGHT, st = MM(3.5), gap = .005 * HEIGHT;
   for (const tt of [.25, .78]) {
     const t = tt + p.s_along / 100; if (t < .08 || t > .95) continue;
     const Q = F0.clone().addScaledVector(u, t * len), path = [];
@@ -2732,7 +2739,7 @@ function hangingCloth(p, o) {
     edge(inn.slice(cutRow).map((r) => r[c]), out.slice(cutRow).map((r) => r[c])); edge(out.slice(cutRow).map((r) => r[c + 1]), inn.slice(cutRow).map((r) => r[c + 1]));
   }
   if (ib) {   // the belt: a leather band round the waist over the cloth's row there, as wide as BELT_W of the height
-    const bw = BELT_W * H / 2, bt = .008 * H, ring = (off, dy) => rows[ib].map((_, j) => vid(th + off, ib, j, dy));
+    const bw = BELT_W * H / 2, bt = MM(3), ring = (off, dy) => rows[ib].map((_, j) => vid(th + off, ib, j, dy));
     const A = ring(bt, bw), B = ring(bt, -bw), A0 = ring(0, bw), B0 = ring(0, -bw);
     for (let j = 0; j < nu; j++) {
       acc.face([A[j], B[j], B[j + 1], A[j + 1]], LEATHER, 'strap');
@@ -2967,7 +2974,7 @@ function buildPiece(kind, sides, p) {
       // shoulder moves under it, a strap lying on the skin would go into it
       const onPlate = (f, a) => 1 - smooth(plateHi(a) - D(3), plateHi(a) + D(3), f);
       const capPt = (f, a, extra) => { const [o, dd] = capRay(f, a); return o.clone().addScaledVector(dd, capBase(f, a) - hug(f, a) * onPlate(f, a) + lift + upLift + extra); };
-      const st = .06 * P.R, w = Math.max(.08, p.strap_width * .5) * P.R, N = 25;
+      const st = MM(STRAP_T), w = Math.max(.08, p.strap_width * .5) * P.R, N = 25;
       for (const sgn of [1, -1]) {
         const sd = Math.sign(rel(sideAng(sgn))), af = mid + sd * D(40), ab = mid + sd * D(140), as = mid + sd * D(90);
         // its ends riveted on the breast- and backplate, below their tops (a plate's top comes down at its sides)
@@ -2985,7 +2992,7 @@ function buildPiece(kind, sides, p) {
         for (let i = 0; i < N - 1; i++) for (const e of [0, 1]) { const q = [V[0][i][e], V[0][i + 1][e], V[1][i + 1][e], V[1][i][e]]; acc.face(e ? q : q.reverse(), LEATHER, 'strap'); }
         for (const i of [0, N - 1]) { const q = [V[0][i][0], V[0][i][1], V[1][i][1], V[1][i][0]]; acc.face(i === 0 ? q : q.reverse(), LEATHER, 'strap'); }
         if (p.buckle) {   // on the front, near the breastplate
-          const q = rows[5], bt = .35 * st, hh = w * 1.05, hl = w * .9, nn = q.N.clone(), tt = q.T.clone(), bb = tt.clone().cross(nn).normalize();
+          const q = rows[5], bt = MM(BUCKLE_T), hh = w * 1.05, hl = w * .9, nn = q.N.clone(), tt = q.T.clone(), bb = tt.clone().cross(nn).normalize();
           for (const s2 of [-1, 1]) box(acc, q.c.clone().addScaledVector(tt, s2 * hl).addScaledVector(nn, st + bt), [tt, bb, nn], bt, hh, bt * 1.2, DETAIL, 'buckle', q.face);
           for (const s2 of [-1, 1]) box(acc, q.c.clone().addScaledVector(bb, s2 * hh).addScaledVector(nn, st + bt), [tt, bb, nn], hl, bt, bt * 1.2, DETAIL, 'buckle', q.face);
         }
