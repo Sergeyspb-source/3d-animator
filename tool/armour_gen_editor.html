@@ -4750,7 +4750,9 @@ $('pinchClear').addEventListener('click', () => { if ((S.p.pinches || []).length
 // ------------------------------------------------------------------ undo / redo (Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y, the ↶ ↷ buttons):
 // the piece, its sides, style and parameters (pinches too). A slider's moves in a row are one step
 const HIST = { undo: [], redo: [], at: null, timer: 0, restoring: false };
-const snapS = () => JSON.stringify({ piece: S.piece, sides: S.sides, style: S.style, p: S.p });
+// (the name with the piece: an undo back to another piece kept the opened item's name, and «Generate» then made that
+// item as the other piece - a bracer saved as a greave)
+const snapS = () => JSON.stringify({ piece: S.piece, sides: S.sides, style: S.style, p: S.p, name: S.name, touched: S.nameTouched });
 function histNote(what) {
   if (HIST.restoring) return;
   clearTimeout(HIST.timer);
@@ -4769,7 +4771,11 @@ function histStep(from, to) {
   to.push(HIST.at); HIST.at = from.pop();
   const x = JSON.parse(HIST.at);
   HIST.restoring = true;
-  try { S.p = x.p; S.sides = x.sides; S.style = x.style; if (x.piece !== S.piece) setPiece(x.piece, true); else changed('history'); }
+  try {
+    S.p = x.p; S.sides = x.sides; S.style = x.style;
+    if (x.name !== undefined) { S.name = x.name; S.nameTouched = x.touched; $('name').value = S.name; listWorn(); }
+    if (x.piece !== S.piece) setPiece(x.piece, true); else changed('history');
+  }
   finally { HIST.restoring = false; }
   histSync();
 }
@@ -4854,12 +4860,13 @@ async function make() {
     return null;
   }
   overwriteOk = '';
+  const replace = !!was;   // asked and pressed again: the server may make it over another kind's piece
   busy = true; $('go').disabled = true;
   const item = itemName();
   if (WORN.get(item) && WORN.get(item).on) { await wearPiece(DATA.worn.find((w) => w.item === item), false); listWorn(); }   // not over itself
   let js = null;
   try {
-    js = await send('generate', { item, piece: S.piece, sides: lastBuild.sides.filter((s) => s !== 'C'),
+    js = await send('generate', { item, piece: S.piece, replace, sides: lastBuild.sides.filter((s) => s !== 'C'),
       params: { ...S.p }, two: S.piece === 'weapon' ? twoCode() : '', point: S.piece === 'weapon' ? spearPoint : '', mesh: isMade() ? null : payload(), under: [...WORN.entries()].filter(([, w]) => w.on && layerOf(w)).map(([k]) => k) }, '{{js:ag.working}}', '_wear_' + item);
   } catch (e) { $('status').textContent = '{{js:ed.could_not_send_to_sf3d}}' + e.message; console.error(e); }
   busy = false; $('go').disabled = !lastBuild;
@@ -4899,6 +4906,7 @@ async function rebuildLayers() {
       S.name = x.item; S.nameTouched = true; setPiece(x.piece, true); listSaved(x.item);
       for (const w of DATA.worn) if (w.item !== x.item && layerOf(w) && !(WORN.get(w.item) && WORN.get(w.item).on)) await wearPiece(w, true);   // everything else on
       rebuild();
+      if (S.piece !== x.piece || itemName() !== x.item) { $('status').textContent = '{{js:ag.layers_stopped}}'.replace('{0}', x.item); return; }
       const js = await make();
       if (!js || !js.ok) { $('status').textContent = '{{js:ag.layers_stopped}}'.replace('{0}', x.item) + '\n' + ($('status').textContent || ''); return; }
       done.push(x.item);

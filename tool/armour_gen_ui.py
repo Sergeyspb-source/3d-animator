@@ -276,6 +276,14 @@ def generate(cfg, req) -> dict:
     out = rigged.parent / f"{stem}_wear_{item}.glb"
     work = Path(cfg["work_dir"]) / "armour_gen" / f"{stem}_{item}"
     work.mkdir(parents=True, exist_ok=True)
+    # another kind's piece of this name (a bracer) is not made over (as a greave) unless the editor asked and was told so
+    fit = rigged.parent / f"{stem}_wear_{item}.fit.json"
+    try:
+        had = (json.loads(fit.read_text(encoding="utf-8")).get("procedural") or {}).get("piece") if fit.exists() else None
+    except (OSError, ValueError):
+        had = None
+    if had and had != piece and not req.get("replace"):
+        return {"ok": False, "log": _t("ag.other_kind", item, had, piece)}
     made = MADE.get(piece)
     if not made:
         (work / "mesh.json").write_text(json.dumps(req["mesh"]), encoding="utf-8")

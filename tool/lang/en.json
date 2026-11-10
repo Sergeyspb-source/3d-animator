@@ -343,6 +343,7 @@
  "ag.s_hand": "Bar in the fist (no forearm straps)",
  "ag.saved": "Made before",
  "ag.saved_new": "— a new piece —",
+ "ag.other_kind": "Not made: «{0}» is already a piece of another kind ({1}), and «{2}» is chosen now. Not to overwrite it, give the new piece another name (or press «Generate» again after the warning).",
  "ag.layers_rebuild": "Rebuild by layers",
  "ag.layers_rebuild_info": "Make every saved piece again from the inside out: clothes under the armour, trousers, shoes, the limbs' plates, the skirt, the cuirass, the pauldrons, the cloth over them. Each with its own settings and over every piece under it, so the order they were made in no longer matters. Helmets, elbows and shoes from the generators and the weapons stay as they are.",
  "ag.layers_confirm": "Rebuild {0} pieces by layers (inside out): {1}? Each is made in Blender again; it takes a few minutes.",
