@@ -23,6 +23,7 @@ import landmarks  # any skeleton: what the tools read off it
 import landmarks_ui  # hand-placed landmark skeleton (Mixamo-like)
 import face_parts_ui  # procedural eyes, teeth, tongue
 import armour_gen_ui  # procedural armour from the character's own skin
+import wear_files as WF
 import i18n
 from i18n import t as _t
 PORT = 7861
@@ -798,7 +799,7 @@ def _char_files(value):
 
 def _char_counts(f):
     return (len(list(f["dir"].glob("*.face.json"))),
-            len([x for x in f["dir"].glob("*_wear_*.glb") if not x.name.endswith(".src.glb")]))
+            len([g for _, g, _ in WF.items_in(f["dir"]) if g is not None]) + len([x for x in f["dir"].glob("*_wear_*.glb") if not x.name.endswith(".src.glb")]))
 
 
 # what a character has, as icons (the list shows plain text: emoji); the legend is under the list's label
@@ -922,7 +923,7 @@ def char_add(upload):
     if not upload:
         return gr.update()
     src = Path(upload if isinstance(upload, str) else upload.name)
-    if "_wear_" in src.stem or src.name.endswith(".src.glb"):   # a piece put on a character (its result, its source): not a character
+    if WF.is_piece_file(src):   # a piece put on a character (its result, its source): not a character
         gr.Warning(_t("ui.char_add_piece", src.name))
         return gr.update()
     stem = re.sub(r"_(landmarks_)?rigged$", "", src.stem)

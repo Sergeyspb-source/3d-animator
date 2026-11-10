@@ -48,6 +48,8 @@ It glues several open-source models together (Stable Fast 3D, Hunyuan3D-2, UniRi
 
 Every «Character» tool works on the **current character**, chosen once under the row of tabs and shown there in 3D with what it already has (the model, the skeleton, the body in parts for sets, lip-sync clips, pieces put on). A character is a folder `export\character\<name>\`; «Add a model…» makes one from a GLB, «Delete» erases its whole folder after asking «Delete for good?»; the file it was loaded from stays where it was. The choice is kept between runs. A tab's own «load a file» stays for a one-off job on a model that is not a character.
 
+A character's pieces lie in its folder by kind: `armor/` (plates, mail, helmets, gloves, shoes and the pieces fitted in «Armour»), `clothes/` (clothes under the armour, trousers, skirt, tabard, cloak), `weapons/` (weapons, shields, scabbards, quivers). Each piece is four files: `<item>.glb` and `<item>.mask.json` (what of the body it hides) for the game, `<item>.src.glb` and `<item>.fit.json` (the piece as made and its settings) for the editors. The name is given by the rule `<part>_<style>`, `_2`, `_3` for another of the same: `cuirass_steel`, `bracer_leather_2`, `helmet_barbute`, `shield_round`, `undercloth_fitted`, a weapon just `sword`. No model prefix: the folder says whose it is. The name is given once, at the first «Generate», and kept even when the style changes (the game and the fitting room know the piece by it); the «Piece name» field can be typed over. The editors' answers lie in `work\status\`, not in the model's folder. A character in the old layout (`<model>_wear_<item>.*` next to the model) is moved over the first time its pieces are opened: the files renamed by the rule, the references between pieces (what each was made over) too, the old answers deleted.
+
 Outputs go to `export\<category>\<name>\` (GLB + JSON stats + icon). Scratch files go to `work\`. Neither folder is in the repository.
 
 ---
@@ -142,11 +144,11 @@ When pieces overlap (a boot over a greave, a cuisse over padding), the list «Ov
 
 ### What a piece hides
 
-Every piece put on (fitted or procedural) also saves which part of the body it hides, `<character>_wear_<item>.mask.json` (`tool/body_mask.py`): the skin under it, which would poke through in motion, and what sticks out through it — the cords hanging from trousers under a skirt, the ears under a helmet. A face out of a helmet or a hand out of a bracer stays. The editor and the Godot fitting room take those triangles away while the piece is on, and bring them back when it is off; the body's edge at the piece's rim stays.
+Every piece put on (fitted or procedural) also saves which part of the body it hides, `<item>.mask.json` (`tool/body_mask.py`): the skin under it, which would poke through in motion, and what sticks out through it — the cords hanging from trousers under a skirt, the ears under a helmet. A face out of a helmet or a hand out of a bracer stays. The editor and the Godot fitting room take those triangles away while the piece is on, and bring them back when it is off; the body's edge at the piece's rim stays.
 
 ### Saving and the Godot fitting room
 
-Every «Put on» also saves the fitting (`<character>_wear_<item>.fit.json`); «Open» brings it back with all the sliders and points. «Fitting room in Godot» builds a small Godot project with the character, its clips and every piece put on, and opens it. Here is a whole set in Godot during the walk clip: breastplate, helmet and short cuisses from Hunyuan3D, boots, and bracers taken off a Tripo character.
+Every «Put on» also saves the fitting (`<item>.fit.json`); «Open» brings it back with all the sliders and points. «Fitting room in Godot» builds a small Godot project with the character, its clips and every piece put on, and opens it. Here is a whole set in Godot during the walk clip: breastplate, helmet and short cuisses from Hunyuan3D, boots, and bracers taken off a Tripo character.
 
 ![The fitting room in Godot](docs/images/en/godot_walk.jpg)
 
@@ -390,13 +392,13 @@ In the landmark editor's pose mode, **Armour** opens the armour panel:
    - «Open up» (lower end / upper end / both ends): a generated piece closed at an end is cut open there by `blender_armour_hollow.py`, texture and all, and placed again. On a limb the lower end is the one away from the body (the wrist, the knee); an upright piece goes by its own vertical. The piece's own wall stays; a solid blank gets one inwards (rays from the middle out pass two surfaces when it has a wall).
    - «Repaint for the shape»: Hunyuan3D-Paint paints the reshaped piece anew from its reference picture (found in `refs_mv`, or chosen in «Piece picture»), so the texture follows the new shape instead of being stretched (3–6 min on the GPU). The result becomes the fitting's source piece.
    - Hunyuan3D from four views (Codex draws them: `export/equipment/generated_armour/make_refs_mv.py`) gives hollow armour that sits without any opening step. A piece generated from one picture is usually a closed solid; `tool/blender_armour_hollow.py in.glb out.glb [open=both|top|bottom] [axis=auto|z|x,y,z] [wall=0.08|auto]` is the same cut from the command line.
-4. Every fitting is saved next to the character as `<character>_wear_<item>.fit.json` + `.src.glb`. «Open» brings it back with all the sliders and points, and «Save» saves without fitting.
+4. Every fitting is saved in the character's folder as `<item>.fit.json` + `.src.glb`. «Open» brings it back with all the sliders and points, and «Save» saves without fitting.
 5. **«Fitting room in Godot»** builds `work/wardrobe/<character>/`: the character with its clips (the procedural ones are made if none exist), every fitted piece on, pieces on/off, and an orbit camera. It then opens the project in Godot.
 
 In your own Godot project, copy `tool/godot/sf3d_equip.gd` and the GLBs, then:
 
 ```gdscript
-var bracers := SF3DEquip.wear($Goblin, preload("res://goblin_wear_bracer.glb"))   # put on (meshes move under the character's Skeleton3D)
+var bracers := SF3DEquip.wear($Goblin, preload("res://armor/bracer_leather.glb"))   # put on (meshes move under the character's Skeleton3D)
 SF3DEquip.take_off(bracers)                                                      # take off
 SF3DEquip.show(bracers, false)                                                   # hide (the body under it comes back)
 ```

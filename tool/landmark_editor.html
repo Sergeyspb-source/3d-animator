@@ -5124,7 +5124,7 @@ $('mcOpen').oninput = mcApply; $('mcMarks').onchange = mcApply;
 $('mcClose').onclick = () => { $('mcBox').hidden = true; };
 
 // SF3D does the work: the request goes through a hidden textbox and button, the answer comes back as a status file
-// next to the character (<stem>_wear_<item>.wear.json, <stem>_wardrobe.wear.json for the Godot fitting room)
+// in work/status/<model>/ (<stem>_wear_<item>.wear.json, <stem>_wardrobe.wear.json for the Godot fitting room)
 async function wearSend(action, extra, wait, out = $('wStatus')) {   // out: where the progress and the answer are shown
   const req = Object.assign({ id: Date.now(), action, rigged: DATA.rigged }, extra);
   try {
@@ -5135,7 +5135,8 @@ async function wearSend(action, extra, wait, out = $('wStatus')) {   // out: whe
   } catch (e) { out.textContent = '{{js:ed.could_not_send_to_sf3d}}' + e.message; return null; }
   out.textContent = wait;
   const stem = DATA.rigged.split('/').pop().replace(/_(landmarks_)?rigged\.glb$/i, '').replace(/\.glb$/i, '');
-  const status = DATA.rigged.replace(/[^/]*$/, '') + stem + (action === 'wardrobe' ? '_wardrobe' : '_wear_' + req.item) + '.wear.json';
+  const dir = DATA.status_dir ? DATA.status_dir + '/' : DATA.rigged.replace(/[^/]*$/, '');   // the answers: work/status/<model>
+  const status = dir + stem + (action === 'wardrobe' ? '_wardrobe' : '_wear_' + req.item) + '.wear.json';
   for (let k = 0; k < 400; k++) {
     await new Promise((r) => setTimeout(r, 1500));
     let js = null;

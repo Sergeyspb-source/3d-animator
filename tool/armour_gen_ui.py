@@ -2,7 +2,8 @@
 page (armour_gen_editor.html) builds the piece and its weights live over the character from the parameters, so the
 result is seen (and posed) before it is made; «Generate» sends that geometry here and Blender (blender_armour_gen.py)
 bakes its materials and exports it. The result lies next to the character like a piece put on in the «Armour» mode
-(<stem>_wear_<item>.glb with its fit.json), so the Godot fitting room and the editor's other pieces see it."""
+(<model>/<armor|clothes|weapons>/<item>.glb with its fit.json: wear_files), so the Godot fitting room and the editor's
+other pieces see it."""
 import base64
 import html as _html
 import json
@@ -19,6 +20,7 @@ import i18n
 from i18n import t as _t
 
 import landmarks as LM
+import wear_files as WF
 
 ROOT = Path(__file__).resolve().parent
 EDITOR = ROOT / "armour_gen_editor.html"
@@ -153,15 +155,16 @@ def characters(cfg):
 def saved(rigged: Path) -> list:
     """The character's pieces made here before: [{item, piece, sides, params}] (the editor opens them again)."""
     out = []
-    for f in sorted(rigged.parent.glob(f"{LM._stem(rigged)}_wear_*.fit.json")):
+    for f in WF.fits(rigged):
         try:
-            pr = json.loads(f.read_text(encoding="utf-8")).get("procedural")
+            js = json.loads(f.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
+        pr = js.get("procedural")
         if isinstance(pr, dict) and pr.get("piece") in PIECES and isinstance(pr.get("params"), dict):
-            under = (json.loads(f.read_text(encoding="utf-8")).get("state") or {}).get("under") or []
-            out.append({"item": f.name[len(LM._stem(rigged)) + 6:-len(".fit.json")], "piece": pr["piece"],
-                        "sides": pr.get("sides") or [], "params": pr["params"], "under": under})   # (what it was made over)
+            out.append({"item": f.name[:-len(".fit.json")], "piece": pr["piece"], "style": pr.get("style"),
+                        "sides": pr.get("sides") or [], "params": pr["params"],
+                        "under": (js.get("state") or {}).get("under") or []})   # (what it was made over)
     return out
 
 
@@ -177,26 +180,23 @@ def _kind(glb: Path):
 def worn(rigged: Path) -> list:
     """Every piece put on the character so far (made here or fitted in «Armour»): [{item, glb, piece}] — the editor
     shows them and fits a new piece over the ones ticked (under the ones that go over it: a cuirass over a skirt)."""
-    stem = LM._stem(rigged)
-    return [{"item": f.name[len(stem) + 6:-4], "glb": f.resolve().as_posix(), "v": int(f.stat().st_mtime), "piece": _kind(f),
+    return [{"item": f.name[:-4], "glb": f.resolve().as_posix(), "v": int(f.stat().st_mtime), "piece": _kind(f),
              "mask": f.with_suffix(".mask.json").resolve().as_posix() if f.with_suffix(".mask.json").exists() else None}
-            for f in sorted(rigged.parent.glob(f"{stem}_wear_*.glb")) if not f.name.endswith(".src.glb")]
+            for f in WF.pieces(rigged)]
 
 
-WEAR_FILES = (".glb", ".src.glb", ".mask.json", ".fit.json", ".wear.json")   # a piece put on: its result and what goes with it
-
-
-def remove_piece(rigged: Path, item: str) -> dict:
-    """A piece taken off the character for good (asked first in the page): its files (<stem>_wear_<item>.*, by the
-    exact name: «proc_a» is not «proc_a_2»; its check's answer) deleted. The Godot fitting room drops its copy when
-    next opened."""
-    stem = LM._stem(rigged)
-    files = [rigged.parent / f"{stem}_wear_{item}{x}" for x in WEAR_FILES] + [rigged.parent / f"{stem}_qa_{item}.wear.json"]
+def remove_piece(cfg, rigged: Path, item: str) -> dict:
+    """A piece taken off the character for good (asked first in the page): its files (<folder>/<item>.*, by the exact
+    name: «a» is not «a_2»; its answers) deleted. The Godot fitting room drops its copy when next opened."""
+    files = [WF.path(rigged, item, x) for x in WF.SUFFIXES] + [WF.status(cfg, rigged, f"_qa_{item}"), WF.status(cfg, rigged, f"_wear_{item}")]
     files = [f for f in files if f.is_file()]
     if not item or not files:
         return {"ok": False, "log": _t("ag.remove_none", item)}
     for f in files:
         f.unlink()
+    folder = WF.path(rigged, item, ".glb").parent
+    if folder.parent == rigged.parent and folder.name in WF.CATS and folder.is_dir() and not any(folder.iterdir()):
+        folder.rmdir()   # its kind's folder, now empty
     return {"ok": True, "log": _t("ag.removed", item)}
 
 
@@ -226,6 +226,7 @@ def decals(folder: Path) -> list:
 def editor_page(rigged: Path, decals_dir: Path | None = None) -> str:
     page = i18n.fill(EDITOR.read_text(encoding="utf-8"))
     data = {"rigged": rigged.resolve().as_posix(), "rigged_v": int(rigged.stat().st_mtime), "stem": LM._stem(rigged),
+            "status_dir": WF.status_dir(None, rigged).resolve().as_posix(),   # where the answers to the page go
             "target": TARGET_ID, "go": GO_ID, "names": {n: LM.bone_names(n) for n in ("mixamo", "godot")},
             "pieces": {k: {"joints": v[:3], "foreign": v[3], "part": v[4], "family": v[5], "range": v[6], "defaults": v[7],
                            "label": _t(f"ag.piece_{k}"), "tlabels": [_t(x) for x in T_LABELS.get(k, T_LABELS[v[5]])[:2]], "tinfo": _t(T_LABELS.get(k, T_LABELS[v[5]])[2])}
@@ -275,11 +276,11 @@ def generate(cfg, req) -> dict:
         return {"ok": False, "log": _t("ag.unknown_piece", piece)}
     stem = LM._stem(rigged)
     item = re.sub(r"[^A-Za-z0-9_-]+", "_", req.get("item") or f"proc_{piece}").strip("_") or f"proc_{piece}"
-    out = rigged.parent / f"{stem}_wear_{item}.glb"
+    out = WF.path(rigged, item, ".glb", piece, make=True)
     work = Path(cfg["work_dir"]) / "armour_gen" / f"{stem}_{item}"
     work.mkdir(parents=True, exist_ok=True)
     # another kind's piece of this name (a bracer) is not made over (as a greave) unless the editor asked and was told so
-    fit = rigged.parent / f"{stem}_wear_{item}.fit.json"
+    fit = WF.path(rigged, item, ".fit.json", piece)
     try:
         had = (json.loads(fit.read_text(encoding="utf-8")).get("procedural") or {}).get("piece") if fit.exists() else None
     except (OSError, ValueError):
@@ -320,21 +321,21 @@ def generate(cfg, req) -> dict:
     info = json.loads(line.split(" ", 1)[1])
     shutil.copy2(work / "piece.glb", out)
     if (work / "mask.json").exists():   # what of the body it hides: SF3DEquip.wear() takes it away while it is on
-        shutil.copy2(work / "mask.json", rigged.parent / f"{stem}_wear_{item}.mask.json")
+        shutil.copy2(work / "mask.json", WF.path(rigged, item, ".mask.json", piece))
     else:   # a held piece hides nothing: an older piece's mask of that name goes
-        (rigged.parent / f"{stem}_wear_{item}.mask.json").unlink(missing_ok=True)
+        WF.path(rigged, item, ".mask.json", piece).unlink(missing_ok=True)
     # the editor's list of pieces: a fit.json and a source next to the result (marked: it is changed here, not there)
-    shutil.copy2(work / "piece.glb", rigged.parent / f"{stem}_wear_{item}.src.glb")
-    (rigged.parent / f"{stem}_wear_{item}.fit.json").write_text(json.dumps(
-        {"item": item, "src": f"{stem}_wear_{item}.src.glb", "saved": datetime.now().isoformat(timespec="seconds"),
-         "procedural": {"piece": piece, "sides": sides, "params": params},
+    shutil.copy2(work / "piece.glb", WF.path(rigged, item, ".src.glb", piece))
+    WF.path(rigged, item, ".fit.json", piece).write_text(json.dumps(
+        {"item": item, "src": f"{item}.src.glb", "saved": datetime.now().isoformat(timespec="seconds"),
+         "procedural": {"piece": piece, "sides": sides, "params": params, "style": req.get("style")},
          "state": {"part": PIECES[piece][4], "under": [str(x) for x in req.get("under") or []]}}, ensure_ascii=False, indent=1),
         encoding="utf-8")
     shots = [str(work / f"preview_{v}.png") for v in ("front", "side", "close") if (work / f"preview_{v}.png").exists()]
     msg = _t("ag.done", out.name, info["vertices"], ", ".join(info["bones"]), (datetime.now() - t).seconds)
     if info.get("over_clothes"):
         msg += "\n" + _t("ag.over_clothes")
-    mask = rigged.parent / f"{stem}_wear_{item}.mask.json"
+    mask = WF.path(rigged, item, ".mask.json", piece)
     return {"ok": True, "log": msg, "glb": out.resolve().as_posix(), "mask": mask.resolve().as_posix() if mask.exists() else None, "shots": shots}
 
 
@@ -344,7 +345,7 @@ def qa(cfg, req) -> dict:
     rigged = Path(req["rigged"])
     stem = LM._stem(rigged)
     item = re.sub(r"[^A-Za-z0-9_-]+", "_", req.get("item") or "").strip("_")
-    piece = rigged.parent / f"{stem}_wear_{item}.glb"
+    piece = WF.path(rigged, item, ".glb")
     if not piece.exists():
         return {"ok": False, "log": _t("ag.qa_no_piece")}
     work = Path(cfg["work_dir"]) / "armour_gen" / f"{stem}_{item}"
@@ -395,7 +396,7 @@ _BAKES, _BAKE_LOCK = {}, threading.Lock()
 
 
 def _bake_write(rigged: Path, b: dict):
-    (rigged.parent / f"{LM._stem(rigged)}_bake.wear.json").write_text(json.dumps(
+    WF.status(None, rigged, "_bake").write_text(json.dumps(
         {"batch": b["batch"], "queue": [j["item"] for j in b["q"]], "current": b["current"], "done": b["done"],
          "running": b["running"], "stopped": b["stopped"]}, ensure_ascii=False), encoding="utf-8")
 
@@ -440,7 +441,7 @@ def bake(cfg, req) -> dict:
 
 def handle(cfg, text):
     """A request from the editor page. The answer also goes to a status file next to the character, which the page
-    waits for: <stem>_wear_<item>.wear.json (the Godot fitting room: LM.wear's own, <stem>_wardrobe.wear.json).
+    waits for: work/status/<model>/<stem>_wear_<item>.wear.json (the Godot fitting room: LM.wear's own, <stem>_wardrobe.wear.json).
     Returns (log, renders)."""
     req = json.loads(text)
     if req.get("action") == "wardrobe":
@@ -452,7 +453,7 @@ def handle(cfg, text):
         except Exception as e:  # noqa: BLE001
             res = {"ok": False, "log": _t("lm.error", e)}
         item = re.sub(r"[^A-Za-z0-9_-]+", "_", req.get("item") or "").strip("_")
-        (rigged.parent / f"{LM._stem(rigged)}_qa_{item}.wear.json").write_text(
+        WF.status(cfg, rigged, f"_qa_{item}").write_text(
             json.dumps({"id": req.get("id"), **res}, ensure_ascii=False), encoding="utf-8")
         return res["log"], None
     if req.get("action") == "bake":   # answered in <stem>_bakeq_<item>.wear.json (the queue's state: <stem>_bake.wear.json)
@@ -462,19 +463,19 @@ def handle(cfg, text):
             res = bake(cfg, req)
         except Exception as e:  # noqa: BLE001
             res = {"ok": False, "log": _t("lm.error", e)}
-        (rigged.parent / f"{LM._stem(rigged)}_bakeq_{item}.wear.json").write_text(
+        WF.status(cfg, rigged, f"_bakeq_{item}").write_text(
             json.dumps({"id": req.get("id"), **res}, ensure_ascii=False), encoding="utf-8")
         return res["log"], None
     if req.get("action") == "remove":   # answered in <stem>_remove_<item>.wear.json
         rigged = Path(req["rigged"])
         item = re.sub(r"[^A-Za-z0-9_-]+", "_", req.get("item") or "").strip("_")
-        for old in rigged.parent.glob(f"{glob.escape(LM._stem(rigged))}_remove_*.wear.json"):   # the answers to earlier ones: read
+        for old in WF.status_dir(cfg, rigged).glob(f"{glob.escape(LM._stem(rigged))}_remove_*.wear.json"):   # the answers to earlier ones: read
             old.unlink(missing_ok=True)
         try:
-            res = remove_piece(rigged, item)
+            res = remove_piece(cfg, rigged, item)
         except Exception as e:  # noqa: BLE001
             res = {"ok": False, "log": _t("lm.error", e)}
-        (rigged.parent / f"{LM._stem(rigged)}_remove_{item}.wear.json").write_text(   # (its answer: the page reads it, then it is not needed)
+        WF.status(cfg, rigged, f"_remove_{item}").write_text(
             json.dumps({"id": req.get("id"), **res}, ensure_ascii=False), encoding="utf-8")
         return res["log"], None
     if req.get("action") == "made_preview":   # answered in <stem>_helmet_<style>.wear.json
@@ -483,7 +484,7 @@ def handle(cfg, text):
             res = made_preview(cfg, req)
         except Exception as e:  # noqa: BLE001
             res = {"ok": False, "log": _t("lm.error", e)}
-        (rigged.parent / f"{LM._stem(rigged)}_helmet_{req.get('style')}.wear.json").write_text(
+        WF.status(cfg, rigged, f"_helmet_{req.get('style')}").write_text(
             json.dumps({"id": req.get("id"), **res}, ensure_ascii=False), encoding="utf-8")
         return res["log"], None
     rigged = Path(req["rigged"])
@@ -492,7 +493,7 @@ def handle(cfg, text):
         res = generate(cfg, req)
     except Exception as e:  # noqa: BLE001  (the page must hear back, or it waits for minutes)
         res = {"ok": False, "log": _t("lm.error", e)}
-    (rigged.parent / f"{LM._stem(rigged)}_wear_{item}.wear.json").write_text(
+    WF.status(cfg, rigged, f"_wear_{item}").write_text(
         json.dumps({"id": req.get("id"), **{k: v for k, v in res.items() if k != "shots"}}, ensure_ascii=False), encoding="utf-8")
     return res["log"], res.get("shots")
 

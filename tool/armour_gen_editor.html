@@ -3710,7 +3710,7 @@ const DEFAULTS = Object.assign({ gap: 8, thickness: 12, relief: .35, step: 5, ri
   cloth_style: 'shirt', cloth_quilt: false, quilt_lines: false, pinches: [], paints: [],
   weapon: 'sword', shield: 'round', w_len: 100, w_width: 100, w_guard: 100, w_grip: 100, w_grip_r: 100, w_head: 100, grip_along: 0, grip_out: 0,
   grip_tilt: 15, grip_roll: 0, w_two: 0, arrows: 12, cloak_len: 60, cloak_wrap: 172, cloak_flare: 25, cloak_lift: 5, cloak_nape: 120, cloak_gap: .5, skirt_len: 30, skirt_flare: 30, skirt_lift: 6, skirt_slit: 0, skirt_gap: .5, tabard_len: 50, tabard_belt: 8, tabard_flare: 15, tabard_lift: 2, tabard_gap: 1, s_size: 100, s_curve: 30, s_rim: 100, s_boss: 100, s_along: 0, s_out: 0, s_turn: 0, s_hand: false }, PIECES.bracer.defaults);
-const S = { piece: 'bracer', sides: ['L', 'R'], name: 'proc_bracer', nameTouched: false, p: { ...DEFAULTS }, armour: null };
+const S = { piece: 'bracer', sides: ['L', 'R'], name: '', nameTouched: false, p: { ...DEFAULTS }, armour: null };
 let clampTo = 0, curView = 'front';   // clampTo: a cuirass's top, held under the armpits (%)
 
 const fmt = (key, x) => {
@@ -3835,6 +3835,7 @@ function syncPanel() {
   for (const b of $('pieces').querySelectorAll('button')) b.classList.toggle('on', b.dataset.piece === S.piece);
   for (const b of $('sidesRow').querySelectorAll('button')) b.classList.toggle('on', S.sides.includes(b.dataset.side));
   $('sidesRow').hidden = !['limb', 'joint', 'glove', 'held'].includes(PIECES[S.piece].family);
+  if (!S.nameTouched) S.name = autoName();   // a new piece: named by the rule as its kind and style change
   $('name').value = S.name;
   pinchSync();
 }
@@ -3849,7 +3850,7 @@ function setPiece(k, keep) {
   }
   // a name that is another kind's piece (a cuirass opened, then «Weapon» chosen) is not kept: it would be made over it
   const other = DATA.saved.find((x) => x.item === S.name && x.piece !== k);
-  if (!S.nameTouched || (!keep && other)) { S.name = 'proc_' + k; S.nameTouched = false; }
+  if (!S.nameTouched || (!keep && other)) { S.name = ''; S.nameTouched = false; }   // (named by the rule: autoName)
   if (k === 'weapon' || (k === 'shield' && S.p.s_hand)) fistPose();   // a weapon is seen in the fist that holds it
   if (isCloth(k) && pose === 'rest') {   // a cloak over the arms hanging (a skirt beside them)
     pose = 'down'; for (const b of $('poses').children) b.classList.toggle('on', b.dataset.p === 'down');
@@ -4843,7 +4844,7 @@ async function send(action, extra, wait, statusName) {
     window.parent.document.querySelector('#' + DATA.go).click();
   } catch (e) { $('status').textContent = '{{js:ed.could_not_send_to_sf3d}}' + e.message; return null; }
   $('status').textContent = wait;
-  const status = DATA.rigged.replace(/[^/]*$/, '') + DATA.stem + statusName + '.wear.json';
+  const status = DATA.status_dir + '/' + DATA.stem + statusName + '.wear.json';   // (work/status/<model>: not the model's folder)
   for (let k = 0; k < 600; k++) {
     await new Promise((r) => setTimeout(r, 1500));
     let js = null;
@@ -4855,7 +4856,27 @@ async function send(action, extra, wait, statusName) {
   $('status').textContent = '{{js:ed.sf3d_did_not_answer_see_the_armour}}';
   return null;
 }
-const itemName = () => (S.name || 'proc_' + S.piece).trim().replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'proc_' + S.piece;
+// a new piece's name: <part>_<style>, «_2», «_3»… for another of the same (wear_files.base_name, free_name: the same
+// rule); it lies in its model's armor/clothes/weapons folder, which says whose it is. Given once: after «Generate»
+// the piece keeps it (another «Generate» makes it over), and it can be typed over
+const SURF_STYLES = ['mail', 'scales', 'lamellar', 'brigandine', 'splints', 'quilt'];
+const slugN = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
+function styleOf(kind, p, style) {
+  const own = { weapon: p.weapon, shield: p.shield, helmet: p.helmet, glove: p.glove, elbow: String(p.elbow || '').replace(/^elbow_/, ''),
+    footwear: String(p.footwear || '').replace(/^foot_/, ''), undercloth: p.cloth_style, sheath: p.sheath }[kind];
+  if (own) return slugN(own);
+  if (style) return slugN(String(style).replace(/^(cloth|shield|weapon|sheath|glove|foot|elbow)_/, ''));
+  if (SURF_STYLES.includes(p.surface)) return p.surface;
+  return slugN(p.material) || 'piece';
+}
+function autoName() {
+  const st = styleOf(S.piece, S.p, S.style), base = S.piece === 'weapon' ? st : `${S.piece}_${st}`;
+  const taken = new Set([...DATA.worn.map((w) => w.item), ...DATA.saved.map((x) => x.item)]);
+  if (!taken.has(base)) return base;
+  let n = 2; while (taken.has(`${base}_${n}`)) n++;
+  return `${base}_${n}`;
+}
+const itemName = () => ((S.nameTouched ? S.name : '') || autoName()).trim().replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || autoName();
 // what «Generate» last made of this item (DATA.saved): the fitting room shows that, so a piece changed since is made first
 const sorted = (o) => JSON.stringify(o, (k, v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map((x) => [x, v[x]])) : v));
 const madeAsShown = () => { const e = DATA.saved.find((x) => x.item === itemName());
@@ -4878,13 +4899,14 @@ async function make() {
   if (WORN.get(item) && WORN.get(item).on) { await wearPiece(DATA.worn.find((w) => w.item === item), false); listWorn(); }   // not over itself
   let js = null;
   try {
-    js = await send('generate', { item, piece: S.piece, replace, sides: lastBuild.sides.filter((s) => s !== 'C'),
+    js = await send('generate', { item, piece: S.piece, replace, style: S.style, sides: lastBuild.sides.filter((s) => s !== 'C'),
       params: { ...S.p }, two: S.piece === 'weapon' ? twoCode() : '', point: S.piece === 'weapon' ? spearPoint : '', mesh: isMade() ? null : payload(), under: [...WORN.entries()].filter(([, w]) => w.on && layerOf(w)).map(([k]) => k) }, '{{js:ag.working}}', '_wear_' + item);
   } catch (e) { $('status').textContent = '{{js:ed.could_not_send_to_sf3d}}' + e.message; console.error(e); }
   busy = false; $('go').disabled = !lastBuild;
   if (js && js.ok) {
     const i = DATA.saved.findIndex((x) => x.item === item);
-    const entry = { item, piece: S.piece, sides: [...S.sides], params: { ...S.p }, under: [...WORN.entries()].filter(([k, w]) => k !== item && w.on && layerOf(w)).map(([k]) => k) };
+    S.name = item; S.nameTouched = true;   // its name kept: «Generate» again makes this piece over, not a «_2»
+    const entry = { item, piece: S.piece, style: S.style, sides: [...S.sides], params: { ...S.p }, under: [...WORN.entries()].filter(([k, w]) => k !== item && w.on && layerOf(w)).map(([k]) => k) };
     if (i >= 0) DATA.saved[i] = entry; else DATA.saved.push(entry);
     listSaved(item);
     const old = WORN.get(item); if (old) { scene.remove(old.root); WORN.delete(item); }   // its old look goes
@@ -4947,7 +4969,7 @@ async function rebuildLayers() {
       S.name = x.item; S.nameTouched = true;
       buildBody(); rebuild();
       if (!parts.length || !lastBuild) throw new Error('{{js:ag.layers_stopped}}'.replace('{0}', x.item));
-      jobs.push({ item: x.item, piece: x.piece, sides: lastBuild.sides.filter((q) => q !== 'C'), params: { ...S.p }, mesh: payload(),
+      jobs.push({ item: x.item, piece: x.piece, style: x.style || null, sides: lastBuild.sides.filter((q) => q !== 'C'), params: { ...S.p }, mesh: payload(),
         under: [...WORN.entries()].filter(([k, w]) => k !== x.item && w.on && layerOf(w)).map(([k]) => k), two: '', point: '' });
       const ms = parts.flatMap((part) => meshesOf(part.acc)); temp.push(...ms);   // worn by the next ones as it is shown
       WORN.set(x.item, { root: null, meshes: ms, on: true, piece: x.piece, mask: null });
@@ -4975,7 +4997,7 @@ function bakeWatch() {   // the queue's state, every 2 s: each made piece put on
   clearTimeout(BAKE.timer);
   BAKE.timer = setTimeout(async () => {
     let st = null;
-    try { const r = await fetch(fileUrl(DATA.rigged.replace(/[^/]*$/, '') + DATA.stem + '_bake.wear.json') + '?t=' + Date.now()); if (r.ok) st = await r.json(); } catch (e) { /* not yet */ }
+    try { const r = await fetch(fileUrl(DATA.status_dir + '/' + DATA.stem + '_bake.wear.json') + '?t=' + Date.now()); if (r.ok) st = await r.json(); } catch (e) { /* not yet */ }
     if (!st || st.batch !== BAKE.batch) { bakeWatch(); return; }
     for (const d of st.done.slice(BAKE.seen)) {
       BAKE.seen++; BAKE.left = BAKE.left.filter((x) => x !== d.item);

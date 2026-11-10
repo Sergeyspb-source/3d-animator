@@ -13,6 +13,7 @@ import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
+import wear_files as WF
 import i18n
 from i18n import t as _t
 
@@ -444,23 +445,24 @@ def _stem(rigged: Path) -> str:
 def wear(cfg, text):
     """The editor's armour mode (mode «Броня») asks through a hidden textbox. text: JSON {id, action, rigged, ...}:
     action "wear" (default): put the piece on as placed — {item, glb (base64 of the piece), placements, offset,
-    conform, rigidity, deforms, state}; writes <stem>_wear_<item>.glb and saves the fitting. "save": only save the
-    fitting (<stem>_wear_<item>.fit.json with the editor state + the piece as <stem>_wear_<item>.src.glb, so it opens
+    conform, rigidity, deforms, state}; writes <folder>/<item>.glb (wear_files) and saves the fitting. "save": only save
+    the fitting (<item>.fit.json with the editor state + the piece as <item>.src.glb, so it opens
     again for corrections). "wardrobe": build and open the Godot fitting room with every piece put on. "repaint": paint
     the reshaped piece anew (_repaint). "hollow": cut a closed end of the piece open (_hollow).
-    The answer goes to a status file next to the character (the editor waits for it): <stem>_wear_<item>.wear.json,
+    The answer goes to a status file in work/status/<model> (the editor waits for it): <stem>_wear_<item>.wear.json,
     <stem>_wardrobe.wear.json. Returns the log text."""
     req = json.loads(text)
     rigged = Path(req["rigged"])
     action = req.get("action") or "wear"
     item = re.sub(r"[^\w-]+", "_", req.get("item") or "item").strip("_") or "item"
-    status = rigged.parent / f"{_stem(rigged)}_{'wardrobe' if action == 'wardrobe' else 'wear_' + item}.wear.json"
-    own = f"{_stem(rigged)}_wear_"
-    if action in ("wear", "save") and item.startswith(own):   # a piece of this character's own file (its result or
-        # its .src.glb) put on again: a second copy over the first (trousers fitted over their own skirt) - refused
-        status.write_text(json.dumps({"id": req.get("id"), "ok": False, "log": _t("lm.wear_own_piece", re.sub(r"_src$", "", item[len(own):]))},
-                                     ensure_ascii=False), encoding="utf-8")
-        return _t("lm.wear_own_piece", re.sub(r"_src$", "", item[len(own):]))
+    status = WF.status(cfg, rigged, "_wardrobe" if action == "wardrobe" else "_wear_" + item)
+    own = f"{_stem(rigged)}_wear_"   # (the old layout's names)
+    base = re.sub(r"_src$", "", item[len(own):] if item.startswith(own) else item)
+    if action in ("wear", "save") and (item.startswith(own) or (base != item and WF.path(rigged, base, ".glb").exists())):
+        # a piece of this character's own file (its result or its .src.glb) put on again: a second copy over the
+        # first (trousers fitted over their own skirt) - refused
+        status.write_text(json.dumps({"id": req.get("id"), "ok": False, "log": _t("lm.wear_own_piece", base)}, ensure_ascii=False), encoding="utf-8")
+        return _t("lm.wear_own_piece", base)
     try:
         res = (wardrobe(cfg, rigged) if action == "wardrobe" else _repaint(cfg, req, rigged, item) if action == "repaint"
                else _hollow(cfg, req, rigged, item) if action == "hollow" else _face_edit(req, rigged) if action == "face_edit"
@@ -557,9 +559,8 @@ def _face_edit(req, rigged: Path) -> dict:
 
 
 def _save_fit(rigged: Path, item: str, piece: bytes, state) -> dict:
-    stem = _stem(rigged)
-    src = rigged.parent / f"{stem}_wear_{item}.src.glb"
-    fit = rigged.parent / f"{stem}_wear_{item}.fit.json"
+    src = WF.path(rigged, item, ".src.glb", make=True)   # (a piece fitted here: with the armour, unless made elsewhere)
+    fit = WF.path(rigged, item, ".fit.json")
     src.write_bytes(piece)
     try:   # a piece made in «Equipment: procedural» and corrected here keeps its parameters (it opens there again)
         made = json.loads(fit.read_text(encoding="utf-8")).get("procedural") if fit.exists() else None
@@ -584,7 +585,7 @@ def _fit_entry(fit: Path) -> dict:
 
 def saved_fits(rigged: Path) -> list:
     out = []
-    for f in sorted(Path(rigged).parent.glob(glob.escape(_stem(rigged)) + "_wear_*.fit.json")):
+    for f in WF.fits(rigged):
         try:
             if f.with_name(f.name[:-len(".fit.json")] + ".src.glb").exists():
                 out.append(_fit_entry(f))
@@ -603,9 +604,9 @@ def _wear(cfg, req, rigged: Path, item: str, put_on: bool) -> dict:
     work.mkdir(parents=True, exist_ok=True)
     piece = work / "piece.glb"
     piece.write_bytes(piece_bytes)
-    out = rigged.parent / f"{stem}_wear_{item}.glb"
+    out = WF.path(rigged, item, ".glb", make=True)
     keep = bool(req.get("keep_weights"))   # a procedural piece corrected by hand: its own skin, weights and mask stay
-    mask_keep = rigged.parent / f"{stem}_wear_{item}.mask.json"
+    mask_keep = WF.path(rigged, item, ".mask.json")
     if keep and mask_keep.exists():   # what it hid as made (ears under a helmet...): kept aside, the new one adds to it
         shutil.copy2(mask_keep, work / "mask_made.json")
     job = {"character": str(rigged), "armour": str(piece if keep else clean_glb(piece)), "out": str(out), "item": item,
@@ -625,7 +626,7 @@ def _wear(cfg, req, rigged: Path, item: str, put_on: bool) -> dict:
                 "log": _t("lm.failed") + next((x for x in r.stdout.splitlines() if x.startswith("WEAR_FAIL")), (r.stdout + r.stderr)[-600:])}
     rep = json.loads(line.split(" ", 1)[1])
     if (work / "mask.json").exists():   # what of the body it hides: SF3DEquip.wear() takes it away while it is on
-        shutil.copy2(work / "mask.json", rigged.parent / f"{stem}_wear_{item}.mask.json")
+        shutil.copy2(work / "mask.json", WF.path(rigged, item, ".mask.json"))
     equip = ROOT / "godot" / "sf3d_equip.gd"   # the folder goes into a Godot project as is: SF3DEquip.wear() puts it on
     if equip.exists():
         (rigged.parent / equip.name).write_bytes(equip.read_bytes())
@@ -637,7 +638,7 @@ def _wear(cfg, req, rigged: Path, item: str, put_on: bool) -> dict:
         if v.get("over_cells"):
             near += _t("lm.over_other_pieces_cells", v["over_cells"])
         parts.append(_t("lm.vertices_bones", k, v['vertices'], near, ', '.join(b.split(':')[-1] for b in v['bones'][:4])))
-    return {"ok": True, "glb": out.resolve().as_posix(), "fit": _fit_entry(rigged.parent / f"{stem}_wear_{item}.fit.json"),
+    return {"ok": True, "glb": out.resolve().as_posix(), "fit": _fit_entry(WF.path(rigged, item, ".fit.json")),
             "log": _t("lm.put_on_and_saved", out.name) + "; ".join(parts)}
 
 
@@ -647,11 +648,10 @@ HY_SRC = r"D:\My projects\SF3D\hunyuan3d-src"
 
 def _under(rigged: Path, item: str, items) -> list:
     """The fitted results of the pieces this one goes over: only this character's, put on, and not the piece itself."""
-    stem = _stem(rigged)
     out = []
     for name in items:
         name = re.sub(r"[^\w-]+", "_", str(name)).strip("_")
-        glb = rigged.parent / f"{stem}_wear_{name}.glb"
+        glb = WF.path(rigged, name, ".glb")
         if name and name != item and glb.exists():
             out.append(str(glb))
     return out
@@ -671,7 +671,7 @@ def _repaint(cfg, req, rigged: Path, item: str) -> dict:
     """«Перекрасить по форме»: the piece as reshaped in the editor (openings drawn in, wall, points; its own space) is
     painted anew by Hunyuan3D-Paint from its reference picture, so the texture follows the new shape instead of being
     stretched over it, and the sides the picture does not show are made up by the model. The result becomes the
-    fitting's source piece (<stem>_wear_<item>.src.glb)."""
+    fitting's source piece (<item>.src.glb)."""
     stem = _stem(rigged)
     work = Path(cfg["work_dir"]) / "wear" / f"{stem}_{item}_repaint_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     work.mkdir(parents=True, exist_ok=True)
@@ -697,7 +697,7 @@ def _repaint(cfg, req, rigged: Path, item: str) -> dict:
         return {"ok": False, "log": _t("lm.hunyuan3d_paint_did_not_repaint_the") + (r.stdout + r.stderr)[-400:]}
     from glbfix import set_metallic
     set_metallic(out, 0.3, 0.8)   # the painter leaves no metallic factor: a viewer would show the piece as a dark mirror
-    src = rigged.parent / f"{stem}_wear_{item}.src.glb"
+    src = WF.path(rigged, item, ".src.glb", make=True)
     src.write_bytes(out.read_bytes())
     return {"ok": True, "src": src.resolve().as_posix(),
             "log": _t("lm.repainted_for_the_new_shape_the", ref.name)}
@@ -708,7 +708,7 @@ def _hollow(cfg, req, rigged: Path, item: str) -> dict:
     bracer at both ends) is cut open there by blender_armour_hollow.py, texture and all. req: {glb (base64 of the
     piece as loaded), open: "top" (one end: the one axis points to) | "both", axis: [x, y, z] in the piece's space}.
     The wall is left as it is when the piece has one, else one is made inwards. The result becomes the fitting's source
-    piece (<stem>_wear_<item>.src.glb)."""
+    piece (<item>.src.glb)."""
     stem = _stem(rigged)
     work = Path(cfg["work_dir"]) / "wear" / f"{stem}_{item}_open_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     work.mkdir(parents=True, exist_ok=True)
@@ -727,7 +727,7 @@ def _hollow(cfg, req, rigged: Path, item: str) -> dict:
     if not line or not out.exists():
         return {"ok": False, "log": _t("lm.could_not_open_it") + (r.stdout + r.stderr)[-400:]}
     rep = json.loads(line.split(" ", 1)[1])
-    src = rigged.parent / f"{stem}_wear_{item}.src.glb"
+    src = WF.path(rigged, item, ".src.glb", make=True)
     src.write_bytes(out.read_bytes())
     wall = _t("lm.its_own_wall_kept") if not rep["wall"] else _t("lm.a_wall_added_inwards")
     return {"ok": True, "src": src.resolve().as_posix(),
@@ -764,16 +764,16 @@ def wardrobe(cfg, rigged: Path) -> dict:
     if not godot or not Path(godot).exists():
         raise RuntimeError(_t("lm.godot_not_found_set_godot_exe_in_the"))
     stem = _stem(rigged)
-    pieces = [p for p in sorted(rigged.parent.glob(glob.escape(stem) + "_wear_*.glb")) if re.fullmatch(re.escape(stem) + r"_wear_[\w-]+\.glb", p.name)]
+    pieces = WF.pieces(rigged)
     if not pieces:
         raise RuntimeError(_t("lm.no_piece_is_put_on_yet_fit_a_piece"))
     proj = Path(cfg["work_dir"]) / "wardrobe" / _slug(stem)
     proj.mkdir(parents=True, exist_ok=True)
     model = _animated_model(cfg, rigged, proj)
-    files = {"character.glb": model, **{f"wear_{p.name[len(stem) + 6:]}": p for p in pieces}}
+    files = {"character.glb": model, **{f"wear_{p.name}": p for p in pieces}}
     for p in pieces:   # what of the body each one hides: SF3DEquip.wear() reads it beside the piece
         if p.with_suffix(".mask.json").exists():
-            files[f"wear_{p.name[len(stem) + 6:-4]}.mask.json"] = p.with_suffix(".mask.json")
+            files[f"wear_{p.name[:-4]}.mask.json"] = p.with_suffix(".mask.json")
     for old in [*proj.glob("wear_*.glb"), *proj.glob("wear_*.mask.json")]:   # a piece taken off since the last time
         if old.name not in files:
             old.unlink()
@@ -914,6 +914,7 @@ def editor_page(src: Path, state: dict | None, rigged: Path | None = None, mode:
     page = i18n.fill(EDITOR.read_text(encoding="utf-8"))
     data = {"state": state, "target": target, "wear_target": wear_ids[0], "wear_go": wear_ids[1], "source": str(src), "mode": mode, "say": say,
             "rigged": Path(rigged).resolve().as_posix() if rigged and Path(rigged).exists() else None,
+            "status_dir": WF.status_dir(None, rigged).resolve().as_posix() if rigged and Path(rigged).exists() else None,
             "rigged_v": int(Path(rigged).stat().st_mtime) if rigged and Path(rigged).exists() else 0,
             "names": {"mixamo": bone_names("mixamo"), "godot": bone_names("godot")},
             "clips": face_clips(rigged) if rigged and Path(rigged).exists() else [],
