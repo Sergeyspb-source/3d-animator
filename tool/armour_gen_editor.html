@@ -447,7 +447,8 @@ const medRow = (row, k) => row.map((_, j) => median(Array.from({ length: 2 * k +
 class Profile {   // the skin around an axis: distances from it, rows along, the full circle around, and the hit triangles
   // o: {foreign: bone name words of skin that is not this part's, arms: [[direction, length]] (a torso's shoulder balls),
   //     limbOnly: cloth hanging off the limb does not count, skirt: the radius never shrinks going down (from t1),
-  //     over: the outermost of this part's surfaces up to over x the skin's distance, or reach (clothes worn under it),
+  //     over: the outermost of this part's surfaces up to over x the skin's distance (3% of the height past it at
+  //     least), or reach (clothes worn under it),
   //     outside: below this t the rays come in from outside, the first surface they meet counts (below the crotch the
   //     axis is between the legs, in a loincloth: from there only the legs' inner sides are seen)}
   constructor(limb, t0, t1, o) {
@@ -479,7 +480,10 @@ class Profile {   // the skin around an axis: distances from it, rows along, the
           }
           if (best) h = best;
         } else if (h && o.over && skinOf(h, o.foreign) <= .5) {
-          const lim = o.over * h.distance;
+          // as far as «over» x the skin's distance, and at least 3% of the height past the skin: where the bone is under
+          // the skin (a shin's, a forearm's inner side) the skin is near the axis, and trousers 2 cm off it were
+          // missed - the greave went on the skin and they came out through it (their strap at the knee: 3.6 cm)
+          const lim = Math.max(o.over * h.distance, h.distance + .03 * HEIGHT);
           for (const x of castAll(org2, d, lim)) if (skinOf(x, o.foreign) <= .5) h = x; else break;
         }
         if (!h || skinOf(h, o.foreign) > .5) return NaN;
