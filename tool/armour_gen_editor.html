@@ -289,7 +289,7 @@ const isOuter = (w) => (S.piece === 'helmet' ? ['helmet', 'head'].includes(w.pie
     : (LAYER[w.piece] || 0) > (LAYER[S.piece] || 99));
 // what the rays meet: the character's skin and the pieces put on under the new one (their rest pose, their weights);
 // the ones over it apart (outerGeo): the new piece stays under them
-let outerGeo = null, bodyFor = null;
+let outerGeo = null, bodyFor = null, SKIN_TRIS = Infinity, SKIN_VERTS = Infinity;   // bodyGeo's triangles (vertices) from these on are the worn pieces'
 function buildBody() {
   const pos = [], idx = [], vb = [], vw = [], id = new Map(boneNames.map((n, i) => [n, i])), v = new V3();
   const on = [...WORN.values()].filter((w) => w.on && layerOf(w)), meshes = [...charMeshes, ...on.filter((w) => !isOuter(w)).flatMap((w) => w.meshes)];   // (a cloth one over it: neither)
@@ -303,7 +303,9 @@ function buildBody() {
   }
   outerGeo = op.length ? new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(op, 3)) : null;
   if (outerGeo) outerGeo.computeBoundsTree();
+  SKIN_TRIS = SKIN_VERTS = Infinity;
   for (const o of meshes) {
+    if (!charMeshes.includes(o) && SKIN_TRIS === Infinity) { SKIN_TRIS = idx.length / 3; SKIN_VERTS = pos.length / 3; }   // (the pieces' after the skin's)
     o.updateMatrixWorld(true);
     const g = o.geometry, P = g.attributes.position, si = g.attributes.skinIndex, sw = g.attributes.skinWeight;
     const bmap = o.skeleton.bones.map((b) => id.get(b.name) ?? 0), base = pos.length / 3;
@@ -1048,7 +1050,20 @@ function cuirassShape(P, waist, gap, tPit, hug) {   // hug: a garment - never un
   const m = Math.min(6, kPit);
   for (let j = 0; j < P.NA; j++) { const g0 = g[kPit - m][j]; for (let i = kPit - m; i <= kPit; i++) g[i][j] = Math.max(g[i][j], chest[j] - (chest[j] - g0) * ((kPit - i) / m) ** 2); }
   const skin = hug ? P.skin : P.skin.map((row) => medRow(row, 5));   // (thin cloth: the muscles' ridges came through)
-  return blur(g, 2).map((r, i) => r.map((x, j) => Math.max(x, skin[i][j] + .5 * gap * P.R)));
+  // the pieces worn under it (a belt and its buckle, the top of a mail skirt) stay under it as they are: only what is
+  // one ray wide is let go (a cord), and over them the plate rises in a smooth bump, not through them (the wide
+  // median above let a buckle and a belt's side out through a cuirass's scales by up to 2 cm)
+  const worn = P.skin.map((row, i) => { const m = medRow(row, 1); return row.map((_, j) => (P.face[i][j] >= SKIN_TRIS ? m[j] + .5 * gap * P.R : 0)); });
+  // and their own vertices: a buckle's frame is thinner than the rays are apart (they went through its middle)
+  const BP = bodyGeo.attributes.position, L = P.limb, v = new V3();
+  for (let k = SKIN_VERTS; k < BP.count; k++) {
+    v.fromBufferAttribute(BP, k).sub(L.a); const t = v.dot(L.u) / L.len; if (t < P.t0 || t > P.t1) continue;
+    v.addScaledVector(L.u, -t * L.len); const d = v.length(), [x, y] = P.cell(t, L.angOf(v)), i = Math.round(x), j = Math.round(y) % P.NA;
+    if (d <= P.skin[i][j] + .25 * P.R) worn[i][j] = Math.max(worn[i][j], d + .5 * gap * P.R);   // (farther: another limb's piece, an arm's)
+  }
+  const over = blur(worn.map((r, i) => r.map((_, j) => Math.max(...[-1, 0, 1].flatMap((di) => [-1, 0, 1].map((dj) =>
+    worn[Math.min(n - 1, Math.max(0, i + di))][(j + dj + P.NA) % P.NA]))))), 1);
+  return blur(g, 2).map((r, i) => r.map((x, j) => Math.max(x, skin[i][j] + .5 * gap * P.R, over[i][j])));
 }
 // a pauldron (spaulder) on one shoulder: half-round lames across it (round its top, from the front over to the back),
 // from the neck's side (t0 < 0 on the upper arm's axis) down the arm (t1), the upper over the lower, the first one a
@@ -4100,6 +4115,7 @@ $('views').addEventListener('click', (e) => e.target.dataset.v && view(e.target.
 window.agView = (v, eye, whole) => view(v, eye, whole);
 window.agParts = () => parts.map((x) => ({ side: x.side, v: Array.from(x.acc.v) }));   // the tests measure what is built
 window.agReach = () => reach.last || null;
+window.agStale = () => staleList().map((x) => x.item);   // (the tests: what «Rebuild by layers» would make again)
 window.agBones = (re) => { const out = {}; for (const part of parts) { const a = part.acc; for (let i = 0; i < a.bi.length; i++) if (a.bw[i] > .05) { const n = boneNames[a.bi[i]]; if (!re || new RegExp(re).test(n)) out[n] = (out[n] || 0) + 1; } } return out; };   // for the tests: vertices per bone
 window.agNaN = () => ({ parts: parts.map((x) => [x.acc.v.length / 3, x.acc.v.filter((v) => !Number.isFinite(v)).length, Math.max(...x.acc.f.flat())]), meshes: pieceGroup.children.map((m) => [m.userData.part, m.geometry.attributes.position.count, [...m.geometry.attributes.position.array].filter((v) => !Number.isFinite(v)).length]) });   // for the tests
 window.agClothPierce = () => {   // for the tests: the arms' skin with the cloth between it and the bone (an arm through the cloth)
