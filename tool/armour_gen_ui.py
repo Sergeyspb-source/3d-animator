@@ -134,7 +134,7 @@ SURFACES = ("plates", "scales", "lamellar", "mail", "quilt", "plain", "splints",
 # reference styles
 CHOICES = {"opening_labels": ("none", "left", "right", "back", "front"), "closure_labels": ("across", "lace", "round"),
            "shoulder_labels": ("straps", "yoke", "none"),
-           "style_labels": ("leather", "steel", "mail", "splints", "covered", "plate_mail", "lamellar", "brigandine", "wool", "leather_tr",
+           "style_labels": ("leather", "steel", "mail", "splints", "covered", "plate_mail", "lamellar", "brigandine", "tights", "wool", "leather_tr",
                             "mail_chausses", "plate_cuisses", "hidden_plate", "plate_and_mail", "compact", "extended", "carrier",
                             "short_mail", "wrap_mail", "carrier_mail", "lames", *HELMETS, *ELBOWS, *FOOTWEAR, *GLOVES, *CLOTHS,
                             *(f"weapon_{w}" for w in WEAPONS), *(f"shield_{x}" for x in SHIELDS), *(f"sheath_{x}" for x in SHEATHS)),

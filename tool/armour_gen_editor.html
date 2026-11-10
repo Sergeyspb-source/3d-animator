@@ -1342,9 +1342,6 @@ function glove(side, p) {
 // or laced, arming points at the shoulders, the arms and the hem, mail voiders at the armpits. Braies are loose
 // trousers, a padded coif a bag round the head
 const GARMENTS = {
-  // under the armour: a thin cloth on the body (its own shape, the muscles smoothed: relief), no skirt, collar, ties or
-  // the armpit's fold - nothing to come out from under the plates; the quilted ones over it are worn without armour
-  fitted: { top: -.04, hem: null, waist: 1, ease: 0, sleeves: true, relief: .12, tight: true },
   // top: where the body ends and the skirt goes on (along the torso from the hips: 0 the hips, 1 the neck); hem: how far
   // the skirt comes down the thigh from the crotch, as a share of the thigh's length (the legs' own: a goblin's short
   // ones get a short skirt, not a dress; negative: above the crotch; null: none); waist: the body in with the waist (0:
@@ -1462,7 +1459,7 @@ function bodySkin(parts, keep) {   // {pos, w, tris} of the skin whose most weig
   const key = [...parts].sort().join() + keep.key;
   if (partCache.has(key)) return partCache.get(key);
   const id = new Map(boneNames.map((x, i) => [x, i])), partOf = new Map(boneNames.map((x) => [x, bodyPart(x)]));
-  const pos = [], w = [], tris = [], keys = new Map(), v = new V3();
+  const pos = [], w = [], tris = [], keys = new Map(), v = new V3(), skinKeys = new Set();   // skinKeys: the meshes' own positions (thousandths), a mask's
   for (const o of charMeshes) {
     o.updateMatrixWorld(true);
     const P = o.geometry.attributes.position, si = o.geometry.attributes.skinIndex, sw = o.geometry.attributes.skinWeight;
@@ -1478,8 +1475,11 @@ function bodySkin(parts, keep) {   // {pos, w, tris} of the skin whose most weig
       }
       const top = [...by.entries()].sort((a, b) => b[1] - a[1])[0];
       if (!top || !parts.has(top[0])) return (local[i] = -1);
-      v.fromBufferAttribute(P, i).applyMatrix4(o.matrixWorld);
+      v.fromBufferAttribute(P, i);
+      const lk = `${Math.round(v.x * 1000)},${Math.round(v.y * 1000)},${Math.round(v.z * 1000)}`;
+      v.applyMatrix4(o.matrixWorld);
       if (!keep(v, top[0])) return (local[i] = -1);
+      skinKeys.add(lk);
       const kp = `${Math.round(v.x * 1e4)},${Math.round(v.y * 1e4)},${Math.round(v.z * 1e4)}`;
       if (keys.has(kp)) return (local[i] = keys.get(kp));
       while (bi.length < 4) { bi.push(bi[0]); bw.push(0); }
@@ -1491,7 +1491,7 @@ function bodySkin(parts, keep) {   // {pos, w, tris} of the skin whose most weig
       if (a >= 0 && b >= 0 && c >= 0 && a !== b && b !== c && a !== c) tris.push([a, b, c]);
     }
   }
-  const res = { pos, w, tris };
+  const res = { pos, w, tris, keys: skinKeys };
   partCache.set(key, res); return res;
 }
 function normalsOf(pos, tris) {
@@ -1526,9 +1526,89 @@ function coif(p) {
   shellOf(acc, B, ids, gap, thick, quilt ? CLOTH : PLATE, quilt ? 'quilt' : 'plate', (i) => ({ direct: B.w[i] }), null, 3);
   return [{ side: 'C', acc, R }];
 }
+// ---- thin cloth on the body (under the armour: a shirt, tights): the character's own skin, the parts it covers, out by
+// the gap - one surface, so nothing between the body and the sleeves (the armpits, the shoulders, as a vest and
+// sleeves made apart left them bare); each point with its skin's weights (it moves as the skin does). As cloth lies:
+// over the hollows, not down into them (under the chest, between it, the belly's lines, round the muscles of the arms
+// and thighs) - each point pushed out along its normal towards its neighbours' middle, never in; «relief» how much of
+// the body's shape stays (the steps). The quilted ones (cut as clothes are) go on without armour
+const SKIN_FILL = 30, SKIN_SINK = 40, SKIN_BALL = 30;   // mm: no hollow filled deeper; no bump cut deeper; the smoothing's reach
+function skinCloth(p, parts, keep) {
+  const S = bodySkin(new Set(parts), keep);
+  if (!S.tris.length) return [];
+  const n = S.pos.length, nb = Array.from({ length: n }, () => new Set());
+  for (const [a, b, c] of S.tris) { nb[a].add(b).add(c); nb[b].add(a).add(c); nb[c].add(a).add(b); }
+  const NB = nb.map((x) => [...x]), raw = S.pos.map((v) => v.clone()), pos = S.pos.map((v) => v.clone());
+  const k = 1 - (p.relief ?? .1), m = new V3(), avg = (i, P) => { m.set(0, 0, 0); for (const j of NB[i]) m.add(P[j]); return m.multiplyScalar(1 / NB[i].length); };
+  // the skin within SKIN_BALL of each point, each point by its share of the skin's area: smoothing in the body's own
+  // size, not by neighbours (a nipple sculpted in many small triangles is many rings wide: neighbours' smoothing kept it)
+  const r = MM(SKIN_BALL), cell = new Map(), key = (x, y, z) => `${x},${y},${z}`, fl = (v) => [v.x, v.y, v.z].map((x) => Math.floor(x / r));
+  raw.forEach((v, i) => { const kk = key(...fl(v)); (cell.get(kk) || cell.set(kk, []).get(kk)).push(i); });
+  const near = raw.map((v) => { const out = [], [a, b, c] = fl(v);
+    for (let x = a - 1; x <= a + 1; x++) for (let y = b - 1; y <= b + 1; y++) for (let z = c - 1; z <= c + 1; z++) for (const j of cell.get(key(x, y, z)) || []) if (raw[j].distanceTo(v) < r) out.push(j);
+    return out; });
+  const A = new Float64Array(n), e1 = new V3(), e2 = new V3();
+  for (const [a, b, c] of S.tris) { const x = e1.subVectors(raw[b], raw[a]).cross(e2.subVectors(raw[c], raw[a])).length() / 6; A[a] += x; A[b] += x; A[c] += x; }
+  const wsum = near.map((js) => js.reduce((q, j) => q + A[j], 0) || 1);
+  const ballP = (P, i) => { m.set(0, 0, 0); for (const j of near[i]) m.addScaledVector(P[j], A[j]); return m.multiplyScalar(1 / wsum[i]); };
+  const ballS = (x) => x.map((_, i) => near[i].reduce((q, j) => q + A[j] * x[j], 0) / wsum[i]);
+  // the body's shape smoothed hard (its small forms gone: the nipples, the chest's edge, the belly's squares, the arms'
+  // muscles; each point along its normal only - the openings keep their edges), what it shrank given back as a smooth
+  // field (an arm stays as thick: it shrank so all round; a nipple does not: little of the skin round it)
+  const steps = Math.round(10 * k);
+  for (let it = 0; it < steps; it++) {
+    const N = normalsOf(pos, S.tris), d = pos.map((v, i) => ballP(pos, i).sub(v).dot(N[i]));
+    for (let i = 0; i < n; i++) pos[i].addScaledVector(N[i], .7 * d[i]);
+  }
+  { const NL = normalsOf(pos, S.tris); let sf = raw.map((v, i) => v.clone().sub(pos[i]).dot(NL[i]));
+    for (let it = 0; it < 2 * steps; it++) sf = ballS(sf);
+    for (let i = 0; i < n; i++) pos[i].addScaledVector(NL[i], sf[i]); }
+  // the mesh relaxed: where the skin was in many small triangles (a nipple) the smoothing folded them over one another
+  // (its edges - the neck, the cuffs, the hem - stay where they are: relaxed, they drew in)
+  const ec = new Map(); for (const t of S.tris) for (const [x, y] of [[t[0], t[1]], [t[1], t[2]], [t[2], t[0]]]) { const kk = x < y ? x + ',' + y : y + ',' + x; ec.set(kk, (ec.get(kk) || 0) + 1); }
+  const rim = new Uint8Array(n); for (const [kk, c] of ec) if (c === 1) for (const x of kk.split(',')) rim[+x] = 1;
+  for (let it = 0; it < 15; it++) { const nx = pos.map((v, i) => (NB[i].length && !rim[i] ? v.clone().lerp(avg(i, pos), .5) : v.clone())); for (let i = 0; i < n; i++) pos[i].copy(nx[i]); }
+  // what is left of the hollows filled (each point out along its normal towards its neighbours' middle, never in)
+  for (let it = 0, fs = Math.round(30 * k); it < fs; it++) {
+    const N = normalsOf(pos, S.tris), next = pos.map((v) => v.clone());
+    for (let i = 0; i < n; i++) {
+      if (!NB[i].length) continue;
+      const out = avg(i, pos).sub(pos[i]).dot(N[i]);
+      if (out > 0) next[i].addScaledVector(N[i], .7 * out);
+    }
+    for (let i = 0; i < n; i++) pos[i].copy(next[i]);
+  }
+  // out no farther than SKIN_FILL (between the legs: not a web), in no deeper than SKIN_SINK (the skin under it is
+  // hidden, in the game by its mask); then back out to the skin as a whole, along its own smooth normals, by how far it
+  // went in at the middle (the same everywhere: no shape given back)
+  const N0 = normalsOf(raw, S.tris), cap = MM(SKIN_FILL), sink = MM(SKIN_SINK);
+  for (let i = 0; i < n; i++) {
+    const e = pos[i].clone().sub(raw[i]).dot(N0[i]);
+    if (e > cap) pos[i].addScaledVector(N0[i], cap - e); else if (e < -sink) pos[i].addScaledVector(N0[i], -sink - e);
+  }
+  { const e = pos.map((v, i) => v.clone().sub(raw[i]).dot(N0[i])).sort((x, y) => x - y), mid = e[n >> 1];
+    if (mid < 0) { const N = normalsOf(pos, S.tris); for (let i = 0; i < n; i++) pos[i].addScaledVector(N[i], -mid); } }
+  const H = { pos, n: normalsOf(pos, S.tris), w: S.w, tris: S.tris };
+  const R = .02 * HEIGHT, gap = MM(1) + p.gap * R, thick = MM(1.2) + p.thickness * R, acc = new Acc();
+  acc.w = (q) => q.direct;
+  shellOf(acc, H, S.tris.map((_, t) => t), gap, thick, PLATE, 'plate', (i) => ({ direct: S.w[i] }), null, 8);   // (8: the cut's staircase smoothed)
+  return [{ side: 'C', acc, R, mask: S.keys }];   // (mask: the skin it covers, hidden on screen as the game does)
+}
+const torsoT = (v) => { const { limb } = limbOf('cuirass', 'C'); return v.clone().sub(limb.a).dot(limb.u) / limb.len; };
+function fittedShirt(p) {   // the body down to the hips (in under the trousers' waist), the arms to the wrists; the neck, the hands bare
+  const keep = (v, part) => part !== 'torso' || torsoT(v) > .04;
+  keep.key = 'shirt';
+  return skinCloth(p, ['torso', 'upper_arm', 'forearm'], keep);
+}
+function fittedTights(p) {   // from the waist (up over the shirt's bottom) down to the ankles; the feet bare
+  const keep = (v, part) => part !== 'torso' || torsoT(v) < .16;
+  keep.key = 'tights';
+  return skinCloth(p, ['torso', 'thigh', 'shin'], keep);
+}
 function undercloth(p) {
   const st = p.cloth_style;
   if (st === 'coif') return coif(p);
+  if (st === 'fitted') return fittedShirt(p);
   if (st === 'braies' || st === 'braies_long') return braies(p, st === 'braies_long');
   return GARMENTS[st] ? garment(p, GARMENTS[st]) : [];
 }
@@ -3131,6 +3211,7 @@ function buildPiece(kind, sides, p) {
     if (p.straps) straps(acc, belt, p, [p.t1 - p.strap_width * P.R * .5 / limb.len], 'C', mid);
     parts.push({ side: 'C', acc, R: P.R });
   }
+  if (kind === 'trousers' && p.fitted) return fittedTights(p);   // tights of thin cloth on the skin (under the armour)
   if (kind === 'trousers' || kind === 'brayette') {   // the seat round the hips down to the crotch, then each leg down from the hip joint
     const acc = new Acc(), { limb: torso } = limbOf('cuirass', 'C');
     const down = cast(torso.a, torso.u.clone().negate(), torso.len), tc = down ? -down.distance / torso.len + .03 : -.12;
@@ -3535,9 +3616,10 @@ const STYLES = {
   },
 };
 const CLOTHES = { surface: 'plain', material: 'cloth', cloth: '#5b4632', gap: 3, thickness: 5, relief: .5, loose: .2, folds: .2, t1: 56, fly: false, stitch: false,
-  thigh: 'none', knee: 'none', cuffs: true, straps: 1, strap_width: 30, buckle: true };
+  thigh: 'none', knee: 'none', cuffs: true, straps: 1, strap_width: 30, buckle: true, fitted: false };
 Object.assign(STYLES, {
   trousers: {   // knee breeches: cloth or leather, and over the thighs mail, plates, leather panels
+    tights: { ...CLOTHES, fitted: true, cloth: '#5b4632', gap: 1, thickness: 1.5, relief: .1, straps: 0, cuffs: false },   // under the armour: thin cloth on the skin
     wool: { ...CLOTHES, straps: 0, fly: true },
     leather_tr: { ...CLOTHES, material: 'leather', tint: '#7a4526', loose: .12, folds: .1, cuffs: false, fly: true, stitch: true, knee: 'patch' },
     mail_chausses: { ...CLOTHES, thigh: 'mail', t1: 58, cuffs: false },
@@ -3560,7 +3642,7 @@ Object.assign(STYLES, {
   helmet: Object.fromEntries(['kettle_hat', 'open_bascinet', 'barbute', 'visored_bascinet', 'sallet', 'armet'].map((k) => [k, { helmet: k }])),
   elbow: Object.fromEntries(['leather', 'mail', 'early_plate', 'winged_plate', 'articulated_plate', 'plate_mail_hybrid'].map((k) => ['elbow_' + k, { elbow: 'elbow_' + k }])),
   undercloth: {   // worn under the armour: the reference sheets underarmor_clothing_reference_20261026_2151, braies, a coif
-    cloth_fitted: { cloth_style: 'fitted', cloth_quilt: false, quilt_lines: false, cloth: '#8a7a62', tint: '#7a6a52', gap: 1, thickness: 1.5 },
+    cloth_fitted: { cloth_style: 'fitted', cloth_quilt: false, quilt_lines: false, cloth: '#8a7a62', tint: '#7a6a52', gap: 1, thickness: 1.5, relief: .1 },
     cloth_shirt: { cloth_style: 'shirt', cloth_quilt: false, quilt_lines: false, cloth: '#d2c6aa', tint: '#c9bc9c', gap: 4, thickness: 2 },
     cloth_aketon: { cloth_style: 'aketon', cloth_quilt: true, quilt_lines: true, cloth: '#b3a588', tint: '#c2b394', gap: 4, thickness: 4, cell: 9 },
     cloth_gambeson: { cloth_style: 'gambeson', cloth_quilt: true, quilt_lines: true, cloth: '#a59a88', tint: '#c2b8a2', gap: 4, thickness: 5, cell: 9 },
@@ -3874,6 +3956,7 @@ function setPiece(k, keep) {
   if (!keep) {   // trousers are cloth: the armour's own material and surface come back after them
     if (k === 'trousers' && was !== 'trousers') S.armour = { material: S.p.material, surface: S.p.surface };
     if (k !== 'trousers' && was === 'trousers' && S.armour) Object.assign(S.p, S.armour);
+    S.p.fitted = false;   // (tights chosen before: not the next trousers' unless chosen again)
     Object.assign(S.p, PIECES[k].defaults);
     S.p.pinches = []; S.p.paints = [];
   }
@@ -3946,6 +4029,8 @@ function rebuildNow() {
     for (const part of parts) applyPinches(part.acc.v, S.p.pinches, null, () => part.acc.f.filter((f, k) => SMOOTHED.has(part.acc.role[k])));
     parts.forEach((part, pi) => { for (const m of meshesOf(part.acc)) { m.userData.part = pi; pieceGroup.add(m); } });
     paintAll();
+    const pm = parts.find((x) => x.mask);
+    if (pm) { previewMask = pm.mask; hideBody(); }   // (thin cloth on the skin: the skin under it would show through its smoothed bumps)
     if (parts.length) {
       const nv = parts.reduce((s, x) => s + x.acc.v.length / 3, 0);
       info = '{{js:ag.info_line}}'.replace('{0}', nv.toLocaleString()).replace('{1}', (performance.now() - t).toFixed(0));
