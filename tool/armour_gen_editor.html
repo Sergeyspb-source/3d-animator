@@ -147,6 +147,7 @@
           <div class="row" id="paintDmgRow" style="margin:4px 0 2px"><span class="seg" id="paintDmg"><button data-k="claws">{{ag.dmg_claws}}</button><button data-k="scratch">{{ag.dmg_scratch}}</button><button data-k="hole">{{ag.dmg_hole}}</button><button data-k="dent">{{ag.dmg_dent}}</button></span></div>
           <div id="paintDecalRow">
             <div class="decals" id="paintDecals"></div>
+            <div class="row" id="paintCoverRow" style="margin:4px 0"><button id="paintCover" class="grow" title="{{ag.paint_cover_title}}">{{ag.paint_cover}}</button></div>
             <div class="row"><span class="note">{{ag.paint_number}}</span><input type="text" id="i_paint_num" style="width:70px" maxlength="6" placeholder="10">
               <label class="chk" style="margin:0 0 0 8px"><input type="checkbox" id="i_paint_flip"> {{ag.paint_flip}}</label></div>
           </div>
@@ -1919,12 +1920,17 @@ function shieldShape(p) {   // its size, its face's bulge, its board's thickness
     const t = j / n * TAU, c = Math.cos(t), sn = Math.sin(t);
     if (kind === 'round') return [c * R, sn * R];
     if (kind === 'kite') return c > 0 ? [c * R * .75, sn * R * .62] : [c * R * 1.35, sn * R * .62 * (1 + c) ** .8];   // round top, long point
-    if (kind === 'tower') return rect(1.55 * R, .72 * R, 10, c, sn);
+    if (kind === 'tower') {   // a pavise: tall, its top arched, a little narrower at the foot
+      const [x, y] = rect(1.55 * R, .72 * R, c > 0 ? 2.6 : 9, c, sn);
+      return [x, y * (.9 + .1 * (x / (1.55 * R) + 1) / 2)];
+    }
     if (kind === 'scutum') return rect(1.4 * R, .8 * R, 5, c, sn);
     return c > 0 ? [R * .55 + c * .05 * R, sn * R * .75 * Math.min(1, 1.6 * Math.abs(sn) ** .3)] : [c * R * 1.05, sn * R * .75 * (1 + c) ** .55];   // heater
   });
   const W = Math.max(...outline.map(([, y]) => Math.abs(y))), bend = (p.s_bend || 0) / 100 * .45 * W;
-  const dome = (x, y) => curve * (1 - Math.min(1, (x * x + y * y) / (R * R * 1.4))) + bend * (1 - (y / W) ** 2);
+  const Hx = Math.max(...outline.map(([x]) => Math.abs(x))), ridge = (p.s_ridge || 0) / 100 * .3 * W;   // a ridge down the middle (a pavise's: its channel behind)
+  const dome = (x, y) => curve * (1 - Math.min(1, (x * x + y * y) / (R * R * 1.4))) + bend * (1 - (y / W) ** 2)
+    + ridge * Math.exp(-((y / (.2 * W)) ** 2)) * (1 - Math.min(1, Math.abs(x / Hx)) ** 6);
   return { R, curve, thick, kind, n, outline, dome };
 }
 // the board's place as a node's: moved along its own axes (cm: across, up, out), turned about them (°: X tilts it
@@ -1945,13 +1951,22 @@ function shieldNode(Fr, p, pivot) {
   f.C.addScaledVector(f.S, -(p.s_px || 0) * cm).addScaledVector(f.E, (p.s_py || 0) * cm).addScaledVector(f.A, (p.s_pz || 0) * cm);
   return f;
 }
+// the board's face: its middle on the surface, its half height and width, its way out and up - a picture over all of it
+function boardFace(Fr, p) {
+  const { outline, dome } = shieldShape(p), xs = outline.map(([x]) => x), ys = outline.map(([, y]) => Math.abs(y));
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), xm = (x0 + x1) / 2;
+  return { p: Fr.C.clone().addScaledVector(Fr.E, xm).addScaledVector(Fr.A, dome(xm, 0)), n: Fr.A.clone(), up: Fr.E.clone(), hh: (x1 - x0) / 2, hw: Math.max(...ys) };
+}
 function shieldBoard(acc, Fr, p, bossAt = [0, 0]) {   // the board in its frame (A its face's way, E its up), its rim and boss (over the hand)
   const { R, curve, thick, kind, n, outline, dome } = shieldShape(p), { loft } = itemMesh(acc, Fr);
   const ringsAt = (front) => [.003, .05, .3, .55, .78, .92, 1].map((k) => outline.map(([x, y]) => [front ? dome(x * k, y * k) : dome(x * k, y * k) - thick, x * k, y * k]));
   const fr = ringsAt(true), bk = ringsAt(false);
   // the face is the covering (leather, rawhide, linen, painted: the piece's material) glued over the boards; the back
   // and the edge are the bare boards (no wear painted there: a damage goes on the side it was put on)
-  loft(fr, PLATE, 'plate', true, false); loft(bk.reverse(), WOOD, 'wood', false, true);
+  // (each ring the other way round: the faces' own normals out of the board, the face's +A, the back's -A - a picture or
+  // a damage goes on the side it was put on, and «over the whole shield» puts it on +A)
+  const rev = (rings) => rings.map((r) => [...r].reverse());
+  loft(rev(fr), PLATE, 'plate', true, false); loft(rev(bk).reverse(), WOOD, 'wood', false, true);
   loft([fr[fr.length - 1], bk[0]], WOOD, 'wood', false, false);   // its edge
   const rimW = .02 * R * p.s_rim / 100 * 3;   // a metal band round the edge
   if (p.s_rim > 0) loft(Array.from({ length: n + 1 }, (_, j) => {
@@ -2047,7 +2062,7 @@ function shieldInHand(side, p) {
   }
   // (as near the elbow as the board is over the forearm: a kite across the arm takes it on its wide part)
   const warn = strap && !armStraps(acc, Fr, side, [.15, .2, .25, .3, .35, .4, .45, .5, .55], p, true) ? '{{js:ag.s_elbow_short}}' : null;
-  return { side, acc, R, warn, node: { base: Fr0, pivot: F.C.clone(), frame: Fr, bone: (strap ? 'forearm_' : 'hand_') + side } };
+  return { side, acc, R, warn, node: { base: Fr0, pivot: F.C.clone(), frame: Fr, bone: (strap ? 'forearm_' : 'hand_') + side, face: boardFace(Fr, p) } };
 }
 function shield(side, p) {   // on the forearm's outer side, its face out, its long axis along the forearm (the point down);
   // in the fist («s_hand»): a bar across the boss's back (round) or the wide part's (kite, heater), the board in front of
@@ -2072,7 +2087,7 @@ function shield(side, p) {   // on the forearm's outer side, its face out, its l
   shieldBoard(acc, Fr, p);
   // on its back two leather straps round the forearm (by the elbow, by the wrist)
   armStraps(acc, Fr, side, [.25, .78].map((tt) => tt + p.s_along / 100), p);
-  return { side, acc, R, node: { base: Fr0, pivot: Fr0.C.clone(), frame: Fr, bone: 'forearm_' + side } };
+  return { side, acc, R, node: { base: Fr0, pivot: Fr0.C.clone(), frame: Fr, bone: 'forearm_' + side, face: boardFace(Fr, p) } };
 }
 // ---- the shield's gizmo: on its board as shown - the rest frame carried into the pose by the bone it is on - and back:
 // the gizmo's place and turn, in the rest pose, as the node's numbers (shieldNode backwards: its turns about Z, then X,
@@ -3789,11 +3804,11 @@ Object.assign(STYLES, {
   },
   shield: {
     // (the face: painted planks on a round one; leather or rawhide on a kite, a heater, a scutum; gessoed canvas on a pavise)
-    shield_round: { shield: 'round', material: 'wood', trim: 'steel', s_size: 100, s_curve: 30, s_boss: 100, s_bend: 0, s_elbow: false },
-    shield_kite: { shield: 'kite', material: 'leather', trim: 'steel', s_size: 110, s_curve: 35, s_boss: 70, s_bend: 0, s_elbow: true },
-    shield_heater: { shield: 'heater', material: 'leather', trim: 'steel', s_size: 95, s_curve: 25, s_boss: 0, s_bend: 0, s_elbow: true },
-    shield_tower: { shield: 'tower', material: 'cloth', trim: 'steel', s_size: 100, s_curve: 8, s_boss: 0, s_bend: 15, s_elbow: true },   // a pavise
-    shield_scutum: { shield: 'scutum', material: 'leather', trim: 'brass', s_size: 100, s_curve: 0, s_boss: 100, s_bend: 75, s_elbow: true },   // bent round its upright
+    shield_round: { shield: 'round', s_rim: 100, s_ridge: 0, material: 'wood', trim: 'steel', s_size: 100, s_curve: 30, s_boss: 100, s_bend: 0, s_elbow: false },
+    shield_kite: { shield: 'kite', s_rim: 100, s_ridge: 0, material: 'leather', trim: 'steel', s_size: 110, s_curve: 35, s_boss: 70, s_bend: 0, s_elbow: true },
+    shield_heater: { shield: 'heater', s_rim: 100, s_ridge: 0, material: 'leather', trim: 'steel', s_size: 95, s_curve: 25, s_boss: 0, s_bend: 0, s_elbow: true },
+    shield_tower: { shield: 'tower', material: 'cloth', trim: 'steel', s_size: 100, s_curve: 6, s_boss: 0, s_bend: 12, s_ridge: 70, s_rim: 0, s_elbow: true },   // a pavise: a ridge down it, no metal rim (its edge painted)
+    shield_scutum: { shield: 'scutum', s_rim: 100, s_ridge: 0, material: 'leather', trim: 'brass', s_size: 100, s_curve: 0, s_boss: 100, s_bend: 75, s_elbow: true },   // bent round its upright
   },
   sheath: {   // its length and width are the weapon's sliders: a scabbard made after the sword fits it
     sheath_scabbard: { sheath: 'scabbard', material: 'leather', trim: 'steel' },
@@ -3899,6 +3914,7 @@ SPEC.push(['{{js:ag.held_group}}', ['plate', 'strap', 'trim', 'quilt'], [
   ['w_two', -120, 120, 5, '{{js:ag.w_two}}', '{{js:ag.w_two_info}}', 'pc', isW('sword', 'axe', 'mace', 'spear', 'staff')],
   ['s_curve', 0, 100, 5, '{{js:ag.s_curve}}', '', 'pc', isP('shield')],
   ['s_bend', 0, 100, 5, '{{js:ag.s_bend}}', '{{js:ag.s_bend_info}}', 'pc', isP('shield')],
+  ['s_ridge', 0, 100, 5, '{{js:ag.s_ridge}}', '{{js:ag.s_ridge_info}}', 'pc', isP('shield')],
   ['s_rim', 0, 200, 10, '{{js:ag.s_rim}}', '', 'pc', isP('shield')],
   ['s_boss', 0, 200, 10, '{{js:ag.s_boss}}', '', 'pc', isP('shield')],
   // (the place's sliders of before: shown only on a piece made with them - a new one is placed by the node's fields)
@@ -3937,7 +3953,7 @@ const DEFAULTS = Object.assign({ gap: 8, thickness: 12, relief: .35, step: 5, ri
   strap: 0, strap_fwd: 0, elbow: 'elbow_winged_plate', limb_gap: 8, wing: 100, footwear: 'foot_ankle_boot', foot_gap: 6, glove: 'plain_leather', cuff: 14,
   cloth_style: 'shirt', cloth_quilt: false, quilt_lines: false, pinches: [], paints: [],
   weapon: 'sword', shield: 'round', w_len: 100, w_width: 100, w_guard: 100, w_grip: 100, w_grip_r: 100, w_head: 100, grip_along: 0, grip_out: 0,
-  grip_tilt: 15, grip_roll: 0, w_two: 0, arrows: 12, cloak_len: 60, cloak_wrap: 172, cloak_flare: 25, cloak_lift: 5, cloak_nape: 120, cloak_gap: .5, skirt_len: 30, skirt_flare: 30, skirt_lift: 6, skirt_slit: 0, skirt_gap: .5, tabard_len: 50, tabard_belt: 8, tabard_flare: 15, tabard_lift: 2, tabard_gap: 1, s_size: 100, s_curve: 30, s_rim: 100, s_boss: 100, s_along: 0, s_out: 0, s_turn: 0, s_hand: false, s_elbow: true, s_bend: 0,
+  grip_tilt: 15, grip_roll: 0, w_two: 0, arrows: 12, cloak_len: 60, cloak_wrap: 172, cloak_flare: 25, cloak_lift: 5, cloak_nape: 120, cloak_gap: .5, skirt_len: 30, skirt_flare: 30, skirt_lift: 6, skirt_slit: 0, skirt_gap: .5, tabard_len: 50, tabard_belt: 8, tabard_flare: 15, tabard_lift: 2, tabard_gap: 1, s_size: 100, s_curve: 30, s_rim: 100, s_boss: 100, s_along: 0, s_out: 0, s_turn: 0, s_hand: false, s_elbow: true, s_bend: 0, s_ridge: 0,
   s_px: 0, s_py: 0, s_pz: 0, s_rx: 0, s_ry: 0, s_rz: 0 }, PIECES.bracer.defaults);
 // idle: no piece being made (the editor opens so: the character as it is, its worn pieces to tick) until a kind is
 // chosen or a made piece opened - a new bracer shown from the start went on beside the worn one
@@ -4919,7 +4935,7 @@ function pinchSync() {
   $('pinchOnly').hidden = painting; $('paintOnly').hidden = !painting;
   const fill = painting && (PAINT.fill === 'part' || PAINT.fill === 'all'), dmg = painting && PAINT.fill === 'damage', decal = painting && (PAINT.fill === 'decal' || dmg);
   $('brushRows').hidden = fill; $('pinchKRow').hidden = painting;
-  $('paintDecalRow').hidden = !decal || dmg; $('paintDmgRow').hidden = !dmg; $('r_pinch_shape').hidden = $('r_pinch_asp').hidden = decal;
+  $('paintDecalRow').hidden = !decal || dmg; $('paintCoverRow').hidden = S.piece !== 'shield'; $('paintDmgRow').hidden = !dmg; $('r_pinch_shape').hidden = $('r_pinch_asp').hidden = decal;
   for (const b of $('paintDmg').children) b.classList.toggle('on', b.dataset.k === PAINT.dmg);
   if (decal) $('pinchShapeTools').hidden = false;
   for (const b of $('paintDecals').children) b.classList.toggle('on', b.dataset.d === PAINT.decal && !PAINT.num);
@@ -4955,6 +4971,20 @@ $('i_paint_a').addEventListener('input', (e) => { PAINT.a = +e.target.value; pin
 $('paintDmg').addEventListener('click', (e) => { if (e.target.dataset.k) { PAINT.dmg = e.target.dataset.k; pinchSync(); } });
 $('paintDecals').innerHTML = (DATA.decals || []).map((d) => `<button data-d="${d.name}" title="${d.label}"><img src="${fileUrl(d.path)}" alt="${d.label}"></button>`).join('');
 $('paintDecals').addEventListener('click', (e) => { const d = e.target.dataset.d; if (d) { PAINT.decal = d; PAINT.num = ''; $('i_paint_num').value = ''; pinchSync(); } });
+// the chosen picture over a shield's whole face, its own colours: up its long axis, as big as covers it (its proportions
+// kept: what is past the edge is not on it), one per shield; a picture put so before goes
+$('paintCover').addEventListener('click', async () => {
+  const d = decalOf(PAINT.decal), faces = parts.filter((x) => x.node && x.node.face).map((x) => x.node.face);
+  if (!d || !faces.length) return;
+  const img = new Image(); img.src = fileUrl(d.path);
+  try { await img.decode(); } catch (e) { return; }
+  const asp = img.naturalWidth / Math.max(1, img.naturalHeight), r5 = (x) => Math.round(x * 1e5) / 1e5;
+  const add = faces.map((f) => {
+    const [R0, U0] = decalFrame(f.n.toArray(), 0), ang = Math.atan2(-f.up.dot(R0), f.up.dot(U0));
+    return { t: 'decal', img: d.path, name: d.name, cover: 1, p: f.p.toArray().map(r5), n: f.n.toArray().map(r5), r: r5(Math.max(f.hh, f.hw / asp) * 1.02), ang: r5(ang), flip: false, a: 1, look: 'image' };
+  });
+  S.p.paints = [...(S.p.paints || []).filter((L) => !L.cover), ...add]; changed('paint');
+});
 $('i_paint_num').addEventListener('input', (e) => { PAINT.num = e.target.value.replace(/\D/g, ''); e.target.value = PAINT.num; pinchSync(); });
 $('i_paint_flip').addEventListener('change', (e) => { PAINT.flip = e.target.checked; });
 // «Battle wear»: by a seed, dents, scratches, now and then claw marks, and soot patches where blows land (the piece's
