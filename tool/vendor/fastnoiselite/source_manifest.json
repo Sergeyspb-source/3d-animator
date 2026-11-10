@@ -1,0 +1,12 @@
+[
+  {
+    "file": "FastNoiseLite.js",
+    "url": "https://raw.githubusercontent.com/Auburn/FastNoiseLite/785f37a9ad76e283586a379675085f2063ae03f7/JavaScript/dist/FastNoiseLite.js",
+    "sha256": "3fb78eace483e94c8d1b8f4d299844d92b3c1c23baccb8bc89d83481b60d561f"
+  },
+  {
+    "file": "LICENSE",
+    "url": "https://raw.githubusercontent.com/Auburn/FastNoiseLite/785f37a9ad76e283586a379675085f2063ae03f7/LICENSE",
+    "sha256": "c08da3239b919c12f4ec616b457a8dd0fc923c8102c8a742c4006fcb5de28fb0"
+  }
+]

@@ -1,0 +1,572 @@
+[
+  {
+    "file": "src/alea.js",
+    "url": "https://raw.githubusercontent.com/Azgaar/armoria-api/f4c9b191e3540104c780145e42b431cfa636345d/app/alea.js",
+    "sha256": "cf2a2272eaa5deebc8d77398af367d58d79a0611e532712ab5e3222f20fac603"
+  },
+  {
+    "file": "src/dataModel.js",
+    "url": "https://raw.githubusercontent.com/Azgaar/armoria-api/f4c9b191e3540104c780145e42b431cfa636345d/app/dataModel.js",
+    "sha256": "22c34f11c3c99cf8e01909332210ae1b4fe2191783002c72ff7ccf361b72fb0c"
+  },
+  {
+    "file": "src/generator.js",
+    "url": "https://raw.githubusercontent.com/Azgaar/armoria-api/f4c9b191e3540104c780145e42b431cfa636345d/app/generator.js",
+    "sha256": "99d87f261ef617353a58a103368bbc60be333bbc5f0dc09b584de3c08d57651f"
+  },
+  {
+    "file": "src/renderer.js",
+    "url": "https://raw.githubusercontent.com/Azgaar/armoria-api/f4c9b191e3540104c780145e42b431cfa636345d/app/renderer.js",
+    "sha256": "b9c2e8dea6833dd588de2e9bdd216e23099e03caf208252db8af953e42e38b79"
+  },
+  {
+    "file": "src/templates.js",
+    "url": "https://raw.githubusercontent.com/Azgaar/armoria-api/f4c9b191e3540104c780145e42b431cfa636345d/app/templates.js",
+    "sha256": "dfd02640ebc2a85ef3ba3c111fd6f10e3c154fe5b006bc9ac0d6375b2e6ce622"
+  },
+  {
+    "file": "LICENSE",
+    "url": "https://raw.githubusercontent.com/Azgaar/armoria-api/f4c9b191e3540104c780145e42b431cfa636345d/LICENSE",
+    "sha256": "ca6c26c8111feeb53fd931f08c050492c8f9772d6ae6d239307d2578a7016390"
+  },
+  {
+    "file": "charges/anchor.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/anchor.svg",
+    "sha256": "5d7520721114e36e7f03255c22c3e9c4b8f3722cb8c87be66c6ff10478c43db9"
+  },
+  {
+    "file": "charges/annulet.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/annulet.svg",
+    "sha256": "d19b56833dd697f91904ccbfe36815f893adf963d55d4b4927cac655ad64a8a2"
+  },
+  {
+    "file": "charges/ant.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/ant.svg",
+    "sha256": "4884eabd50f4af622b39f91e39b4421ca7aae333d0a582e51b518616caa62875"
+  },
+  {
+    "file": "charges/armEmbowedHoldingSabre.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/armEmbowedHoldingSabre.svg",
+    "sha256": "caf4f461e911d012c603568763e85c3ebae5b98de9b387fa77e4b1848de96a1d"
+  },
+  {
+    "file": "charges/armEmbowedVambraced.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/armEmbowedVambraced.svg",
+    "sha256": "675c5b9bd67fa19c2d44260fbb9e546882cb70183d4d39ed8eb67117995c9375"
+  },
+  {
+    "file": "charges/armEmbowedVambracedHoldingSword.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/armEmbowedVambracedHoldingSword.svg",
+    "sha256": "4fc98bfe8c8e9c409bedaafd6fed5213490d0d1740e4bc0a784bbcae77738cb0"
+  },
+  {
+    "file": "charges/billet.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/billet.svg",
+    "sha256": "989c86bb0defbbdfa69faf63635db8ceaee0cc9afb24702f50feee34641208cc"
+  },
+  {
+    "file": "charges/bowWithThreeArrows.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/bowWithThreeArrows.svg",
+    "sha256": "4f2936a6b93be54e555a4dfa8a58811b671b7babfb58bc1dec5b3737e0fbae42"
+  },
+  {
+    "file": "charges/bridge2.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/bridge2.svg",
+    "sha256": "b739a3e84874e93bc96dbcb36dfa1cae5f3f42b6c8d52361b52b8682e9bea105"
+  },
+  {
+    "file": "charges/caduceus.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/caduceus.svg",
+    "sha256": "f29700a82c4c9c190a2fc98a214b121565d6e741baa40ec7049e2ee55be538f4"
+  },
+  {
+    "file": "charges/carreau.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/carreau.svg",
+    "sha256": "3be5b01e58d8c28f71d1aceb7c59f81fdba269033c6d1180f3d7b1e316ff6961"
+  },
+  {
+    "file": "charges/cavalier.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/cavalier.svg",
+    "sha256": "1811f58022d313dd97e3e189331e0d578d7dce4fc2b1ae709e2fc3c90b4ee425"
+  },
+  {
+    "file": "charges/centaur.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/centaur.svg",
+    "sha256": "e712f11d28d2a4a0590a5c94fe50d7b536639c1827b04e25a11adf382a3980ae"
+  },
+  {
+    "file": "charges/church.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/church.svg",
+    "sha256": "c028bef521581eaeb70e5e13ac31e138f9becd9194c3caf8d5f516dcf13541eb"
+  },
+  {
+    "file": "charges/compassRose.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/compassRose.svg",
+    "sha256": "99361e299a1b81adeeb66cb5b049f7f1468cd034771d14dbe04860e754e91a84"
+  },
+  {
+    "file": "charges/crescent.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crescent.svg",
+    "sha256": "e0f3f1239e1c9ba5b821cabcf25762b8713b8d8e36a929b2f465f1e23ba0ae92"
+  },
+  {
+    "file": "charges/crossAnkh.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossAnkh.svg",
+    "sha256": "0c439ed21c3c2fe4de50e10253e6d337e8a539e2fb00fa2d84c551b5c739b36f"
+  },
+  {
+    "file": "charges/crossArrowed.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossArrowed.svg",
+    "sha256": "afabaa725cb7792c4486fb16ad0248a69a89cc0aaa1785a92d03bcc70e1f8c90"
+  },
+  {
+    "file": "charges/crossAvellane.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossAvellane.svg",
+    "sha256": "86048a7d76f2bf8a837b4b69f7df45bef947b3f12f506d670b1549886ff4a4b8"
+  },
+  {
+    "file": "charges/crossBiparted.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossBiparted.svg",
+    "sha256": "21d46759cdfd5253d097d9f085baa1c9248bfcc6be9f28398268a7b6807461ef"
+  },
+  {
+    "file": "charges/crossBottony.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossBottony.svg",
+    "sha256": "fe17136c6bfcb544e1c69ba756d47e001516b820a275c418256758c915a037d4"
+  },
+  {
+    "file": "charges/crossBurgundy.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossBurgundy.svg",
+    "sha256": "76bf711ad6cc9c44d33c53d47205781d45734c3c479eacaf3a1aede53aa35bd9"
+  },
+  {
+    "file": "charges/crossCalvary.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossCalvary.svg",
+    "sha256": "e8a93e777eb7a096e13ca94b7572d16762f3f9f718595a1683c4da0932bf2d34"
+  },
+  {
+    "file": "charges/crossCarolingian.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossCarolingian.svg",
+    "sha256": "a1e4a5bb69aca1361036680d0015f299810c0accfbd557747e08be90b887c801"
+  },
+  {
+    "file": "charges/crossCeltic.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossCeltic.svg",
+    "sha256": "3b58dfebd0ac882d531e42fc3d2aa9600e034ee6f32cd574fbbc8d263d4d428b"
+  },
+  {
+    "file": "charges/crossCeltic2.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossCeltic2.svg",
+    "sha256": "7de74f386337efacaa41862a84627c707f92d516696fb710d19530e1eaebfb2b"
+  },
+  {
+    "file": "charges/crossCercelee.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossCercelee.svg",
+    "sha256": "13782312fd02ba0253fecc954e61e9c966797ffdf62f10ba81b80975af2c7edf"
+  },
+  {
+    "file": "charges/crossClechy.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossClechy.svg",
+    "sha256": "c8c2e5790349ea8e126aef09fbe5c722c6decb79e596dd9ab6b98c50f35ea372"
+  },
+  {
+    "file": "charges/crossDouble.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossDouble.svg",
+    "sha256": "fcb1c005a6372d684b6adcc8c3c1b33d979526edbcbed46861bb94dec06ec036"
+  },
+  {
+    "file": "charges/crossErminee.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossErminee.svg",
+    "sha256": "55f96fb573db169a14a6e2df7a3a39fb20e5304382ad5997f4c25a32a2672389"
+  },
+  {
+    "file": "charges/crossFitchy.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossFitchy.svg",
+    "sha256": "b478825812a1a7c20613b5b77808587f39b27e6229f3ac387ee24c313af83e1e"
+  },
+  {
+    "file": "charges/crossFleury.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossFleury.svg",
+    "sha256": "9f578209fcc44147b6382d99b95121663fe2de99c1c24eef656242462e2ae6d9"
+  },
+  {
+    "file": "charges/crossFormee.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossFormee.svg",
+    "sha256": "8a671a8412ceee4a88a70f05353234aecb86e709e5f14aa2eb25d9950635da45"
+  },
+  {
+    "file": "charges/crossFormee2.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossFormee2.svg",
+    "sha256": "7a1450a616de4fe70d59b58e77dda99e5999596413f6a0144517576ed2396422"
+  },
+  {
+    "file": "charges/crossFourchy.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossFourchy.svg",
+    "sha256": "addda398fe19556f8a19ce9c554be79ed7d143421fc5e08ad595bef2a87b9ae1"
+  },
+  {
+    "file": "charges/crossGamma.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossGamma.svg",
+    "sha256": "52eea696eac8c08c7ee1a969a0f1eac7d805478b0591d50c89141783d0c90e86"
+  },
+  {
+    "file": "charges/crossHummetty.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossHummetty.svg",
+    "sha256": "535c3df4b50d16b9c8354fed58565f4c367758c9f7267eec64a6656ed7873af6"
+  },
+  {
+    "file": "charges/crossJerusalem.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossJerusalem.svg",
+    "sha256": "e5d04e3bbb6a0127feefae34051e7822d0132bf8c0eaaea74877b60b60f906cd"
+  },
+  {
+    "file": "charges/crossLatin.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossLatin.svg",
+    "sha256": "9dd3d7cf5dca951c7882f49ff5b8ad8c62a250a9692d063dcb4fda40a34d4617"
+  },
+  {
+    "file": "charges/crossMaltese.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossMaltese.svg",
+    "sha256": "bc7599aea3bb46b6df90df12659ddf0793f4b2833143b6d802deff5f2b407ff0"
+  },
+  {
+    "file": "charges/crossMoline.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossMoline.svg",
+    "sha256": "9883b3e2f954deb66b3af02df5809da1ba33ee7247ff232dec34bfe9911a185f"
+  },
+  {
+    "file": "charges/crossOccitan.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossOccitan.svg",
+    "sha256": "b4116949fc27346a15c05cf8110f161e56158f3a6df063fd88e195e856337f10"
+  },
+  {
+    "file": "charges/crossOrthodox.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossOrthodox.svg",
+    "sha256": "06845c84258ce7eefcd10a45034cd99cb2c4a0382a62bebec98f74eb2b04659c"
+  },
+  {
+    "file": "charges/crossPatonce.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossPatonce.svg",
+    "sha256": "efd507ec9480ebb06719d437baaea3edd27c65132160436282e5f8a5d0390c2f"
+  },
+  {
+    "file": "charges/crossPatriarchal.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossPatriarchal.svg",
+    "sha256": "1a5dcb0054a9875b63d5703c1f04a21b913da969b54d0df2aa0457db577a1b90"
+  },
+  {
+    "file": "charges/crossPattee.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossPattee.svg",
+    "sha256": "e26e4ac0ef433262413a00c0e294d136c6763e7063a3de4a0c757529fe756682"
+  },
+  {
+    "file": "charges/crossPatteeAlisee.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossPatteeAlisee.svg",
+    "sha256": "a08ae7638a34f39d367b2d3b587b1501ba5f704f747b96013923933284edef0e"
+  },
+  {
+    "file": "charges/crossPommy.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossPommy.svg",
+    "sha256": "72603751c42a7362070eac9d38885781740a6168955d282adc32b1ba8c27eeca"
+  },
+  {
+    "file": "charges/crossPotent.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossPotent.svg",
+    "sha256": "0a174b762260371a71ef3fe79b7db81cf68fd9e8043ad6f7e77f584838083754"
+  },
+  {
+    "file": "charges/crossSaltire.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossSaltire.svg",
+    "sha256": "de03dd4c92e2f8c2b890024cbbc0b5c8998c54cebf1cab060900092722bf1656"
+  },
+  {
+    "file": "charges/crossSantiago.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossSantiago.svg",
+    "sha256": "20af7d9b61f6b23e6e1698afbbde103619406905b8fc0e7962fd9cf7a891004b"
+  },
+  {
+    "file": "charges/crossTau.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossTau.svg",
+    "sha256": "e5a980d8da0680db86a3cca4347bddf67cae065d8df96b222c53115aaaad7620"
+  },
+  {
+    "file": "charges/crossTemplar.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossTemplar.svg",
+    "sha256": "52efacd5648fa1e5b77e96c4a895d4ea1d93a0917000587a16c94e483ce92f5a"
+  },
+  {
+    "file": "charges/crossTriquetra.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossTriquetra.svg",
+    "sha256": "2b3b41f33f35ec67fd93fa5feadb1d773be1512e43b19fd505f7753444656090"
+  },
+  {
+    "file": "charges/crossVoided.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crossVoided.svg",
+    "sha256": "9dc866176713b8e595196bc7444331c7230658431aa2b8c64a689343a1953915"
+  },
+  {
+    "file": "charges/crosslet.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/crosslet.svg",
+    "sha256": "457ab69351bee1e436fe7944f1072b1fcf96c74481559be45d6ac590af7bf392"
+  },
+  {
+    "file": "charges/delf.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/delf.svg",
+    "sha256": "514ccf1f88e16a7ed3fb589848ba43b76e99c689c4f7255284d6de5ece9232eb"
+  },
+  {
+    "file": "charges/dragonfly.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/dragonfly.svg",
+    "sha256": "a7720fa5cee9d7b761fb11fbc65147501d492da425f11a0f373e1c56b8434178"
+  },
+  {
+    "file": "charges/drawingCompass.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/drawingCompass.svg",
+    "sha256": "614d5cae76ebbfeec2456d169f9230eec51af6ddb66ce78be7b43bc6fa2a10e2"
+  },
+  {
+    "file": "charges/earOfWheat.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/earOfWheat.svg",
+    "sha256": "aacab5666d79c53127b001c1a6b3c32f78362a1c9c0edf3aa9ec8b87da736b98"
+  },
+  {
+    "file": "charges/flamberge.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/flamberge.svg",
+    "sha256": "4550f5555fa7e788d9239bdf7a33d7ca2bcaa69943f072644b1b252eb3103134"
+  },
+  {
+    "file": "charges/flangedMace.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/flangedMace.svg",
+    "sha256": "10be04cc6e22ffc41d351ebb5f0811962e225b2771824c76ca777cd7a082ffa8"
+  },
+  {
+    "file": "charges/fleurDeLis.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/fleurDeLis.svg",
+    "sha256": "5b583747db04407dd126c77ffb174ff7a2b2c3bc47a987c106fe1aadcbaef4fe"
+  },
+  {
+    "file": "charges/fusil.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/fusil.svg",
+    "sha256": "cb49732794f1fc871d4e8751858907c395dcb0b4381506e80f69a799b0df37a7"
+  },
+  {
+    "file": "charges/goutte.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/goutte.svg",
+    "sha256": "33f02358ef667e7e9264759918a5630d6196990312396c14142086affb9c9cdd"
+  },
+  {
+    "file": "charges/grapeBunch.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/grapeBunch.svg",
+    "sha256": "61061a199e202cd99aa49d96bd9b555ce8cfa6cd4b314eadf34b924ee0d2d219"
+  },
+  {
+    "file": "charges/heart.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/heart.svg",
+    "sha256": "359a3f0256e8e1b00891fb7ef96d10a2e9416dafd4d4bb20aa212fd07f3f6b8d"
+  },
+  {
+    "file": "charges/helmetZischagge.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/helmetZischagge.svg",
+    "sha256": "dd5afebc81f8397074b96a44302378c5b5f393a34098ae0974c885f82bc9ac14"
+  },
+  {
+    "file": "charges/laurelWreath2.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/laurelWreath2.svg",
+    "sha256": "231f008ef852ed01b60c043cd28504ca37943afdd1dc3efeec58a4143a52a781"
+  },
+  {
+    "file": "charges/lozenge.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/lozenge.svg",
+    "sha256": "ea59c68c952cc65ac0e48a272efa9e39d6640ad6731b9e28a9d23bf3adecd2f9"
+  },
+  {
+    "file": "charges/lozengeFaceted.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/lozengeFaceted.svg",
+    "sha256": "1bc67833f2fd642cd7ffcfb2c3b356f39650bd68a286adffb9fd152ae223e242"
+  },
+  {
+    "file": "charges/lozengePloye.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/lozengePloye.svg",
+    "sha256": "a443c16519b72e01a1d2432501166bbc633f822f73cbb588d4be9ae791972fe5"
+  },
+  {
+    "file": "charges/mace.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/mace.svg",
+    "sha256": "379436647cc22aab12c6abb8da1208daf062c8e797b632c7e737600979267117"
+  },
+  {
+    "file": "charges/maces.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/maces.svg",
+    "sha256": "e870f058938742ff8e9407a9ba2d62441a3cb2a54f30c433b02459329b7b5db0"
+  },
+  {
+    "file": "charges/mascle.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/mascle.svg",
+    "sha256": "f44de38ae7a7d9dd77c4f38f90198df25b02ee963c756be25d3ba5ca48c2c0f0"
+  },
+  {
+    "file": "charges/mullet.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/mullet.svg",
+    "sha256": "314dd8840421507847484a7f5081e25622a73c458237a2637df8b17507622a85"
+  },
+  {
+    "file": "charges/mullet10.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/mullet10.svg",
+    "sha256": "4052f2a0a8f9aec416fc89417523141eedf4eba228c59600bb96b1f7b1534199"
+  },
+  {
+    "file": "charges/mullet4.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/mullet4.svg",
+    "sha256": "9aed088f64ce7c02d7661968062dc25b6decdd420bb086e7f3eca5ef18f49353"
+  },
+  {
+    "file": "charges/mullet6.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/mullet6.svg",
+    "sha256": "e55c7e610fb58f75c6db7ab69e8128b20044272e60612f80f0cb47c2d0364c33"
+  },
+  {
+    "file": "charges/mullet6Faceted.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/mullet6Faceted.svg",
+    "sha256": "1a67cacdf6813f2fdcf456eb15cad01ae610e78df28498db26c525fb3f5b5845"
+  },
+  {
+    "file": "charges/mullet6Pierced.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/mullet6Pierced.svg",
+    "sha256": "fb7a63298cb6db0704c7e9380c0050cfce56e4b3821bc321c530a12bb9c3faf7"
+  },
+  {
+    "file": "charges/mullet7.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/mullet7.svg",
+    "sha256": "f637e9092f63b88d03f72b7ab78fcf5abc436f08c290175baebeb737a5123c07"
+  },
+  {
+    "file": "charges/mullet8.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/mullet8.svg",
+    "sha256": "7c6f6204fa6d0ce36e547f5cfe4868ea2fc67ecb3118196059263b38d13dc212"
+  },
+  {
+    "file": "charges/mulletFaceted.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/mulletFaceted.svg",
+    "sha256": "a18e8772ab4c272c654197665a1a65b032db1300f7bae95ad8e89b3355b8ca28"
+  },
+  {
+    "file": "charges/mulletPierced.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/mulletPierced.svg",
+    "sha256": "af14dcf36a94077daa7bb39a375b5304cd41973a18acb036ab3f18eb3dd8f0eb"
+  },
+  {
+    "file": "charges/ouroboros.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/ouroboros.svg",
+    "sha256": "e4c4c4727b5ca986ad26c4afbf38598806fe34e0899b3c37872ecf105393b20c"
+  },
+  {
+    "file": "charges/pillar.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/pillar.svg",
+    "sha256": "591f504db6b16f85836aa66d04d54c27bf2965e4a279cb5b8fd2d2cf5db0dc80"
+  },
+  {
+    "file": "charges/pique.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/pique.svg",
+    "sha256": "8fce195c532bd641150be853db975e2a0cb519c9ff8a6f009a16158c93d8c389"
+  },
+  {
+    "file": "charges/raft.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/raft.svg",
+    "sha256": "aede614b8d8d0c460288a850fc760681c75d6511cff3c2a42e4e0e1f0d9c7613"
+  },
+  {
+    "file": "charges/ribbon4.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/ribbon4.svg",
+    "sha256": "d73254a811760cf4f7510bfadce6e9a2f388a0abf6c38c4d014c9c96f9043904"
+  },
+  {
+    "file": "charges/roundel.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/roundel.svg",
+    "sha256": "eae8f6f89656cbde8c4767d9a3cc772af0ad3f04551a91a65fdffbe6b253d18a"
+  },
+  {
+    "file": "charges/roundel2.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/roundel2.svg",
+    "sha256": "b80179068570a181fb04eec925e7233f10b4fc71cb16ef31971b6e24e9dbeeea"
+  },
+  {
+    "file": "charges/rustre.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/rustre.svg",
+    "sha256": "dbc3007e2f4fdb21908fd9ea53beb10dbf6a16be9daeccd57db3d61e521de857"
+  },
+  {
+    "file": "charges/scale.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/scale.svg",
+    "sha256": "5cfe37eff3134fc41c9a8782147c2f619e694edbd59a5014bd355dfe907f2763"
+  },
+  {
+    "file": "charges/scaleImbalanced.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/scaleImbalanced.svg",
+    "sha256": "97478d61f39c07f45fce454c9a4ae5c96edf155def07c541a7c8509123b23c6a"
+  },
+  {
+    "file": "charges/scythe2.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/scythe2.svg",
+    "sha256": "3246158609cb81f6bd2daedaf1d6e37fc62eb03ee471bf0a4e30803cd0fe9687"
+  },
+  {
+    "file": "charges/shears.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/shears.svg",
+    "sha256": "de950d8a515a51f6591a66a815bf6c0165296d3541d4e8c3bb5a3da1447f7440"
+  },
+  {
+    "file": "charges/skull.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/skull.svg",
+    "sha256": "35357de63d754357f72d8b456f10f1ab5e61e2060a54682893c87de05d944759"
+  },
+  {
+    "file": "charges/skull2.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/skull2.svg",
+    "sha256": "027e5e35d50bf4655618dd6f95e428a0dbf108640c0005ddcfd641504fed995b"
+  },
+  {
+    "file": "charges/snail.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/snail.svg",
+    "sha256": "3ceb7b716c9aaecc74ca8e1b58d348e4bac1c3203622645da35be2dd3e89b277"
+  },
+  {
+    "file": "charges/spiral.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/spiral.svg",
+    "sha256": "b038a0f68b90cbef957ee77b8343f74358bf4b7e651a46e58a778c400a522f83"
+  },
+  {
+    "file": "charges/squirrel.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/squirrel.svg",
+    "sha256": "45ffba4d352a033d33e4c70e51fea374107ce2cc659d157c4d7fcfcc025719ce"
+  },
+  {
+    "file": "charges/stork.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/stork.svg",
+    "sha256": "e12b7869c811ce7e9cd70e77961124a6d1310e179cf28f07b9cca8080d00cd8a"
+  },
+  {
+    "file": "charges/sun.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/sun.svg",
+    "sha256": "9428facbc19cc31957f2011b5677367bc44b6ef57dcf0722f1b81194e2a4b635"
+  },
+  {
+    "file": "charges/sunInSplendour.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/sunInSplendour.svg",
+    "sha256": "ae369827bb7b9cd7e177578ed931c7ffe7771d191e806f05a13d9391c98b1761"
+  },
+  {
+    "file": "charges/trefle.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/trefle.svg",
+    "sha256": "d8b660460d42c0103585b62a0e26650effced3312e3418dfab6d15db2e64c52c"
+  },
+  {
+    "file": "charges/triangle.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/triangle.svg",
+    "sha256": "dbadbc329a441cdfda960adae1f22c19a310dce762983c5819bf2d3698280d9d"
+  },
+  {
+    "file": "charges/trianglePierced.svg",
+    "url": "https://raw.githubusercontent.com/Azgaar/Armoria/b0bb9b8c37db43e462b90a1e8603e93aae483123/public/charges/trianglePierced.svg",
+    "sha256": "61157f7103d8b1fbd8cef795a757d140cd41836471d639d34d632dedf1cb3a7e"
+  }
+]

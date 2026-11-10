@@ -223,6 +223,52 @@ def decals(folder: Path) -> list:
             for f in sorted(folder.glob("*.png"), key=key)]
 
 
+VENDOR = Path(__file__).resolve().parent / "vendor"
+GEN_WORDS = ("or", "argent", "gules", "azure", "vert", "sable", "purpure", "murrey", "tenne",   # the painting generator's choices
+             "none", "lattice", "scales", "vines", "drops", "checks", "stars", "arms", "cross", "saltire")
+
+
+def web_assets(cfg=None) -> dict:
+    """The painting generator's libraries for the page (the app serves files only from export/ and work/): copied to
+    work/web when newer - Armoria's generator and renderer (MIT) with its CC0 charges, FastNoiseLite (MIT). {name: path}"""
+    work = Path((cfg or __import__("sf3d_tool").load_config())["work_dir"]) / "web"
+    out = {}
+    for name, src, dst in (("armoria", VENDOR / "armoria" / "armoria.mjs", work / "armoria" / "armoria.js"),
+                           ("noise", VENDOR / "fastnoiselite" / "FastNoiseLite.js", work / "fastnoiselite" / "FastNoiseLite.js")):
+        if not src.exists():
+            continue
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        if not dst.exists() or dst.stat().st_mtime < src.stat().st_mtime:
+            shutil.copy2(src, dst)
+        out[name] = dst.resolve().as_posix()
+    charges = VENDOR / "armoria" / "charges"
+    if charges.is_dir():
+        to = work / "armoria" / "charges"
+        to.mkdir(parents=True, exist_ok=True)
+        for f in charges.glob("*.svg"):
+            if not (to / f.name).exists():
+                shutil.copy2(f, to / f.name)
+        out["charges"] = to.resolve().as_posix() + "/"
+    return out
+
+
+def save_decal(cfg, req) -> dict:
+    """A picture made in the page (the painting generator) as a PNG among the «Paint» pictures (export/decals)."""
+    import base64
+    name = re.sub(r"[^A-Za-z0-9_-]+", "_", str(req.get("name") or "")).strip("_")[:60]
+    data = str(req.get("png") or "")
+    if not name or not data.startswith("data:image/png;base64,"):
+        return {"ok": False, "log": _t("ag.decal_bad")}
+    folder = Path(req.get("dir") or Path(cfg["export_dir"]) / "decals").resolve()   # the folder the page's pictures are from
+    roots = [Path(cfg["export_dir"]).resolve(), Path(cfg["work_dir"]).resolve()]
+    if not any(folder == r or r in folder.parents for r in roots):
+        return {"ok": False, "log": _t("ag.decal_bad")}
+    folder.mkdir(parents=True, exist_ok=True)
+    f = folder / f"{name}.png"
+    f.write_bytes(base64.b64decode(data.split(",", 1)[1]))
+    return {"ok": True, "log": _t("ag.decal_saved", f.name), "decal": {"name": name, "path": f.resolve().as_posix(), "label": name}}
+
+
 def editor_page(rigged: Path, decals_dir: Path | None = None) -> str:
     page = i18n.fill(EDITOR.read_text(encoding="utf-8"))
     data = {"rigged": rigged.resolve().as_posix(), "rigged_v": int(rigged.stat().st_mtime), "stem": LM._stem(rigged),
@@ -233,7 +279,9 @@ def editor_page(rigged: Path, decals_dir: Path | None = None) -> str:
                        for k, v in PIECES.items()},
             "presets": PRESETS, "mat_labels": {k: _t(f"ag.mat_{k}") for k in PRESETS},
             "surface_labels": {k: _t(f"ag.surf_{k}") for k in SURFACES}, "saved": saved(rigged), "worn": worn(rigged),
-            "decals": decals(decals_dir) if decals_dir else [], "fist": LM.fist_hand(rigged),
+            "decals": decals(decals_dir) if decals_dir else [], "decals_dir": decals_dir.resolve().as_posix() if decals_dir else "",
+            "fist": LM.fist_hand(rigged), "web": web_assets(),
+            "gen_labels": {k: _t(f"ag.gen_{k}") for k in GEN_WORDS},
             **{grp: {k: _t(f"ag.{grp.split('_')[0]}_{k}") for k in keys} for grp, keys in CHOICES.items()}}
     return page.replace("@@DATA@@", json.dumps(data, ensure_ascii=False).replace("</", "<\\/"))
 
@@ -446,6 +494,15 @@ def handle(cfg, text):
     req = json.loads(text)
     if req.get("action") == "wardrobe":
         return LM.wear(cfg, text), None
+    if req.get("action") == "decal_save":   # answered in <stem>_decal_<name>.wear.json
+        rigged = Path(req["rigged"])
+        try:
+            res = save_decal(cfg, req)
+        except Exception as e:  # noqa: BLE001
+            res = {"ok": False, "log": _t("lm.error", e)}
+        name = re.sub(r"[^A-Za-z0-9_-]+", "_", str(req.get("name") or "")).strip("_")[:60]
+        WF.status(cfg, rigged, f"_decal_{name}").write_text(json.dumps({"id": req.get("id"), **res}, ensure_ascii=False), encoding="utf-8")
+        return res["log"], None
     if req.get("action") == "qa":   # answered in <stem>_qa_<item>.wear.json
         rigged = Path(req["rigged"])
         try:

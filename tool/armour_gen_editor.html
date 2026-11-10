@@ -54,6 +54,9 @@
   .sl input[type=range] { grid-column:1 / 3; width:100%; accent-color:var(--accent); margin:2px 0 0; }
   .sl .inf { grid-column:1 / 3; font-size:11.5px; color:var(--muted); }
   label.chk { display:flex; align-items:center; gap:6px; margin:6px 0; }
+  .gen { margin:6px 0; } .gen summary { cursor:pointer; font-size:12.5px; }
+  .gen .grow2 { display:flex; gap:8px; align-items:flex-start; margin-top:4px; } .gen canvas { border:1px solid var(--line); border-radius:4px; flex:none; }
+  .gen .genctl { flex:1; min-width:0; } .gen .row { margin:2px 0; gap:4px; } .gen select { max-width:100%; } .gen .note { width:58px; flex:none; }
   .node { margin:6px 0; }
   .node kbd { font:10px var(--mono); opacity:.6; margin-left:2px; }
   .node .nrow { display:flex; align-items:center; gap:6px; margin:3px 0; }
@@ -148,6 +151,19 @@
           <div id="paintDecalRow">
             <div class="decals" id="paintDecals"></div>
             <div class="row" id="paintCoverRow" style="margin:4px 0"><button id="paintCover" class="grow" title="{{ag.paint_cover_title}}">{{ag.paint_cover}}</button></div>
+            <details id="genBox" class="gen"><summary>{{ag.gen}}</summary>
+              <div class="note">{{ag.gen_info}}</div>
+              <div class="grow2"><canvas id="genPrev" width="120" height="200"></canvas><div class="genctl">
+                <div class="row"><span class="note">{{ag.gen_mode}}</span><select id="g_mode"><option value="paint">{{ag.gen_mode_paint}}</option><option value="arms">{{ag.gen_mode_arms}}</option></select></div>
+                <div class="row"><span class="note">{{ag.gen_seed}}</span><input type="text" id="g_seed" style="width:70px"><button id="genRoll" title="{{ag.gen_roll}}">🎲</button></div>
+                <div class="row gp"><span class="note">{{ag.gen_field}}</span><select id="g_field"></select></div>
+                <div class="row gp"><span class="note">{{ag.gen_pattern}}</span><select id="g_pattern"></select><select id="g_pcol"></select></div>
+                <div class="row gp"><span class="note">{{ag.gen_border}}</span><select id="g_bcol"></select><input type="range" id="g_bw" min="0" max="12" step="1" style="width:70px"></div>
+                <div class="row gp"><span class="note">{{ag.gen_charge}}</span><select id="g_charge"></select></div>
+                <div class="row"><span class="note">{{ag.gen_age}}</span><input type="range" id="g_age" min="0" max="1" step="0.05" style="width:90px"></div>
+              </div></div>
+              <div class="row" style="margin-top:4px"><button id="genApply" class="grow">{{ag.gen_apply}}</button></div>
+            </details>
             <div class="row"><span class="note">{{ag.paint_number}}</span><input type="text" id="i_paint_num" style="width:70px" maxlength="6" placeholder="10">
               <label class="chk" style="margin:0 0 0 8px"><input type="checkbox" id="i_paint_flip"> {{ag.paint_flip}}</label></div>
           </div>
@@ -4969,7 +4985,8 @@ $('paintLook').addEventListener('click', (e) => { if (e.target.dataset.l) { PAIN
 $('i_paint_c').addEventListener('input', (e) => { PAINT.c = e.target.value; });
 $('i_paint_a').addEventListener('input', (e) => { PAINT.a = +e.target.value; pinchSync(); });
 $('paintDmg').addEventListener('click', (e) => { if (e.target.dataset.k) { PAINT.dmg = e.target.dataset.k; pinchSync(); } });
-$('paintDecals').innerHTML = (DATA.decals || []).map((d) => `<button data-d="${d.name}" title="${d.label}"><img src="${fileUrl(d.path)}" alt="${d.label}"></button>`).join('');
+function decalButtons() { $('paintDecals').innerHTML = (DATA.decals || []).map((d) => `<button data-d="${d.name}" title="${d.label}"><img src="${fileUrl(d.path)}?v=${Date.now()}" alt="${d.label}"></button>`).join(''); }
+decalButtons();
 $('paintDecals').addEventListener('click', (e) => { const d = e.target.dataset.d; if (d) { PAINT.decal = d; PAINT.num = ''; $('i_paint_num').value = ''; pinchSync(); } });
 // the chosen picture over a shield's whole face, its own colours: up its long axis, as big as covers it (its proportions
 // kept: what is past the edge is not on it), one per shield; a picture put so before goes
@@ -5449,6 +5466,160 @@ $('saved').addEventListener('change', (e) => {
   S.name = x.item; S.nameTouched = true; setPiece(x.piece, true);
 });
 
+
+// ------------------------------------------------------------------ the painting generator (paints as the pavises were)
+// A picture for a shield's face (or for any piece, put on with the «Picture» brush): a field of a colour, a pattern over
+// it (a lattice with dots, scales, vines, drops, checks), a border with a thin line, in the middle a coat of arms
+// (Armoria: its generator and renderer, MIT; only its CC0 charges are here) or a great cross; aged (the varnish
+// darkened, paint flaked off to the gesso, crazing: FastNoiseLite, MIT). Or a coat of arms over the whole face. Seeded:
+// the same seed gives the same picture; «🎲» another one, the colours as heraldry wants them (a metal on a colour)
+const TINCT = { or: '#c9a227', argent: '#e3dcc6', gules: '#a3241e', azure: '#24508f', vert: '#2f6a3b', sable: '#211d1a', purpure: '#6a2f68', murrey: '#7a2e3a', tenne: '#b0662a' };
+// (Armoria's tinctures as pigments: ours, and its others muted the same way)
+const ARM_COLORS = { ...TINCT, carnation: '#d2a888', celeste: '#7fa2c2', 'cendrée': '#6f6a64', sanguine: '#8e2f2a', 'tenné': '#b0662a' };
+const METALS = ['or', 'argent'], COLOURS = ['gules', 'azure', 'vert', 'sable', 'purpure', 'murrey', 'tenne'];
+const GEN_PATTERNS = ['none', 'lattice', 'scales', 'vines', 'drops', 'checks', 'stars'], GEN_CHARGES = ['arms', 'cross', 'saltire', 'none'];
+const GEN = { mode: 'paint', seed: String(1 + Math.floor(Math.random() * 9999)), field: 'vert', pattern: 'vines', pcol: 'or', bcol: 'gules', bw: 6, charge: 'arms', age: .4 };
+let ARM = null, FNL = null;
+// (the app serves .js as octet-stream, which a module may not be: its text as a JavaScript blob)
+const importText = async (path) => import(URL.createObjectURL(new Blob([await (await fetch(fileUrl(path))).text()], { type: 'text/javascript' })));
+async function genLibs() {
+  if (!ARM && DATA.web && DATA.web.armoria) { ARM = await importText(DATA.web.armoria); ARM.setCharges(fileUrl(DATA.web.charges)); ARM.restrict(); }
+  if (!FNL && DATA.web && DATA.web.noise) FNL = (await importText(DATA.web.noise)).default;
+}
+function genRand(seed) {   // mulberry32 over the seed's hash
+  let h = 1779033703; for (const c of String(seed)) h = Math.imul(h ^ c.charCodeAt(0), 3432918353), h = (h << 13) | (h >>> 19);
+  let a = h >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+function genRoll(seed) {   // the choices from the seed, a metal on a colour (or the other way)
+  const r = genRand(seed), pick = (a) => a[Math.floor(r() * a.length)], metalField = r() < .3;
+  GEN.field = metalField ? pick(METALS) : pick(COLOURS);
+  GEN.pcol = metalField ? pick(COLOURS) : pick(METALS);
+  GEN.pattern = pick(['lattice', 'scales', 'vines', 'drops', 'checks', 'stars', 'vines', 'none']);
+  GEN.bcol = pick(COLOURS.filter((c) => c !== GEN.field)); GEN.bw = 3 + Math.floor(r() * 7);
+  GEN.charge = pick(['arms', 'arms', 'cross', 'saltire', 'none']); GEN.age = Math.round((.2 + .5 * r()) * 20) / 20;
+}
+const genAspect = () => { const f = parts.map((x) => x.node && x.node.face).find(Boolean); return f ? f.hw / f.hh : 1; };
+async function genCoa(seed, shield, size) {   // a coat of arms (SVG) as an image
+  const coa = ARM.generate(String(seed)); coa.shield = shield;
+  const svg = await ARM.draw('g' + String(seed).replace(/\W/g, ''), coa, size, ARM_COLORS);
+  const img = new Image(); img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg); await img.decode(); return img;
+}
+async function genPicture(W) {   // -> a canvas W wide, as tall as the face is
+  await genLibs();
+  const asp = genAspect(), H = Math.max(64, Math.round(W / asp)), cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const g = cv.getContext('2d'), r = genRand(GEN.seed + ':' + GEN.mode), col = (k) => TINCT[k] || k, u = W / 100;
+  if (GEN.mode === 'arms' && ARM) {
+    g.fillStyle = col('argent'); g.fillRect(0, 0, W, H);
+    g.drawImage(await genCoa(GEN.seed, 'no', 1024), 0, 0, W, H);   // («no»: the field to its edges, no shield's outline)
+  } else {
+    g.fillStyle = col(GEN.field); g.fillRect(0, 0, W, H);
+    g.fillStyle = g.strokeStyle = col(GEN.pcol); g.lineWidth = .6 * u;
+    const s = 9 * u;
+    if (GEN.pattern === 'lattice') {   // a diaper: lozenges, a dot in each
+      g.globalAlpha = .85;
+      for (let k = -H; k < W + H; k += s) { g.beginPath(); g.moveTo(k, 0); g.lineTo(k + H, H); g.moveTo(k, 0); g.lineTo(k - H, H); g.stroke(); }
+      for (let y = 0; y < H + s; y += s) for (let x = (Math.round(y / s) % 2) * s / 2; x < W + s; x += s) { g.beginPath(); g.arc(x, y + s / 2, .9 * u, 0, TAU); g.fill(); }
+    } else if (GEN.pattern === 'scales') {   // scales: rows of arcs, each row half a scale over
+      g.lineWidth = .8 * u; g.globalAlpha = .9;
+      for (let y = 0, row = 0; y < H + s; y += .55 * s, row++) for (let x = (row % 2) * s / 2 - s; x < W + s; x += s) { g.beginPath(); g.arc(x, y, s / 2, 0, Math.PI); g.stroke(); }
+    } else if (GEN.pattern === 'vines') {   // vines: stems winding up, tendrils curling off them, leaves
+      g.lineCap = 'round';
+      for (let x0 = W * (.12 + .1 * r()); x0 < W; x0 += W * (.24 + .08 * r())) {
+        const amp = (4 + 4 * r()) * u, per = (18 + 10 * r()) * u, ph = r() * TAU;
+        g.lineWidth = 1.1 * u; g.beginPath(); for (let y = 0; y <= H; y += u) { const x = x0 + amp * Math.sin(y / per * TAU + ph); y ? g.lineTo(x, y) : g.moveTo(x, y); } g.stroke();
+        for (let y = per * r(); y < H; y += per / 2) {
+          const x = x0 + amp * Math.sin(y / per * TAU + ph), dir = Math.cos(y / per * TAU + ph) > 0 ? 1 : -1, rr = (2.5 + 2 * r()) * u;
+          g.lineWidth = .6 * u; g.beginPath(); for (let t = 0; t < 4.5; t += .15) { const q = rr * (1 - t / 5.5); g.lineTo(x + dir * (rr + q * Math.cos(t * 1.7 + Math.PI)), y - rr + q * Math.sin(t * 1.7 + Math.PI)); } g.stroke();
+          g.beginPath(); g.ellipse(x - dir * 2.2 * u, y + 1.5 * u, 2.4 * u, 1 * u, dir * .7, 0, TAU); g.fill();
+        }
+      }
+    } else if (GEN.pattern === 'drops') {   // drops (gouttes), in a staggered grid
+      for (let y = s / 2, row = 0; y < H; y += s, row++) for (let x = (row % 2) * s / 2 + s / 2; x < W; x += s) {
+        g.beginPath(); g.moveTo(x, y - 2.6 * u); g.quadraticCurveTo(x + 1.6 * u, y, x, y + 1.6 * u); g.quadraticCurveTo(x - 1.6 * u, y, x, y - 2.6 * u); g.fill();
+      }
+    } else if (GEN.pattern === 'checks') {   // chequy, faint
+      g.globalAlpha = .35; for (let y = 0; y < H; y += s) for (let x = ((y / s) % 2) * s; x < W; x += 2 * s) g.fillRect(x, y, s, s);
+    } else if (GEN.pattern === 'stars') {   // semy of mullets
+      for (let y = s / 2, row = 0; y < H; y += s, row++) for (let x = (row % 2) * s / 2 + s / 2; x < W; x += s) {
+        g.beginPath(); for (let k = 0; k < 10; k++) { const a = -Math.PI / 2 + k * Math.PI / 5, q = (k % 2 ? 1 : 2.3) * u; g.lineTo(x + q * Math.cos(a), y + q * Math.sin(a)); } g.closePath(); g.fill();
+      }
+    }
+    g.globalAlpha = 1;
+    const bw = GEN.bw * u, inset = bw;   // the border, a thin line of the pattern's metal inside it
+    if (GEN.charge === 'cross') {   // a cross, its arms a little above the half (as on a banner)
+      g.fillStyle = col(GEN.bcol); const cw = 14 * u;
+      g.fillRect(W / 2 - cw / 2, 0, cw, H); g.fillRect(0, H * .42 - cw / 2, W, cw);
+    } else if (GEN.charge === 'saltire') {   // a saltire: corner to corner
+      g.strokeStyle = col(GEN.bcol); g.lineWidth = 14 * u; g.lineCap = 'butt';
+      g.beginPath(); g.moveTo(0, 0); g.lineTo(W, H); g.moveTo(W, 0); g.lineTo(0, H); g.stroke();
+    }
+    if (GEN.bw > 0) {
+      g.strokeStyle = col(GEN.bcol); g.lineWidth = bw; g.strokeRect(bw / 2, bw / 2, W - bw, H - bw);
+      g.strokeStyle = col(METALS.includes(GEN.pcol) ? GEN.pcol : 'or'); g.lineWidth = .7 * u; g.strokeRect(inset + u, inset + u, W - 2 * inset - 2 * u, H - 2 * inset - 2 * u);
+    }
+    if (GEN.charge === 'arms' && ARM) {   // a coat of arms in the middle, a heater, a little above the half
+      const w = .56 * W, img = await genCoa(GEN.seed, 'heater', 512), h = w * 1.1;
+      g.drawImage(img, (W - w) / 2, H * .42 - h / 2, w, h);
+    }
+  }
+  if (GEN.age > 0 && FNL) genAge(g, W, H);
+  return cv;
+}
+function genAge(g, W, H) {   // the varnish darkened, paint flaked off to the gesso, the crazing
+  const A = GEN.age, im = g.getImageData(0, 0, W, H), d = im.data, sd = [...String(GEN.seed)].reduce((a, c) => a * 31 + c.charCodeAt(0), 7) | 0;
+  const fl = new FNL(sd); fl.SetNoiseType(FNL.NoiseType.OpenSimplex2); fl.SetFractalType(FNL.FractalType.FBm); fl.SetFractalOctaves(5); fl.SetFrequency(9 / W);
+  const dk = new FNL(sd + 1); dk.SetNoiseType(FNL.NoiseType.OpenSimplex2); dk.SetFractalType(FNL.FractalType.FBm); dk.SetFractalOctaves(3); dk.SetFrequency(1.5 / W);
+  const ck = new FNL(sd + 2); ck.SetNoiseType(FNL.NoiseType.Cellular); ck.SetCellularReturnType(FNL.CellularReturnType.Distance2Sub); ck.SetFrequency(28 / W);
+  const gesso = [218, 206, 178], thr = .8 - .35 * A;   // (the paint mostly on: off in small flakes, more at the edges)
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = 4 * (y * W + x); let rr = d[i], gg = d[i + 1], bb = d[i + 2];
+    const flake = fl.GetNoise(x, y), edge = Math.min(x, y, W - 1 - x, H - 1 - y) / W;   // (more off at the edges, where it is handled)
+    const off = flake + .6 * A * Math.max(0, .08 - edge) / .08;
+    if (off > thr) { const k = Math.min(1, (off - thr) / .05); rr += (gesso[0] - rr) * k; gg += (gesso[1] - gg) * k; bb += (gesso[2] - bb) * k; }
+    const crack = ck.GetNoise(x, y); if (crack > -.06 * A - .02 && crack < 0) { const k = .45 * A; rr *= 1 - k; gg *= 1 - k; bb *= 1 - k; }
+    const dark = .82 + .12 * dk.GetNoise(x, y), v = 1 - A * (1 - dark);   // the varnish: darker, warmer
+    d[i] = Math.min(255, rr * v * 1.0); d[i + 1] = Math.min(255, gg * v * .96); d[i + 2] = Math.min(255, bb * v * .85);
+  }
+  g.putImageData(im, 0, 0);
+}
+window.agGen = { set: (o) => Object.assign(GEN, o), pic: async (w) => (await genPicture(w)).toDataURL('image/png') };   // (the tests)
+let genBusy = false, genAgain = false;
+async function genPreview() {   // the thumbnail, again as the choices change (once at a time, the last one)
+  if (genBusy) { genAgain = true; return; }
+  genBusy = true;
+  try {
+    const cv = await genPicture(120), pv = $('genPrev'), g = pv.getContext('2d');
+    pv.height = Math.min(240, cv.height); g.clearRect(0, 0, pv.width, pv.height); g.drawImage(cv, 0, 0, pv.width, pv.height);
+  } catch (e) { console.error(e); $('status').textContent = e.message; }
+  finally { genBusy = false; if (genAgain) { genAgain = false; genPreview(); } }
+}
+function genSync() {
+  for (const [id, k] of [['g_mode', 'mode'], ['g_seed', 'seed'], ['g_field', 'field'], ['g_pattern', 'pattern'], ['g_pcol', 'pcol'], ['g_bcol', 'bcol'], ['g_bw', 'bw'], ['g_charge', 'charge'], ['g_age', 'age']]) $(id).value = GEN[k];
+  for (const e of document.querySelectorAll('#genBox .gp')) e.hidden = GEN.mode !== 'paint';
+}
+{
+  const opts = (list, lab) => list.map((k) => `<option value="${k}">${lab(k)}</option>`).join('');
+  const tl = (k) => DATA.gen_labels[k] || k;
+  $('g_field').innerHTML = opts([...COLOURS, ...METALS], tl); $('g_pcol').innerHTML = opts([...METALS, ...COLOURS], tl); $('g_bcol').innerHTML = opts([...COLOURS, ...METALS], tl);
+  $('g_pattern').innerHTML = opts(GEN_PATTERNS, tl); $('g_charge').innerHTML = opts(GEN_CHARGES, tl);
+  genRoll(GEN.seed); genSync();
+  $('genBox').addEventListener('toggle', () => { if ($('genBox').open) genPreview(); });
+  $('genBox').addEventListener('input', (e) => {
+    const k = { g_mode: 'mode', g_seed: 'seed', g_field: 'field', g_pattern: 'pattern', g_pcol: 'pcol', g_bcol: 'bcol', g_bw: 'bw', g_charge: 'charge', g_age: 'age' }[e.target.id]; if (!k) return;
+    GEN[k] = ['bw', 'age'].includes(k) ? +e.target.value : e.target.value; genSync(); genPreview();
+  });
+  $('genRoll').addEventListener('click', () => { GEN.seed = String(1 + Math.floor(Math.random() * 99999)); genRoll(GEN.seed); genSync(); genPreview(); });
+  // made full size, kept among the pictures (export/decals: Blender bakes it from there), chosen; on a shield over its face
+  $('genApply').addEventListener('click', async () => {
+    let cv; try { cv = await genPicture(1024); } catch (e) { $('status').textContent = e.message; return; }
+    const name = `paint_${GEN.mode}_${String(GEN.seed).replace(/\W/g, '')}_${GEN.field}_${GEN.pattern}`.slice(0, 60);
+    const js = await send('decal_save', { name, png: cv.toDataURL('image/png'), dir: DATA.decals_dir }, '{{js:ag.gen_saving}}', '_decal_' + name);
+    if (!js || !js.ok) return;
+    DATA.decals = [...(DATA.decals || []).filter((d) => d.name !== js.decal.name), js.decal]; decalButtons(); DECAL_IMG.delete(js.decal.path);
+    PAINT.decal = js.decal.name; PAINT.num = ''; pinchSync();
+    if (S.piece === 'shield' && parts.some((x) => x.node)) $('paintCover').click();
+  });
+}
 // ------------------------------------------------------------------ start
 buildPanel(); syncPanel(); listSaved(); listWorn(); wornListed = true;
 $('worn').addEventListener('click', (e) => {   // its name: opened above, as from «Saved» (the tick only puts it on, takes it off)
