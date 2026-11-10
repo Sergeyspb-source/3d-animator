@@ -329,17 +329,17 @@ async function wearPiece(w, on) {
   let e = WORN.get(w.item);
   if (!e) {
     const gltf = await new GLTFLoader().loadAsync(fileUrl(w.glb) + '?v=' + (w.v || Date.now()));
-    const meshes = [];
+    const meshes = [], mask = w.mask ? await loadMask(w.mask) : null;   // (loaded first: no frame drawn in the rest pose below)
     restPose();
     gltf.scene.traverse((o) => {
       if (o.isSkinnedMesh) { o.skeleton.bones = o.skeleton.bones.map((b) => byName[b.name] || b); o.frustumCulled = false; meshes.push(o); }
       if (o.isMesh) for (const mt of [].concat(o.material)) mt.side = THREE.DoubleSide;
     });
     scene.add(gltf.scene); gltf.scene.updateMatrixWorld(true);
-    e = { root: gltf.scene, meshes, on: false, piece: w.piece, mask: w.mask ? await loadMask(w.mask) : null }; WORN.set(w.item, e);
+    e = { root: gltf.scene, meshes, on: false, piece: w.piece, mask }; WORN.set(w.item, e);
   }
   e.on = on; e.root.visible = on;
-  restPose(); buildBody(); hideBody(); changed('worn');
+  restPose(); buildBody(); hideBody(); applyPose(); changed('worn');   // (the pose back at once: not a frame of T-pose)
 }
 // what of the body a piece hides (<piece>.mask.json, made with it: tool/body_mask.py), as the game takes it away:
 // the triangles whose three corners are hidden
@@ -3911,7 +3911,10 @@ const fractions = (p) => ({ ...p, t0: p.t0 / 100, t1: p.t1 / 100, gap: p.gap / 1
   rim: p.rim / 100, rivets: p.rivets / 100, rivet_size: p.rivet_size / 100, strap_width: p.strap_width / 100, hem: p.hem / 100,
   sleeves: p.sleeves / 100, sp_start: p.sp_start / 100, sp_reach: p.sp_reach / 100, neckline: p.neckline / 100, point: p.point / 100,
   top_cut: p.top_cut / 100, bottom_cut: p.bottom_cut / 100, yoke: p.yoke / 100, cuff: p.cuff / 100 });
-function rebuild() {
+// the chosen pose kept whatever way it ends (a style's piece still loading, nothing to build): the rest pose it is made
+// on was left on screen meanwhile - a T-pose for a second or two when a piece was chosen
+function rebuild() { try { rebuildNow(); } finally { applyPose(); } }
+function rebuildNow() {
   if (bodyFor !== S.piece && [...WORN.values()].some((w) => w.on)) buildBody();   // which worn pieces are over it changed
   if (!bodyGeo) return;
   const t = performance.now();
@@ -5036,7 +5039,7 @@ async function rebuildLayers() {
     S.piece = keep.piece; S.idle = keep.idle; S.p = keep.p; S.sides = keep.sides; S.name = keep.name; S.nameTouched = keep.touched; S.style = keep.style;
     HIST.restoring = false; REBUILDING = false;
     for (const m of temp) m.geometry.dispose();
-    restPose(); buildBody(); hideBody(); changed('worn');
+    restPose(); buildBody(); hideBody(); applyPose(); changed('worn');   // (the pose back at once: not a frame of T-pose)
   }
   if (!jobs.length) { layersSync(); return; }
   BAKE.batch = Date.now(); BAKE.left = jobs.map((j) => j.item); BAKE.seen = 0; layersSync();
@@ -5155,7 +5158,7 @@ async function removePiece(item) {
   if (e) { scene.remove(e.root); WORN.delete(item); }
   DATA.worn = DATA.worn.filter((w) => w.item !== item); DATA.saved = DATA.saved.filter((w) => w.item !== item);
   if (item === itemName() && resultRoot) setShow(false);
-  listWorn(); listSaved(); restPose(); buildBody(); hideBody(); changed('worn');
+  listWorn(); listSaved(); restPose(); buildBody(); hideBody(); applyPose(); changed('worn');   // (the pose back at once: not a frame of T-pose)
 }
 $('layersGo').addEventListener('click', () => rebuildLayers().catch((er) => { console.error(er); $('status').textContent = er.message; }));
 $('savedDel').addEventListener('click', () => { const x = DATA.saved[+$('saved').value]; removePiece(x ? x.item : ''); });
