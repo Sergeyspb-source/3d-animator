@@ -9,6 +9,7 @@ import json
 import re
 import glob
 import shutil
+import threading
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -158,8 +159,9 @@ def saved(rigged: Path) -> list:
         except (OSError, ValueError):
             continue
         if isinstance(pr, dict) and pr.get("piece") in PIECES and isinstance(pr.get("params"), dict):
+            under = (json.loads(f.read_text(encoding="utf-8")).get("state") or {}).get("under") or []
             out.append({"item": f.name[len(LM._stem(rigged)) + 6:-len(".fit.json")], "piece": pr["piece"],
-                        "sides": pr.get("sides") or [], "params": pr["params"]})
+                        "sides": pr.get("sides") or [], "params": pr["params"], "under": under})   # (what it was made over)
     return out
 
 
@@ -385,6 +387,57 @@ def qa(cfg, req) -> dict:
     return {"ok": True, "log": msg, "report": (work / "qa.json").resolve().as_posix(), "points": len(rep["points"])}
 
 
+# «Rebuild by layers» in the background: the editor works out every piece's shape at once (inside out, each over the
+# ones under it) and queues them here; a thread makes them in Blender one after another while the editor stays free.
+# Its state is in <stem>_bake.wear.json, which the editor reads: {batch, queue, current, done: [{item, ok, log, glb,
+# mask}], running, stopped}. «Stop» empties the queue: the piece in Blender is finished, the ones made stay.
+_BAKES, _BAKE_LOCK = {}, threading.Lock()
+
+
+def _bake_write(rigged: Path, b: dict):
+    (rigged.parent / f"{LM._stem(rigged)}_bake.wear.json").write_text(json.dumps(
+        {"batch": b["batch"], "queue": [j["item"] for j in b["q"]], "current": b["current"], "done": b["done"],
+         "running": b["running"], "stopped": b["stopped"]}, ensure_ascii=False), encoding="utf-8")
+
+
+def _bake_run(cfg, rigged: Path, b: dict):
+    while True:
+        with _BAKE_LOCK:
+            if not b["q"]:
+                b["current"], b["running"] = None, False
+                _bake_write(rigged, b)
+                return
+            job = b["q"].pop(0)
+            b["current"] = job["item"]
+            _bake_write(rigged, b)
+        try:
+            res = generate(cfg, job)
+        except Exception as e:  # noqa: BLE001  (the next ones still go)
+            res = {"ok": False, "log": _t("lm.error", e)}
+        with _BAKE_LOCK:
+            b["done"].append({"item": job["item"], "ok": bool(res.get("ok")), "log": res.get("log", ""), "glb": res.get("glb"), "mask": res.get("mask")})
+
+
+def bake(cfg, req) -> dict:
+    """One piece of a batch queued (req: {rigged, batch, job: the «generate» request}), or the batch stopped
+    (req.stop). Starts the thread when none runs."""
+    rigged = Path(req["rigged"])
+    with _BAKE_LOCK:
+        b = _BAKES.setdefault(str(rigged), {"batch": 0, "q": [], "current": None, "done": [], "running": False, "stopped": False})
+        if req.get("stop"):
+            b["q"].clear(); b["stopped"] = True
+            _bake_write(rigged, b)
+            return {"ok": True, "log": _t("ag.bake_stopping")}
+        if req.get("batch") != b["batch"]:   # a new batch: what the last one made is not reported again
+            b["batch"], b["done"], b["stopped"] = req.get("batch"), [], False
+        b["q"].append({**req["job"], "rigged": req["rigged"]})
+        if not b["running"]:
+            b["running"] = True
+            threading.Thread(target=_bake_run, args=(cfg, rigged, b), daemon=True).start()
+        _bake_write(rigged, b)
+    return {"ok": True, "log": _t("ag.bake_queued", req["job"].get("item"))}
+
+
 def handle(cfg, text):
     """A request from the editor page. The answer also goes to a status file next to the character, which the page
     waits for: <stem>_wear_<item>.wear.json (the Godot fitting room: LM.wear's own, <stem>_wardrobe.wear.json).
@@ -400,6 +453,16 @@ def handle(cfg, text):
             res = {"ok": False, "log": _t("lm.error", e)}
         item = re.sub(r"[^A-Za-z0-9_-]+", "_", req.get("item") or "").strip("_")
         (rigged.parent / f"{LM._stem(rigged)}_qa_{item}.wear.json").write_text(
+            json.dumps({"id": req.get("id"), **res}, ensure_ascii=False), encoding="utf-8")
+        return res["log"], None
+    if req.get("action") == "bake":   # answered in <stem>_bakeq_<item>.wear.json (the queue's state: <stem>_bake.wear.json)
+        rigged = Path(req["rigged"])
+        item = re.sub(r"[^A-Za-z0-9_-]+", "_", (req.get("job") or {}).get("item") or "stop").strip("_")
+        try:
+            res = bake(cfg, req)
+        except Exception as e:  # noqa: BLE001
+            res = {"ok": False, "log": _t("lm.error", e)}
+        (rigged.parent / f"{LM._stem(rigged)}_bakeq_{item}.wear.json").write_text(
             json.dumps({"id": req.get("id"), **res}, ensure_ascii=False), encoding="utf-8")
         return res["log"], None
     if req.get("action") == "remove":   # answered in <stem>_remove_<item>.wear.json

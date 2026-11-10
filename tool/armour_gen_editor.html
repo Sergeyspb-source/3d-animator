@@ -121,7 +121,8 @@
       <div class="row" style="margin-top:6px" id="savedRow" hidden>
         <span class="note">{{ag.saved}}</span><select id="saved" class="grow"></select><button id="savedDel" title="{{ag.remove_title}}">{{ag.remove_piece}}</button>
       </div>
-      <div class="row" style="margin-top:6px" id="layersRow" hidden><button id="layersGo" title="{{ag.layers_rebuild_info}}">{{ag.layers_rebuild}}</button></div>
+      <div class="row" style="margin-top:6px" id="layersRow" hidden><button id="layersGo" title="{{ag.layers_rebuild_info}}">{{ag.layers_rebuild}}</button>
+        <span class="note" id="bakeNote" style="margin-left:8px"></span><button id="bakeStop" hidden>{{ag.bake_stop}}</button></div>
     </div>
     <div id="groups"></div>
     <div class="box" id="pinchBox">
@@ -4870,6 +4871,7 @@ async function make() {
     return null;
   }
   overwriteOk = '';
+  if (BAKE.left.includes(itemName())) { $('status').textContent = '{{js:ag.bake_busy}}'.replace('{0}', itemName()); return null; }
   const replace = !!was;   // asked and pressed again: the server may make it over another kind's piece
   busy = true; $('go').disabled = true;
   const item = itemName();
@@ -4882,12 +4884,13 @@ async function make() {
   busy = false; $('go').disabled = !lastBuild;
   if (js && js.ok) {
     const i = DATA.saved.findIndex((x) => x.item === item);
-    const entry = { item, piece: S.piece, sides: [...S.sides], params: { ...S.p } };
+    const entry = { item, piece: S.piece, sides: [...S.sides], params: { ...S.p }, under: [...WORN.entries()].filter(([k, w]) => k !== item && w.on && layerOf(w)).map(([k]) => k) };
     if (i >= 0) DATA.saved[i] = entry; else DATA.saved.push(entry);
     listSaved(item);
     const old = WORN.get(item); if (old) { scene.remove(old.root); WORN.delete(item); }   // its old look goes
-    if (!DATA.worn.some((w) => w.item === item)) DATA.worn.push({ item, glb: js.glb, v: Date.now(), piece: S.piece });
-    else Object.assign(DATA.worn.find((w) => w.item === item), { v: Date.now(), piece: S.piece });
+    const now = Math.round(Date.now() / 1000);   // (seconds, as the server's file times)
+    if (!DATA.worn.some((w) => w.item === item)) DATA.worn.push({ item, glb: js.glb, v: now, piece: S.piece });
+    else Object.assign(DATA.worn.find((w) => w.item === item), { v: now, piece: S.piece });
     listWorn();
     resultMask = js.mask ? await loadMask(js.mask) : null;
     const wi = DATA.worn.find((w) => w.item === item); if (wi) wi.mask = js.mask;
@@ -4896,36 +4899,109 @@ async function make() {
     const over = DATA.worn.filter((w) => w.item !== item && WORN.get(w.item) && WORN.get(w.item).on && layerOf(w) && isOuter(w)
       && !CLOTH_KINDS.includes(w.piece) && DATA.saved.some((x) => x.item === w.item)).map((w) => w.item);
     if (over.length && !REBUILDING) $('status').textContent += '\n' + '{{js:ag.layers_stale}}'.replace('{0}', over.join(', '));
+    layersSync();   // (its time is new now: the pieces over it are out of date)
   }
   return js;
 }
-// «Rebuild by layers»: every piece made here again, from the innermost layer out (LAYER), each with its own settings
-// and over every piece worn under it - so the order they were first made in no longer matters. The pieces made by
-// Blender's generators (a helmet, elbows, shoes: fitted to the body alone) and the held ones stay as they are.
-let REBUILDING = false;
-async function rebuildLayers() {
-  if (busy || REBUILDING) return;
-  const order = DATA.saved.map((x, i) => [x, i]).filter(([x]) => !HELD.includes(x.piece) && !MADE.includes(x.piece) && PIECES[x.piece])
+// «Rebuild by layers»: the pieces made before something now under them (a piece of a lower layer made later, or one
+// worn now that was not then) and every one over those, inside out (LAYER). Their shapes are worked out here at once,
+// each over the ones under it - the ones just worked out too (what is on the screen is what is made) - and queued in
+// the server, which makes them in Blender one after another while the editor stays free (bake, <stem>_bake.wear.json);
+// each made one is put on as it comes. The pieces from Blender's generators (a helmet, elbows, shoes: fitted to the body
+// alone) and the held ones stay as they are.
+const ownKind = (x) => !HELD.includes(x.piece) && !MADE.includes(x.piece) && !!PIECES[x.piece];
+const madeAt = (item) => (DATA.worn.find((w) => w.item === item) || {}).v || 0;   // seconds
+function staleList() {
+  const order = DATA.saved.map((x, i) => [x, i]).filter(([x]) => ownKind(x))
     .sort(([a, i], [b, j]) => ((LAYER[a.piece] || 0) - (LAYER[b.piece] || 0)) || i - j).map(([x]) => x);
-  if (!order.length || !confirm('{{js:ag.layers_confirm}}'.replace('{0}', order.length).replace('{1}', order.map((x) => x.item).join(', ')))) return;
-  REBUILDING = true; $('layersGo').disabled = true;
-  const done = [];
-  try {
-    for (const [k, x] of order.entries()) {
-      S.p = { ...DEFAULTS, ...PIECES[x.piece].defaults, ...x.params }; S.sides = x.sides && x.sides.length ? [...x.sides] : ['L', 'R'];
-      S.name = x.item; S.nameTouched = true; setPiece(x.piece, true); listSaved(x.item);
-      for (const w of DATA.worn) if (w.item !== x.item && layerOf(w) && !(WORN.get(w.item) && WORN.get(w.item).on)) await wearPiece(w, true);   // everything else on
-      rebuild();
-      if (S.piece !== x.piece || itemName() !== x.item) { $('status').textContent = '{{js:ag.layers_stopped}}'.replace('{0}', x.item); return; }
-      const js = await make();
-      if (!js || !js.ok) { $('status').textContent = '{{js:ag.layers_stopped}}'.replace('{0}', x.item) + '\n' + ($('status').textContent || ''); return; }
-      done.push(x.item);
-      const w = DATA.worn.find((y) => y.item === x.item); if (w) await wearPiece(w, true);   // on: the next ones go over it
-      $('status').textContent = '{{js:ag.layers_progress}}'.replace('{0}', k + 1).replace('{1}', order.length).replace('{2}', x.item);
-    }
-    $('status').textContent = '{{js:ag.layers_done}}'.replace('{0}', done.join(' → '));
-  } finally { REBUILDING = false; $('layersGo').disabled = false; }
+  const out = [];
+  for (const x of order) {
+    const lx = LAYER[x.piece] || 0;
+    const under = DATA.worn.filter((w) => w.item !== x.item && !HELD.includes(w.piece) && (LAYER[w.piece] || 0) < lx);
+    if (under.some((w) => out.some((y) => y.item === w.item) || madeAt(w.item) > madeAt(x.item) + 1 || !(x.under || []).includes(w.item))) out.push(x);
+  }
+  return out;
 }
+const BAKE = { batch: 0, left: [], timer: 0, seen: 0 };
+let REBUILDING = false;
+function layersSync() {
+  const n = BAKE.left.length ? 0 : staleList().length;
+  $('layersGo').textContent = '{{js:ag.layers_rebuild}}' + (n ? ` (${n})` : '');
+  $('layersGo').disabled = !n || !!BAKE.left.length || REBUILDING;
+  $('layersGo').title = n ? '{{js:ag.layers_rebuild_info}}' : '{{js:ag.layers_none}}';
+}
+async function rebuildLayers() {
+  if (busy || REBUILDING || BAKE.left.length) return;
+  const list = staleList();
+  if (!list.length || !confirm('{{js:ag.layers_confirm}}'.replace('{0}', list.length).replace('{1}', list.map((x) => x.item).join(', ')))) return;
+  REBUILDING = true; $('layersGo').disabled = true;
+  const keep = { piece: S.piece, p: S.p, sides: S.sides, name: S.name, touched: S.nameTouched, style: S.style };
+  for (const w of DATA.worn) if (layerOf(w) && !WORN.get(w.item)) await wearPiece(w, false);   // every worn one loaded (off, as it was)
+  const was = new Map(WORN), on = new Map([...WORN].map(([k, e]) => [k, e.on]));
+  const jobs = [], temp = [];
+  HIST.restoring = true;
+  try {
+    for (const x of list) {
+      for (const [k, e] of WORN) e.on = k !== x.item;   // every other one on
+      S.piece = x.piece; S.p = { ...DEFAULTS, ...PIECES[x.piece].defaults, ...x.params }; S.sides = x.sides && x.sides.length ? [...x.sides] : ['L', 'R'];
+      S.name = x.item; S.nameTouched = true;
+      buildBody(); rebuild();
+      if (!parts.length || !lastBuild) throw new Error('{{js:ag.layers_stopped}}'.replace('{0}', x.item));
+      jobs.push({ item: x.item, piece: x.piece, sides: lastBuild.sides.filter((q) => q !== 'C'), params: { ...S.p }, mesh: payload(),
+        under: [...WORN.entries()].filter(([k, w]) => k !== x.item && w.on && layerOf(w)).map(([k]) => k), two: '', point: '' });
+      const ms = parts.flatMap((part) => meshesOf(part.acc)); temp.push(...ms);   // worn by the next ones as it is shown
+      WORN.set(x.item, { root: null, meshes: ms, on: true, piece: x.piece, mask: null });
+    }
+  } catch (er) { $('status').textContent = er.message; console.error(er); jobs.length = 0; }
+  finally {   // the editor as it was
+    WORN.clear(); for (const [k, e] of was) { e.on = on.get(k); WORN.set(k, e); }
+    S.piece = keep.piece; S.p = keep.p; S.sides = keep.sides; S.name = keep.name; S.nameTouched = keep.touched; S.style = keep.style;
+    HIST.restoring = false; REBUILDING = false;
+    for (const m of temp) m.geometry.dispose();
+    restPose(); buildBody(); hideBody(); changed('worn');
+  }
+  if (!jobs.length) { layersSync(); return; }
+  BAKE.batch = Date.now(); BAKE.left = jobs.map((j) => j.item); BAKE.seen = 0; layersSync();
+  for (const job of jobs) {
+    const js = await send('bake', { batch: BAKE.batch, job }, '{{js:ag.bake_sending}}'.replace('{0}', job.item), '_bakeq_' + job.item);
+    if (!js || !js.ok) { BAKE.left = []; layersSync(); return; }
+  }
+  $('status').textContent = '{{js:ag.bake_started}}'.replace('{0}', jobs.length);
+  bakeNote('{{js:ag.bake_progress}}'.replace('{0}', 0).replace('{1}', jobs.length).replace('{2}', jobs[0].item));
+  bakeWatch();
+}
+function bakeNote(text) { $('bakeNote').textContent = text; $('bakeStop').hidden = !BAKE.left.length; }
+function bakeWatch() {   // the queue's state, every 2 s: each made piece put on in place of the old one
+  clearTimeout(BAKE.timer);
+  BAKE.timer = setTimeout(async () => {
+    let st = null;
+    try { const r = await fetch(fileUrl(DATA.rigged.replace(/[^/]*$/, '') + DATA.stem + '_bake.wear.json') + '?t=' + Date.now()); if (r.ok) st = await r.json(); } catch (e) { /* not yet */ }
+    if (!st || st.batch !== BAKE.batch) { bakeWatch(); return; }
+    for (const d of st.done.slice(BAKE.seen)) {
+      BAKE.seen++; BAKE.left = BAKE.left.filter((x) => x !== d.item);
+      if (!d.ok) { $('status').textContent = d.log; continue; }
+      const x = DATA.saved.find((y) => y.item === d.item), w = DATA.worn.find((y) => y.item === d.item);
+      if (x) x.under = DATA.worn.filter((y) => y.item !== d.item && layerOf(y)).map((y) => y.item);
+      const old = WORN.get(d.item), wasOn = old ? old.on : false;
+      if (old) { if (old.root) scene.remove(old.root); WORN.delete(d.item); }
+      if (w) { w.v = Math.round(Date.now() / 1000); w.mask = d.mask; if (wasOn) await wearPiece(w, true); }
+    }
+    const total = st.done.length + st.queue.length + (st.current ? 1 : 0);
+    if (st.running || st.queue.length) {
+      bakeNote('{{js:ag.bake_progress}}'.replace('{0}', st.done.length).replace('{1}', total).replace('{2}', st.current || ''));
+      bakeWatch(); return;
+    }
+    BAKE.left = [];
+    bakeNote(st.stopped ? '{{js:ag.bake_stopped}}'.replace('{0}', st.done.filter((d) => d.ok).length)
+      : '{{js:ag.layers_done}}'.replace('{0}', st.done.filter((d) => d.ok).map((d) => d.item).join(' → ')));
+    layersSync(); listWorn();
+  }, 2000);
+}
+$('bakeStop').addEventListener('click', async () => {
+  $('bakeStop').disabled = true;
+  await send('bake', { stop: true, batch: BAKE.batch }, '{{js:ag.bake_stopping}}', '_bakeq_stop');
+  $('bakeStop').disabled = false;
+});
 // the check in motion: the piece made (first, if it changed), then Blender plays the character's clips with it on;
 // where the skin came out through it is marked here (red, on the rest pose)
 let qaPoints = null;
@@ -4988,6 +5064,7 @@ async function loadResult(glb) {   // the baked piece, on the character's own bo
 function listSaved(sel) {
   $('savedRow').hidden = !DATA.saved.length;
   $('layersRow').hidden = DATA.saved.filter((x) => !HELD.includes(x.piece) && !MADE.includes(x.piece)).length < 2;
+  layersSync();
   $('saved').innerHTML = `<option value="">{{js:ag.saved_new}}</option>` + DATA.saved.map((x, i) => `<option value="${i}">${x.item} — ${LABEL[x.piece] || x.piece}</option>`).join('');
   $('saved').value = sel ? String(DATA.saved.findIndex((x) => x.item === sel)) : '';
 }
