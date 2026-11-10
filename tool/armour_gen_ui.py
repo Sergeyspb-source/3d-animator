@@ -83,7 +83,7 @@ PIECES = {"bracer": ("forearm", "hand", "forearm", ("Spine", "Hips", "Chest", "U
 WEAPONS = ("sword", "dagger", "axe", "mace", "spear", "staff", "bow")
 SHIELDS = ("round", "kite", "heater")
 SHEATHS = ("scabbard", "dagger", "quiver", "quiver_hip")
-CLOTHS = ("cloth_shirt", "cloth_aketon", "cloth_gambeson", "cloth_doublet", "cloth_voider", "cloth_vest", "cloth_braies", "cloth_braies_long",
+CLOTHS = ("cloth_fitted", "cloth_shirt", "cloth_aketon", "cloth_gambeson", "cloth_doublet", "cloth_voider", "cloth_vest", "cloth_braies", "cloth_braies_long",
           "cloth_coif")
 GLOVES = ("glove_plain_leather", "glove_reinforced_leather", "glove_mail_mitten", "glove_hourglass", "glove_plate_mitten", "glove_hybrid")
 HELMETS = ("kettle_hat", "open_bascinet", "barbute", "visored_bascinet", "sallet", "armet")

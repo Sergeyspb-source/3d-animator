@@ -38,6 +38,8 @@
   .seg button:last-child { border-radius:0 7px 7px 0; }
   .pieces { display:grid; grid-template-columns:repeat(3,1fr); gap:4px; }
   .pieces button { padding:6px 4px; }
+  .pieces .pgrp { grid-column:1 / -1; font-size:11px; letter-spacing:.04em; text-transform:uppercase; opacity:.65; margin:6px 0 0; }
+  .pieces .pgrp:first-child { margin-top:0; }
   .sep { width:1px; align-self:stretch; background:var(--line); margin:0 2px; }
   .grow { flex:1; }
   button { font:inherit; color:var(--fg); background:var(--bg); border:1px solid var(--line); border-radius:7px; padding:4px 9px; cursor:pointer; }
@@ -1030,7 +1032,7 @@ function convexRow(row) {
 // a breastplate's shell: convex round, widest at the chest (just under the armpits, row kPit), never wider going down
 // (the flare belongs to the fauld below it); waist 1: in with the body's waist, 0: straight down from the chest. Above
 // the chest it closes in to the neck as the body does
-function cuirassShape(P, waist, gap, tPit) {
+function cuirassShape(P, waist, gap, tPit, hug) {   // hug: a garment - never under the skin itself (a plate: its median)
   // thin things on the body (a knot of the trousers' cords in front) filtered out: they are hidden under it, not worn
   const hull = P.inner.map((row) => convexRow(medRow(row, 5))), n = hull.length;
   const kPit = Math.max(1, Math.min(n - 1, Math.round((tPit - P.t0) / (P.t1 - P.t0) * (n - 1))));
@@ -1042,7 +1044,7 @@ function cuirassShape(P, waist, gap, tPit) {
   // the last rows come up to the chest level flat (no slope at the top): the cap goes on from there with no crease
   const m = Math.min(6, kPit);
   for (let j = 0; j < P.NA; j++) { const g0 = g[kPit - m][j]; for (let i = kPit - m; i <= kPit; i++) g[i][j] = Math.max(g[i][j], chest[j] - (chest[j] - g0) * ((kPit - i) / m) ** 2); }
-  const skin = P.skin.map((row) => medRow(row, 5));
+  const skin = hug ? P.skin : P.skin.map((row) => medRow(row, 5));   // (thin cloth: the muscles' ridges came through)
   return blur(g, 2).map((r, i) => r.map((x, j) => Math.max(x, skin[i][j] + .5 * gap * P.R)));
 }
 // a pauldron (spaulder) on one shoulder: half-round lames across it (round its top, from the front over to the back),
@@ -1315,6 +1317,9 @@ function glove(side, p) {
 // or laced, arming points at the shoulders, the arms and the hem, mail voiders at the armpits. Braies are loose
 // trousers, a padded coif a bag round the head
 const GARMENTS = {
+  // under the armour: a thin cloth on the body (its own shape, the muscles smoothed: relief), no skirt, collar, ties or
+  // the armpit's fold - nothing to come out from under the plates; the quilted ones over it are worn without armour
+  fitted: { top: -.04, hem: null, waist: 1, ease: 0, sleeves: true, relief: .12, tight: true },
   // top: where the body ends and the skirt goes on (along the torso from the hips: 0 the hips, 1 the neck); hem: how far
   // the skirt comes down the thigh from the crotch, as a share of the thigh's length (the legs' own: a goblin's short
   // ones get a short skirt, not a dress; negative: above the crotch; null: none); waist: the body in with the waist (0:
@@ -1346,15 +1351,15 @@ const angAt = (limb, d) => limb.angOf(d.clone().addScaledVector(limb.u, -d.dot(l
 function sleeve(p, G, s, thick) {   // round the upper arm from the shoulder over the elbow, round the forearm to the wrist
   const acc = new Acc(), gap = p.gap + .7 * G.ease, sf = { ...p, surface: p.cloth_quilt ? 'quilt' : 'plain' };
   const { limb: ul } = limbOf('rerebrace', s), PU = profile('sleeve_up' + s, ul, -.2, 1.08, { foreign: PIECES.rerebrace.foreign, limbOnly: true });
-  PU.shell(gap, .3);
+  PU.shell(gap, G.relief ?? .3);
   acc.w = weigher('limb', PB['arm_' + s], p.rigidity);
   // a little wider at its top, most under the arm: over the armhole's edge, which turns in under it (the armpit's folds)
   const upA = angAt(ul, UP), under = (a) => (1 - Math.cos(a - upA)) / 2;
   const up = { limb: ul, P: PU, ta: -.2, tb: 1.08, top: 'a', arcs: arcsOf(0, 360, 0), R: PU.R, thick,
-    r: (t, a) => PU.rIn(t, a) + .18 * PU.R * smooth(.15, -.1, t) * (.4 + .6 * under(a)) };
+    r: (t, a) => PU.rIn(t, a) + (G.tight ? 0 : .18) * PU.R * smooth(.15, -.1, t) * (.4 + .6 * under(a)) };
   surface(acc, up, sf);
   const { limb: fl } = limbOf('bracer', s), PF = profile('sleeve_lo' + s, fl, -.08, .97, { foreign: PIECES.bracer.foreign, limbOnly: true });
-  PF.shell(gap, .3);
+  PF.shell(gap, G.relief ?? .3);
   const tuck = (t) => smooth(.12, -.08, t) * 1.8 * thick;   // in under the upper one at the elbow
   const lo = { limb: fl, P: PF, ta: -.08, tb: .97, top: 'a', arcs: arcsOf(0, 360, 0), R: PF.R, thick,
     r: (t, a) => Math.max(PF.rSkin(t, a) + .3 * p.gap * PF.R, PF.rIn(t, a) - tuck(t)) };
@@ -1394,7 +1399,7 @@ function garment(p, G) {
   const q = { ...p, surface: p.cloth_quilt ? 'quilt' : 'plain', material: 'cloth', stitch: false, trim: '', straps: 0, spaulders: 0, mail_under: false,
     two_plates: false, low_surface: 'same', anatomy: 0, point: 0, ridge: 0, garment: true, gap: p.gap + G.ease };
   const [body] = buildPiece('cuirass', ['C'], { ...q, t0: G.top, waist: G.waist, sector: 360, opening: G.open ? 'front' : 'none',
-    closure: G.open || 'across', ties: G.ties || 0, shoulders: 'yoke', neckline: G.collar ? .03 : .08, armhole: 30, relief: .3, neck_tie: !!G.neckTie });
+    closure: G.open || 'across', ties: G.ties || 0, shoulders: 'yoke', neckline: G.collar ? .03 : .08, armhole: 30, relief: G.relief ?? .3, neck_tie: !!G.neckTie });
   const out = [body], thick = body.thick;
   // the hem from the crotch (straight down from the hips) and the thigh's length, along the torso
   const { limb: tl } = limbOf('cuirass', 'C'), down = cast(tl.a, tl.u.clone().negate(), tl.len), tcr = down ? -down.distance / tl.len : -.12;
@@ -2827,7 +2832,7 @@ function buildPiece(kind, sides, p) {
     const bump = (x, w) => (Math.abs(x) < w ? (1 + Math.cos(Math.PI * x / w)) / 2 : 0);
     const lo = (a) => p.t0 - p.point * Math.max(0, 1 - Math.abs(rel(a)) / D(60));   // the bottom, pointed in front
     const ridge = (a) => p.ridge * .1 * P.R * Math.max(0, 1 - Math.abs(rel(a)) / D(9));   // the keel down the middle
-    const shape = cuirassShape(P, p.waist, p.gap, tPit), base = (t, a) => P.at(shape, t, a) + mus(t, a) + ridge(a);
+    const shape = cuirassShape(P, p.waist, p.gap, tPit, !!p.garment), base = (t, a) => P.at(shape, t, a) + mus(t, a) + ridge(a);
     // the cap
     const C = limb.axis(tPit), PHI = D(88);
     const capRay = (f, a) => [C, limb.out(a).multiplyScalar(Math.cos(f)).addScaledVector(limb.u, Math.sin(f))];
@@ -3530,6 +3535,7 @@ Object.assign(STYLES, {
   helmet: Object.fromEntries(['kettle_hat', 'open_bascinet', 'barbute', 'visored_bascinet', 'sallet', 'armet'].map((k) => [k, { helmet: k }])),
   elbow: Object.fromEntries(['leather', 'mail', 'early_plate', 'winged_plate', 'articulated_plate', 'plate_mail_hybrid'].map((k) => ['elbow_' + k, { elbow: 'elbow_' + k }])),
   undercloth: {   // worn under the armour: the reference sheets underarmor_clothing_reference_20261026_2151, braies, a coif
+    cloth_fitted: { cloth_style: 'fitted', cloth_quilt: false, quilt_lines: false, cloth: '#8a7a62', tint: '#7a6a52', gap: 1, thickness: 1.5 },
     cloth_shirt: { cloth_style: 'shirt', cloth_quilt: false, quilt_lines: false, cloth: '#d2c6aa', tint: '#c9bc9c', gap: 4, thickness: 2 },
     cloth_aketon: { cloth_style: 'aketon', cloth_quilt: true, quilt_lines: true, cloth: '#b3a588', tint: '#c2b394', gap: 4, thickness: 4, cell: 9 },
     cloth_gambeson: { cloth_style: 'gambeson', cloth_quilt: true, quilt_lines: true, cloth: '#a59a88', tint: '#c2b8a2', gap: 4, thickness: 5, cell: 9 },
@@ -3715,7 +3721,11 @@ const fmt = (key, x) => {
   return String(x);
 };
 function buildPanel() {
-  $('pieces').innerHTML = Object.keys(PIECES).map((k) => `<button data-piece="${k}">${PIECES[k].label}</button>`).join('');
+  // in blocks: the armour, the clothes, what is held (a piece of none of them, added later, goes to the armour's)
+  const BLOCKS = [['{{js:ag.block_armour}}', []], ['{{js:ag.block_clothes}}', ['undercloth', 'trousers', 'skirt', 'tabard', 'cloak']],
+    ['{{js:ag.block_held}}', ['weapon', 'shield', 'sheath']]];
+  for (const k of Object.keys(PIECES)) if (!BLOCKS.some(([, ks]) => ks.includes(k))) BLOCKS[0][1].push(k);
+  $('pieces').innerHTML = BLOCKS.map(([t, ks]) => `<div class="pgrp">${t}</div>` + ks.filter((k) => PIECES[k]).map((k) => `<button data-piece="${k}">${PIECES[k].label}</button>`).join('')).join('');
   const html = SPEC.map(([title, roles, list], gi) => `<div class="box" id="g_${gi}" data-roles="${roles.join(' ')}"><div class="grp">${title}</div>` +
     (gi === 1 ? `<div class="row" style="margin:2px 0 6px"><span class="seg" id="surfSeg">${SURFACES.map((m) => `<button data-surf="${m}">${DATA.surface_labels[m]}</button>`).join('')}</span></div>` +
       `<div id="lowRow"><div class="note">{{js:ag.low_surface}}</div><div class="row" style="margin:2px 0 6px"><span class="seg" id="lowSeg">` +
@@ -3821,7 +3831,7 @@ function syncPanel() {
   $('i_tint').value = S.p.tint; $('i_cloth').value = S.p.cloth; $('i_tex').value = String(S.p.tex); $('i_seed').value = S.p.seed;
   for (const b of $('matSeg').children) b.classList.toggle('on', b.dataset.mat === S.p.material);
   for (const b of $('surfSeg').children) b.classList.toggle('on', b.dataset.surf === S.p.surface);
-  for (const b of $('pieces').children) b.classList.toggle('on', b.dataset.piece === S.piece);
+  for (const b of $('pieces').querySelectorAll('button')) b.classList.toggle('on', b.dataset.piece === S.piece);
   for (const b of $('sidesRow').querySelectorAll('button')) b.classList.toggle('on', S.sides.includes(b.dataset.side));
   $('sidesRow').hidden = !['limb', 'joint', 'glove', 'held'].includes(PIECES[S.piece].family);
   $('name').value = S.name;
