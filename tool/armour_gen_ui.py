@@ -84,7 +84,7 @@ PIECES = {"bracer": ("forearm", "hand", "forearm", ("Spine", "Hips", "Chest", "U
           "sheath": ("hips", "spine1", "hips", (), "hips", "held", (0, 0, 0, 0),
                      dict(sheath="scabbard", material="leather", trim="steel", tint="#4a2c18", cloth="#6b4a2a", straps=0, rigidity=1))}
 WEAPONS = ("sword", "dagger", "axe", "mace", "spear", "staff", "bow")
-SHIELDS = ("round", "kite", "heater")
+SHIELDS = ("round", "kite", "heater", "tower", "scutum")
 SHEATHS = ("scabbard", "dagger", "quiver", "quiver_hip")
 CLOTHS = ("cloth_fitted", "cloth_shirt", "cloth_aketon", "cloth_gambeson", "cloth_doublet", "cloth_voider", "cloth_vest", "cloth_braies", "cloth_braies_long",
           "cloth_coif")

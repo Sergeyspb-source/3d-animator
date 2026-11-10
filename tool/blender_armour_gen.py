@@ -255,7 +255,23 @@ def patchy(P, L):
     return _smooth(.3, .7, n).astype(np.float32)
 
 
-def stroke_weight(P, L):
+_SIDE = {"P": None, "N": None, "memo": {}}   # every material's pixels (positions, normals): where a thing was put
+
+
+def _facing(P, NR, o, n):
+    """How each pixel faces as the surface the thing was put on: NR·n signed so that the pixel nearest the point - of
+    all the materials' (a board's back is a material of its own) - is positive (the faces' normals here may be the
+    other way round from the editor's: turned outward in Blender)"""
+    key = (tuple(np.round(o, 5)), tuple(np.round(n, 5)))
+    s = _SIDE["memo"].get(key)
+    if s is None:
+        AP, AN = _SIDE["P"], _SIDE["N"]
+        i = np.argmin(np.einsum("ij,ij->i", AP - o, AP - o))
+        s = _SIDE["memo"][key] = float(np.sign(AN[i] @ n) or 1.)
+    return (NR @ n) * s
+
+
+def stroke_weight(P, L, NR=None):
     """A stroke's weight at the points P (Blender's axes): the strongest of its brush stamps, as the editor's
     pinchShapeW measures them (a circle in space; an oval, a rectangle in the surface's plane)."""
     r, soft, sh, asp, ang = float(L["r"]), float(L.get("s", .7)), L.get("sh"), float(L.get("asp") or 1), float(L.get("ang") or 0)
@@ -277,6 +293,8 @@ def stroke_weight(P, L):
             dn = np.hypot(a, b) if sh == "oval" else np.maximum(np.abs(a), np.abs(b))
             w = np.where((dn < 1) & (np.abs(along) <= r), 1 - _smooth(1 - soft, 1, dn), 0)
         w = np.where(along >= -.5 * r, w, 0)
+        if NR is not None:   # not on a face turned away (a board's back): as the editor's strokeWAt
+            w = np.where(_facing(P[near], NR[near], o, n) > 0, w, 0)
         W[near] = np.maximum(W[near], w)
     return W
 
@@ -284,7 +302,7 @@ def stroke_weight(P, L):
 _DECALS = {}
 
 
-def decal_weight(P, L):
+def decal_weight(P, L, NR=None):
     """A picture's (alpha, rgb) at the points P: projected along the surface's direction where it was put, its right
     across the up direction then turned, as the editor's decalFrame has it."""
     im = _DECALS.get(L["img"])
@@ -301,6 +319,8 @@ def decal_weight(P, L):
     r = float(L["r"]); rel = P - o
     x = rel @ R / (r * asp) * (-1 if L.get("flip") else 1); y = rel @ U / r
     inside = (np.abs(x) <= 1) & (np.abs(y) <= 1) & (np.abs(rel @ n) <= r)
+    if NR is not None:   # not the far face (a board's back)
+        inside &= _facing(P, NR, o, n) > .2
     h, w = px.shape[:2]
     ix = np.clip(((x * .49 + .5) * (w - 1)).round().astype(int), 0, w - 1); iy = np.clip(((y * .49 + .5) * (h - 1)).round().astype(int), 0, h - 1)
     s = px[iy, ix]
@@ -317,7 +337,7 @@ def _dh(x):
     return np.mod(np.sin(x * 127.1) * 43758.5453, 1.0)
 
 
-def damage_effect(P, L, col, rough, metal):
+def damage_effect(P, L, col, rough, metal, NR=None):
     """Claw marks, a scratch or a hole on the colour (linear), roughness and metalness, in place: the editor's
     damages() shader, per pixel."""
     o = np.array((L["p"][0], -L["p"][2], L["p"][1])); n = np.array((L["n"][0], -L["n"][2], L["n"][1]))
@@ -331,6 +351,8 @@ def damage_effect(P, L, col, rough, metal):
         return
     rel = P[near] - o
     ok = np.abs(rel @ n) <= .5 * r
+    if NR is not None:   # not the far face: a shield's back, a thin plate's inside (as the editor's shader)
+        ok &= _facing(P[near], NR[near], o, n) > .2
     qx, qy = rel @ R / r, rel @ U / r
     ok &= (np.abs(qx) <= 1.05) & (np.abs(qy) <= 1.05)
     idx = np.nonzero(near)[0][ok]; qx, qy = qx[ok], qy[ok]
@@ -388,6 +410,21 @@ def paint_layers(obj, mats, imgs, size, item, paint):
         nt.links.new(g.outputs["Position"], sub.inputs[0]); nt.links.new(sub.outputs[0], div.inputs[0])
         return div.outputs[0]
     P = {k: v * span + lo for k, v in bake_aux(obj, mats, size, item, "pos", pos).items()}
+    # the surface's way, 0..1 (as the position): a damage or a picture only on the side facing as it was put. The faces'
+    # own normals (their corners' order, as the editor's), not the shading one: Cycles turns that to the ray, a board's
+    # back came out as its face
+    fa = obj.data.attributes.get("fnrm") or obj.data.attributes.new("fnrm", "FLOAT_VECTOR", "FACE")
+    fa.data.foreach_set("vector", [c for p in obj.data.polygons for c in p.normal])
+    def nrm(nt):
+        at = nt.nodes.new("ShaderNodeAttribute"); at.attribute_name = "fnrm"
+        ma = nt.nodes.new("ShaderNodeVectorMath"); ma.operation = "MULTIPLY_ADD"
+        ma.inputs[1].default_value = (.5, .5, .5); ma.inputs[2].default_value = (.5, .5, .5)
+        nt.links.new(at.outputs["Vector"], ma.inputs[0])
+        return ma.outputs[0]
+    NR = {k: v * 2 - 1 for k, v in bake_aux(obj, mats, size, item, "nrm", nrm).items()}
+    ks = [k for k in P if k in NR]
+    live = {k: np.linalg.norm(NR[k], axis=1) > .5 for k in ks}   # (the pixels on a face: the rest of the image is empty)
+    _SIDE.update(P=np.concatenate([P[k][live[k]] for k in ks]), N=np.concatenate([NR[k][live[k]] for k in ks]), memo={})
     masks = {}
     for li, L in enumerate(layers):
         if L.get("pts"):
@@ -402,8 +439,8 @@ def paint_layers(obj, mats, imgs, size, item, paint):
         for li, L in enumerate(layers):
             if L["t"] == "damage":   # after the paint, over it (below)
                 continue
-            pic = decal_weight(P[m.name], L) if L["t"] == "decal" else None
-            w = (pic[0] if pic else stroke_weight(P[m.name], L) if L.get("pts") else np.clip(masks[li][m.name], 0, 1)) * float(L.get("a", 1))
+            pic = decal_weight(P[m.name], L, NR[m.name]) if L["t"] == "decal" else None
+            w = (pic[0] if pic else stroke_weight(P[m.name], L, NR[m.name]) if L.get("pts") else np.clip(masks[li][m.name], 0, 1)) * float(L.get("a", 1))
             if L["t"] != "erase" and w.any():
                 w = w * patchy(P[m.name], L)
             if L["t"] == "erase":
@@ -423,7 +460,7 @@ def paint_layers(obj, mats, imgs, size, item, paint):
             lin = np.power(np.clip(col[:, :3], 0, 1), 2.2)
             rg, mt_ = rough[:, 0].copy(), mv.copy()
             for L in dmg:
-                damage_effect(P[m.name], L, lin, rg, mt_)
+                damage_effect(P[m.name], L, lin, rg, mt_, NR[m.name])
             col[:, :3] = np.power(np.clip(lin, 0, 1), 1 / 2.2); rough[:, :3] = rg[:, None]; mv = mt_
         imgs[(m.name, "color")].pixels.foreach_set(col.ravel()); imgs[(m.name, "rough")].pixels.foreach_set(rough.ravel())
         mt = bpy.data.images.new(f"{item}_{m.name}_metal", size, size, alpha=False); mt.colorspace_settings.name = "Non-Color"
@@ -517,7 +554,7 @@ for nm, png in (mj.get("patterns") or {}).items():
         pf.write_bytes(base64.b64decode(png))
         patterns[nm] = bpy.data.images.load(str(pf))
         patterns[nm].colorspace_settings.name = "Non-Color"
-SLOTS = ("plate", "strap", "detail", "mail", "quilt", "trim")
+SLOTS = ("plate", "strap", "detail", "mail", "quilt", "trim", "wood")
 mats = [node_mat(f"{item}_{SLOTS[u]}", mj["mats"][u], R, patterns.get(mj["mats"][u].get("pattern")), float(mj.get("pattern_unit") or R))
         for u in used]
 for m, _ in mats:

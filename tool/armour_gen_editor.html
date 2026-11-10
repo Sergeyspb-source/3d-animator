@@ -54,6 +54,11 @@
   .sl input[type=range] { grid-column:1 / 3; width:100%; accent-color:var(--accent); margin:2px 0 0; }
   .sl .inf { grid-column:1 / 3; font-size:11.5px; color:var(--muted); }
   label.chk { display:flex; align-items:center; gap:6px; margin:6px 0; }
+  .node { margin:6px 0; }
+  .node .nrow { display:flex; align-items:center; gap:6px; margin:3px 0; }
+  .node .nlbl { font-size:12px; width:92px; flex:none; }
+  .node label { display:flex; align-items:center; gap:3px; font:11.5px var(--mono); color:var(--muted); flex:1; min-width:0; }
+  .node input[type=number] { width:100%; padding:2px 4px; }
   .wname { cursor:pointer; }
   .wname:hover { text-decoration:underline; color:#a0451f; }
   .wdel { margin-left:4px; padding:0 5px; font-size:11px; line-height:16px; opacity:.55; }
@@ -621,7 +626,7 @@ function weigher(fam, main, rigidity) {   // body triangle -> the 4 strongest bo
 // the material slots Blender bakes: the surface (the chosen material), leather (straps, backing, lacing), rivets and
 // buckles, mail (metal rings), quilting (cloth): mail and quilting may come with plates in one piece; the trim on the
 // plates' rims (brass, gold...)
-const PLATE = 0, LEATHER = 1, DETAIL = 2, MAIL = 3, CLOTH = 4, TRIM = 5;
+const PLATE = 0, LEATHER = 1, DETAIL = 2, MAIL = 3, CLOTH = 4, TRIM = 5, WOOD = 6;   // WOOD: bare boards (a shield's back)
 class Acc {
   constructor() { this.v = []; this.uv = []; this.f = []; this.m = []; this.role = []; this.g = []; this.group = 0; this.bi = []; this.bw = []; this.w = null; }
   vert(p, u = 0, w = 0, face = -1) {
@@ -1891,45 +1896,113 @@ function readyStance(t) {
     armTo(s, Cn.clone().sub(g.C.clone().sub(joint('hand_' + s))), new Q());
   }
 }
+// a tower shield (a pavise: tall, near rectangular, to stand behind) and a scutum (a tall rectangle bent round its
+// upright, as the Roman legionary's); «Bend» bends any of them so, across (the face round a vertical axis)
 function shieldShape(p) {   // its size, its face's bulge, its board's thickness and outline (up, across) round the edge
   const R = .16 * HEIGHT * p.s_size / 100, curve = p.s_curve / 100 * .25 * R, thick = .012 * HEIGHT;
-  const kind = p.shield || 'round', n = 48;
+  const kind = p.shield || 'round', n = kind === 'tower' || kind === 'scutum' ? 64 : 48;
+  const rect = (hh, hw, m, c, sn) => [hh * Math.sign(c) * Math.abs(c) ** (2 / m), hw * Math.sign(sn) * Math.abs(sn) ** (2 / m)];   // rounded corners (a superellipse)
   const outline = Array.from({ length: n }, (_, j) => {
     const t = j / n * TAU, c = Math.cos(t), sn = Math.sin(t);
     if (kind === 'round') return [c * R, sn * R];
     if (kind === 'kite') return c > 0 ? [c * R * .75, sn * R * .62] : [c * R * 1.35, sn * R * .62 * (1 + c) ** .8];   // round top, long point
+    if (kind === 'tower') return rect(1.55 * R, .72 * R, 10, c, sn);
+    if (kind === 'scutum') return rect(1.4 * R, .8 * R, 5, c, sn);
     return c > 0 ? [R * .55 + c * .05 * R, sn * R * .75 * Math.min(1, 1.6 * Math.abs(sn) ** .3)] : [c * R * 1.05, sn * R * .75 * (1 + c) ** .55];   // heater
   });
-  const dome = (x, y) => curve * (1 - Math.min(1, (x * x + y * y) / (R * R * 1.4)));
+  const W = Math.max(...outline.map(([, y]) => Math.abs(y))), bend = (p.s_bend || 0) / 100 * .45 * W;
+  const dome = (x, y) => curve * (1 - Math.min(1, (x * x + y * y) / (R * R * 1.4))) + bend * (1 - (y / W) ** 2);
   return { R, curve, thick, kind, n, outline, dome };
 }
-function shieldBoard(acc, Fr, p) {   // the board in its frame (A its face's way, E its up), its rim and boss
-  const { R, curve, thick, kind, n, outline, dome } = shieldShape(p), { loft, lathe } = itemMesh(acc, Fr);
+// the board's place as a node's: moved along its own axes (cm: across, up, out), turned about them (°: X tilts it
+// forward or back, Y turns it about its upright, Z spins it in its plane) round a pivot (the bar in the fist, else its
+// middle) - the sliders «Along», «Off the arm», «Turn» of before are kept as they were for the pieces made with them
+function shieldNode(Fr, p, pivot) {
+  const cm = MM(10), D = THREE.MathUtils.degToRad, f = { C: Fr.C.clone(), A: Fr.A.clone(), E: Fr.E.clone(), S: Fr.S.clone() };
+  const P = pivot || Fr.C;
+  const rot = (axis, deg) => {
+    if (!deg) return;
+    const q = new Q().setFromAxisAngle(axis.clone().normalize(), D(deg));
+    for (const k of ['A', 'E', 'S']) f[k].applyQuaternion(q);
+    f.C.sub(P).applyQuaternion(q).add(P);
+  };
+  rot(f.A, p.s_rz); rot(f.S, p.s_rx); rot(f.E, p.s_ry);
+  f.C.addScaledVector(f.S, (p.s_px || 0) * cm).addScaledVector(f.E, (p.s_py || 0) * cm).addScaledVector(f.A, (p.s_pz || 0) * cm);
+  return f;
+}
+function shieldBoard(acc, Fr, p, bossAt = [0, 0]) {   // the board in its frame (A its face's way, E its up), its rim and boss (over the hand)
+  const { R, curve, thick, kind, n, outline, dome } = shieldShape(p), { loft } = itemMesh(acc, Fr);
   const ringsAt = (front) => [.003, .05, .3, .55, .78, .92, 1].map((k) => outline.map(([x, y]) => [front ? dome(x * k, y * k) : dome(x * k, y * k) - thick, x * k, y * k]));
   const fr = ringsAt(true), bk = ringsAt(false);
-  loft(fr, PLATE, 'plate', true, false); loft(bk.reverse(), PLATE, 'plate', false, true);
-  loft([fr[fr.length - 1], bk[0]], PLATE, 'plate', false, false);   // its edge
+  // the face is the covering (leather, rawhide, linen, painted: the piece's material) glued over the boards; the back
+  // and the edge are the bare boards (no wear painted there: a damage goes on the side it was put on)
+  loft(fr, PLATE, 'plate', true, false); loft(bk.reverse(), WOOD, 'wood', false, true);
+  loft([fr[fr.length - 1], bk[0]], WOOD, 'wood', false, false);   // its edge
   const rimW = .02 * R * p.s_rim / 100 * 3;   // a metal band round the edge
   if (p.s_rim > 0) loft(Array.from({ length: n + 1 }, (_, j) => {
     const [x, y] = outline[j % n], d = Math.hypot(x, y) || 1, nx = x / d, ny = y / d, z = dome(x, y);
     return [[z + .4 * thick, x, y], [z + .4 * thick, x - nx * rimW, y - ny * rimW], [z - thick * 1.4, x - nx * rimW, y - ny * rimW], [z - thick * 1.4, x + nx * .2 * rimW, y + ny * .2 * rimW]];
   }), TRIM, 'trim', false, false);
-  if (p.s_boss > 0 && kind === 'round') {   // the boss: a half ball from the face, its rim a little sunk into it
-    const rb = .22 * R * p.s_boss / 100, half = BALL(curve, rb, 9).slice(4);   // from its equator (cos 90° is not quite 0: no filter on it)
-    lathe([[curve - .5 * thick, rb], ...half], DETAIL, 'rivet');
+  if (p.s_boss > 0) {   // the boss: a half ball from the face over the hand, its rim a little sunk into it (a kite's too: they kept it)
+    const [bx, by] = bossAt, z = dome(bx, by), rb = .22 * R * p.s_boss / 100 * (kind === 'round' ? 1 : .8), half = BALL(z, rb, 9).slice(4);   // from its equator
+    itemMesh(acc, { ...Fr, C: Fr.C.clone().addScaledVector(Fr.E, bx).addScaledVector(Fr.S, by) }).lathe([[z - .5 * thick, rb], ...half], DETAIL, 'rivet');
   }
+}
+// leather straps round the forearm from the board's back (the enarmes) at the forearm's shares ts (from the elbow), each
+// following the arm's own section (rays in to the skin round its far side) from the back face to the back face; where
+// the arm reaches the board, or the board is across the arm, there is no room: none. How many were made
+function armStraps(acc, Fr, side, ts, p, first = false) {   // first: only the first of ts that fits
+  const F0 = joint('forearm_' + side), F1 = joint('hand_' + side); if (!F0 || !F1) return 0;
+  const u = F1.clone().sub(F0), len = u.length(); u.normalize();
+  const { thick, dome, outline } = shieldShape(p), { loft } = itemMesh(acc, Fr);
+  const out = Fr.A.clone().addScaledVector(u, -Fr.A.dot(u)); if (out.length() < .5) return 0; out.normalize();
+  const inside = (e, s2) => {   // over the board (inside its outline, off the rim) - not the plane past its edge
+    let c = false; const q = outline.map(([x, y]) => [x * .9, y * .9]);
+    for (let i = 0, j = q.length - 1; i < q.length; j = i++) if ((q[i][1] > s2) !== (q[j][1] > s2) && e < (q[j][0] - q[i][0]) * (s2 - q[i][1]) / (q[j][1] - q[i][1]) + q[i][0]) c = !c;
+    return c;
+  };
+  const side2 = new V3().crossVectors(u, out).normalize(), loc = (X) => { const d = X.clone().sub(Fr.C); return [d.dot(Fr.A), d.dot(Fr.E), d.dot(Fr.S)]; };
+  const sw = .022 * HEIGHT, st = MM(3.5), gap = .005 * HEIGHT, oa = out.dot(Fr.A);
+  let made = 0;
+  for (const t of ts) {
+    if (t < .08 || t > .95) continue;
+    const Q0 = F0.clone().addScaledVector(u, t * len), far = .2 * HEIGHT;
+    const hit = cast(Q0.clone().addScaledVector(out, far), out.clone().negate(), far), skin = hit ? far - hit.distance : .04 * HEIGHT;
+    const path = [];
+    for (let k = 0; k <= 12; k++) {   // round the far side of the arm: from beside it (towards the shield) under it and back
+      const th = Math.PI / 2 + k / 12 * Math.PI, d = out.clone().multiplyScalar(Math.cos(th)).addScaledVector(side2, Math.sin(th));
+      const h = cast(Q0, d, 2 * skin), r = h ? h.distance : skin;   // from the arm's axis out to its skin (not the body beside it)
+      path.push(Q0.clone().addScaledVector(d, r + gap + st));
+    }
+    // each end on out to the back face (as far as it is over it there)
+    const ends = [path[0], path[path.length - 1]].map((X) => { const [a, e, s2] = loc(X); return [X, (dome(e, s2) - thick - a) / oa, inside(e, s2)]; });
+    if (ends.some(([, dd, ins]) => dd < 0 || !ins)) continue;   // the arm reaches the shield there (no room), or it is past its edge
+    const pts = [ends[0][0].clone().addScaledVector(out, ends[0][1]), ...path, ends[1][0].clone().addScaledVector(out, ends[1][1])];
+    const rings = pts.map((X) => {   // a flat band: across the arm's way, its thickness away from the arm
+      const nrm = X.clone().sub(Q0); nrm.addScaledVector(u, -nrm.dot(u)); nrm.normalize();
+      return [[0, -sw / 2], [0, sw / 2], [st, sw / 2], [st, -sw / 2]].map(([o, w]) => loc(X.clone().addScaledVector(nrm, o - st).addScaledVector(u, w)));
+    });
+    loft(rings, LEATHER, 'strap'); made++;
+    if (first) break;
+  }
+  return made;
 }
 // held in the fist: the closed fingers' ring round a bar (the weapon's grip frame, its sliders), the board against the
 // back of the hand and the forearm - the outer side, as a strapped one (the arm hanging keeps it off the leg); the bar's
 // two posts go past the index and the little finger into its back. The bar lies across the board, its long axis the
 // knuckles' way (a kite's point towards the elbow, over the forearm), at its middle for a round one, on the wide part of a
 // kite or a heater; «Along» moves it towards the edge, «Out» the board off the hand, «Turn» turns it about its face.
+// A strap round the forearm by the elbow too («s_elbow»: no one holds a shield by a bar alone) - then the shield is on
+// the forearm's bone, the bar where the fist closes; the boss over the fist
 function shieldInHand(side, p) {
   const F = handFrame(side, p), P = palmOf(side); if (!F || !P) return null;
   const { R, thick, kind, dome } = shieldShape(p), D = THREE.MathUtils.degToRad;
   const sg = F.S.dot(P.palm) >= 0 ? -1 : 1, N = F.S.clone().multiplyScalar(sg);   // the back of the hand's way: the board's face
-  const up = F.E.clone().applyAxisAngle(N, D(p.s_turn)), across = new V3().crossVectors(N, up).normalize();
-  const gx = ({ round: 0, kite: .3, heater: .2 }[kind] + p.s_along / 100) * R;
+  // its long axis from the elbow to the fist (the forearm under it: the strap by the elbow reaches it; the knuckles' way
+  // put the elbow off a kite's narrow part); «Z» of the node turns it from there (90°: across the forearm)
+  let up0 = F.E.clone(); { const E0 = joint('forearm_' + side); if (E0) { const d = F.C.clone().sub(E0); d.addScaledVector(N, -d.dot(N)); if (d.length() > 1e-6) up0 = d.normalize(); } }
+  const up = up0.applyAxisAngle(N, D(p.s_turn)), across = new V3().crossVectors(N, up).normalize();
+  const gx = ({ round: 0, kite: .3, heater: .2 }[kind] || 0) * R + p.s_along / 100 * R;
   // the hand's and the forearm's back under the board (rays in from outside it, the skin at rest): the farthest out over
   // the bar's axis; the closed fist's knuckles at least (the fingers' ring round the bar, their thickness over it)
   const ring = gripRing(side, P);
@@ -1940,13 +2013,26 @@ function shieldInHand(side, p) {
     if (h && far - h.distance < .1 * HEIGHT) skin = Math.max(skin, far - h.distance);
   }
   const back = skin + .008 * HEIGHT + p.s_out / 100 * R;   // the board's back from the bar's axis
-  const Fr = { C: F.C.clone().addScaledVector(N, back + thick - dome(gx, 0)).addScaledVector(up, -gx), A: N, E: up, S: across };
-  const acc = rigidAcc(PB['hand_' + side]), { lathe, box } = itemMesh(acc, F);
-  shieldBoard(acc, Fr, p);
-  const gr = F.r * p.w_grip_r / 100, hl = .7 * P.pw, pt = Math.max(gr, .006 * HEIGHT), s0 = -pt * sg, s1 = (back + .5 * thick) * sg;
+  const Fr = shieldNode({ C: F.C.clone().addScaledVector(N, back + thick - dome(gx, 0)).addScaledVector(up, -gx), A: N, E: up, S: across }, p, F.C);
+  const strap = p.s_elbow !== false, acc = rigidAcc(PB[(strap ? 'forearm_' : 'hand_') + side]), { lathe, box } = itemMesh(acc, F);
+  const loc = (X) => { const d = X.clone().sub(Fr.C); return [d.dot(Fr.A), d.dot(Fr.E), d.dot(Fr.S)]; };
+  const [, be, bs] = loc(F.C);
+  shieldBoard(acc, Fr, p, [be, bs]);
+  const gr = F.r * p.w_grip_r / 100, hl = .7 * P.pw, pt = Math.max(gr, .006 * HEIGHT), s0 = -pt * sg;
   lathe(ROUND(gr * .95, gr, -hl, hl, 5), LEATHER, 'strap');   // the bar, wrapped in leather
-  for (const s2 of [-1, 1]) box(s2 * hl - pt, s2 * hl + pt, -.8 * pt, .8 * pt, Math.min(s0, s1), Math.max(s0, s1), TRIM, 'trim');   // its posts into the back
-  return { side, acc, R };
+  const den = N.dot(Fr.A);
+  for (const s2 of [-1, 1]) {   // its posts into the back: out along the back of the hand's way to the board, as it is turned
+    const X = F.C.clone().addScaledVector(F.A, s2 * hl);
+    if (Math.abs(den) < .2) continue;
+    let t = Fr.C.clone().sub(X).dot(Fr.A) / den;
+    for (let k = 0; k < 3; k++) { const [, e, s3] = loc(X.clone().addScaledVector(N, t)); t = Fr.C.clone().addScaledVector(Fr.A, dome(e, s3) - thick).sub(X).dot(Fr.A) / den; }
+    if (t <= 0) continue;
+    const s1 = (t + .5 * thick) * sg;
+    box(s2 * hl - pt, s2 * hl + pt, -.8 * pt, .8 * pt, Math.min(s0, s1), Math.max(s0, s1), TRIM, 'trim');
+  }
+  // (as near the elbow as the board is over the forearm: a kite across the arm takes it on its wide part)
+  const warn = strap && !armStraps(acc, Fr, side, [.15, .2, .25, .3, .35, .4, .45, .5, .55], p, true) ? '{{js:ag.s_elbow_short}}' : null;
+  return { side, acc, R, warn };
 }
 function shield(side, p) {   // on the forearm's outer side, its face out, its long axis along the forearm (the point down);
   // in the fist («s_hand»): a bar across the boss's back (round) or the wide part's (kite, heater), the board in front of
@@ -1964,34 +2050,13 @@ function shield(side, p) {   // on the forearm's outer side, its face out, its l
   out.addScaledVector(u, -out.dot(u)).normalize();
   const D = THREE.MathUtils.degToRad, mid = F0.clone().addScaledVector(u, (.5 + p.s_along / 100) * len);
   const hit = cast(mid.clone().addScaledVector(out, .2 * HEIGHT), out.clone().negate(), .2 * HEIGHT), skin = hit ? .2 * HEIGHT - hit.distance : .04 * HEIGHT;
-  const { R, thick, dome } = shieldShape(p);
+  const { R, thick } = shieldShape(p);
   const up = u.clone().negate().applyAxisAngle(out, D(p.s_turn));
-  const Fr = { C: mid.clone().addScaledVector(out, skin + .015 * HEIGHT + p.s_out / 100 * R + thick), A: out, E: up, S: new V3().crossVectors(out, up).normalize() };
-  const acc = rigidAcc(PB['forearm_' + side]), { loft } = itemMesh(acc, Fr);
+  const Fr = shieldNode({ C: mid.clone().addScaledVector(out, skin + .015 * HEIGHT + p.s_out / 100 * R + thick), A: out, E: up, S: new V3().crossVectors(out, up).normalize() }, p);
+  const acc = rigidAcc(PB['forearm_' + side]);
   shieldBoard(acc, Fr, p);
-  // on its back two leather straps round the forearm (by the elbow, by the wrist), each following the arm's own section
-  // (rays in to the skin round the far side) from the back face to the back face
-  const side2 = new V3().crossVectors(u, out).normalize(), loc = (X) => { const d = X.clone().sub(Fr.C); return [d.dot(Fr.A), d.dot(Fr.E), d.dot(Fr.S)]; };
-  const sw = .022 * HEIGHT, st = MM(3.5), gap = .005 * HEIGHT;
-  for (const tt of [.25, .78]) {
-    const t = tt + p.s_along / 100; if (t < .08 || t > .95) continue;
-    const Q = F0.clone().addScaledVector(u, t * len), path = [];
-    for (let k = 0; k <= 12; k++) {   // round the far side of the arm: from beside it (towards the shield) under it and back
-      const th = Math.PI / 2 + k / 12 * Math.PI, d = out.clone().multiplyScalar(Math.cos(th)).addScaledVector(side2, Math.sin(th));
-      const h = cast(Q, d, 2 * skin), r = h ? h.distance : skin;   // from the arm's axis out to its skin (not the body beside it)
-      path.push(Q.clone().addScaledVector(d, r + gap + st));
-    }
-    const ends = [path[0], path[path.length - 1]];
-    const back = ends.map((X) => { const [, e, s2] = loc(X); return dome(e, s2) - thick; });   // the back face over its ends
-    if (back.some((b, i) => b < loc(ends[i])[0])) continue;   // the arm reaches the shield there: no room for a strap
-    const pts = [Fr.C.clone().addScaledVector(Fr.A, back[0]).addScaledVector(side2, path[0].clone().sub(Fr.C).dot(side2)).addScaledVector(u, path[0].clone().sub(Fr.C).dot(u)),
-      ...path, Fr.C.clone().addScaledVector(Fr.A, back[1]).addScaledVector(side2, path[path.length - 1].clone().sub(Fr.C).dot(side2)).addScaledVector(u, path[path.length - 1].clone().sub(Fr.C).dot(u))];
-    const rings = pts.map((X) => {   // a flat band: across the arm's way, its thickness away from the arm
-      const nrm = X.clone().sub(Q); nrm.addScaledVector(u, -nrm.dot(u)); nrm.normalize();
-      return [[0, -sw / 2], [0, sw / 2], [st, sw / 2], [st, -sw / 2]].map(([o, w]) => loc(X.clone().addScaledVector(nrm, o - st).addScaledVector(u, w)));
-    });
-    loft(rings, LEATHER, 'strap');
-  }
+  // on its back two leather straps round the forearm (by the elbow, by the wrist)
+  armStraps(acc, Fr, side, [.25, .78].map((tt) => tt + p.s_along / 100), p);
   return { side, acc, R };
 }
 // ---- worn at the belt: a scabbard for the sword (or a dagger's) on a hip, hanging back and out from a belt round the
@@ -3403,7 +3468,7 @@ function reliefTexture(kind, seed) {   // the hammered dents of metal, the grain
   const tx = new THREE.CanvasTexture(cv); tx.wrapS = tx.wrapT = THREE.RepeatWrapping;
   texCache.set(key, tx); return tx;
 }
-const ROLE_MAT = { plate: PLATE, trim: TRIM, mail: MAIL, quilt: CLOTH, backing: LEATHER, strap: LEATHER, rivet: DETAIL, buckle: DETAIL };
+const ROLE_MAT = { plate: PLATE, trim: TRIM, mail: MAIL, quilt: CLOTH, backing: LEATHER, strap: LEATHER, rivet: DETAIL, buckle: DETAIL, wood: WOOD };
 const mats = {};
 for (const r of Object.keys(ROLE_MAT)) mats[r] = new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, emissive: 0x000000 });
 // the pinch's brush drawn on the piece: a grid over what moves (fainter where it moves less), a ring at its edge
@@ -3424,7 +3489,7 @@ vec3 decals(inout vec3 col) {   // over the colour; returns (roughness, metalnes
   for (int i = 0; i < ${DECAL_N}; i++) {
     if (i >= uDecalN) break;
     vec3 rel = vRest - uDecalP[i];
-    if (abs(dot(rel, uDecalNr[i])) > uDecalA[i].w) continue;
+    if (abs(dot(rel, uDecalNr[i])) > uDecalA[i].w || dot(vRestN, uDecalNr[i]) < .2) continue;   // (not the far face: a board's back)
     vec2 q = vec2(dot(rel, uDecalU[i]), dot(rel, uDecalV[i]));
     if (abs(q.x) > 1. || abs(q.y) > 1.) continue;
     vec2 cell = vec2(float(i - (i / 4) * 4), float(i / 4));
@@ -3451,7 +3516,7 @@ vec4 damages(inout vec3 col) {   // -> (roughness, its weight, metalness, its we
     if (i >= uDmgN) break;
     vec3 rel = vRest - uDmgP[i];
     float kind = uDmgK[i].x, seed = uDmgK[i].y, a = uDmgK[i].z, r = uDmgK[i].w;
-    if (abs(dot(rel, uDmgNr[i])) > .5 * r) continue;
+    if (abs(dot(rel, uDmgNr[i])) > .5 * r || dot(vRestN, uDmgNr[i]) < .2) continue;   // (not the far face: a shield's back, a thin plate's inside)
     vec2 q = vec2(dot(rel, uDmgU[i]), dot(rel, uDmgV[i])), L = uDmgL[i];
     if (abs(q.x) > 1.05 || abs(q.y) > 1.05) continue;
     float core = 0., shade = 0.;
@@ -3510,10 +3575,10 @@ const withBW = (vs) => 'varying vec3 vBW;\n' + vs.replace('#include <project_ver
 for (const m of Object.values(mats)) m.onBeforeCompile = (sh) => {
   Object.assign(sh.uniforms, BRUSH);
   Object.assign(sh.uniforms, DECAL);
-  sh.vertexShader = 'attribute vec4 aPaint; attribute vec2 aPaintRM; varying vec4 vPaint; varying vec2 vPaintRM; varying vec3 vRest;\n' +
-    withBW(sh.vertexShader).replace('#include <begin_vertex>', '#include <begin_vertex>\n  vPaint = aPaint; vPaintRM = aPaintRM; vRest = position;');
+  sh.vertexShader = 'attribute vec4 aPaint; attribute vec2 aPaintRM; varying vec4 vPaint; varying vec2 vPaintRM; varying vec3 vRest; varying vec3 vRestN;\n' +
+    withBW(sh.vertexShader).replace('#include <begin_vertex>', '#include <begin_vertex>\n  vPaint = aPaint; vPaintRM = aPaintRM; vRest = position; vRestN = normal;');
   Object.assign(sh.uniforms, DMG);
-  sh.fragmentShader = 'varying vec4 vPaint; varying vec2 vPaintRM; varying vec3 vRest;\n' + DECAL_GLSL + DMG_GLSL + BRUSH_GLSL + sh.fragmentShader
+  sh.fragmentShader = 'varying vec4 vPaint; varying vec2 vPaintRM; varying vec3 vRest; varying vec3 vRestN;\n' + DECAL_GLSL + DMG_GLSL + BRUSH_GLSL + sh.fragmentShader
     .replace('#include <color_fragment>', '#include <color_fragment>\n  diffuseColor.rgb = mix(diffuseColor.rgb, vPaint.rgb, vPaint.a);\n  vec3 dRM = decals(diffuseColor.rgb);\n  vec4 dmg = damages(diffuseColor.rgb);')
     .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n  roughnessFactor = mix(roughnessFactor, vPaintRM.x, vPaint.a);\n  roughnessFactor = mix(roughnessFactor, dRM.x, dRM.z);\n  roughnessFactor = mix(roughnessFactor, dmg.x, dmg.y);')
     .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\n  metalnessFactor = mix(metalnessFactor, vPaintRM.y, vPaint.a);\n  metalnessFactor = mix(metalnessFactor, dRM.y, dRM.z);\n  metalnessFactor = mix(metalnessFactor, dmg.z, dmg.w);')
@@ -3551,7 +3616,7 @@ function lensOn(mat) {
 // the texture units: a pattern tile (8 cells) when mail or quilting is in the piece, else a limb radius; n tiles under
 // one colour tile
 const LOOK = { U: 1, n: 1, specs: null };
-function lookSpecs(p) {   // the six materials as Blender bakes them (blender_armour_gen.node_mat)
+function lookSpecs(p) {   // the seven materials as Blender bakes them (blender_armour_gen.node_mat)
   const tint = new THREE.Color(p.tint), leather = [tint.r, tint.g, tint.b];   // the pickers' sRGB colours -> linear
   const ct = new THREE.Color(p.cloth), cloth = [ct.r, ct.g, ct.b];
   const scuff = (c) => c.map((x) => Math.min(1, x * 1.6));
@@ -3566,7 +3631,8 @@ function lookSpecs(p) {   // the six materials as Blender bakes them (blender_ar
   const strap = leather.map((c) => c * .7);
   return [plate, { kind: 'leather', col: strap, spot: scuff(strap), rough: .75, metal: 0 }, metalSpec,
     { ...metalSpec, pattern: 'mail' }, { ...clothSpec, pattern: 'quilt' }, p.trim === 'leather' ? { kind: 'leather', col: leather.map((x) => x * .6), spot: scuff(leather), rough: .75, metal: 0 }
-      : { kind: 'metal', col: tc, spot: spotOf(tm, tc), rough: tr, metal: tmm, bump: p.hammer * .5 }];
+      : { kind: 'metal', col: tc, spot: spotOf(tm, tc), rough: tr, metal: tmm, bump: p.hammer * .5 },
+    { kind: 'leather', col: wood.map((x) => Math.min(1, x * 1.25)), spot: wood.map((x) => x * .8), rough: .88, metal: 0 }];   // bare boards, unpainted
 }
 const quiltTile = (p) => (p.quilt_lines ? 'channels' : 'quilt');   // quilting in channels along, or diamonds
 function patterned(p) {   // mail or quilting anywhere in the piece
@@ -3672,9 +3738,12 @@ Object.assign(STYLES, {
     weapon_bow: { weapon: 'bow', material: 'wood', trim: 'leather', cloth: '#d8cfae', w_len: 100, w_width: 100, grip_tilt: 0, grip_roll: 0 },
   },
   shield: {
-    shield_round: { shield: 'round', material: 'wood', trim: 'steel', s_size: 100, s_curve: 30, s_boss: 100 },
-    shield_kite: { shield: 'kite', material: 'wood', trim: 'steel', s_size: 110, s_curve: 35 },
-    shield_heater: { shield: 'heater', material: 'wood', trim: 'steel', s_size: 95, s_curve: 25 },
+    // (the face: painted planks on a round one; leather or rawhide on a kite, a heater, a scutum; gessoed canvas on a pavise)
+    shield_round: { shield: 'round', material: 'wood', trim: 'steel', s_size: 100, s_curve: 30, s_boss: 100, s_bend: 0, s_elbow: false },
+    shield_kite: { shield: 'kite', material: 'leather', trim: 'steel', s_size: 110, s_curve: 35, s_boss: 70, s_bend: 0, s_elbow: true },
+    shield_heater: { shield: 'heater', material: 'leather', trim: 'steel', s_size: 95, s_curve: 25, s_boss: 0, s_bend: 0, s_elbow: true },
+    shield_tower: { shield: 'tower', material: 'cloth', trim: 'steel', s_size: 100, s_curve: 8, s_boss: 0, s_bend: 15, s_elbow: true },   // a pavise
+    shield_scutum: { shield: 'scutum', material: 'leather', trim: 'brass', s_size: 100, s_curve: 0, s_boss: 100, s_bend: 75, s_elbow: true },   // bent round its upright
   },
   sheath: {   // its length and width are the weapon's sliders: a scabbard made after the sword fits it
     sheath_scabbard: { sheath: 'scabbard', material: 'leather', trim: 'steel' },
@@ -3762,6 +3831,8 @@ SPEC.push(['{{js:ag.made_group}}', [], [
 // held things: a weapon's sizes and its grip in the fist, a shield's; the rest of the groups is not theirs
 const isHeld = () => HELD.includes(S.piece), isW = (...k) => () => S.piece === 'weapon' && k.includes(S.p.weapon);
 const isGrip = () => S.piece === 'weapon' || (S.piece === 'shield' && !!S.p.s_hand);   // held in the fist: its grip's sliders
+// a shield's place as a node's fields: [param, group, axis, tip, step]
+const NODE_FIELDS = [["s_px", "pos", "X", '{{js:ag.node_x}}', 0.5], ["s_py", "pos", "Y", '{{js:ag.node_y}}', 0.5], ["s_pz", "pos", "Z", '{{js:ag.node_z}}', 0.5], ["s_rx", "rot", "X", '{{js:ag.node_rx}}', 5], ["s_ry", "rot", "Y", '{{js:ag.node_ry}}', 5], ["s_rz", "rot", "Z", '{{js:ag.node_rz}}', 5]];
 const HELD_GI = SPEC.length;
 SPEC.push(['{{js:ag.held_group}}', ['plate', 'strap', 'trim', 'quilt'], [
   ['w_len', 40, 180, 5, '{{js:ag.w_len}}', '', 'pc', () => isP('weapon')() || isP('sheath')()],
@@ -3776,13 +3847,14 @@ SPEC.push(['{{js:ag.held_group}}', ['plate', 'strap', 'trim', 'quilt'], [
   ['grip_tilt', -60, 60, 5, '{{js:ag.grip_tilt}}', '{{js:ag.grip_tilt_info}}', 'deg', isGrip],
   ['grip_roll', -180, 180, 5, '{{js:ag.grip_roll}}', '{{js:ag.grip_roll_info}}', 'deg', isGrip],
   ['w_two', -120, 120, 5, '{{js:ag.w_two}}', '{{js:ag.w_two_info}}', 'pc', isW('sword', 'axe', 'mace', 'spear', 'staff')],
-  ['s_size', 40, 200, 5, '{{js:ag.s_size}}', '', 'pc', isP('shield')],
   ['s_curve', 0, 100, 5, '{{js:ag.s_curve}}', '', 'pc', isP('shield')],
+  ['s_bend', 0, 100, 5, '{{js:ag.s_bend}}', '{{js:ag.s_bend_info}}', 'pc', isP('shield')],
   ['s_rim', 0, 200, 10, '{{js:ag.s_rim}}', '', 'pc', isP('shield')],
-  ['s_boss', 0, 200, 10, '{{js:ag.s_boss}}', '', 'pc', () => S.piece === 'shield' && (S.p.shield || 'round') === 'round'],
-  ['s_along', -50, 50, 2, '{{js:ag.s_along}}', '', 'pc', isP('shield')],
-  ['s_out', -50, 100, 2, '{{js:ag.s_out}}', '{{js:ag.s_out_info}}', 'pc', isP('shield')],
-  ['s_turn', -90, 90, 5, '{{js:ag.s_turn}}', '', 'deg', isP('shield')]], isHeld]);
+  ['s_boss', 0, 200, 10, '{{js:ag.s_boss}}', '', 'pc', isP('shield')],
+  // (the place's sliders of before: shown only on a piece made with them - a new one is placed by the node's fields)
+  ['s_along', -50, 50, 2, '{{js:ag.s_along}}', '', 'pc', () => S.piece === 'shield' && !!S.p.s_along],
+  ['s_out', -50, 100, 2, '{{js:ag.s_out}}', '{{js:ag.s_out_info}}', 'pc', () => S.piece === 'shield' && !!S.p.s_out],
+  ['s_turn', -90, 90, 5, '{{js:ag.s_turn}}', '', 'deg', () => S.piece === 'shield' && !!S.p.s_turn]], isHeld]);
 const isCloth = (k = S.piece) => PIECES[k] && PIECES[k].family === 'cloak';   // cloth that swings (a cloak, a skirt)
 for (const gi of [0, 1, 3, 5]) { const was = SPEC[gi][3]; SPEC[gi][3] = () => was() && !isHeld() && !isCloth(); }
 { const was = SPEC[2][3]; SPEC[2][3] = () => was() && !isCloth(); }
@@ -3815,7 +3887,8 @@ const DEFAULTS = Object.assign({ gap: 8, thickness: 12, relief: .35, step: 5, ri
   strap: 0, strap_fwd: 0, elbow: 'elbow_winged_plate', limb_gap: 8, wing: 100, footwear: 'foot_ankle_boot', foot_gap: 6, glove: 'plain_leather', cuff: 14,
   cloth_style: 'shirt', cloth_quilt: false, quilt_lines: false, pinches: [], paints: [],
   weapon: 'sword', shield: 'round', w_len: 100, w_width: 100, w_guard: 100, w_grip: 100, w_grip_r: 100, w_head: 100, grip_along: 0, grip_out: 0,
-  grip_tilt: 15, grip_roll: 0, w_two: 0, arrows: 12, cloak_len: 60, cloak_wrap: 172, cloak_flare: 25, cloak_lift: 5, cloak_nape: 120, cloak_gap: .5, skirt_len: 30, skirt_flare: 30, skirt_lift: 6, skirt_slit: 0, skirt_gap: .5, tabard_len: 50, tabard_belt: 8, tabard_flare: 15, tabard_lift: 2, tabard_gap: 1, s_size: 100, s_curve: 30, s_rim: 100, s_boss: 100, s_along: 0, s_out: 0, s_turn: 0, s_hand: false }, PIECES.bracer.defaults);
+  grip_tilt: 15, grip_roll: 0, w_two: 0, arrows: 12, cloak_len: 60, cloak_wrap: 172, cloak_flare: 25, cloak_lift: 5, cloak_nape: 120, cloak_gap: .5, skirt_len: 30, skirt_flare: 30, skirt_lift: 6, skirt_slit: 0, skirt_gap: .5, tabard_len: 50, tabard_belt: 8, tabard_flare: 15, tabard_lift: 2, tabard_gap: 1, s_size: 100, s_curve: 30, s_rim: 100, s_boss: 100, s_along: 0, s_out: 0, s_turn: 0, s_hand: false, s_elbow: true, s_bend: 0,
+  s_px: 0, s_py: 0, s_pz: 0, s_rx: 0, s_ry: 0, s_rz: 0 }, PIECES.bracer.defaults);
 // idle: no piece being made (the editor opens so: the character as it is, its worn pieces to tick) until a kind is
 // chosen or a made piece opened - a new bracer shown from the start went on beside the worn one
 const S = { piece: 'bracer', idle: true, sides: ['L', 'R'], name: '', nameTouched: false, p: { ...DEFAULTS }, armour: null };
@@ -3861,7 +3934,12 @@ function buildPanel() {
       `<label class="chk" id="r_hinges"><input type="checkbox" id="i_hinges"> {{js:ag.hinges}}</label>` +
       `<div id="shRow"><div class="note">{{js:ag.shoulders_over}}</div><div class="row" style="margin:2px 0 6px"><span class="seg" id="shSeg">` +
       ['straps', 'yoke', 'none'].map((m) => `<button data-sh="${m}">${DATA.shoulder_labels[m]}</button>`).join('') + `</span></div></div>` : '') +
-    (gi === HELD_GI ? `<label class="chk" id="r_s_hand"><input type="checkbox" id="i_s_hand"> {{js:ag.s_hand}}</label>` : '') +
+    (gi === HELD_GI ? `<label class="chk" id="r_s_hand"><input type="checkbox" id="i_s_hand"> {{js:ag.s_hand}}</label>` +
+      `<label class="chk" id="r_s_elbow"><input type="checkbox" id="i_s_elbow"> {{js:ag.s_elbow}}</label>` +
+      `<div id="nodeBox" class="node"><div class="note">{{js:ag.node}}</div>` +
+      [['pos', '{{js:ag.node_pos}}'], ['rot', '{{js:ag.node_rot}}']].map(([g, lbl]) => `<div class="nrow"><span class="nlbl">${lbl}</span>` +
+        NODE_FIELDS.filter((x) => x[1] === g).map(([k, , ax, tip, st]) => `<label title="${tip}">${ax}<input type="number" id="n_${k}" step="${st}"></label>`).join('') + `</div>`).join('') +
+      `<div class="nrow"><span class="nlbl">{{js:ag.node_scale}}</span><label title="{{js:ag.s_size}}">%<input type="number" id="n_s_size" step="5" min="20" max="400"></label></div></div>` : '') +
     (gi === 4 ? `<div class="row" style="margin:4px 0 6px"><span class="seg" id="matSeg">${Object.keys(PRESETS).map((m) => `<button data-mat="${m}">${DATA.mat_labels[m]}</button>`).join('')}</span></div>` +
       `<div class="note">{{js:ag.trim}}</div><div class="row" style="margin:2px 0 6px"><span class="seg" id="trimSeg">` +
       ['', 'brass', 'gold', 'bronze', 'steel', 'leather'].map((m) => `<button data-trim="${m}">${m ? DATA.mat_labels[m] : '{{js:ag.trim_none}}'}</button>`).join('') + `</span></div>` +
@@ -3874,6 +3952,11 @@ function buildPanel() {
   $('i_buckle').addEventListener('change', (e) => { S.p.buckle = e.target.checked; changed('buckle'); });
   for (const k of ['cuffs', 'two_plates', 'mail_under', 'stitch', 'hinges', 'fly', 'wrap', 'front_panel', 'hem_band']) $('i_' + k).addEventListener('change', (e) => { S.p[k] = e.target.checked; changed(k); });
   $('i_s_hand').addEventListener('change', (e) => { S.p.s_hand = e.target.checked; if (S.p.s_hand) fistPose(); changed('s_hand'); });
+  $('i_s_elbow').addEventListener('change', (e) => { S.p.s_elbow = e.target.checked; changed('s_elbow'); });
+  for (const k of [...NODE_FIELDS.map((x) => x[0]), 's_size']) $('n_' + k).addEventListener('input', (e) => {
+    const v = parseFloat(e.target.value); if (!Number.isFinite(v)) return;
+    S.p[k] = k === 's_size' ? Math.max(20, Math.min(400, v)) : v; changed(k);
+  });
   for (const [id, key, attr] of [['openSeg', 'opening', 'open'], ['closeSeg', 'closure', 'close'], ['shSeg', 'shoulders', 'sh'], ['thighSeg', 'thigh', 'thigh'], ['kneeSeg', 'knee', 'knee']])
     $(id).addEventListener('click', (e) => { const m = e.target.dataset[attr]; if (m) { S.p[key] = m; changed(key); } });
   $('styleSeg').addEventListener('click', (e) => { const m = e.target.dataset.style; if (m) applyStyle(m); });
@@ -3916,6 +3999,9 @@ function syncPanel() {
   SPEC.forEach((g, gi) => { if (g[3]) $('g_' + gi).hidden = !g[3](); });
   for (const k of ['buckle', 'cuffs', 'two_plates', 'mail_under', 'stitch', 'hinges', 'fly', 'wrap', 'front_panel', 'hem_band', 's_hand']) $('i_' + k).checked = !!S.p[k];
   $('r_s_hand').hidden = S.piece !== 'shield';
+  $('r_s_elbow').hidden = S.piece !== 'shield' || !S.p.s_hand; $('i_s_elbow').checked = S.p.s_elbow !== false;
+  $('nodeBox').hidden = S.piece !== 'shield';
+  for (const k of [...NODE_FIELDS.map((x) => x[0]), 's_size']) { const el = $('n_' + k); if (document.activeElement !== el) el.value = +(S.p[k] || 0).toFixed(1); }
   const legs = S.piece === 'trousers' || S.piece === 'brayette';
   $('thighRow').hidden = S.piece !== 'trousers'; $('r_fly').hidden = !legs;
   for (const k of ['wrap', 'front_panel']) $('r_' + k).hidden = S.piece !== 'tassets';
@@ -4038,6 +4124,7 @@ function rebuildNow() {
       const cl = parts.find((x) => x.clamped);
       clampTo = cl ? Math.round(cl.t1 * 100) : 0; $('v_t1').textContent = fmt('t1', S.p.t1);
     } else warn.push('{{js:ag.choose_a_side}}');
+    for (const x of parts) if (x.warn) warn.push(x.warn);   // (a shield's strap by the elbow that cannot reach it)
   } catch (e) { warn.push(e.message); console.error(e); }
   lastBuild = parts.length ? { piece: S.piece, sides } : null;
   if (isCloth() && clothOn) setCloth(true); else clothStop();   // (from the arms hanging into the pose again)
@@ -4463,11 +4550,13 @@ function fillMembers() {
   });
   paintMembers = mem;
 }
-function strokeWAt(P, i, L) {   // a stroke's weight at a vertex: the strongest of its points
-  let w = 0; for (const c of L.pts) w = Math.max(w, pinchShapeW(P[3 * i] - c[0], P[3 * i + 1] - c[1], P[3 * i + 2] - c[2], c[3], c[4], c[5], L, c)); return w;
+function strokeWAt(P, i, L, N) {   // a stroke's weight at a vertex: the strongest of its points (N: the normals - not on a face turned away, a board's back)
+  let w = 0;
+  for (const c of L.pts) if (!N || N[3 * i] * c[3] + N[3 * i + 1] * c[4] + N[3 * i + 2] * c[5] > 0) w = Math.max(w, pinchShapeW(P[3 * i] - c[0], P[3 * i + 1] - c[1], P[3 * i + 2] - c[2], c[3], c[4], c[5], L, c));
+  return w;
 }
 function paintMesh(m) {   // every layer at every vertex of a mesh, into its paint attributes
-  const layers = S.p.paints || [], g = m.geometry, P = g.attributes.position.array, n = P.length / 3, src = m.userData.src;
+  const layers = S.p.paints || [], g = m.geometry, P = g.attributes.position.array, n = P.length / 3, src = m.userData.src, Nn = g.attributes.normal ? g.attributes.normal.array : null;
   const C = g.attributes.aPaint.array, RM = g.attributes.aPaintRM.array, mem = paintMembers[m.userData.part] || new Map();
   C.fill(0); RM.fill(0);
   layers.forEach((L, li) => {
@@ -4476,7 +4565,7 @@ function paintMesh(m) {   // every layer at every vertex of a mesh, into its pai
       const [lo, hi] = strokeBox(L);
       for (let i = 0; i < n; i++) {
         if (P[3 * i] < lo[0] || P[3 * i] > hi[0] || P[3 * i + 1] < lo[1] || P[3 * i + 1] > hi[1] || P[3 * i + 2] < lo[2] || P[3 * i + 2] > hi[2]) continue;
-        layerOver(C, RM, i, L, strokeWAt(P, i, L) * L.a * patchy(L, P[3 * i], P[3 * i + 1], P[3 * i + 2]));
+        layerOver(C, RM, i, L, strokeWAt(P, i, L, Nn) * L.a * patchy(L, P[3 * i], P[3 * i + 1], P[3 * i + 2]));
       }
     } else { const f = mem.get(li); if (f) for (let i = 0; i < n; i++) if (f[src[i]]) layerOver(C, RM, i, L, L.a * patchy(L, P[3 * i], P[3 * i + 1], P[3 * i + 2])); }
   });
@@ -4835,7 +4924,8 @@ function battleWear(seed) {
     for (let i = 0; i < a.v.length / 3; i++) {
       const nv = new V3(n[3 * i], n[3 * i + 1], n[3 * i + 2]); if (nv.lengthSq() < 1e-20) continue; nv.normalize();
       const p = P(i), out = p.clone().sub(c); if (out.lengthSq() < 1e-12) continue;
-      const bulge = Math.max(0, nv.dot(out.normalize()));
+      // (a shield: its whole face - the board is near flat, nothing on it bulges from its middle; its back is not 'plate')
+      const bulge = S.piece === 'shield' ? 1 : Math.max(0, nv.dot(out.normalize()));
       const w = bulge * (1 + .6 * Math.max(0, nv.dot(FRONT)) + .3 * Math.max(0, nv.dot(UP)));
       if (w > .05) cands.push({ p, n: nv, w });
     }
@@ -5193,7 +5283,7 @@ $('qaHide').addEventListener('click', () => showQa(null));
 let qaOut = null;   // the shield's «off the arm» the check found keeps the body out of it
 $('qaFix').addEventListener('click', () => {
   if (qaOut === null) return;
-  const el = $('i_s_out'); el.value = qaOut; el.dispatchEvent(new Event('input'));
+  const el = $('n_s_pz'); el.value = qaOut; el.dispatchEvent(new Event('input'));
   $('qaFix').hidden = true; qaOut = null;
 });
 $('qa').addEventListener('click', async () => {
@@ -5204,10 +5294,9 @@ $('qa').addEventListener('click', async () => {
   let js = null;
   try { js = await send('qa', { item: itemName(), piece: S.piece, sides: twoHand ? ['L', 'R'] : S.sides.filter((x) => x !== 'C') }, '{{js:ag.qa_running}}', '_qa_' + itemName()); } finally { busy = false; $('qa').disabled = false; }
   if (js && js.ok && S.piece === 'shield' && js.need > 0) {   // the shift out that keeps the body out of it, as the slider's share of its size
-    const R = .16 * HEIGHT * S.p.s_size / 100, want = S.p.s_out + Math.ceil(js.need / R * 100) + 2;
-    qaOut = Math.min(100, want);
-    $('qaFix').textContent = '{{js:ag.qa_shield_out}}'.replace('{0}', qaOut - S.p.s_out); $('qaFix').hidden = qaOut <= S.p.s_out;
-    if (want > 100) $('status').textContent += '\n{{js:ag.qa_shield_more}}';
+    const cm = MM(10), now = S.p.s_pz || 0;   // (cm on the node's Z: off the arm)
+    qaOut = now + Math.ceil(js.need / cm * 2) / 2 + .5;
+    $('qaFix').textContent = '{{js:ag.qa_shield_out}}'.replace('{0}', (qaOut - now).toFixed(1)); $('qaFix').hidden = false;
   }
   if (js && js.ok && js.report) {
     try { const rep = await (await fetch(fileUrl(js.report) + '?t=' + Date.now())).json(); showQa(rep.points); } catch (e) { console.error(e); }
