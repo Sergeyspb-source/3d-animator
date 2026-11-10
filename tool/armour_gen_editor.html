@@ -4939,9 +4939,16 @@ window.sf3dPinchTest = { hit: (x, y) => { const h = pinchHit({ clientX: x, clien
   hidden: (x, y) => { const h = pinchHit({ clientX: x, clientY: y }); return h && hiddenByBody(h.point); }, hist: () => ({ undo: HIST.undo.length, redo: HIST.redo.length }) };
 
 // ------------------------------------------------------------------ to SF3D: the geometry, weights and materials, answered by a status file
+// the piece being made is off its tick while it is (it would show twice): when another is chosen it goes back on - one
+// just made, or opened while it was worn (it came back unticked: the next piece was made without it)
+let BACK_ON = null;
 function listWorn() {   // the pieces already on the character, a tick each — not the one being made (it would show twice)
   const me = itemName(), mine = WORN.get(me);
-  if (mine && mine.on) wearPiece(DATA.worn.find((w) => w.item === me), false).catch((er) => console.error(er));
+  if (mine && mine.on) { BACK_ON = me; wearPiece(DATA.worn.find((w) => w.item === me), false).catch((er) => console.error(er)); }
+  if (BACK_ON && BACK_ON !== me) {
+    const w = DATA.worn.find((x) => x.item === BACK_ON); BACK_ON = null;
+    if (w && !(WORN.get(w.item) || {}).on) wearPiece(w, true).then(() => { const c = $('worn').querySelector(`[data-w="${DATA.worn.indexOf(w)}"]`); if (c) c.checked = true; }).catch((er) => console.error(er));
+  }
   const rows = DATA.worn.map((w, i) => [w, i]).filter(([w]) => w.item !== me);
   $('wornRow').hidden = !rows.length;
   $('wornNote').textContent = ['weapon', 'shield'].includes(S.piece) ? '{{js:ag.worn_held}}' : '{{js:ag.worn}}';
@@ -5041,6 +5048,7 @@ async function make() {
     if (!DATA.worn.some((w) => w.item === item)) DATA.worn.push({ item, glb: js.glb, v: now, piece: S.piece });
     else Object.assign(DATA.worn.find((w) => w.item === item), { v: now, piece: S.piece });
     layersSync();   // (its time is new now: the pieces over it are out of date - at once, not after it is shown)
+    BACK_ON = item;   // (on when the next piece is chosen)
     listWorn();
     resultMask = js.mask ? await loadMask(js.mask) : null;
     const wi = DATA.worn.find((w) => w.item === item); if (wi) wi.mask = js.mask;
