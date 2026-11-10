@@ -55,6 +55,7 @@
   .sl .inf { grid-column:1 / 3; font-size:11.5px; color:var(--muted); }
   label.chk { display:flex; align-items:center; gap:6px; margin:6px 0; }
   .node { margin:6px 0; }
+  .node kbd { font:10px var(--mono); opacity:.6; margin-left:2px; }
   .node .nrow { display:flex; align-items:center; gap:6px; margin:3px 0; }
   .node .nlbl { font-size:12px; width:92px; flex:none; }
   .node label { display:flex; align-items:center; gap:3px; font:11.5px var(--mono); color:var(--muted); flex:1; min-width:0; }
@@ -195,6 +196,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { computeBoundsTree } from 'three-mesh-bvh';
 import { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js';
@@ -229,6 +231,16 @@ const backLight = new THREE.DirectionalLight(0xffffff, .9); backLight.position.s
 const camera = new THREE.PerspectiveCamera(30, 1, .01, 100);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
+// a shield moved, turned, scaled with the mouse (as the markup's nodes): arrows, rings, cubes on the board as it is shown
+const gizmo = new TransformControls(camera, renderer.domElement); gizmo.setSpace('local'); gizmo.setSize(.8); scene.add(gizmo);
+const gizmoObj = new THREE.Object3D(); scene.add(gizmoObj);
+let gizmoMode = 'translate', gizmoDrag = null;
+gizmo.addEventListener('dragging-changed', (e) => {
+  controls.enabled = !e.value;
+  if (e.value) gizmoDrag = { size: S.p.s_size };
+  else { gizmoDrag = null; gizmoObj.scale.set(1, 1, 1); histCommit(); }
+});
+gizmo.addEventListener('objectChange', () => gizmoMoved());
 // the middle button pans the view, not the page (browser autoscroll); the wheel zooms, it does not scroll the app
 const cnv = renderer.domElement;
 cnv.addEventListener('mousedown', (e) => { if (e.button === 1) e.preventDefault(); });
@@ -244,6 +256,7 @@ const frameHidden = () => { try { return !!window.frameElement && !window.frameE
 renderer.setAnimationLoop(() => {
   if (frameHidden()) return;
   if (typeof tween !== 'undefined' && tween) tweenStep();
+  gizmoSync();
   if (typeof cloth !== 'undefined' && cloth) clothStep(1 / 60);
   controls.update(); renderer.render(scene, camera);
 });
@@ -1926,8 +1939,10 @@ function shieldNode(Fr, p, pivot) {
     for (const k of ['A', 'E', 'S']) f[k].applyQuaternion(q);
     f.C.sub(P).applyQuaternion(q).add(P);
   };
-  rot(f.A, p.s_rz); rot(f.S, p.s_rx); rot(f.E, p.s_ry);
-  f.C.addScaledVector(f.S, (p.s_px || 0) * cm).addScaledVector(f.E, (p.s_py || 0) * cm).addScaledVector(f.A, (p.s_pz || 0) * cm);
+  // (X is -S: X, Y, Z = -S, E, A make a right-handed frame with Z out of the board - the gizmo's, so its arrows and the
+  // numbers agree)
+  rot(f.A, p.s_rz); rot(f.S.clone().negate(), p.s_rx); rot(f.E, p.s_ry);
+  f.C.addScaledVector(f.S, -(p.s_px || 0) * cm).addScaledVector(f.E, (p.s_py || 0) * cm).addScaledVector(f.A, (p.s_pz || 0) * cm);
   return f;
 }
 function shieldBoard(acc, Fr, p, bossAt = [0, 0]) {   // the board in its frame (A its face's way, E its up), its rim and boss (over the hand)
@@ -2013,7 +2028,7 @@ function shieldInHand(side, p) {
     if (h && far - h.distance < .1 * HEIGHT) skin = Math.max(skin, far - h.distance);
   }
   const back = skin + .008 * HEIGHT + p.s_out / 100 * R;   // the board's back from the bar's axis
-  const Fr = shieldNode({ C: F.C.clone().addScaledVector(N, back + thick - dome(gx, 0)).addScaledVector(up, -gx), A: N, E: up, S: across }, p, F.C);
+  const Fr0 = { C: F.C.clone().addScaledVector(N, back + thick - dome(gx, 0)).addScaledVector(up, -gx), A: N, E: up, S: across }, Fr = shieldNode(Fr0, p, F.C);
   const strap = p.s_elbow !== false, acc = rigidAcc(PB[(strap ? 'forearm_' : 'hand_') + side]), { lathe, box } = itemMesh(acc, F);
   const loc = (X) => { const d = X.clone().sub(Fr.C); return [d.dot(Fr.A), d.dot(Fr.E), d.dot(Fr.S)]; };
   const [, be, bs] = loc(F.C);
@@ -2032,7 +2047,7 @@ function shieldInHand(side, p) {
   }
   // (as near the elbow as the board is over the forearm: a kite across the arm takes it on its wide part)
   const warn = strap && !armStraps(acc, Fr, side, [.15, .2, .25, .3, .35, .4, .45, .5, .55], p, true) ? '{{js:ag.s_elbow_short}}' : null;
-  return { side, acc, R, warn };
+  return { side, acc, R, warn, node: { base: Fr0, pivot: F.C.clone(), frame: Fr, bone: (strap ? 'forearm_' : 'hand_') + side } };
 }
 function shield(side, p) {   // on the forearm's outer side, its face out, its long axis along the forearm (the point down);
   // in the fist («s_hand»): a bar across the boss's back (round) or the wide part's (kite, heater), the board in front of
@@ -2052,12 +2067,47 @@ function shield(side, p) {   // on the forearm's outer side, its face out, its l
   const hit = cast(mid.clone().addScaledVector(out, .2 * HEIGHT), out.clone().negate(), .2 * HEIGHT), skin = hit ? .2 * HEIGHT - hit.distance : .04 * HEIGHT;
   const { R, thick } = shieldShape(p);
   const up = u.clone().negate().applyAxisAngle(out, D(p.s_turn));
-  const Fr = shieldNode({ C: mid.clone().addScaledVector(out, skin + .015 * HEIGHT + p.s_out / 100 * R + thick), A: out, E: up, S: new V3().crossVectors(out, up).normalize() }, p);
+  const Fr0 = { C: mid.clone().addScaledVector(out, skin + .015 * HEIGHT + p.s_out / 100 * R + thick), A: out, E: up, S: new V3().crossVectors(out, up).normalize() }, Fr = shieldNode(Fr0, p);
   const acc = rigidAcc(PB['forearm_' + side]);
   shieldBoard(acc, Fr, p);
   // on its back two leather straps round the forearm (by the elbow, by the wrist)
   armStraps(acc, Fr, side, [.25, .78].map((tt) => tt + p.s_along / 100), p);
-  return { side, acc, R };
+  return { side, acc, R, node: { base: Fr0, pivot: Fr0.C.clone(), frame: Fr, bone: 'forearm_' + side } };
+}
+// ---- the shield's gizmo: on its board as shown - the rest frame carried into the pose by the bone it is on - and back:
+// the gizmo's place and turn, in the rest pose, as the node's numbers (shieldNode backwards: its turns about Z, then X,
+// then Y of the board, round the pivot; then its shift along the turned axes)
+const nodePart = () => (S.piece === 'shield' && !S.idle && !isMade() ? parts.find((x) => x.node) || null : null);
+function boneShown(name) {   // the bone's pose over its rest (identity at rest)
+  const b = PB[name], i = BONES.indexOf(b);
+  return b && i >= 0 ? b.matrixWorld.clone().multiply(SKEL.boneInverses[i]) : new THREE.Matrix4();
+}
+const basisOf = (f) => new THREE.Matrix4().makeBasis(f.S.clone().negate(), f.E, f.A);   // X across, Y up, Z out of its face (right-handed)
+function gizmoSync() {
+  const np = nodePart();
+  if (!np || showResult || PINCH.on || busy) { if (gizmo.object) gizmo.detach(); return; }
+  if (gizmoDrag) return;
+  const f = np.node.frame, M = boneShown(np.node.bone).multiply(basisOf(f).setPosition(f.C));
+  M.decompose(gizmoObj.position, gizmoObj.quaternion, gizmoObj.scale); gizmoObj.scale.set(1, 1, 1);
+  if (gizmo.object !== gizmoObj) gizmo.attach(gizmoObj);
+  if (gizmo.mode !== gizmoMode) gizmo.setMode(gizmoMode);
+}
+function gizmoMoved() {
+  const np = nodePart(); if (!np || !gizmoDrag) return;
+  const D = THREE.MathUtils.radToDeg, r1 = (x) => Math.round(x * 10) / 10;
+  gizmoObj.updateMatrixWorld(true);
+  const L = boneShown(np.node.bone).invert().multiply(gizmoObj.matrixWorld), C = new V3(), q = new Q(), sc = new V3();
+  L.decompose(C, q, sc);
+  if (gizmoMode === 'scale') { S.p.s_size = Math.max(20, Math.min(400, Math.round(gizmoDrag.size * (sc.x + sc.y + sc.z) / 3))); changed('s_size'); return; }
+  const b = np.node.base, B0 = basisOf(b), Rq = new THREE.Matrix4().makeRotationFromQuaternion(q);
+  const e = new THREE.Euler().setFromRotationMatrix(B0.clone().transpose().multiply(Rq), 'ZXY');
+  S.p.s_rx = r1(D(e.x)); S.p.s_ry = r1(D(e.y)); S.p.s_rz = r1(D(e.z));
+  // where its middle comes with the turn alone (round the pivot), and the shift from there along its turned axes (cm)
+  const Rw = Rq.clone().multiply(B0.clone().transpose()), P = np.node.pivot, Crot = b.C.clone().sub(P).applyMatrix4(Rw).add(P);
+  const ax = [new V3(), new V3(), new V3()]; Rq.extractBasis(...ax);   // -S, E, A
+  const d = C.sub(Crot), cm = MM(10);
+  S.p.s_px = r1(d.dot(ax[0]) / cm); S.p.s_py = r1(d.dot(ax[1]) / cm); S.p.s_pz = r1(d.dot(ax[2]) / cm);
+  changed('node');
 }
 // ---- worn at the belt: a scabbard for the sword (or a dagger's) on a hip, hanging back and out from a belt round the
 // waist, sized by the weapon's sliders (the sword made before it); a quiver on the back, its arrows over a shoulder, on a
@@ -3937,6 +3987,7 @@ function buildPanel() {
     (gi === HELD_GI ? `<label class="chk" id="r_s_hand"><input type="checkbox" id="i_s_hand"> {{js:ag.s_hand}}</label>` +
       `<label class="chk" id="r_s_elbow"><input type="checkbox" id="i_s_elbow"> {{js:ag.s_elbow}}</label>` +
       `<div id="nodeBox" class="node"><div class="note">{{js:ag.node}}</div>` +
+      `<div class="row" style="margin:3px 0 5px"><span class="seg" id="gizmoSeg"><button data-g="translate">{{js:ag.gizmo_move}} <kbd>G</kbd></button><button data-g="rotate">{{js:ag.gizmo_rotate}} <kbd>R</kbd></button><button data-g="scale">{{js:ag.gizmo_scale}} <kbd>S</kbd></button></span></div>` +
       [['pos', '{{js:ag.node_pos}}'], ['rot', '{{js:ag.node_rot}}']].map(([g, lbl]) => `<div class="nrow"><span class="nlbl">${lbl}</span>` +
         NODE_FIELDS.filter((x) => x[1] === g).map(([k, , ax, tip, st]) => `<label title="${tip}">${ax}<input type="number" id="n_${k}" step="${st}"></label>`).join('') + `</div>`).join('') +
       `<div class="nrow"><span class="nlbl">{{js:ag.node_scale}}</span><label title="{{js:ag.s_size}}">%<input type="number" id="n_s_size" step="5" min="20" max="400"></label></div></div>` : '') +
@@ -3953,6 +4004,7 @@ function buildPanel() {
   for (const k of ['cuffs', 'two_plates', 'mail_under', 'stitch', 'hinges', 'fly', 'wrap', 'front_panel', 'hem_band']) $('i_' + k).addEventListener('change', (e) => { S.p[k] = e.target.checked; changed(k); });
   $('i_s_hand').addEventListener('change', (e) => { S.p.s_hand = e.target.checked; if (S.p.s_hand) fistPose(); changed('s_hand'); });
   $('i_s_elbow').addEventListener('change', (e) => { S.p.s_elbow = e.target.checked; changed('s_elbow'); });
+  $('gizmoSeg').addEventListener('click', (e) => { const g = e.target.closest('[data-g]'); if (g) setGizmo(g.dataset.g); });
   for (const k of [...NODE_FIELDS.map((x) => x[0]), 's_size']) $('n_' + k).addEventListener('input', (e) => {
     const v = parseFloat(e.target.value); if (!Number.isFinite(v)) return;
     S.p[k] = k === 's_size' ? Math.max(20, Math.min(400, v)) : v; changed(k);
@@ -4001,6 +4053,7 @@ function syncPanel() {
   $('r_s_hand').hidden = S.piece !== 'shield';
   $('r_s_elbow').hidden = S.piece !== 'shield' || !S.p.s_hand; $('i_s_elbow').checked = S.p.s_elbow !== false;
   $('nodeBox').hidden = S.piece !== 'shield';
+  for (const b of $('gizmoSeg').children) b.classList.toggle('on', b.dataset.g === gizmoMode);
   for (const k of [...NODE_FIELDS.map((x) => x[0]), 's_size']) { const el = $('n_' + k); if (document.activeElement !== el) el.value = +(S.p[k] || 0).toFixed(1); }
   const legs = S.piece === 'trousers' || S.piece === 'brayette';
   $('thighRow').hidden = S.piece !== 'trousers'; $('r_fly').hidden = !legs;
@@ -5019,6 +5072,22 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('pointerdown', (e) => {   // the app's page too: a Ctrl+A there stays otherwise
   if (!inField(e.target)) { getSelection().removeAllRanges(); try { if (window.parent !== window) window.parent.getSelection().removeAllRanges(); } catch (er) { /* another origin */ } }
 }, true);
+function setGizmo(m) { gizmoMode = m; for (const b of $('gizmoSeg').children) b.classList.toggle('on', b.dataset.g === m); gizmoSync(); }
+window.addEventListener('keydown', (e) => {   // G, R, S: the shield's gizmo moves, turns, scales (by the key's place: any layout)
+  if (e.ctrlKey || e.metaKey || e.altKey || PINCH.on || !nodePart() || inField(e.target)) return;
+  const m = { KeyG: 'translate', KeyR: 'rotate', KeyS: 'scale' }[e.code]; if (!m) return;
+  e.preventDefault(); setGizmo(m);
+});
+window.agGizmo = () => (gizmo.object ? { mode: gizmo.mode, p: gizmoObj.position.toArray(), q: gizmoObj.quaternion.toArray() } : null);   // (the tests)
+window.agGizmoScreen = () => { if (!gizmo.object) return null; const v = gizmoObj.position.clone().project(camera), r = renderer.domElement.getBoundingClientRect(); return [r.left + (v.x + 1) / 2 * r.width, r.top + (1 - v.y) / 2 * r.height]; };   // (the tests)
+window.agGizmoDrag = (move, turn, axis) => {   // (the tests) a drag: the gizmo moved by move (world), turned by turn° about its local axis
+  if (!gizmo.object) return null;
+  gizmoDrag = { size: S.p.s_size };
+  gizmoObj.position.add(new V3(...move));
+  if (turn) gizmoObj.quaternion.multiply(new Q().setFromAxisAngle(new V3(...axis), THREE.MathUtils.degToRad(turn)));
+  gizmoMoved(); gizmoDrag = null; histCommit();
+  return { px: S.p.s_px, py: S.p.s_py, pz: S.p.s_pz, rx: S.p.s_rx, ry: S.p.s_ry, rz: S.p.s_rz, want: { p: gizmoObj.position.toArray(), q: gizmoObj.quaternion.toArray() } };
+};
 window.addEventListener('keydown', (e) => {   // by the key's place, so the Russian layout works too
   if (!(e.ctrlKey || e.metaKey) || (e.code !== 'KeyZ' && e.code !== 'KeyY')) return;
   if (e.target.closest('input[type=text], input[type=number], textarea, select')) return;
