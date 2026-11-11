@@ -306,12 +306,19 @@ if job.get("mask"):
     from body_mask import body_mask
     for s in sides:
         keys |= {tuple(x) for x in body_mask(body, [ob for x, ob, h in parts if x == s and not h], erode=3)}   # the cup turns half with the forearm
+import blender_texbake as TB
+TB.tag_mail([ob for _, ob, _ in parts])   # (the mail's rings: a slot of their own)
 obj = join([ob for _, ob, _ in parts])
 obj.name = f"{style}_elbows"
 for m in obj.data.materials:   # full metal looks black in a game scene without reflections (cf. armour_gen_ui.PRESETS)
     b = next((n for n in m.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None) if m and m.use_nodes else None
     if b is not None and b.inputs["Metallic"].default_value > .7:
         b.inputs["Metallic"].default_value = .65
+if job.get("uv_out"):   # made for the character (not a style's preview): its textures baked, its unwrap given out
+    import blender_texbake as TB
+    UVTEX = TB.bake_made(obj, job.get("item") or obj.name, job, Path(job.get("work") or Path(job["out"]).parent) / f"{Path(job['out']).stem}_tex")
+else:
+    UVTEX = {}
 mod = obj.modifiers.new("Armature", "ARMATURE")
 mod.object = arm
 obj.parent = arm
@@ -331,4 +338,4 @@ bpy.ops.export_scene.gltf(filepath=job["out"], export_format="GLB", use_selectio
                           export_animations=False, export_influence_nb=4)
 print("ARMOUR_GEN_OK " + json.dumps({"vertices": len(obj.data.vertices), "bones": sorted({names[f"{j}_{s}"] for s in sides for j in ("arm", "forearm")}),
                                      "radius": max(v["radius"] for v in info.values()), "sides": sides, "arms": info,
-                                     "build": {k: (round(v, 4) if isinstance(v, float) else v) for k, v in p.items()}}), flush=True)
+                                     "build": {k: (round(v, 4) if isinstance(v, float) else v) for k, v in p.items()}, "uvtex": UVTEX}), flush=True)

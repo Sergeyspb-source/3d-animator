@@ -308,6 +308,8 @@ for o in parts:
         gh.add([v.index], 1 - k, "REPLACE")
         if k > 0:
             gn.add([v.index], k, "REPLACE")
+import blender_texbake as TB
+TB.tag_mail(parts)   # (the aventail's rings: a slot of their own)
 bpy.ops.object.select_all(action="DESELECT")
 for o in parts:
     o.select_set(True)
@@ -320,6 +322,11 @@ for m in obj.data.materials:   # full metal looks black in a game scene without 
     b = next((n for n in m.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None) if m and m.use_nodes else None
     if b is not None and b.inputs["Metallic"].default_value > .7:
         b.inputs["Metallic"].default_value = .65
+if job.get("uv_out"):   # made for the character (not a style's preview): its textures baked, its unwrap given out
+    import blender_texbake as TB
+    UVTEX = TB.bake_made(obj, job.get("item") or obj.name, job, Path(job.get("work") or Path(job["out"]).parent) / f"{Path(job['out']).stem}_tex")
+else:
+    UVTEX = {}
 mod = obj.modifiers.new("Armature", "ARMATURE")
 mod.object = arm
 obj.parent = arm
@@ -345,4 +352,4 @@ print("ARMOUR_GEN_OK " + json.dumps({"vertices": len(obj.data.vertices), "bones"
                                      "radius": round(half_d, 4), "sides": [], "scale": round(s, 4), "squeeze": round(squeeze, 3),
                                      "head": {"half_width": round(half_w, 3), "half_depth": round(half_d, 3), "eyes_to_top": round(top, 3),
                                               "chin": round(chin, 3), "shoulder": round(shoulder, 3), "neck": round(neck_r, 3)},
-                                     "build": {k: (round(v, 4) if isinstance(v, float) else v) for k, v in p.items()}}), flush=True)
+                                     "build": {k: (round(v, 4) if isinstance(v, float) else v) for k, v in p.items()}, "uvtex": UVTEX}), flush=True)
