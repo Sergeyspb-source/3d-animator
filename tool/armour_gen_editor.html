@@ -4165,7 +4165,8 @@ function buildPanel() {
       `<div class="note" id="uv_state"></div>` +
       `<div class="row"><button id="uv_open">{{js:ag.uv_open}}</button><button id="uv_refresh">{{js:ag.uv_refresh}}</button></div>` +
       `<div class="note" style="margin-top:6px">{{js:ag.uv_want}}</div><textarea id="uv_want" rows="3" style="width:100%;box-sizing:border-box" placeholder="{{js:ag.uv_want_ph}}"></textarea>` +
-      `<div class="row" style="margin-top:4px"><span class="note" style="flex:1">{{js:ag.uv_prompt}}</span><button id="uv_copy">{{js:ag.uv_copy}}</button></div>` +
+      `<div class="row" style="margin-top:4px"><span class="seg" id="uv_kind"><button data-k="script" class="on" title="{{js:ag.uv_kind_script_title}}">{{js:ag.uv_kind_script}}</button><button data-k="tile" title="{{js:ag.uv_kind_tile_title}}">{{js:ag.uv_kind_tile}}</button></span><span style="flex:1"></span><button id="uv_copy">{{js:ag.uv_copy}}</button></div>` +
+      `<div class="note" id="uv_kind_note"></div>` +
       `<textarea id="uv_prompt" rows="9" readonly style="width:100%;box-sizing:border-box;font:11px var(--mono)"></textarea>` +
       `<div class="row" style="margin-top:4px"><select id="uv_slot"></select><label class="filebtn"><input type="file" id="uv_file" accept="image/*" hidden><span>{{js:ag.uv_load}}</span></label><button id="uv_take" title="{{js:ag.uv_take_title}}">{{js:ag.uv_take}}</button></div>` +
       `<div class="note" id="uv_applied"></div><div class="row"><button id="uv_clear">{{js:ag.uv_clear}}</button></div></details>` : '') + '</div>').join('');
@@ -6035,9 +6036,13 @@ function projWire() {
 // islands over its colours, their mask, their edges (<item>_uv/ next to it). A texture painted on that elsewhere - by
 // hand, or by an image model with the prompt made here - comes back as that part's colour at the next «Generate»
 // (when the piece is still the same: the same unwrap), the paint and the damage then over it
-const UV = { info: null };
+const UV = { info: null, kind: 'script' };
 const uvMade = () => DATA.saved.find((x) => x.item === itemName() && x.piece === S.piece);
 function uvPrompt() {
+  if (UV.kind === 'tile') {   // an image generator: a seamless texture of the material, put on with «Own material»
+    const want = $('uv_want').value.trim() || '{{js:ag.uv_want_default}}';
+    return '{{js:ag.uv_tile_text}}'.replace('{want}', want).replace('{mat}', DATA.mat_labels[S.p.material] || S.p.material || '').replace('{piece}', PIECES[S.piece].label);
+  }
   const I = UV.info; if (!I) return '';
   const sl = Object.keys(I.slots), lab = (k) => (DATA.lib_slots[k] || k).replace(/\s*\(.*\)/, '');
   const want = $('uv_want').value.trim() || '{{js:ag.uv_want_default}}';
@@ -6051,7 +6056,7 @@ function uvSync() {
   if (!$('uvBox')) return;
   const I = UV.info, made = !!uvMade();
   $('uv_state').textContent = !made ? '{{js:ag.uv_make_first}}' : !I ? '{{js:ag.uv_none}}' : '{{js:ag.uv_state}}'.replace('{0}', I.folder).replace('{1}', I.size);
-  for (const id of ['uv_open', 'uv_copy', 'uv_take', 'uv_slot']) $(id).disabled = !I;
+  for (const id of ['uv_open', 'uv_take', 'uv_slot']) $(id).disabled = !I;
   $('uv_file').disabled = !I;
   if (I) {
     const keys = Object.keys(I.slots), cur = $('uv_slot').value;
@@ -6059,6 +6064,9 @@ function uvSync() {
     if (keys.includes(cur)) $('uv_slot').value = cur;
   }
   $('uv_prompt').value = uvPrompt();
+  for (const b of $('uv_kind').children) b.classList.toggle('on', b.dataset.k === UV.kind);
+  $('uv_kind_note').textContent = UV.kind === 'tile' ? '{{js:ag.uv_kind_tile_note}}' : '{{js:ag.uv_kind_script_note}}';
+  $('uv_copy').disabled = UV.kind === 'script' && !I;
   const on = Object.keys(S.p.uvtex || {});
   $('uv_applied').textContent = on.length ? '{{js:ag.uv_on}}'.replace('{0}', on.map((k) => DATA.lib_slots[k] || k).join(', ')) : '';
   $('uv_clear').disabled = !on.length;
@@ -6080,6 +6088,7 @@ function uvWire() {
   if (!$('uvBox')) return;
   $('uvBox').addEventListener('toggle', () => { if ($('uvBox').open) uvRefresh(); });
   $('uv_refresh').addEventListener('click', () => uvRefresh());
+  $('uv_kind').addEventListener('click', (e) => { const k = e.target.closest('[data-k]'); if (k) { UV.kind = k.dataset.k; uvSync(); } });
   $('uv_want').addEventListener('input', () => { try { localStorage.setItem('ag_uv_want', $('uv_want').value); } catch (e) { /* none */ } $('uv_prompt').value = uvPrompt(); });
   try { $('uv_want').value = localStorage.getItem('ag_uv_want') || ''; } catch (e) { /* none */ }
   $('uv_open').addEventListener('click', () => send('uv_open', { item: itemName(), piece: S.piece }, '{{js:ag.uv_reading}}', '_uv_open'));
