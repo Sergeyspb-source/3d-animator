@@ -5722,6 +5722,7 @@ async function make() {
     const entry = { item, piece: S.piece, style: S.style, sides: [...S.sides], params: { ...S.p }, under: [...WORN.entries()].filter(([k, w]) => k !== item && w.on && layerOf(w)).map(([k]) => k) };
     if (i >= 0) DATA.saved[i] = entry; else DATA.saved.push(entry);
     listSaved(item);
+    UV.info = null; UV.tried = null;   // (its unwrap is new: read again - one read while it was being made found none)
     const old = WORN.get(item); if (old) { scene.remove(old.root); WORN.delete(item); }   // its old look goes
     const now = Math.round(Date.now() / 1000);   // (seconds, as the server's file times)
     if (!DATA.worn.some((w) => w.item === item)) DATA.worn.push({ item, glb: js.glb, v: now, piece: S.piece });
@@ -5732,6 +5733,7 @@ async function make() {
     resultMask = js.mask ? await loadMask(js.mask) : null;
     const wi = DATA.worn.find((w) => w.item === item); if (wi) wi.mask = js.mask;
     await loadResult(js.glb);
+    if ($('uvBox') && $('uvBox').open) uvRefresh(true);   // (the unwrap given out with it now)
     // pieces worn over it were fitted without it (a cuirass made before these trousers): said, and «Rebuild by layers»
     const mine = regionsOf(S.piece, S.p);   // (only where they meet it on the body)
     const over = DATA.worn.filter((w) => w.item !== item && WORN.get(w.item) && WORN.get(w.item).on && layerOf(w) && isOuter(w)
