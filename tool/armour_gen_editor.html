@@ -4304,7 +4304,7 @@ function changed(what) {
   histNote(what);
   syncPanel();
   if (what === 'look') { applyLook(S.p, LOOK.R); if (!pending) return; }
-  if (resultRoot && what !== 'look') setShow(false);
+  if (resultRoot && what !== 'look' && what !== 'worn') setShow(false);   // (other pieces put on or off: the result made is still the piece - kept on show with them)
   if (pending) return;
   pending = true;
   requestAnimationFrame(() => { pending = false; rebuild(); });
@@ -4714,6 +4714,7 @@ function skin(s) {
 }
 $('views').addEventListener('click', (e) => e.target.dataset.v && view(e.target.dataset.v));
 window.agView = (v, eye, whole) => view(v, eye, whole);
+window.agShow = () => ({ result: showResult, root: !!(resultRoot && resultRoot.visible), preview: pieceGroup.visible, worn: [...WORN.entries()].filter(([, w]) => w.on && w.root && w.root.visible).map(([k]) => k) });   // (the tests)
 window.agCamDist = () => camera.position.distanceTo(controls.target);   // (the tests)
 window.agProjR = () => { const L = (S.p.paints || []).find((x) => x.proj); return L ? L.r : null; };   // (the tests)
 window.agParts = () => parts.map((x) => ({ side: x.side, v: Array.from(x.acc.v) }));   // the tests measure what is built
