@@ -190,6 +190,8 @@
  "ag.style_elbow_articulated_plate": "Cup with lames",
  "ag.style_elbow_plate_mail_hybrid": "Steel and a mail gusset",
  "ag.made_group": "Generator",
+ "ag.limb_gap_leg": "Air over the leg",
+ "ag.limb_gap_leg_info": "The air between the leg and the poleyn, a share of the leg's radius at the knee. The generator builds the poleyn and scales it to the leg; the cup on the knee in front, the wing outward.",
  "ag.limb_gap": "Air over the arm",
  "ag.limb_gap_info": "Between the arm and the elbow piece, a share of the arm's radius at the elbow. The generator builds it and it is scaled to the arm; the cup on the elbow's point, the wing outwards.",
  "ag.elbow_wing": "Wing",

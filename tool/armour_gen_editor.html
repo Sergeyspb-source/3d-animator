@@ -4343,6 +4343,8 @@ function syncPanel() {
   const pc = PIECES[S.piece], [a0, b0, a1, b1] = pc.range;
   $('i_t0').min = a0; $('i_t0').max = b0; $('i_t1').min = a1; $('i_t1').max = b1;
   $('l_t0').textContent = pc.tlabels[0]; $('l_t1').textContent = pc.tlabels[1]; $('n_t0').textContent = pc.tinfo;
+  const leg = S.piece === 'poleyn';   // (the same generator's sliders, a knee's words)
+  $('l_limb_gap').textContent = leg ? '{{js:ag.limb_gap_leg}}' : '{{js:ag.limb_gap}}'; $('n_limb_gap').textContent = leg ? '{{js:ag.limb_gap_leg_info}}' : '{{js:ag.limb_gap_info}}';
   for (const sp of ALL) {
     $('i_' + sp[0]).value = S.p[sp[0]]; $('v_' + sp[0]).textContent = fmt(sp[0], S.p[sp[0]]);
     $('r_' + sp[0]).hidden = sp[7] ? !sp[7]() : false; $('n_' + sp[0]).hidden = !$('n_' + sp[0]).textContent;
@@ -4559,7 +4561,8 @@ const madeCache = new Map();
 let helmetObj = null, madePending = null;
 async function madePreview(piece, sides) {
   const style = S.p[piece];
-  const js = await send('made_preview', { piece, style, sides, params: { ...S.p } }, '{{js:ag.helmet_making}}', '_helmet_' + style);
+  // (placed by hand - along, turned, sized - not here: the preview moved so at once, Blender makes it so on «Generate»)
+  const js = await send('made_preview', { piece, style, sides, params: { ...S.p, made_slide: 0, made_twist: 0, made_size: 100 } }, '{{js:ag.helmet_making}}', '_helmet_' + style);
   if (!js || !js.ok) return null;
   const gltf = await new GLTFLoader().loadAsync(fileUrl(js.preview.glb) + '?v=' + js.preview.v);
   gltf.scene.traverse((o) => {
@@ -4568,10 +4571,41 @@ async function madePreview(piece, sides) {
   });
   return { root: gltf.scene, mask: await loadMask(js.preview.mask) };
 }
+// an elbow's, a poleyn's preview placed by hand at once (as blender_elbow_gen.py will make it: round the joint, along the
+// upper bone, turned round it to the outside, sized), from the preview made at the style's own place
+function madePlace(root, piece) {
+  if (!['elbow', 'poleyn'].includes(piece)) return;
+  const slide = (S.p.made_slide || 0) / 100 * HEIGHT / 1.75, tw = THREE.MathUtils.degToRad(S.p.made_twist || 0), k = (S.p.made_size ?? 100) / 100;
+  const [J0, J1] = piece === 'poleyn' ? ['upleg', 'leg'] : ['arm', 'forearm'];
+  restPose();
+  const F = {};
+  for (const s of 'LR') {
+    const A = joint(J0 + '_' + s), E = joint(J1 + '_' + s); if (!A || !E) continue;
+    const u = A.clone().sub(E).normalize(), o = (piece === 'poleyn' ? FRONT.clone() : FRONT.clone().negate()).addScaledVector(u, 0);
+    o.addScaledVector(u, -o.dot(u)).normalize();
+    const sg = new V3().crossVectors(u, o).dot(new V3(s === 'L' ? 1 : -1, 0, 0)) > 0 ? 1 : -1;
+    F[s] = { E, u, q: new Q().setFromAxisAngle(u, sg * tw) };
+  }
+  const v = new V3();
+  root.updateMatrixWorld(true);
+  root.traverse((m) => {
+    if (!m.isMesh) return;
+    const g = m.geometry, P = g.attributes.position;
+    if (!g.userData.orig) g.userData.orig = P.array.slice();
+    const O = g.userData.orig, M = m.matrixWorld, Mi = M.clone().invert();
+    for (let i = 0; i < P.count; i++) {
+      v.fromArray(O, 3 * i).applyMatrix4(M);
+      const s = !F.R || (F.L && Math.abs(v.x - F.L.E.x) < Math.abs(v.x - F.R.E.x)) ? 'L' : 'R', f = F[s];
+      if (f) v.sub(f.E).multiplyScalar(k).applyQuaternion(f.q).add(f.E).addScaledVector(f.u, slide);
+      v.applyMatrix4(Mi); P.setXYZ(i, v.x, v.y, v.z);
+    }
+    P.needsUpdate = true; g.computeBoundingSphere(); g.computeBoundingBox();
+  });
+}
 function rebuildMade() {
   const piece = S.piece, sides = piece !== 'helmet' ? [...S.sides] : [];
   if (piece !== 'helmet' && !sides.length) { $('warn').textContent = '{{js:ag.choose_a_side}}'; $('warn').hidden = false; lastBuild = null; $('go').disabled = true; return; }
-  const key = [piece, S.p[piece], S.p.head_gap, S.p.limb_gap, S.p.wing, S.p.made_slide, S.p.made_twist, S.p.made_size, S.p.foot_gap, S.p.visor_angle, S.p.cheek_angle, S.p.tail, S.p.brim, ...sides].join('_'), h = madeCache.get(key);
+  const key = [piece, S.p[piece], S.p.head_gap, S.p.limb_gap, S.p.wing, S.p.foot_gap, S.p.visor_angle, S.p.cheek_angle, S.p.tail, S.p.brim, ...sides].join('_'), h = madeCache.get(key);
   if (!h) {
     if (madePending !== key) {
       madePending = key;
@@ -4582,6 +4616,7 @@ function rebuildMade() {
     return;
   }
   helmetObj = h.root; scene.add(helmetObj);
+  madePlace(h.root, piece);
   previewMask = h.mask; hideBody();
   lastBuild = { piece, sides };
   $('info').textContent = DATA.style_labels[S.p[piece]] || S.p[piece];

@@ -180,7 +180,7 @@ STRAP_IN = {n: min(math.hypot(v.co.x / p["arm_radius"], (v.co.y - .002) / (.82 *
             for n in ("Upper_Strap", "Lower_Strap") for o in right if o.name == n}
 
 # ---------------------------------------------------------------- each side: mirrored for the left, weighted, onto the arm
-parts, info = [], {}
+parts, info, frames = [], {}, {}
 SLIDE = float(prm.get("slide", 0)) / 100 * H / 1.75   # cm on a man of 1.75 m: up the limb +
 TWIST = math.radians(float(prm.get("twist", 0)))     # its cup turned round the limb, to the outside +
 SIZE = float(prm.get("size", 100)) / 100
@@ -299,9 +299,101 @@ for s in sides:
         ob.data.update()
         parts.append((s, ob, hug))
     info[s] = {"radius": round(r0, 3), "scale": [round(sx, 2), round(sy, 2)], "point": round(point, 3), "straps": [round(k_up, 2), round(k_lo, 2)]}
+    frames[s] = {"c": c, "u": u, "o": o, "f": fw, "r0": r0}
 for src in right:
     bpy.data.objects.remove(src, do_unlink=True)
 
+
+
+# ---------------------------------------------------------------- the straps on the limb itself, from the cup's sides
+# The generator's strap is a closed ellipse round the limb at its mean radius, over the cup's face too: off the skin
+# where the limb is not round (behind a knee), its buckle (on the crook's side) in the air. Each strap now goes from
+# under one side of the cup round the back of the limb to the other (its part in front of the cup taken out), every
+# few degrees round the limb as far out as the skin there and a little air (rays from the limb's axis); its buckle
+# and rivets moved onto it.
+def _axis_at(F, P):   # the limb's axis point beside P and the way out from it (the upper bone above the joint, the lower below)
+    d = P - F["c"]
+    w = F["u"] if d.dot(F["u"]) >= 0 else F["f"]
+    A = F["c"] + w * d.dot(w)
+    r = P - A
+    return A, r, w
+
+
+def _ang(F, r, w):   # the angle round the limb from the cup's middle (0) to the crook (pi)
+    o = (F["o"] - w * F["o"].dot(w)).normalized()
+    rr = (r - w * r.dot(w))
+    if rr.length < 1e-9:
+        return 0., rr
+    rr.normalize()
+    return math.acos(clamp(rr.dot(o), -1, 1)), rr
+
+
+def fit_straps():
+    air = .004 * H
+    for s, F in frames.items():
+        cups = [ob for x, ob, h in parts if x == s and ob.name.startswith(CUP[:1]) or (x == s and ob.name.startswith(("Steel_Couter", "Formed_Leather")))]
+        angs = sorted(_ang(F, *_axis_at(F, ob.matrix_world @ v.co)[1:])[0] for ob in cups for v in ob.data.vertices)
+        half = angs[int(.97 * (len(angs) - 1))] if angs else math.radians(70)   # the cup's half width round the limb
+        cut = max(0., half - math.radians(10))   # (the strap's end tucked 10° under the cup's edge)
+        for x, ob, h in parts:
+            if x != s or not ob.name.startswith(("Upper_Strap", "Lower_Strap")):
+                continue
+            if any(k in ob.name for k in ("_Buckle", "_Tongue", "_Anchor")):
+                continue
+            me = ob.data
+            bm = bmesh.new(); bm.from_mesh(me)
+            gone = [fc for fc in bm.faces if _ang(F, *_axis_at(F, ob.matrix_world @ fc.calc_center_median())[1:])[0] < cut]
+            if gone:
+                bmesh.ops.delete(bm, geom=gone, context="FACES")
+            bm.to_mesh(me); bm.free()
+            # each vertex: its axis point, its way out, how far; the strap's inside per 10° bin to the skin there
+            pts = []
+            for v in me.vertices:
+                P = ob.matrix_world @ v.co
+                A, r, w = _axis_at(F, P)
+                a, rr = _ang(F, r, w)
+                side = 1 if rr.dot(w.cross(F["o"])) >= 0 else -1
+                pts.append((v, A, rr, r.length, side * a))
+            if not pts:
+                continue
+            bins = {}
+            for v, A, rr, rl, a in pts:
+                b = round(a / math.radians(10))
+                if b not in bins or rl < bins[b][0]:
+                    bins[b] = (rl, A, rr)
+            shift = {}
+            for b, (rin, A, rr) in bins.items():
+                hit = tree.ray_cast(A, rr, 2 * rin + .2 * H)
+                skin = hit[3] if hit[0] is not None else rin - air
+                shift[b] = skin + air - rin
+            Mi = ob.matrix_world.inverted()
+            for v, A, rr, rl, a in pts:
+                t = a / math.radians(10)
+                b0 = math.floor(t); k = t - b0
+                d0, d1 = shift.get(b0, shift.get(b0 + 1, 0.)), shift.get(b0 + 1, shift.get(b0, 0.))
+                v.co = Mi @ ((ob.matrix_world @ v.co) + rr * (d0 * (1 - k) + d1 * k))
+            me.update()
+        for x, ob, h in parts:   # its buckle, tongue and rivets onto the strap
+            if x != s or not ob.name.startswith(("Upper_Strap", "Lower_Strap")) or not any(k in ob.name for k in ("_Buckle", "_Tongue", "_Anchor")):
+                continue
+            ws = [ob.matrix_world @ v.co for v in ob.data.vertices]
+            if not ws:
+                continue
+            P = sum(ws, Vector()) / len(ws)
+            A, r, w = _axis_at(F, P)
+            a, rr = _ang(F, r, w)
+            hit = tree.ray_cast(A, rr, 2 * r.length + .2 * H)
+            if hit[0] is None:
+                continue
+            want = hit[3] + air + (.0025 * H if "_Anchor" not in ob.name else .001 * H)
+            mv = rr * (want - (P - A).dot(rr))
+            Mi = ob.matrix_world.inverted_safe().to_3x3()
+            for v in ob.data.vertices:
+                v.co = v.co + Mi @ mv
+            ob.data.update()
+
+
+fit_straps()
 
 
 def join(obs):
