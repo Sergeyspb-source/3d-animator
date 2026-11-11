@@ -102,7 +102,7 @@
       </span>
       <span class="sep"></span>
       <span class="seg" id="poses" title="{{ag.pose_title}}">
-        <button data-p="rest" class="on">{{ag.pose_rest}}</button><button data-p="side">{{ag.pose_side}}</button><button data-p="front">{{ag.pose_front}}</button><button data-p="elbows">{{ag.pose_elbows}}</button><button data-p="squat">{{ag.pose_squat}}</button><button data-p="stride">{{ag.pose_stride}}</button><button data-p="fist">{{ag.pose_fist}}</button><button data-p="down">{{ag.pose_down}}</button><button data-p="guard" title="{{ag.pose_guard_title}}">{{ag.pose_guard}}</button><button data-p="two" title="{{ag.pose_two_title}}">{{ag.pose_two}}</button>
+        <button data-p="rest" class="on">{{ag.pose_rest}}</button><button data-p="side">{{ag.pose_side}}</button><button data-p="front">{{ag.pose_front}}</button><button data-p="elbows">{{ag.pose_elbows}}</button><button data-p="squat">{{ag.pose_squat}}</button><button data-p="stride">{{ag.pose_stride}}</button><button data-p="fist">{{ag.pose_fist}}</button><button data-p="down">{{ag.pose_down}}</button><button data-p="guard" title="{{ag.pose_guard_title}}">{{ag.pose_guard}}</button><button data-p="guard_high" title="{{ag.pose_guard_high_title}}">{{ag.pose_guard_high}}</button><button data-p="two" title="{{ag.pose_two_title}}">{{ag.pose_two}}</button><button data-p="two_high" title="{{ag.pose_two_high_title}}">{{ag.pose_two_high}}</button>
       </span>
       <span class="sep"></span>
       <span class="seg"><button id="undoBtn" title="{{ag.undo_title}}">↶</button><button id="redoBtn" title="{{ag.redo_title}}">↷</button></span>
@@ -1985,12 +1985,12 @@ function reach(t) {
 // the editor's «Fist» for a weapon in both hands: the holding hand turned so the haft points forward and a little up, and
 // brought so that the two grips lie along it in front of the chest (the nearer one well off the body), then the other
 // hand onto the haft
-function readyStance(t) {
+function readyStance(t, Dw, midW) {   // (Dw, midW: the haft's way and the hands' middle of a stance, else the «Fist»'s)
   const s = t.from, G = twoGrips(t), L = joint('arm_L'), Rs = joint('arm_R'), hand = PB['hand_' + s]; if (!G || !L || !Rs || !hand) return;
   const l = joint('forearm_' + s).distanceTo(joint('arm_' + s)) + joint('hand_' + s).distanceTo(joint('forearm_' + s));
-  const D = FRONT.clone().addScaledVector(UP, .35).normalize(), a = G.T.clone().sub(G.C).dot(G.A);
+  const D = Dw || FRONT.clone().addScaledVector(UP, .35).normalize(), a = G.T.clone().sub(G.C).dot(G.A);
   aimWorld(hand, G.A, D);   // the hand (and the weapon on it) turned about the wrist
-  const mid = L.clone().add(Rs).multiplyScalar(.5).addScaledVector(UP, -.4 * l).addScaledVector(FRONT, .4 * l + Math.abs(a) / 2 * D.z);
+  const mid = midW || L.clone().add(Rs).multiplyScalar(.5).addScaledVector(UP, -.4 * l).addScaledVector(FRONT, .4 * l + Math.abs(a) / 2 * D.z);
   const Cn = mid.clone().addScaledVector(D, -a / 2);
   for (let k = 0; k < 3; k++) {   // the hand keeps its turn as the arm moves; the grip in it moves with the wrist
     const g = twoGrips(t);
@@ -4448,6 +4448,7 @@ function handClose(s) {   // the fist: as remembered in the markup, else each fi
     for (let k = 1; k <= 3; k++) { const b = PB[`${f}${k}_${s}`]; if (b) turn(b, ax, GRIP_DEG[f === 'thumb' ? 'thumb' : 'finger'][k - 1]); }
   }
 }
+const STANCES = ['guard', 'guard_high', 'two', 'two_high'];
 // the hand's twist about the forearm (from its rest) given to the forearm (share of it): a shield strapped on the
 // forearm turns with the fist, the elbow's skin is not wrung at the wrist
 function twistForearm(s, share) {
@@ -4470,62 +4471,147 @@ function handTo(s, W, across, along) {
   const R = new Q().setFromRotationMatrix(handBasis(a, palm).multiply(handBasis(P.across, P.palm).transpose()));
   armTo(s, W, R);
 }
-function stanceLegs() {
-  const dir = (a, b) => (PB[a] && PB[b] ? joint(b).sub(joint(a)).normalize() : null);
-  for (const [s, th, kn] of [['L', 14, 16], ['R', -8, 12]]) {
-    const d = dir('upleg_' + s, 'leg_' + s); if (!d || !dir('leg_' + s, 'foot_' + s)) continue;
-    turn(PB['upleg_' + s], d.clone().cross(FRONT).normalize(), th);
-    turn(PB['leg_' + s], dir('leg_' + s, 'foot_' + s).cross(FRONT.clone().negate()).normalize(), kn);
+// the body in a guard: the pelvis lower, the left foot forward and the right one back (both flat on the floor where they
+// stood, each leg bending at its knee to them), the hips and the chest turned the shield's shoulder forward, the head
+// back to the front
+function limbTo(a, b, c, Wt, poleDir) {   // two bones (a, b) so that c's joint comes to Wt; the knee/elbow towards poleDir
+  const A = PB[a], B = PB[b], Cb = PB[c]; if (!A || !B || !Cb) return;
+  const keep = Cb.getWorldQuaternion(new Q());
+  const Sh = joint(a), E = joint(b), Wr = joint(c), l1 = E.distanceTo(Sh), l2 = Wr.distanceTo(E);
+  const nd = Wt.clone().sub(Sh), d = Math.max(Math.abs(l1 - l2) * 1.01, Math.min((l1 + l2) * .999, nd.length())); nd.normalize();
+  const x = (l1 * l1 - l2 * l2 + d * d) / (2 * d), h = Math.sqrt(Math.max(0, l1 * l1 - x * x));
+  const pole = poleDir.clone().addScaledVector(nd, -poleDir.dot(nd)).normalize();
+  const En = Sh.clone().addScaledVector(nd, x).addScaledVector(pole, h), Wn = Sh.clone().addScaledVector(nd, d);
+  aimWorld(A, E.clone().sub(Sh), En.clone().sub(Sh));
+  aimWorld(B, joint(c).sub(joint(b)), Wn.clone().sub(joint(b)));
+  Cb.quaternion.copy(Cb.parent.getWorldQuaternion(new Q()).invert().multiply(keep)); Cb.updateMatrixWorld(true);   // (the foot as it was: flat)
+}
+const sideX = (s) => new V3(s === 'L' ? 1 : -1, 0, 0);
+function stanceBody(lead) {   // lead: the side whose shoulder and foot go forward; the body's front afterwards
+  const feet = {}, sg = lead === 'L' ? -1 : 1;
+  for (const s of 'LR') if (joint('foot_' + s)) feet[s] = joint('foot_' + s);
+  const legLen = PB.upleg_L && feet.L ? joint('upleg_L').distanceTo(feet.L) : .5 * HEIGHT;
+  const D = THREE.MathUtils.degToRad;
+  if (PB.hips) {   // turned a little, then down
+    turn(PB.hips, UP, sg * 12);
+    const wp = PB.hips.getWorldPosition(new V3()).addScaledVector(UP, -.09 * legLen);
+    PB.hips.position.copy(PB.hips.parent.worldToLocal(wp)); PB.hips.updateMatrixWorld(true);
   }
+  for (const k of ['spine', 'spine1', 'spine2']) if (PB[k]) turn(PB[k], UP, sg * 6);
+  for (const k of ['neck', 'head']) if (PB[k]) turn(PB[k], UP, -sg * 15);   // (the eyes to the front again)
+  for (const s of 'LR') if (feet[s]) {
+    const fw = s === lead ? .3 : -.22, T = feet[s].clone().addScaledVector(FRONT, fw * legLen).addScaledVector(sideX(s), .04 * legLen);
+    limbTo('upleg_' + s, 'leg_' + s, 'foot_' + s, T, FRONT.clone().addScaledVector(sideX(s), .3));
+  }
+  charRoot.updateMatrixWorld(true);
+  return FRONT.clone().applyQuaternion(new Q().setFromAxisAngle(UP, D(sg * 30)));
 }
 const armLen = (s) => joint('forearm_' + s).distanceTo(joint('arm_' + s)) + joint('hand_' + s).distanceTo(joint('forearm_' + s));
-function heldSides() {   // which hand holds the shield and which the weapon: the piece's own side, else the left and the right
+function heldSides() {   // which hand holds the shield and which the weapon: the piece's own side, else the worn ones', else left and right
   const one = S.sides.filter((x) => x !== 'C');
   if (S.piece === 'shield' && one.length === 1) return { shield: one[0], weapon: one[0] === 'L' ? 'R' : 'L' };
   if (S.piece === 'weapon' && one.length === 1) return { weapon: one[0], shield: one[0] === 'L' ? 'R' : 'L' };
+  const w = wornHeld().find((x) => x.weapon);
+  if (w) return { weapon: w.side, shield: w.side === 'L' ? 'R' : 'L' };
   return { shield: 'L', weapon: 'R' };
 }
-function aimHeld(s, D, restQ) {   // the weapon being made (on this hand) pointed along D, turned with the wrist
-  const part = S.piece === 'weapon' && parts.find((x) => x.side === s && x.F); if (!part || !restQ) return;
-  const now = PB['hand_' + s].getWorldQuaternion(new Q()), A = part.F.A.clone().applyQuaternion(now.multiply(restQ.clone().invert()));
+// a worn weapon (shown, from «Worn»): its long axis at rest (the blade's way: the longer side of the hand), the grip's
+// middle on it by the palm, its ends, its «second hand» - so the stances point it and put the other hand on it
+const heldCache = new Map();
+function wornHeld() {
+  const outl = [];
+  for (const [item, e] of WORN) {
+    if (!e.on || !e.root || !e.root.visible || e.piece !== 'weapon') continue;
+    const key = item + '|' + (DATA.worn.find((w) => w.item === item) || {}).v;
+    if (!heldCache.has(key)) {
+      const pts = [];
+      e.root.updateMatrixWorld(true);
+      e.root.traverse((o) => { if (!o.isMesh) return; const P = o.geometry.attributes.position, st = Math.max(1, Math.floor(P.count / 1500)); for (let i = 0; i < P.count; i += st) pts.push(new V3().fromBufferAttribute(P, i).applyMatrix4(o.matrixWorld)); });
+      if (pts.length < 10) { heldCache.set(key, null); continue; }
+      const c = pts.reduce((a, q) => a.add(q), new V3()).divideScalar(pts.length);
+      let A = new V3(.3, .5, .8);
+      for (let it = 0; it < 30; it++) {   // the long axis: the covariance's first way (power iteration)
+        const n = new V3(); for (const q of pts) { const d = q.clone().sub(c); n.addScaledVector(d, d.dot(A)); } A = n.normalize();
+      }
+      const side = ['L', 'R'].map((sd) => [sd, joint('hand_' + sd) ? Math.min(...pts.map((q) => q.distanceTo(joint('hand_' + sd)))) : Infinity]).sort((x, y) => x[1] - y[1])[0][0];
+      const M = palmOf(side); if (!M) { heldCache.set(key, null); continue; }
+      const Pm = M.H.clone().lerp(M.K, .5), C = c.clone().addScaledVector(A, Pm.clone().sub(c).dot(A));
+      let lo = Infinity, hi = -Infinity; for (const q of pts) { const t = q.clone().sub(C).dot(A); lo = Math.min(lo, t); hi = Math.max(hi, t); }
+      if (-lo > hi) { A.negate(); [lo, hi] = [-hi, -lo]; }   // the blade the longer way from the hand
+      const sv = DATA.saved.find((x) => x.item === item), p = (sv && sv.params) || {};
+      heldCache.set(key, { item, side, A, C, lo, hi, wTwo: +p.w_two || 0, weapon: p.weapon || '' });
+    }
+    const h = heldCache.get(key); if (h) outl.push({ ...h, weapon: true });
+  }
+  return outl;
+}
+function heldAxis(s) {   // the weapon in this hand at rest: {A, C, lo, hi, wTwo}: the one being made, else a worn one
+  const part = S.piece === 'weapon' && parts.find((x) => x.side === s && x.F);
+  if (part) {
+    const F = part.F, v = part.acc.v; let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < v.length; i += 3) { const a = (v[i] - F.C.x) * F.A.x + (v[i + 1] - F.C.y) * F.A.y + (v[i + 2] - F.C.z) * F.A.z; lo = Math.min(lo, a); hi = Math.max(hi, a); }
+    return { A: F.A.clone(), C: F.C.clone(), lo, hi, wTwo: +S.p.w_two || 0 };
+  }
+  return wornHeld().find((x) => x.side === s) || null;
+}
+function twoOf(s, h) {   // as twoHandOf, for any weapon's axis: the second grip a share of the arm's length along it
+  const M = palmOf(s); if (!M || !h) return null;
+  const L = h.hi - h.lo, arm = armLen(s), sg = Math.sign(h.wTwo) || -1, wt = Math.abs(h.wTwo) || 32;
+  const a = Math.max(h.lo + .04 * L, Math.min(h.hi - .04 * L, sg * Math.max(wt / 100 * arm, 1.1 * M.pw)));
+  const Ft = handBasis(M.across, M.palm).transpose(), hl = M.K.distanceTo(M.H);
+  const t = h.C.clone().addScaledVector(h.A, a).sub(M.H).applyMatrix4(Ft).divideScalar(hl), ax = h.A.clone().applyMatrix4(Ft), c = h.C.clone().sub(M.H).applyMatrix4(Ft).divideScalar(hl);
+  return { side: s === 'L' ? 'R' : 'L', from: s, n: [t, ax, c].flatMap((x) => x.toArray()) };
+}
+function aimHeld(s, D, restQ, h) {   // the weapon in this hand pointed along D, turned with the wrist
+  if (!h || !restQ) return;
+  const now = PB['hand_' + s].getWorldQuaternion(new Q()), A = h.A.clone().applyQuaternion(now.multiply(restQ.clone().invert()));
   aimWorld(PB['hand_' + s], A, D);
 }
+// the stances: «guard» - the shield before the chest, the sword over it pointing forward; «guard_high» - the same
+// shield, the sword raised over the shoulder to strike; «two» - a weapon in both hands before the belly, its point
+// forward and up; «two_high» - the hilt by the shoulder, the blade up and back (vom Tag)
 function stancePose(kind) {
   if (!['L', 'R'].every((s) => PB['arm_' + s] && PB['forearm_' + s] && PB['hand_' + s] && joint('arm_' + s))) return;
-  const out = (s) => new V3(s === 'L' ? 1 : -1, 0, 0), hs = heldSides(), restQ = {};
-  for (const s of 'LR') restQ[s] = PB['hand_' + s].getWorldQuaternion(new Q());
-  stanceLegs();
-  if (kind === 'two') {   // a weapon in both hands: before the belly, its point forward and up
-    if (twoHand && S.piece === 'weapon') { readyStance(twoHand); reach(twoHand); handClose(twoHand.from); handClose(twoHand.side); return; }
-    const s = hs.weapon, o = s === 'L' ? 'R' : 'L', l = armLen(s), D = FRONT.clone().addScaledVector(UP, .45).normalize();
-    const mid = joint('arm_L').add(joint('arm_R')).multiplyScalar(.5);
-    const W = mid.clone().addScaledVector(UP, -.62 * l).addScaledVector(FRONT, .5 * l).addScaledVector(out(s), .04 * l);
-    handTo(s, W, D, out(o)); twistForearm(s, .5); aimHeld(s, D, restQ[s]);
-    handTo(o, W.clone().addScaledVector(D, -.2 * l).addScaledVector(out(o), .06 * l), D, out(s)); twistForearm(o, .5);
-    handClose(s); handClose(o);
+  const hs = heldSides(), restQ = {}, axes = {}, two0 = {};
+  for (const s of 'LR') { restQ[s] = PB['hand_' + s].getWorldQuaternion(new Q()); axes[s] = heldAxis(s); }
+  const two = kind === 'two' || kind === 'two_high';
+  const ws = two && twoHand && S.piece === 'weapon' ? twoHand.from : hs.weapon;
+  const t = two ? (twoHand && S.piece === 'weapon' ? twoHand : axes[ws] ? twoOf(ws, axes[ws]) : null) : null;   // (at rest: the hand's frame then)
+  const fwd = stanceBody(two ? (ws === 'R' ? 'L' : 'R') : hs.shield);
+  const side = (s) => new V3().crossVectors(UP, fwd).normalize().multiplyScalar(s === 'L' ? 1 : -1);   // the body's own left, right
+  if (two) {
+    const o = ws === 'L' ? 'R' : 'L', l = armLen(ws), Sh = joint('arm_' + ws), mid0 = joint('arm_L').add(joint('arm_R')).multiplyScalar(.5);
+    const D = kind === 'two_high' ? UP.clone().multiplyScalar(.85).addScaledVector(FRONT, -.35).addScaledVector(side(ws), .2).normalize()
+      : FRONT.clone().addScaledVector(UP, .45).normalize();
+    const mid = kind === 'two_high' ? Sh.clone().addScaledVector(UP, .3 * l).addScaledVector(fwd, .22 * l).addScaledVector(side(ws), -.05 * l)
+      : mid0.clone().addScaledVector(UP, -.45 * l).addScaledVector(fwd, .45 * l);
+    if (t) { readyStance(t, D, mid); reach(t); twistForearm(t.side, .5); handClose(t.from); handClose(t.side); return; }
+    handTo(ws, mid, D, side(o)); twistForearm(ws, .5);
+    handTo(o, mid.clone().addScaledVector(D, -.2 * l).addScaledVector(side(o), .04 * l), D, side(ws)); twistForearm(o, .5);
+    handClose(ws); handClose(o);
     return;
   }
-  // the guard: the shield's forearm across before the chest (its face forward), the weapon's fist by the hip, the
-  // blade forward and up
+  // the shield's forearm across before the chest, held out (its outer side, the shield's, to the front)
   const sh = hs.shield, w = hs.weapon, ls = armLen(sh), lw = armLen(w);
-  // (the elbow down and a little forward, the forearm across, inwards and a little forward and up: its outer side,
-  // where the shield lies, to the front)
   const l1 = joint('forearm_' + sh).distanceTo(joint('arm_' + sh)), l2 = ls - l1;
-  const El = joint('arm_' + sh).addScaledVector(UP, -.8 * l1).addScaledVector(FRONT, .5 * l1).addScaledVector(out(sh), .1 * l1);
-  const fd = out(sh).negate().multiplyScalar(.8).addScaledVector(FRONT, .5).addScaledVector(UP, .2).normalize();
+  const El = joint('arm_' + sh).addScaledVector(UP, -.62 * l1).addScaledVector(fwd, .7 * l1).addScaledVector(side(sh), .15 * l1);
+  const fd = side(sh).negate().multiplyScalar(.75).addScaledVector(fwd, .55).addScaledVector(UP, .25).normalize();
   const Ws = El.addScaledVector(fd, l2);
   armTo(sh, Ws, new Q());
   handTo(sh, Ws, UP, fd); twistForearm(sh, 1);
-  const D = FRONT.clone().addScaledVector(UP, .75).addScaledVector(out(w), .05).normalize();   // (beside the shield, not behind it)
-  const Ww = joint('arm_' + w).addScaledVector(UP, -.6 * lw).addScaledVector(FRONT, .38 * lw).addScaledVector(out(w), .2 * lw);
+  const Shw = joint('arm_' + w);
+  const D = kind === 'guard_high' ? UP.clone().multiplyScalar(.6).addScaledVector(FRONT, -.55).addScaledVector(side(w), .4).normalize()
+    : FRONT.clone().addScaledVector(UP, .08).addScaledVector(side(sh), .2).normalize();   // (over the shield's top)
+  const Ww = kind === 'guard_high' ? Shw.clone().addScaledVector(UP, .38 * lw).addScaledVector(side(w), .22 * lw).addScaledVector(fwd, .02 * lw)
+    : Shw.clone().addScaledVector(UP, -.08 * lw).addScaledVector(fwd, .5 * lw).addScaledVector(side(w), .02 * lw);
   armTo(w, Ww, new Q());
-  handTo(w, Ww, D, out(sh)); twistForearm(w, .5); aimHeld(w, D, restQ[w]);
+  handTo(w, Ww, D, null); twistForearm(w, .5); aimHeld(w, D, restQ[w], axes[w]);
   handClose(sh); handClose(w);
 }
 function applyPose() {
   if (!charRoot) return;
   restPose();
-  if (pose === 'guard' || pose === 'two') { stancePose(pose); charRoot.updateMatrixWorld(true); return; }
+  if (STANCES.includes(pose)) { stancePose(pose); charRoot.updateMatrixWorld(true); return; }
   const dir = (a, b) => (PB[a] && PB[b] ? joint(b).sub(joint(a)).normalize() : null);
   for (const s of 'LR') {
     if (pose === 'side' || pose === 'front') {   // the arm raised 100° (the collarbone 20° of it), as the clips do
