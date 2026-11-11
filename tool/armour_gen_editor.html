@@ -4562,7 +4562,8 @@ let helmetObj = null, madePending = null;
 async function madePreview(piece, sides) {
   const style = S.p[piece];
   // (placed by hand - along, turned, sized - not here: the preview moved so at once, Blender makes it so on «Generate»)
-  const js = await send('made_preview', { piece, style, sides, params: { ...S.p, made_slide: 0, made_twist: 0, made_size: 100 } }, '{{js:ag.helmet_making}}', '_helmet_' + style);
+  const live = ['elbow', 'poleyn'].includes(piece) ? { made_slide: 0, made_twist: 0, made_size: 100, limb_gap: MADE_GAP0 } : {};   // (its gap too: out from the limb's axis here)
+  const js = await send('made_preview', { piece, style, sides, params: { ...S.p, ...live } }, '{{js:ag.helmet_making}}', '_helmet_' + style);
   if (!js || !js.ok) return null;
   const gltf = await new GLTFLoader().loadAsync(fileUrl(js.preview.glb) + '?v=' + js.preview.v);
   gltf.scene.traverse((o) => {
@@ -4573,9 +4574,11 @@ async function madePreview(piece, sides) {
 }
 // an elbow's, a poleyn's preview placed by hand at once (as blender_elbow_gen.py will make it: round the joint, along the
 // upper bone, turned round it to the outside, sized), from the preview made at the style's own place
+const MADE_GAP0 = 8;   // the gap an elbow's, a poleyn's preview is made with (another: out from the limb's axis here)
 function madePlace(root, piece) {
   if (!['elbow', 'poleyn'].includes(piece)) return;
   const slide = (S.p.made_slide || 0) / 100 * HEIGHT / 1.75, tw = THREE.MathUtils.degToRad(S.p.made_twist || 0), k = (S.p.made_size ?? 100) / 100;
+  const kg = (1 + (S.p.limb_gap ?? MADE_GAP0) / 100) / (1 + MADE_GAP0 / 100);   // the gap: across the limb only
   const [J0, J1] = piece === 'poleyn' ? ['upleg', 'leg'] : ['arm', 'forearm'];
   restPose();
   const F = {};
@@ -4596,7 +4599,8 @@ function madePlace(root, piece) {
     for (let i = 0; i < P.count; i++) {
       v.fromArray(O, 3 * i).applyMatrix4(M);
       const s = !F.R || (F.L && Math.abs(v.x - F.L.E.x) < Math.abs(v.x - F.R.E.x)) ? 'L' : 'R', f = F[s];
-      if (f) v.sub(f.E).multiplyScalar(k).applyQuaternion(f.q).add(f.E).addScaledVector(f.u, slide);
+      if (f) { v.sub(f.E); const a = v.dot(f.u); v.addScaledVector(f.u, -a).multiplyScalar(kg).addScaledVector(f.u, a);
+        v.multiplyScalar(k).applyQuaternion(f.q).add(f.E).addScaledVector(f.u, slide); }
       v.applyMatrix4(Mi); P.setXYZ(i, v.x, v.y, v.z);
     }
     P.needsUpdate = true; g.computeBoundingSphere(); g.computeBoundingBox();
@@ -4605,7 +4609,7 @@ function madePlace(root, piece) {
 function rebuildMade() {
   const piece = S.piece, sides = piece !== 'helmet' ? [...S.sides] : [];
   if (piece !== 'helmet' && !sides.length) { $('warn').textContent = '{{js:ag.choose_a_side}}'; $('warn').hidden = false; lastBuild = null; $('go').disabled = true; return; }
-  const key = [piece, S.p[piece], S.p.head_gap, S.p.limb_gap, S.p.wing, S.p.foot_gap, S.p.visor_angle, S.p.cheek_angle, S.p.tail, S.p.brim, ...sides].join('_'), h = madeCache.get(key);
+  const key = [piece, S.p[piece], S.p.head_gap, ['elbow', 'poleyn'].includes(piece) ? MADE_GAP0 : S.p.limb_gap, S.p.wing, S.p.foot_gap, S.p.visor_angle, S.p.cheek_angle, S.p.tail, S.p.brim, ...sides].join('_'), h = madeCache.get(key);
   if (!h) {
     if (madePending !== key) {
       madePending = key;
