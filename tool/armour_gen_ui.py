@@ -297,7 +297,13 @@ def _uv_fit(src: Path, mask: Path, size: int) -> tuple:
         cont = np.ones_like(m)
     holes = m & ~cont
     share = float(holes.sum() / max(1, m.sum()))
-    if holes.any():   # first the texture itself, from places moved by a few steps that have it; what is left: push-pull
+    aligned = cont.sum() > 0 and (cont & m).sum() / cont.sum() > .9 and not cont.all()
+    if aligned:   # painted on this unwrap (its islands within ours): inside them as it is; only the rim the bake's margin adds
+        # round each island (its background there would show as a seam on the model) takes the island's colour
+        inner = np.asarray(Image.fromarray((m * 255).astype(np.uint8)).filter(ImageFilter.MinFilter(17)), np.float32) > 127
+        holes = m & ~cont & ~inner
+        share = 0.
+    if holes.any() and not aligned:   # first the texture itself, from places moved by a few steps that have it; what is left: push-pull
         rest, orig = holes.copy(), a.copy()
         for dy, dx in ((0, 37), (41, 0), (-29, 53), (61, -17), (0, -83), (-97, 0), (113, 71), (-71, -127), (151, -43), (-167, 149), (211, 0), (0, -233)):
             if not rest.any():
