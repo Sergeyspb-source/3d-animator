@@ -4123,6 +4123,9 @@ const hs = (...k) => () => S.piece === 'helmet' && k.includes(S.p.helmet);
 SPEC.push(['{{js:ag.made_group}}', [], [
   ['head_gap', 0, 20, 1, '{{js:ag.head_gap}}', '{{js:ag.head_gap_info}}', 'pc', isP('helmet')],
   ['limb_gap', 0, 30, 1, '{{js:ag.limb_gap}}', '{{js:ag.limb_gap_info}}', 'pc', isP('elbow', 'poleyn')],
+  ['made_slide', -12, 12, .5, '{{js:ag.made_slide}}', '{{js:ag.made_slide_info}}', '', isP('elbow', 'poleyn')],
+  ['made_twist', -90, 90, 5, '{{js:ag.made_twist}}', '{{js:ag.made_twist_info}}', 'deg', isP('elbow', 'poleyn')],
+  ['made_size', 60, 160, 5, '{{js:ag.made_size}}', '', 'pc', isP('elbow', 'poleyn')],
   ['foot_gap', 0, 20, 1, '{{js:ag.foot_gap}}', '{{js:ag.foot_gap_info}}', 'pc', isP('footwear')],
   ['wing', 0, 150, 5, '{{js:ag.elbow_wing}}', '', 'pc', () => ['elbow', 'poleyn'].includes(S.piece) && /_(winged_plate|articulated_plate|plate_mail_hybrid)$/.test(S.p[S.piece] || '')],
   ['visor_angle', 0, 65, 5, '{{js:ag.visor_angle}}', '', 'deg', hs('visored_bascinet', 'armet')],
@@ -4194,7 +4197,7 @@ const DEFAULTS = Object.assign({ gap: 8, thickness: 12, relief: .35, step: 5, ri
   two_plates: false, spaulders: 0, sp_start: 30, sp_reach: 45, sp_span: 260, neckline: 8, armhole: 40, point: 0, ridge: 0, cap: 1.6, trim: '', hammer: .5, arm_share: .7, mail_under: false, hem: 15, sleeves: 30, top_cut: 0, bottom_cut: 0, splints: 6, stitch: false,
   closure: 'across', hinges: false, opening: 'none', shoulders: 'straps', yoke: 70, thigh: 'none', knee: 'none', fly: false, wrap: false,
   front_panel: false, hem_band: false, helmet: 'barbute', head_gap: 7, visor_angle: 0, cheek_angle: 0, tail: 100, brim: 100,
-  strap: 0, strap_fwd: 0, elbow: 'elbow_winged_plate', poleyn: 'poleyn_winged_plate', codpiece: 'cod_plate', cod_size: 100, cod_proj: 100, cod_top: 0, cod_belt: false, limb_gap: 8, wing: 100, footwear: 'foot_ankle_boot', foot_gap: 6, glove: 'plain_leather', cuff: 14,
+  strap: 0, strap_fwd: 0, elbow: 'elbow_winged_plate', poleyn: 'poleyn_winged_plate', made_slide: 0, made_twist: 0, made_size: 100, codpiece: 'cod_plate', cod_size: 100, cod_proj: 100, cod_top: 0, cod_belt: false, limb_gap: 8, wing: 100, footwear: 'foot_ankle_boot', foot_gap: 6, glove: 'plain_leather', cuff: 14,
   cloth_style: 'shirt', cloth_quilt: false, quilt_lines: false, pinches: [], paints: [],
   weapon: 'sword', shield: 'round', w_len: 100, w_width: 100, w_guard: 100, w_grip: 100, w_grip_r: 100, w_head: 100, grip_along: 0, grip_out: 0,
   grip_tilt: 15, grip_roll: 0, w_two: 0, arrows: 12, cloak_len: 60, cloak_wrap: 172, cloak_flare: 25, cloak_lift: 5, cloak_nape: 120, cloak_gap: .5, skirt_len: 30, skirt_flare: 30, skirt_lift: 6, skirt_slit: 0, skirt_gap: .5, tabard_len: 50, tabard_belt: 8, tabard_flare: 15, tabard_lift: 2, tabard_gap: 1, s_size: 100, s_curve: 30, s_rim: 100, s_boss: 100, s_along: 0, s_out: 0, s_turn: 0, s_hand: false, s_elbow: true, s_bend: 0, s_ridge: 0,
@@ -4568,7 +4571,7 @@ async function madePreview(piece, sides) {
 function rebuildMade() {
   const piece = S.piece, sides = piece !== 'helmet' ? [...S.sides] : [];
   if (piece !== 'helmet' && !sides.length) { $('warn').textContent = '{{js:ag.choose_a_side}}'; $('warn').hidden = false; lastBuild = null; $('go').disabled = true; return; }
-  const key = [piece, S.p[piece], S.p.head_gap, S.p.limb_gap, S.p.wing, S.p.foot_gap, S.p.visor_angle, S.p.cheek_angle, S.p.tail, S.p.brim, ...sides].join('_'), h = madeCache.get(key);
+  const key = [piece, S.p[piece], S.p.head_gap, S.p.limb_gap, S.p.wing, S.p.made_slide, S.p.made_twist, S.p.made_size, S.p.foot_gap, S.p.visor_angle, S.p.cheek_angle, S.p.tail, S.p.brim, ...sides].join('_'), h = madeCache.get(key);
   if (!h) {
     if (madePending !== key) {
       madePending = key;

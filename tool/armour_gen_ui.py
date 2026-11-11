@@ -113,7 +113,8 @@ def _helmet_params(params) -> dict:
 
 
 def _elbow_params(params) -> dict:
-    return {"gap": float(params.get("limb_gap", 8)) / 100, "wing": float(params.get("wing", 100)) / 100}
+    return {"gap": float(params.get("limb_gap", 8)) / 100, "wing": float(params.get("wing", 100)) / 100,
+            "slide": float(params.get("made_slide", 0)), "twist": float(params.get("made_twist", 0)), "size": float(params.get("made_size", 100))}
 
 
 def _poleyn_params(params) -> dict:
@@ -542,6 +543,7 @@ def made_preview(cfg, req) -> dict:
     hp = to_job(req.get("params") or {})
     sides = [x for x in req.get("sides") or [] if x in ("L", "R")]
     tag = "".join(f"_{k[0]}{round(hp[k] * (1 if 'angle' in k else 100))}" for k in ("gap", *own.get(style, ()))) + ("_" + "".join(sides) if sides else "")
+    tag += "".join(f"_{k[:2]}{round(hp[k] * 10)}" for k in ("slide", "twist", "size") if k in hp and hp[k] != (100 if k == "size" else 0))   # (placed by hand)
     d = Path(cfg["work_dir"]) / "helmets" / LM._slug(LM._stem(rigged))
     d.mkdir(parents=True, exist_ok=True)
     glb, mask = d / f"{style}{tag}.glb", d / f"{style}{tag}.mask.json"

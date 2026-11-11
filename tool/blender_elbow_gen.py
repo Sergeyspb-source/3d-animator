@@ -96,7 +96,10 @@ def elbow(s):
     u = (A - E).normalized()
     f = (Hd - E).normalized()
     bend = u + f   # straight: none; bent: toward the crook
-    if bend.length > .15:
+    if LEG:   # a knee's point is in front, whatever way the leg is set (an A-stance bends it sideways, not to the crook)
+        fwd = Vector((0, -1, 0))
+        o = (fwd - u * fwd.dot(u)).normalized()
+    elif bend.length > .15:
         o = -(bend - u * bend.dot(u)).normalized()
     else:   # straight at rest: the elbow's point is behind (the character faces -Y)
         back = Vector((0, -1, 0) if LEG else (0, 1, 0))   # (a knee's point: in front)
@@ -178,9 +181,18 @@ STRAP_IN = {n: min(math.hypot(v.co.x / p["arm_radius"], (v.co.y - .002) / (.82 *
 
 # ---------------------------------------------------------------- each side: mirrored for the left, weighted, onto the arm
 parts, info = [], {}
+SLIDE = float(prm.get("slide", 0)) / 100 * H / 1.75   # cm on a man of 1.75 m: up the limb +
+TWIST = math.radians(float(prm.get("twist", 0)))     # its cup turned round the limb, to the outside +
+SIZE = float(prm.get("size", 100)) / 100
 for s in sides:
     c, r_x, r_y, point, u, o, round_at = arms[s]
+    c = c + u * SLIDE
+    if TWIST:
+        out = Vector((1, 0, 0)) if s == "L" else Vector((-1, 0, 0))   # (the character's left is +X: each one to its outside)
+        sg = 1 if u.cross(o).dot(out) > 0 else -1
+        o = (Quaternion(u, sg * TWIST) @ o).normalized()
     sx, sy = scales(arms[s])
+    sx, sy = sx * SIZE, sy * SIZE
     sz = (sx + sy) / 2
     # the straps' heights: the arm there is thicker or thinner than at the joint; the cup opens out with it round the
     # arm's middle (more and more from the joint to them), the straps and mail go round it there, the gap off it
