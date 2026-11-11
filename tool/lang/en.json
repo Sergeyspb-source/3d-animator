@@ -623,6 +623,7 @@
  "ag.trim": "Rim trim:",
  "ag.trim_none": "none",
  "ag.two_plates": "The chest of two plates (parted in the middle)",
+ "ag.unknown_action": "The app does not know the action «{0}»: the editor page is newer than its code. Restart the SF3D app.",
  "ag.unknown_piece": "unknown piece «{0}»",
  "ag.view_back": "Back",
  "ag.view_close": "Close-up",

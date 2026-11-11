@@ -639,6 +639,12 @@ def handle(cfg, text):
         WF.status(cfg, rigged, f"_helmet_{req.get('style')}").write_text(
             json.dumps({"id": req.get("id"), **res}, ensure_ascii=False), encoding="utf-8")
         return res["log"], None
+    if req.get("action") not in (None, "generate"):   # a page newer than this code (the app not restarted after an update)
+        res = {"ok": False, "log": _t("ag.unknown_action", req.get("action"))}
+        if req.get("rigged"):   # (answered where most actions are: the page stops waiting)
+            WF.status(cfg, Path(req["rigged"]), "_" + re.sub(r"[^A-Za-z0-9_-]+", "_", str(req["action"]))).write_text(
+                json.dumps({"id": req.get("id"), **res}, ensure_ascii=False), encoding="utf-8")
+        return res["log"], None
     rigged = Path(req["rigged"])
     item = re.sub(r"[^A-Za-z0-9_-]+", "_", req.get("item") or "").strip("_") or f"proc_{req.get('piece')}"
     try:
