@@ -320,7 +320,7 @@ async function loadCharacter() {
 // in «Armour» are known by their body part («torso»: a breastplate). A piece made under others already worn: those
 // were fitted without it - «Rebuild by layers» makes them again over it.
 const LAYER = { undercloth: .5, trousers: 1, footwear: 1.5, foot: 1.5, brayette: 2, bracer: 3, rerebrace: 3, greave: 3, cuisse: 3,
-  forearm: 3, upperarm: 3, arm: 3, leg: 3, upleg: 3, tassets: 3, hips: 3, glove: 3.2, hand: 3.2, elbow: 3.5, cuirass: 4, torso: 4,
+  forearm: 3, upperarm: 3, arm: 3, leg: 3, upleg: 3, tassets: 3, hips: 3, glove: 3.2, hand: 3.2, codpiece: 3.3, elbow: 3.5, poleyn: 3.5, knee: 3.5, cuirass: 4, torso: 4,
   pauldron: 5, shoulder: 5, helmet: 5, head: 5, tabard: 6, skirt: 6, cloak: 7 };
 const CLOTH_KINDS = ['cloak', 'skirt', 'tabard'];   // over the new piece: not a wall to keep it under (the cloth is made again over it)
 let UNDER_T = 0;   // the piece being built: its thickness as a share of a profile's size (kept so far inside a wall over it)
@@ -329,6 +329,7 @@ let UNDER_T = 0;   // the piece being built: its thickness as a share of a profi
 const HELD = ['weapon', 'shield', 'sheath'], layerOf = (w) => !HELD.includes(w.piece) && !['weapon', 'shield'].includes(S.piece);   // a belt goes over the armour ticked
 const isOuter = (w) => (S.piece === 'helmet' ? ['helmet', 'head'].includes(w.piece)   // a helmet: not over another
   : w.piece === 'elbow' ? ['bracer', 'rerebrace'].includes(S.piece)   // elbows go over the arm's pieces
+  : w.piece === 'poleyn' ? ['greave', 'cuisse', 'trousers'].includes(S.piece)   // poleyns over the leg's
     : (LAYER[w.piece] || 0) > (LAYER[S.piece] || 99));
 // what the rays meet: the character's skin and the pieces put on under the new one (their rest pose, their weights);
 // the ones over it apart (outerGeo): the new piece stays under them
@@ -2331,6 +2332,79 @@ function sheath(side, p, band = true) {   // band: the belt (the strap) too — 
     [[-hw / 2, 0], [hw / 2, 0], [hw / 2, .004 * H], [-hw / 2, .004 * H]].map(([u, v]) => loc(O.clone().addScaledVector(wide, u).addScaledVector(out, v + T / 2)))), LEATHER, 'strap');
   return band ? [{ side, acc, R: W }, { side, acc: belt.acc, R: W }] : [{ side, acc, R: W }];
 }
+// a codpiece (16th c.): a cup over the groin, bulging out, its rim rolled (a plate's) and riveted, laced to a belt
+// round the waist by two straps; rigid on the hips. Its sheet follows the body under it (rays from in front), pushed out
+// by the bulge and a gap; the steel one plate, the leather one boiled leather, the cloth one stuffed, rounder
+function codpiece(p) {
+  if (!PB.hips || !joint('upleg_L') || !joint('upleg_R') || !joint('spine')) return [];
+  const H = HEIGHT, k = (x) => (x ?? 100) / 100, sz = k(p.cod_size), pr = k(p.cod_proj), st = p.codpiece || 'cod_plate';
+  const L = joint('upleg_L'), R = joint('upleg_R'), mid = L.clone().add(R).multiplyScalar(.5), hipW = L.distanceTo(R);
+  const X = new V3(1, 0, 0), back = FRONT.clone().negate();
+  const skin = (P) => { const O = P.clone().addScaledVector(FRONT, .4 * H), h = cast(O, back, .8 * H); return h ? O.addScaledVector(back, h.distance) : null; };
+  const K = mid.clone().addScaledVector(UP, -.03 * H + ((p.cod_top ?? 0) / 100) * .03 * H);   // (cod_top: up or down 3% of the height)
+  const C = skin(K) || K.clone().addScaledVector(FRONT, .08 * H);
+  const acc = rigidAcc(PB.hips), Fr = { C, A: FRONT.clone(), E: UP.clone(), S: X.clone() }, { loft, lathe } = itemMesh(acc, Fr);
+  const loc = (P) => { const d = P.clone().sub(C); return [d.dot(Fr.A), d.dot(Fr.E), d.dot(Fr.S)]; };
+  const cloth = st === 'cod_cloth', wx = .34 * hipW * sz * (cloth ? 1.1 : 1), up = .055 * H * sz, dn = .05 * H * sz;
+  const dz = .03 * H * pr * (cloth ? 1.3 : 1), gap = .006 * H, th = (cloth ? .006 : .0025) * H;
+  const NV = 11, NU = 13, F = [], Bk = [];
+  const edge = (x) => { const t = Math.min(1, Math.max(0, x)); return t * t * (3 - 2 * t); };
+  for (let i = 0; i < NV; i++) {   // rows from the bottom (between the thighs) to the top (the waist side)
+    const v = -1 + 2 * i / (NV - 1), e = v < 0 ? v * dn : v * up;
+    const half = wx * (v > 0 ? 1 - .3 * v * v : Math.max(.38, Math.pow(Math.max(0, 1 - v * v), .55)));   // straight-ish at the top, rounded below
+    const at = [], dep = [], bul = [];
+    for (let j = 0; j < NU; j++) {
+      const u = -1 + 2 * j / (NU - 1), sx = u * Math.max(half, .08 * wx);
+      const A0 = C.clone().addScaledVector(UP, e).addScaledVector(X, sx), S0 = skin(A0);
+      at.push(A0); dep.push(Math.max(S0 ? S0.clone().sub(C).dot(FRONT) : 0, -.02 * H));   // (between the thighs a ray goes far back: the cup not after it)
+      bul.push(Math.pow(Math.max(0, 1 - u * u), .8) * Math.pow(Math.max(0, 1 - ((v + .25) / 1.25) ** 2), .7) * edge((v + 1) / .45));   // (its lower edge down onto the body)
+    }
+    for (let it = 0; it < 4; it++) for (let j = 1; j < NU - 1; j++) dep[j] = Math.max(dep[j], (dep[j - 1] + dep[j + 1]) / 2);   // no dip in a row (its middle between the thighs)
+    const fr = [], bk = [];
+    for (let j = 0; j < NU; j++) {
+      const P = at[j].clone().addScaledVector(FRONT, dep[j] + gap + dz * bul[j] + th);
+      fr.push(P); bk.push(P.clone().addScaledVector(back, th));
+    }
+    F.push(fr); Bk.push(bk);
+  }
+  const id = (P, u, v) => acc.vert(P, u, v), Fi = F.map((r, i) => r.map((P, j) => id(P, j / (NU - 1), i / (NV - 1)))), Bi = Bk.map((r, i) => r.map((P, j) => id(P, j / (NU - 1), i / (NV - 1))));
+  const role = 'plate';
+  for (let i = 0; i < NV - 1; i++) for (let j = 0; j < NU - 1; j++) {
+    acc.face([Fi[i][j], Fi[i][j + 1], Fi[i + 1][j + 1], Fi[i + 1][j]], PLATE, role);   // the face, out
+    acc.face([Bi[i][j], Bi[i + 1][j], Bi[i + 1][j + 1], Bi[i][j + 1]], PLATE, role);   // the inside
+  }
+  // round its edge: the face to the inside
+  const ring = [...Array.from({ length: NU }, (_, j) => [0, j]), ...Array.from({ length: NV - 2 }, (_, i) => [i + 1, NU - 1]),
+    ...Array.from({ length: NU }, (_, j) => [NV - 1, NU - 1 - j]), ...Array.from({ length: NV - 2 }, (_, i) => [NV - 2 - i, 0])];
+  for (let q = 0; q < ring.length; q++) {
+    const [i0, j0] = ring[q], [i1, j1] = ring[(q + 1) % ring.length];
+    acc.face([Fi[i0][j0], Bi[i0][j0], Bi[i1][j1], Fi[i1][j1]], PLATE, role);
+  }
+  if (!cloth && p.trim) {   // the rim rolled over (a plate's), or a sewn edge band (leather's): a little tube round it
+    const rr = (st === 'cod_plate' ? .0045 : .0035) * H, secs = ring.map(([i, j]) => {
+      const P = F[i][j].clone().lerp(Bk[i][j], .5), nxt = ring[(ring.indexOf(ring.find(([a, b]) => a === i && b === j)) + 1) % ring.length];
+      const T = F[nxt[0]][nxt[1]].clone().sub(F[i][j]).normalize(), nA = FRONT.clone().addScaledVector(T, -FRONT.dot(T)).normalize(), nB = new V3().crossVectors(T, nA);
+      return Array.from({ length: 6 }, (_, g) => loc(P.clone().addScaledVector(nA, rr * Math.cos(g / 6 * TAU)).addScaledVector(nB, rr * Math.sin(g / 6 * TAU))));
+    });
+    loft([...secs, secs[0]], TRIM, 'trim', false, false);
+  }
+  if (!cloth) for (const [i, j] of [[NV - 2, 1], [NV - 2, NU - 2], [Math.round(NV / 2), 1], [Math.round(NV / 2), NU - 2], [1, Math.round(NU / 2) - 2], [1, Math.round(NU / 2) + 2]]) {
+    const P = F[i][j], fr2 = { C: P, A: FRONT.clone(), E: UP.clone(), S: X.clone() };
+    itemMesh(acc, fr2).lathe(BALL(-.001 * H, .0035 * H, 5), DETAIL, 'rivet', 8);
+  }
+  // the belt round the waist, and two straps from the cup's top corners up to it
+  const Cw = joint('hips').lerp(joint('spine'), .5);
+  const belt = bandAround(Cw, (f) => FRONT.clone().multiplyScalar(Math.cos(f)).addScaledVector(X, Math.sin(f)), 40, .03 * H, .006 * H, .006 * H, LEATHER, 'hips', PB.hips);
+  const sw = .016 * H;
+  for (const j of [1, NU - 2]) {
+    const A0 = F[NV - 1][j], fx = Math.atan2(A0.x - Cw.x, A0.z - Cw.z), r = belt.pts[Math.round(((fx + TAU) % TAU) / TAU * 40)].r;
+    const Bt = Cw.clone().addScaledVector(FRONT.clone().multiplyScalar(Math.cos(fx)).addScaledVector(X, Math.sin(fx)), r + .004 * H);
+    const ax = Bt.clone().sub(A0).normalize(), out = FRONT.clone().addScaledVector(ax, -FRONT.dot(ax)).normalize(), wide = new V3().crossVectors(ax, out).normalize();
+    loft([A0.clone().addScaledVector(ax, -.01 * H), Bt.clone().addScaledVector(ax, .012 * H)].map((O) =>
+      [[-sw / 2, 0], [sw / 2, 0], [sw / 2, .004 * H], [-sw / 2, .004 * H]].map(([u, v]) => loc(O.clone().addScaledVector(wide, u).addScaledVector(out, v)))), LEATHER, 'strap');
+  }
+  return [{ side: 'C', acc, R: wx }, { side: 'C', acc: belt.acc, R: wx }];
+}
 // ---- the body in another pose, for a piece that is fitted to it (a cloak lies over arms hanging down): its skin moved
 // by its weights (each bone's turn from its rest), with a ray tree of its own; made once per body
 let downGeo = null, downFor = null, downDm = null, downJ = null;   // downDm: each bone's turn from the rest into the arms-down pose; downJ: the arms' joints there
@@ -3105,6 +3179,7 @@ function buildPiece(kind, sides, p) {
   if (kind === 'shield') for (const side of sides) { const w = shield(side, p); if (w) parts.push(w); }
   if (kind === 'sheath') sides.forEach((side, i) => { const w = sheath(side, p, i === 0); if (w) parts.push(...w); });
   if (kind === 'undercloth') parts.push(...undercloth(p));
+  if (kind === 'codpiece') parts.push(...codpiece(p));
   if (kind === 'cloak') parts.push(...cloak(p));
   if (kind === 'skirt') parts.push(...skirt(p));
   if (kind === 'tabard') parts.push(...tabard(p));
@@ -3885,6 +3960,12 @@ Object.assign(STYLES, {
   // the helmet generators' constructions (vendor/blender_armour)
   helmet: Object.fromEntries(['kettle_hat', 'open_bascinet', 'barbute', 'visored_bascinet', 'sallet', 'armet'].map((k) => [k, { helmet: k }])),
   elbow: Object.fromEntries(['leather', 'mail', 'early_plate', 'winged_plate', 'articulated_plate', 'plate_mail_hybrid'].map((k) => ['elbow_' + k, { elbow: 'elbow_' + k }])),
+  codpiece: {   // the steel plate's, boiled leather, a stuffed cloth one (a landsknecht's)
+    cod_plate: { codpiece: 'cod_plate', material: 'steel', trim: 'steel', cod_proj: 100 },
+    cod_leather: { codpiece: 'cod_leather', material: 'leather', trim: 'brass', cod_proj: 90 },
+    cod_cloth: { codpiece: 'cod_cloth', material: 'cloth', trim: '', cod_proj: 120 },
+  },
+  poleyn: Object.fromEntries(['leather', 'mail', 'early_plate', 'winged_plate', 'articulated_plate', 'plate_mail_hybrid'].map((k) => ['poleyn_' + k, { poleyn: 'poleyn_' + k }])),
   undercloth: {   // worn under the armour: the reference sheets underarmor_clothing_reference_20261026_2151, braies, a coif
     cloth_fitted: { cloth_style: 'fitted', cloth_quilt: false, quilt_lines: false, cloth: '#8a7a62', tint: '#7a6a52', gap: 1, thickness: 1.5, relief: .1 },
     cloth_shirt: { cloth_style: 'shirt', cloth_quilt: false, quilt_lines: false, cloth: '#d2c6aa', tint: '#c9bc9c', gap: 4, thickness: 2 },
@@ -4004,16 +4085,16 @@ const SPEC = [
     ['arm_share', 0, 1, .05, '{{js:ag.arm_share}}', '{{js:ag.arm_share_info}}', '', () => S.piece === 'pauldron' || (S.piece === 'cuirass' && S.p.spaulders > 0)]]],
 ];
 // pieces the generators make (vendor/blender_armour), in Blender: a style and a few parameters of theirs
-const MADE = ['helmet', 'elbow', 'footwear'], isMade = () => MADE.includes(S.piece);
+const MADE = ['helmet', 'elbow', 'footwear', 'poleyn'], isMade = () => MADE.includes(S.piece);
 SPEC.forEach((g) => { if (!g[3]) g[3] = () => !isMade(); });
 SPEC[1][3] = () => !isMade() && S.piece !== 'glove' && S.piece !== 'undercloth';   // a glove's, a cloth's surfaces come with its style
 SPEC[3][3] = () => !isMade() && S.piece !== 'undercloth';   // no straps on cloth
 const hs = (...k) => () => S.piece === 'helmet' && k.includes(S.p.helmet);
 SPEC.push(['{{js:ag.made_group}}', [], [
   ['head_gap', 0, 20, 1, '{{js:ag.head_gap}}', '{{js:ag.head_gap_info}}', 'pc', isP('helmet')],
-  ['limb_gap', 0, 30, 1, '{{js:ag.limb_gap}}', '{{js:ag.limb_gap_info}}', 'pc', isP('elbow')],
+  ['limb_gap', 0, 30, 1, '{{js:ag.limb_gap}}', '{{js:ag.limb_gap_info}}', 'pc', isP('elbow', 'poleyn')],
   ['foot_gap', 0, 20, 1, '{{js:ag.foot_gap}}', '{{js:ag.foot_gap_info}}', 'pc', isP('footwear')],
-  ['wing', 0, 150, 5, '{{js:ag.elbow_wing}}', '', 'pc', () => S.piece === 'elbow' && ['elbow_winged_plate', 'elbow_articulated_plate', 'elbow_plate_mail_hybrid'].includes(S.p.elbow)],
+  ['wing', 0, 150, 5, '{{js:ag.elbow_wing}}', '', 'pc', () => ['elbow', 'poleyn'].includes(S.piece) && /_(winged_plate|articulated_plate|plate_mail_hybrid)$/.test(S.p[S.piece] || '')],
   ['visor_angle', 0, 65, 5, '{{js:ag.visor_angle}}', '', 'deg', hs('visored_bascinet', 'armet')],
   ['cheek_angle', 0, 35, 5, '{{js:ag.cheek_angle}}', '', 'deg', hs('armet')],
   ['tail', 0, 130, 5, '{{js:ag.helmet_tail}}', '', 'pc', hs('sallet')],
@@ -4070,6 +4151,11 @@ SPEC.push(['{{js:ag.tabard_group}}', ['plate'], [
   ['tabard_flare', 0, 100, 5, '{{js:ag.cloak_flare}}', '', 'pc', isP('tabard')],
   ['tabard_lift', -10, 10, .5, '{{js:ag.cloak_lift}}', '{{js:ag.cloak_lift_info}}', 'pc', isP('tabard')],
   ['tabard_gap', 0, 5, .25, '{{js:ag.cloak_gap}}', '{{js:ag.cloak_gap_info}}', 'pc', isP('tabard')]], isP('tabard')]);
+SPEC.push(['{{js:ag.codpiece_group}}', ['plate', 'trim', 'strap'], [
+  ['cod_size', 60, 160, 5, '{{js:ag.cod_size}}', '', 'pc', isP('codpiece')],
+  ['cod_proj', 40, 200, 5, '{{js:ag.cod_proj}}', '{{js:ag.cod_proj_info}}', 'pc', isP('codpiece')],
+  ['cod_top', -100, 100, 5, '{{js:ag.cod_top}}', '{{js:ag.cod_top_info}}', 'pc', isP('codpiece')]], isP('codpiece')]);
+for (const gi of [0, 1, 2, 3, 5]) { const was = SPEC[gi][3]; SPEC[gi][3] = () => was() && S.piece !== 'codpiece'; }   // (a codpiece: its own group, the material)
 const ALL = SPEC.flatMap((g) => g[2]);
 const DEFAULTS = Object.assign({ gap: 8, thickness: 12, relief: .35, step: 5, rim: 6, rivets: 60, rivet_size: 6, strap_width: 35,
   buckle: true, material: 'iron', wear: .35, tint: '#6b4128', cloth: '#56606e', tex: 1024, seed: 1, surface: 'plates', scale_size: 25,
@@ -4077,7 +4163,7 @@ const DEFAULTS = Object.assign({ gap: 8, thickness: 12, relief: .35, step: 5, ri
   two_plates: false, spaulders: 0, sp_start: 30, sp_reach: 45, sp_span: 260, neckline: 8, armhole: 40, point: 0, ridge: 0, cap: 1.6, trim: '', hammer: .5, arm_share: .7, mail_under: false, hem: 15, sleeves: 30, top_cut: 0, bottom_cut: 0, splints: 6, stitch: false,
   closure: 'across', hinges: false, opening: 'none', shoulders: 'straps', yoke: 70, thigh: 'none', knee: 'none', fly: false, wrap: false,
   front_panel: false, hem_band: false, helmet: 'barbute', head_gap: 7, visor_angle: 0, cheek_angle: 0, tail: 100, brim: 100,
-  strap: 0, strap_fwd: 0, elbow: 'elbow_winged_plate', limb_gap: 8, wing: 100, footwear: 'foot_ankle_boot', foot_gap: 6, glove: 'plain_leather', cuff: 14,
+  strap: 0, strap_fwd: 0, elbow: 'elbow_winged_plate', poleyn: 'poleyn_winged_plate', codpiece: 'cod_plate', cod_size: 100, cod_proj: 100, cod_top: 0, limb_gap: 8, wing: 100, footwear: 'foot_ankle_boot', foot_gap: 6, glove: 'plain_leather', cuff: 14,
   cloth_style: 'shirt', cloth_quilt: false, quilt_lines: false, pinches: [], paints: [],
   weapon: 'sword', shield: 'round', w_len: 100, w_width: 100, w_guard: 100, w_grip: 100, w_grip_r: 100, w_head: 100, grip_along: 0, grip_out: 0,
   grip_tilt: 15, grip_roll: 0, w_two: 0, arrows: 12, cloak_len: 60, cloak_wrap: 172, cloak_flare: 25, cloak_lift: 5, cloak_nape: 120, cloak_gap: .5, skirt_len: 30, skirt_flare: 30, skirt_lift: 6, skirt_slit: 0, skirt_gap: .5, tabard_len: 50, tabard_belt: 8, tabard_flare: 15, tabard_lift: 2, tabard_gap: 1, s_size: 100, s_curve: 30, s_rim: 100, s_boss: 100, s_along: 0, s_out: 0, s_turn: 0, s_hand: false, s_elbow: true, s_bend: 0, s_ridge: 0,
@@ -5572,10 +5658,10 @@ async function sendNow(action, extra, wait, statusName) {
 const SURF_STYLES = ['mail', 'scales', 'lamellar', 'brigandine', 'splints', 'quilt'];
 const slugN = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
 function styleOf(kind, p, style) {
-  const own = { weapon: p.weapon, shield: p.shield, helmet: p.helmet, glove: p.glove, elbow: String(p.elbow || '').replace(/^elbow_/, ''),
+  const own = { weapon: p.weapon, shield: p.shield, helmet: p.helmet, glove: p.glove, elbow: String(p.elbow || '').replace(/^elbow_/, ''), poleyn: String(p.poleyn || '').replace(/^poleyn_/, ''), codpiece: String(p.codpiece || '').replace(/^cod_/, ''),
     footwear: String(p.footwear || '').replace(/^foot_/, ''), undercloth: p.cloth_style, sheath: p.sheath }[kind];
   if (own) return slugN(own);
-  if (style) return slugN(String(style).replace(/^(cloth|shield|weapon|sheath|glove|foot|elbow)_/, ''));
+  if (style) return slugN(String(style).replace(/^(cloth|shield|weapon|sheath|glove|foot|elbow|poleyn)_/, ''));
   if (SURF_STYLES.includes(p.surface)) return p.surface;
   return slugN(p.material) || 'piece';
 }
@@ -5652,7 +5738,7 @@ const ownKind = (x) => !HELD.includes(x.piece) && !MADE.includes(x.piece) && !!P
 const madeAt = (item) => (DATA.worn.find((w) => w.item === item) || {}).v || 0;   // seconds
 // where on the body a piece is: a lower layer counts for a piece only where they meet (a coif is no reason to make
 // the trousers again, and through them all the armour over them)
-const REGIONS = { trousers: 'hips legs', brayette: 'hips', footwear: 'feet legs', bracer: 'arms', rerebrace: 'arms', elbow: 'arms',
+const REGIONS = { trousers: 'hips legs', brayette: 'hips', footwear: 'feet legs', bracer: 'arms', rerebrace: 'arms', elbow: 'arms', poleyn: 'legs', knee: 'legs', codpiece: 'hips',
   glove: 'hands arms', greave: 'legs feet', cuisse: 'legs', tassets: 'hips legs', cuirass: 'torso hips', pauldron: 'torso arms', helmet: 'head',
   tabard: 'torso hips legs', skirt: 'hips legs', cloak: 'torso arms hips legs', torso: 'torso hips', forearm: 'arms', upperarm: 'arms', arm: 'arms',
   leg: 'legs feet', upleg: 'legs', foot: 'feet', hand: 'hands', head: 'head', hips: 'hips legs', shoulder: 'torso arms' };

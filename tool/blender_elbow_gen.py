@@ -37,6 +37,10 @@ from i18n import t as _t
 
 job = json.loads(Path(sys.argv[sys.argv.index("--") + 1]).read_text(encoding="utf-8"))
 style, prm = job["style"], job.get("params") or {}
+# the same cups on the knees (a poleyn: params limb «leg»): the thigh, the knee, the shin; its point in front, the crook
+# behind; a right one's wing to the outside is the generator's mirrored one there (a leg's outside is the other way)
+LEG = prm.get("limb") == "leg"
+J_UP, J_MID, J_LO = ("upleg", "leg", "foot") if LEG else ("arm", "forearm", "hand")
 sides = [s for s in job.get("sides") or ["L", "R"] if s in ("L", "R")] or ["L", "R"]
 PARTS = ("Eye_", "EyeSocket", "Teeth_", "Gum_", "Tongue", "MouthCavity", "Icosphere")
 AXIS_Y = .008     # the arm's middle in the generator's frame (its straps and sleeve: elbow_fittings, elbow_builders)
@@ -86,16 +90,16 @@ H = max(v.z for v in verts) - min(v.z for v in verts)
 def elbow(s):
     """The arm at its elbow: (the middle of its round, its radius across (to the sides) and front to back, how far
     out the elbow's point is from the middle, up the upper arm, to the elbow's point)."""
-    A = W @ arm.data.bones[names[f"arm_{s}"]].head_local
-    E = W @ arm.data.bones[names[f"forearm_{s}"]].head_local
-    Hd = W @ arm.data.bones[names[f"hand_{s}"]].head_local
+    A = W @ arm.data.bones[names[f"{J_UP}_{s}"]].head_local
+    E = W @ arm.data.bones[names[f"{J_MID}_{s}"]].head_local
+    Hd = W @ arm.data.bones[names[f"{J_LO}_{s}"]].head_local
     u = (A - E).normalized()
     f = (Hd - E).normalized()
     bend = u + f   # straight: none; bent: toward the crook
     if bend.length > .15:
         o = -(bend - u * bend.dot(u)).normalized()
     else:   # straight at rest: the elbow's point is behind (the character faces -Y)
-        back = Vector((0, 1, 0))
+        back = Vector((0, -1, 0) if LEG else (0, 1, 0))   # (a knee's point: in front)
         o = (back - u * back.dot(u)).normalized()
     v = u.cross(o)
     dirs = [(o * math.cos(a) + v * math.sin(a)) for a in (math.tau * k / 16 for k in range(16))]
@@ -203,15 +207,15 @@ for s in sides:
     R = Matrix((Xf, Yf, Zf)).transposed().to_4x4()   # columns: the frame's axes in the world
     origin = c + AXIS_Y * sy * o   # the frame's (0, .008) is the arm's middle
     M = Matrix.Translation(origin) @ R @ Matrix.Diagonal((sx, sy, sz, 1))
-    up_b, lo_b = names[f"arm_{s}"], names[f"forearm_{s}"]
+    up_b, lo_b = names[f"{J_UP}_{s}"], names[f"{J_MID}_{s}"]
     E0 = W @ arm.data.bones[lo_b].head_local
-    fw = ((W @ arm.data.bones[names[f"hand_{s}"]].head_local) - E0).normalized()
+    fw = ((W @ arm.data.bones[names[f"{J_LO}_{s}"]].head_local) - E0).normalized()
     bend_q = (-u).rotation_difference(fw)
     for src in right:
         ob = src.copy()
         ob.data = src.data.copy()
         col.objects.link(ob)
-        if s == "L":   # the left one: the right one mirrored (x), its faces turned back out
+        if s == ("R" if LEG else "L"):   # the other one: the generator's mirrored (x), its faces turned back out
             for vx in ob.data.vertices:
                 vx.co.x *= -1
             bm = bmesh.new()
@@ -309,7 +313,7 @@ if job.get("mask"):
 import blender_texbake as TB
 TB.tag_mail([ob for _, ob, _ in parts])   # (the mail's rings: a slot of their own)
 obj = join([ob for _, ob, _ in parts])
-obj.name = f"{style}_elbows"
+obj.name = f"{style}_{'poleyns' if LEG else 'elbows'}"
 for m in obj.data.materials:   # full metal looks black in a game scene without reflections (cf. armour_gen_ui.PRESETS)
     b = next((n for n in m.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None) if m and m.use_nodes else None
     if b is not None and b.inputs["Metallic"].default_value > .7:
@@ -336,6 +340,6 @@ arm.select_set(True)
 bpy.context.view_layer.objects.active = arm
 bpy.ops.export_scene.gltf(filepath=job["out"], export_format="GLB", use_selection=True, export_skins=True,
                           export_animations=False, export_influence_nb=4)
-print("ARMOUR_GEN_OK " + json.dumps({"vertices": len(obj.data.vertices), "bones": sorted({names[f"{j}_{s}"] for s in sides for j in ("arm", "forearm")}),
+print("ARMOUR_GEN_OK " + json.dumps({"vertices": len(obj.data.vertices), "bones": sorted({names[f"{j}_{s}"] for s in sides for j in (J_UP, J_MID)}),
                                      "radius": max(v["radius"] for v in info.values()), "sides": sides, "arms": info,
                                      "build": {k: (round(v, 4) if isinstance(v, float) else v) for k, v in p.items()}, "uvtex": UVTEX}), flush=True)

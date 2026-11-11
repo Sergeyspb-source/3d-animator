@@ -108,11 +108,13 @@ def style_of(kind: str, params: dict, style=None) -> str:
     p = params or {}
     own = {"weapon": p.get("weapon"), "shield": p.get("shield"), "helmet": p.get("helmet"), "glove": p.get("glove"),
            "elbow": re.sub(r"^elbow_", "", str(p.get("elbow") or "")), "footwear": re.sub(r"^foot_", "", str(p.get("footwear") or "")),
+           "poleyn": re.sub(r"^poleyn_", "", str(p.get("poleyn") or "")),
+           "codpiece": re.sub(r"^cod_", "", str(p.get("codpiece") or "")),
            "undercloth": p.get("cloth_style"), "sheath": p.get("sheath")}.get(kind)
     if own:
         return slug(own)
     if style:
-        return slug(re.sub(r"^(cloth|shield|weapon|sheath|glove|foot|elbow)_", "", str(style)))
+        return slug(re.sub(r"^(cloth|shield|weapon|sheath|glove|foot|elbow|poleyn)_", "", str(style)))
     if p.get("surface") in SURFACE_STYLES:
         return p["surface"]
     return slug(p.get("material") or "") or "piece"

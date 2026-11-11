@@ -61,6 +61,12 @@ PIECES = {"bracer": ("forearm", "hand", "forearm", ("Spine", "Hips", "Chest", "U
           "elbow": ("arm", "forearm", "forearm", (), "elbow", "joint", (0, 0, 0, 0),
                     dict(elbow="elbow_winged_plate", limb_gap=8, wing=100)),
           "footwear": ("leg", "foot", "foot", (), "foot", "joint", (0, 0, 0, 0), dict(footwear="foot_ankle_boot", foot_gap=6)),
+          # a codpiece: a cup over the groin on a belt, rigid on the hips (built in the editor: armour_gen_editor codpiece)
+          "codpiece": ("hips", "spine", "hips", (), "hips", "groin", (0, 0, 0, 0),
+                       dict(codpiece="cod_plate", material="steel", trim="steel", cod_size=100, cod_proj=100, cod_top=0, straps=0, rigidity=1,
+                            surface="plain")),
+          # the same generator's cups on the knees (poleyns): the thigh, the knee, the shin
+          "poleyn": ("upleg", "leg", "leg", (), "knee", "joint", (0, 0, 0, 0), dict(poleyn="poleyn_winged_plate", limb_gap=8, wing=100)),
           # of the hand's own skin, offset (each finger with its bones), and a cuff round the wrist
           "glove": ("forearm", "hand", "hand", ("Spine", "Hips", "Chest", "UpLeg", "UpperLeg"), "hand", "glove", (0, 0, 0, 0),
                     dict(glove="plain_leather", cuff=14, flare=.2, gap=2, thickness=6, straps=1, strap_width=10, buckle=False,
@@ -95,6 +101,7 @@ GLOVES = ("glove_plain_leather", "glove_reinforced_leather", "glove_mail_mitten"
 HELMETS = ("kettle_hat", "open_bascinet", "barbute", "visored_bascinet", "sallet", "armet")
 FOOTWEAR = ("foot_leather_shoe", "foot_ankle_boot", "foot_mail_foot", "foot_round_sabaton", "foot_pointed_sabaton", "foot_hybrid_boot")
 ELBOWS = ("elbow_leather", "elbow_mail", "elbow_early_plate", "elbow_winged_plate", "elbow_articulated_plate", "elbow_plate_mail_hybrid")
+POLEYNS = tuple("poleyn_" + x[len("elbow_"):] for x in ELBOWS)
 
 
 def _helmet_params(params) -> dict:
@@ -109,6 +116,10 @@ def _elbow_params(params) -> dict:
     return {"gap": float(params.get("limb_gap", 8)) / 100, "wing": float(params.get("wing", 100)) / 100}
 
 
+def _poleyn_params(params) -> dict:
+    return {**_elbow_params(params), "limb": "leg"}
+
+
 def _foot_params(params) -> dict:
     return {"gap": float(params.get("foot_gap", 6)) / 100}
 
@@ -120,14 +131,17 @@ MADE = {"helmet": ("blender_helmet_gen.py", HELMETS, "", _helmet_params,
                     "kettle_hat": ("brim", "strap", "strap_fwd"), "barbute": ("strap", "strap_fwd"), "open_bascinet": ("strap", "strap_fwd")}),
         "elbow": ("blender_elbow_gen.py", ELBOWS, "elbow_", _elbow_params,
                   {k: ("wing",) for k in ("elbow_winged_plate", "elbow_articulated_plate", "elbow_plate_mail_hybrid")}),
-        "footwear": ("blender_footwear_gen.py", FOOTWEAR, "foot_", _foot_params, {})}
+        "footwear": ("blender_footwear_gen.py", FOOTWEAR, "foot_", _foot_params, {}),
+        "poleyn": ("blender_elbow_gen.py", POLEYNS, "poleyn_", _poleyn_params,
+                   {k: ("wing",) for k in ("poleyn_winged_plate", "poleyn_articulated_plate", "poleyn_plate_mail_hybrid")})}
 # «from» / «to» labels: a limb's along it, a torso piece's bottom and top, trousers' waist and leg length
 T_LABELS = {"limb": ("ag.from", "ag.to", "ag.from_info"), "torso": ("ag.bottom", "ag.top", "ag.bottom_info"),
             "cuirass": ("ag.bottom", "ag.neck_top", "ag.bottom_info"), "pauldron": ("ag.pauldron_from", "ag.sp_reach", "ag.pauldron_info"),
             "hips": ("ag.bottom", "ag.top", "ag.tassets_info"), "legs": ("ag.waist", "ag.leg_length", "ag.waist_info"),
             "head": ("ag.from", "ag.to", "ag.from_info"), "joint": ("ag.from", "ag.to", "ag.from_info"),
             "glove": ("ag.from", "ag.to", "ag.from_info"), "cloth": ("ag.from", "ag.to", "ag.from_info"),
-            "held": ("ag.from", "ag.to", "ag.from_info"), "cloak": ("ag.from", "ag.to", "ag.from_info")}
+            "held": ("ag.from", "ag.to", "ag.from_info"), "cloak": ("ag.from", "ag.to", "ag.from_info"),
+            "groin": ("ag.from", "ag.to", "ag.from_info")}
 # (linear colour, roughness, metallic): metallic kept moderate, a game scene without reflections shows a full metal black
 PRESETS = {"iron": ((.34, .34, .35), .55, .55), "steel": ((.56, .58, .61), .35, .65),
            "bronze": ((.55, .36, .17), .42, .6), "leather": ((.30, .17, .09), .72, 0.0), "cloth": ((.25, .27, .3), .9, 0.0),
@@ -139,7 +153,7 @@ CHOICES = {"opening_labels": ("none", "left", "right", "back", "front"), "closur
            "shoulder_labels": ("straps", "yoke", "none"),
            "style_labels": ("leather", "steel", "mail", "splints", "covered", "plate_mail", "lamellar", "brigandine", "tights", "wool", "leather_tr",
                             "mail_chausses", "plate_cuisses", "hidden_plate", "plate_and_mail", "compact", "extended", "carrier",
-                            "short_mail", "wrap_mail", "carrier_mail", "lames", *HELMETS, *ELBOWS, *FOOTWEAR, *GLOVES, *CLOTHS,
+                            "short_mail", "wrap_mail", "carrier_mail", "lames", *HELMETS, *ELBOWS, *POLEYNS, "cod_plate", "cod_leather", "cod_cloth", *FOOTWEAR, *GLOVES, *CLOTHS,
                             *(f"weapon_{w}" for w in WEAPONS), *(f"shield_{x}" for x in SHIELDS), *(f"sheath_{x}" for x in SHEATHS)),
            "thigh_labels": ("none", "mail", "plate", "panels", "plate_mail"), "knee_labels": ("none", "patch", "cop")}
 
