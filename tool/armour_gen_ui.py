@@ -7,6 +7,7 @@ other pieces see it."""
 import base64
 import html as _html
 import json
+import os
 import re
 import glob
 import shutil
@@ -21,6 +22,7 @@ from i18n import t as _t
 
 import landmarks as LM
 import matlib
+import texgen_ai
 import wear_files as WF
 
 ROOT = Path(__file__).resolve().parent
@@ -348,8 +350,24 @@ def uv_action(cfg, req) -> dict:
         import os
         os.startfile(str(d))   # (the app runs on Windows)
         out["log"] = _t("ag.uv_opened", d)
-    elif req["action"] == "uv_put":
-        if req.get("data"):
+    elif req["action"] in ("uv_put", "ai_texture"):
+        if req["action"] == "ai_texture":   # the part's colours repainted by an image model (OpenRouter), kept as its texture
+            sl = str(req.get("slot") or "")
+            if sl not in j["slots"]:
+                return {"ok": False, "log": _t("ag.uv_bad_slot", sl)}
+            key = cfg.get("openrouter_key") or os.environ.get("OPENROUTER_API_KEY", "")
+            if not key:
+                return {"ok": False, "log": _t("ag.ai_no_key")}
+            model = str(req.get("model") or texgen_ai.DEFAULT)
+            t0 = datetime.now()
+            png, cost = texgen_ai.edit(key, model, str(req.get("prompt") or ""), d / f"{sl}_color.png")
+            keep = d / f"{sl}_ai_{re.sub(r'[^A-Za-z0-9_.-]+', '_', model.split('/')[-1])}_{t0:%H%M%S}.png"   # (each one kept)
+            keep.write_bytes(png)
+            from PIL import Image
+            Image.open(keep).convert("RGB").save(d / f"{sl}_user.png")
+            user = {sl: (d / f"{sl}_user.png").resolve().as_posix()}
+            out["ai"] = {"model": model, "cost": cost, "file": keep.name, "seconds": (datetime.now() - t0).seconds}
+        elif req.get("data"):
             from PIL import Image
             import io as _io
             sl = str(req.get("slot") or "")
@@ -367,6 +385,9 @@ def uv_action(cfg, req) -> dict:
         out["user"] = user
         out["uvtex"] = {sl: {"path": p, "hash": j["slots"][sl]["hash"]} for sl, p in fits.items()}
         out["log"] = (_t("ag.uv_taken", ", ".join(_t(f"ag.lib_slot_{s}") for s in user)) if user else _t("ag.uv_no_user", d)) + "".join("\n" + x for x in notes)
+        if out.get("ai"):
+            a = out["ai"]
+            out["log"] = _t("ag.ai_done", a["model"], a["seconds"], f"${a['cost']:.3f}" if isinstance(a["cost"], (int, float)) else "?", a["file"]) + "\n" + out["log"]
     else:
         out["log"] = _t("ag.uv_ready", d)
     return out
@@ -640,7 +661,22 @@ def handle(cfg, text):
             res = {"ok": False, "log": _t("lm.error", e)}
         WF.status(cfg, rigged, "_" + req["action"]).write_text(json.dumps({"id": req.get("id"), **res}, ensure_ascii=False), encoding="utf-8")
         return res["log"], None
-    if req.get("action") in ("uv_info", "uv_put", "uv_open"):   # answered in <stem>_<action>.wear.json
+    if req.get("action") in ("ai_models", "ai_price"):   # OpenRouter's image models (that edit a picture), a model's price
+        rigged = Path(req["rigged"])
+        try:
+            if req["action"] == "ai_models":
+                cfg_model = cfg.get("openrouter_image_model") or ""
+                ms = texgen_ai.models()
+                res = {"ok": True, "models": [{"id": m["id"], "name": m["name"]} for m in ms], "log": _t("ag.ai_models", len(ms)),
+                       "default": texgen_ai.DEFAULT, "has_key": bool(cfg.get("openrouter_key") or os.environ.get("OPENROUTER_API_KEY")),
+                       "cfg_model": cfg_model}
+            else:
+                res = {"ok": True, "price": texgen_ai.price(str(req.get("model") or "")), "log": ""}
+        except Exception as e:  # noqa: BLE001
+            res = {"ok": False, "log": _t("lm.error", e)}
+        WF.status(cfg, rigged, "_" + req["action"]).write_text(json.dumps({"id": req.get("id"), **res}, ensure_ascii=False), encoding="utf-8")
+        return res["log"], None
+    if req.get("action") in ("uv_info", "uv_put", "uv_open", "ai_texture"):   # answered in <stem>_<action>.wear.json
         rigged = Path(req["rigged"])
         try:
             res = uv_action(cfg, req)
