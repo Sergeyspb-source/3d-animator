@@ -4081,10 +4081,14 @@ const fmt = (key, x) => {
 };
 function buildPanel() {
   // in blocks: the armour, the clothes, what is held (a piece of none of them, added later, goes to the armour's)
+  // (each weapon its own button, as the shield: a sword, a dagger, an axe are all weapons; the scabbards and the quivers
+  // a block of their own, each variant a button)
+  const own = (k) => Object.keys(STYLES[k] || {}).map((st) => [k, st]);
   const BLOCKS = [['{{js:ag.block_armour}}', []], ['{{js:ag.block_clothes}}', ['undercloth', 'trousers', 'skirt', 'tabard', 'cloak']],
-    ['{{js:ag.block_held}}', ['weapon', 'shield', 'sheath']]];
-  for (const k of Object.keys(PIECES)) if (!BLOCKS.some(([, ks]) => ks.includes(k))) BLOCKS[0][1].push(k);
-  $('pieces').innerHTML = BLOCKS.map(([t, ks]) => `<div class="pgrp">${t}</div>` + ks.filter((k) => PIECES[k]).map((k) => `<button data-piece="${k}">${PIECES[k].label}</button>`).join('')).join('');
+    ['{{js:ag.block_held}}', [...own('weapon'), 'shield']], ['{{js:ag.block_sheath}}', own('sheath')]];
+  for (const k of Object.keys(PIECES)) if (!BLOCKS.some(([, ks]) => ks.flat().includes(k))) BLOCKS[0][1].push(k);
+  $('pieces').innerHTML = BLOCKS.map(([t, ks]) => `<div class="pgrp">${t}</div>` + ks.map((e) => (Array.isArray(e) ? e : [e])).filter(([k]) => PIECES[k])
+    .map(([k, st]) => `<button data-piece="${k}"${st ? ` data-style="${st}"` : ''}>${st ? DATA.style_labels[st] : PIECES[k].label}</button>`).join('')).join('');
   const html = SPEC.map(([title, roles, list], gi) => `<div class="box" id="g_${gi}" data-roles="${roles.join(' ')}"><div class="grp">${title}</div>` +
     (gi === 1 ? `<div class="row" style="margin:2px 0 6px"><span class="seg" id="surfSeg">${SURFACES.map((m) => `<button data-surf="${m}">${DATA.surface_labels[m]}</button>`).join('')}</span></div>` +
       `<div id="lowRow"><div class="note">{{js:ag.low_surface}}</div><div class="row" style="margin:2px 0 6px"><span class="seg" id="lowSeg">` +
@@ -4155,7 +4159,10 @@ function buildPanel() {
   $('i_seed').addEventListener('change', (e) => { S.p.seed = Math.round(+e.target.value || 1); changed('seed'); });
   $('matSeg').addEventListener('click', (e) => { const m = e.target.dataset.mat; if (m) { S.p.material = m; changed('look'); } });
   $('surfSeg').addEventListener('click', (e) => { const m = e.target.dataset.surf; if (m) { S.p.surface = m; changed('surface'); } });
-  $('pieces').addEventListener('click', (e) => { const k = e.target.dataset.piece; if (k) setPiece(k); });
+  $('pieces').addEventListener('click', (e) => { const { piece: k, style: st } = e.target.dataset; if (!k) return;
+    if (!st) { setPiece(k); return; }
+    HIST.restoring = true; try { setPiece(k); } finally { HIST.restoring = false; }   // (one step back: the piece and its kind)
+    applyStyle(st); });
   $('sidesRow').addEventListener('click', (e) => {
     const s = e.target.dataset.side; if (!s) return;
     S.sides = S.sides.includes(s) ? S.sides.filter((x) => x !== s) : [...S.sides, s].sort(); changed('sides');
@@ -4200,7 +4207,7 @@ function syncPanel() {
   $('closeRow').hidden = !isOpen(); $('r_hinges').hidden = !(isLimb() && isOpen());
   for (const [id, key, attr] of [['openSeg', 'opening', 'open'], ['closeSeg', 'closure', 'close'], ['shSeg', 'shoulders', 'sh'], ['thighSeg', 'thigh', 'thigh'], ['kneeSeg', 'knee', 'knee']])
     for (const b of $(id).children) b.classList.toggle('on', b.dataset[attr] === S.p[key]);
-  const set = styleSet(); $('styleRow').hidden = !set;
+  const set = ['weapon', 'sheath'].includes(S.piece) ? null : styleSet(); $('styleRow').hidden = !set;   // (theirs: the piece's buttons)
   if (set) {
     const kind = S.piece === 'cuirass' || !isLimb() ? S.piece : 'limb';
     if ($('styleSeg').dataset.kind !== kind) {
@@ -4214,7 +4221,8 @@ function syncPanel() {
   $('i_tint').value = S.p.tint; $('i_cloth').value = S.p.cloth; $('i_tex').value = String(S.p.tex); $('i_seed').value = S.p.seed;
   for (const b of $('matSeg').children) b.classList.toggle('on', b.dataset.mat === S.p.material);
   for (const b of $('surfSeg').children) b.classList.toggle('on', b.dataset.surf === S.p.surface);
-  for (const b of $('pieces').querySelectorAll('button')) b.classList.toggle('on', !S.idle && b.dataset.piece === S.piece);
+  for (const b of $('pieces').querySelectorAll('button'))
+    b.classList.toggle('on', !S.idle && b.dataset.piece === S.piece && (!b.dataset.style || b.dataset.style === S.piece + '_' + S.p[S.piece]));
   for (const b of $('sidesRow').querySelectorAll('button')) b.classList.toggle('on', S.sides.includes(b.dataset.side));
   $('sidesRow').hidden = !['limb', 'joint', 'glove', 'held'].includes(PIECES[S.piece].family);
   if (!S.nameTouched) S.name = autoName();   // a new piece: named by the rule as its kind and style change
