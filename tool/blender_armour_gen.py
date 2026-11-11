@@ -302,6 +302,7 @@ def uv_package(obj, mats, imgs, size, item):
             continue
         col = _pixels(imgs[(m.name, "color")], size).copy(); col[:, 3] = 1
         mk = np.clip(mask[m.name][:, 0], 0, 1)
+        own = UV_INFO.get(sl) == "ok" and (d / f"{sl}_color.png").exists()   # (a texture given back: the colours it was painted on kept)
         lines = np.zeros((size, size), np.float32)   # the islands' edges (an edge of one face only, on the unwrap), a pixel wide
         count, seg = {}, {}
         for p in me.polygons:
@@ -321,11 +322,13 @@ def uv_package(obj, mats, imgs, size, item):
                 ys = np.clip(np.round(np.linspace(y0, y1, n + 1)).astype(int), 0, size - 1)
                 lines[ys, xs] = 1
         lines = lines.ravel()
-        save(f"{sl}_color", col)
+        if not own:
+            save(f"{sl}_color", col)
         save(f"{sl}_mask", np.stack([mk, mk, mk, np.ones_like(mk)], axis=1))
         save(f"{sl}_lines", np.stack([lines * 0, lines * 0, lines * 0, lines], axis=1))
-        lay = col.copy(); lay[:, :3] = lay[:, :3] * (1 - lines[:, None]) + np.array([1, .1, .6])[None, :] * lines[:, None]
-        save(f"{sl}_layout", lay)
+        if not own:
+            lay = col.copy(); lay[:, :3] = lay[:, :3] * (1 - lines[:, None]) + np.array([1, .1, .6])[None, :] * lines[:, None]
+            save(f"{sl}_layout", lay)
         info["slots"][sl] = {"hash": uv_hash(obj, mi), "faces": sum(1 for p in me.polygons if p.material_index == mi)}
     (d / "uv.json").write_text(json.dumps(info, indent=1), encoding="utf-8")
 

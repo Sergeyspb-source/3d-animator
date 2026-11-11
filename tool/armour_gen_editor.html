@@ -6063,21 +6063,23 @@ function uvSync() {
   $('uv_applied').textContent = on.length ? '{{js:ag.uv_on}}'.replace('{0}', on.map((k) => DATA.lib_slots[k] || k).join(', ')) : '';
   $('uv_clear').disabled = !on.length;
 }
-async function uvRefresh() {
+async function uvRefresh(keep) {   // keep: the status said before stays (what was made, the holes found)
   UV.info = null;
+  const was = $('status').textContent;
   if (uvMade()) { const js = await send('uv_info', { item: itemName(), piece: S.piece }, '{{js:ag.uv_reading}}', '_uv_info'); if (js && js.ok) UV.info = js; }
+  if (keep) $('status').textContent = was;
   uvSync();
 }
 async function uvUse(js) {   // the textures found or loaded: the piece made again with them, its result shown
   if (!js || !js.ok || !js.uvtex || !Object.keys(js.uvtex).length) return;
   S.p.uvtex = { ...(S.p.uvtex || {}), ...js.uvtex }; changed('uvtex'); uvSync();
   const log = js.log, r = await make();
-  if (r && r.ok) { $('status').textContent = log + '\n' + r.log; await uvRefresh(); }
+  if (r && r.ok) { $('status').textContent = log + '\n' + r.log; await uvRefresh(true); }
 }
 function uvWire() {
   if (!$('uvBox')) return;
   $('uvBox').addEventListener('toggle', () => { if ($('uvBox').open) uvRefresh(); });
-  $('uv_refresh').addEventListener('click', uvRefresh);
+  $('uv_refresh').addEventListener('click', () => uvRefresh());
   $('uv_want').addEventListener('input', () => { try { localStorage.setItem('ag_uv_want', $('uv_want').value); } catch (e) { /* none */ } $('uv_prompt').value = uvPrompt(); });
   try { $('uv_want').value = localStorage.getItem('ag_uv_want') || ''; } catch (e) { /* none */ }
   $('uv_open').addEventListener('click', () => send('uv_open', { item: itemName(), piece: S.piece }, '{{js:ag.uv_reading}}', '_uv_open'));

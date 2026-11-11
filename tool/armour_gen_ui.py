@@ -277,6 +277,55 @@ def uv_dir(rigged: Path, item: str, piece=None) -> Path:
     return WF.path(rigged, item, ".glb", piece).parent / f"{item}_uv"
 
 
+def _uv_fit(src: Path, mask: Path, size: int) -> tuple:
+    """A texture given back made to fit the unwrap: its size, and the holes in it - where an island of the mask meets
+    its empty background (a picture painted on another layout, as an image model draws its own) - filled from the
+    colour round them (push-pull: averaged down a pyramid, taken back up where empty). Saved as <slot>_user_fit.png,
+    the given one kept. -> (that file, the share of the islands that were holes)"""
+    import numpy as np
+    from PIL import Image, ImageFilter
+    im = Image.open(src).convert("RGB")
+    if im.size != (size, size):
+        im = im.resize((size, size), Image.LANCZOS)
+    a = np.asarray(im, np.float32)
+    m = np.asarray(Image.open(mask).convert("L").resize((size, size)), np.float32) > 127
+    corners = np.concatenate([a[:24, :24].reshape(-1, 3), a[:24, -24:].reshape(-1, 3), a[-24:, :24].reshape(-1, 3), a[-24:, -24:].reshape(-1, 3)])
+    bg = np.median(corners, axis=0)   # its background: what its corners are
+    far = np.linalg.norm(a - bg, axis=2) > 22
+    cont = np.asarray(Image.fromarray((far * 255).astype(np.uint8)).filter(ImageFilter.MaxFilter(3)).filter(ImageFilter.MinFilter(5)), np.float32) > 127
+    if corners.std(axis=0).mean() > 8:   # its corners not one flat colour: a picture over the whole square, no background
+        cont = np.ones_like(m)
+    holes = m & ~cont
+    share = float(holes.sum() / max(1, m.sum()))
+    if holes.any():   # first the texture itself, from places moved by a few steps that have it; what is left: push-pull
+        rest, orig = holes.copy(), a.copy()
+        for dy, dx in ((0, 37), (41, 0), (-29, 53), (61, -17), (0, -83), (-97, 0), (113, 71), (-71, -127), (151, -43), (-167, 149), (211, 0), (0, -233)):
+            if not rest.any():
+                break
+            ok_s = np.roll(np.roll(cont, dy, 0), dx, 1)
+            take = rest & ok_s
+            a[take] = np.roll(np.roll(orig, dy, 0), dx, 1)[take]
+            rest &= ~take
+        cont = cont | (holes & ~rest)
+    if holes.any() and (m & ~cont).any():
+        ok = cont.astype(np.float32)
+        levels = [(a * ok[..., None], ok)]
+        while levels[-1][1].shape[0] > 1:
+            c, w = levels[-1]
+            h2 = c.shape[0] // 2
+            c = c[:h2 * 2, :h2 * 2].reshape(h2, 2, h2, 2, 3).sum(axis=(1, 3)); w = w[:h2 * 2, :h2 * 2].reshape(h2, 2, h2, 2).sum(axis=(1, 3))
+            levels.append((c, w))
+        fill = levels[-1][0] / np.maximum(levels[-1][1], 1e-6)[..., None]
+        for c, w in reversed(levels[:-1]):
+            up = np.repeat(np.repeat(fill, 2, axis=0), 2, axis=1)[:c.shape[0], :c.shape[1]]
+            have = w > 0
+            fill = np.where(have[..., None], c / np.maximum(w, 1e-6)[..., None], up)
+        a = np.where(cont[..., None], a, fill)
+    out = src.with_name(src.stem + "_fit.png")
+    Image.fromarray(a.clip(0, 255).astype(np.uint8)).save(out)
+    return out, share
+
+
 def uv_action(cfg, req) -> dict:
     """uv_info: the unwrap given out with the piece made last ({folder, size, slots: {slot: {hash}}, user: {slot: path}});
     uv_put: a texture for a slot (a data URL) saved as <slot>_user.png there, or (no data) the <slot>_user.png files
@@ -287,7 +336,7 @@ def uv_action(cfg, req) -> dict:
     if not info.exists():
         return {"ok": False, "log": _t("ag.uv_none"), "folder": d.resolve().as_posix()}
     j = json.loads(info.read_text(encoding="utf-8"))
-    user = {f.stem[:-5]: f.resolve().as_posix() for f in d.glob("*_user.png") if f.stem[:-5] in j["slots"]}
+    user = {f.stem[:-5]: f.resolve().as_posix() for f in d.glob("*_user.png") if f.stem[:-5] in j["slots"]}   # (not *_user_fit.png)
     out = {"ok": True, "folder": d.resolve().as_posix(), "size": j["size"], "slots": j["slots"], "user": user}
     if req["action"] == "uv_open":
         import os
@@ -301,13 +350,17 @@ def uv_action(cfg, req) -> dict:
             if sl not in j["slots"]:
                 return {"ok": False, "log": _t("ag.uv_bad_slot", sl)}
             im = Image.open(_io.BytesIO(base64.b64decode(str(req["data"]).split(",", 1)[1]))).convert("RGB")
-            if im.size != (j["size"], j["size"]):
-                im = im.resize((j["size"], j["size"]), Image.LANCZOS)
             im.save(d / f"{sl}_user.png")
-            user[sl] = (d / f"{sl}_user.png").resolve().as_posix()
-            out["user"] = user
-        out["uvtex"] = {sl: {"path": p, "hash": j["slots"][sl]["hash"]} for sl, p in user.items()}
-        out["log"] = _t("ag.uv_taken", ", ".join(_t(f"ag.lib_slot_{s}") for s in user)) if user else _t("ag.uv_no_user", d)
+            user = {sl: (d / f"{sl}_user.png").resolve().as_posix()}   # (the one loaded: the others as they are)
+        fits, notes = {}, []
+        for sl, p in user.items():
+            f, share = _uv_fit(Path(p), d / f"{sl}_mask.png", j["size"])
+            fits[sl] = f.resolve().as_posix()
+            if share > .03:   # painted on another layout: its background fell on the islands
+                notes.append(_t("ag.uv_holes", _t(f"ag.lib_slot_{sl}"), round(share * 100)))
+        out["user"] = user
+        out["uvtex"] = {sl: {"path": p, "hash": j["slots"][sl]["hash"]} for sl, p in fits.items()}
+        out["log"] = (_t("ag.uv_taken", ", ".join(_t(f"ag.lib_slot_{s}") for s in user)) if user else _t("ag.uv_no_user", d)) + "".join("\n" + x for x in notes)
     else:
         out["log"] = _t("ag.uv_ready", d)
     return out
