@@ -428,6 +428,14 @@ function castOuter(o, d, far) {   // the inner wall of the pieces worn over the 
   const h = outerGeo.boundsTree.raycastFirst(_ray, THREE.DoubleSide);
   return h && h.distance <= far ? h : null;
 }
+function castSkin(o, d, far) {   // the bare skin's first hit (not the pieces worn: their triangles come after the skin's);
+  // where the skin is hidden under one (its mask takes it away) the inner wall of the layers met first
+  const all = castAll(o, d, far); if (!all.length) return null;
+  const sk = all.find((h) => h.faceIndex < SKIN_TRIS);
+  if (sk && sk.distance < all[0].distance + .03 * HEIGHT) return sk;
+  let k = 0; while (k + 1 < all.length && all[k + 1].distance - all[k].distance < .012 * HEIGHT) k++;
+  return all[k];
+}
 function castAll(o, d, far) {   // every hit along the ray, nearest first
   _ray.origin.copy(o); _ray.direction.copy(d);
   return bodyGeo.boundsTree.raycast(_ray, THREE.DoubleSide).filter((h) => h.distance <= far).sort((a, b) => a.distance - b.distance);
@@ -2397,22 +2405,35 @@ function codpiece(p) {
     const P = F[i][j], fr2 = { C: P, A: FRONT.clone(), E: UP.clone(), S: X.clone() };
     itemMesh(acc, fr2).lathe(BALL(-.001 * H, .0035 * H, 5), DETAIL, 'rivet', 8);
   }
-  // two thin straps from the cup's top corners up to the waist, close to the body (laced there, under the armour), and
-  // a thin belt round the waist if wanted; the codpiece is under the plates (its layer: over the brayette, the hose)
-  const Cw = joint('hips').lerp(joint('spine'), .5), sw = .012 * H, st2 = .0025 * H;
-  const belt = p.cod_belt ? bandAround(Cw, (f) => FRONT.clone().multiplyScalar(Math.cos(f)).addScaledVector(X, Math.sin(f)), 40, .018 * H, st2, .002 * H, LEATHER, 'hips', PB.hips) : null;
+  // two thin straps from the cup's top corners up to the waist on the skin itself (over the undercloth if it is worn,
+  // 1 mm thick: under the brayette, the hose and the cuirass), and a thin belt round the waist if wanted
+  const Cw = joint('hips').lerp(joint('spine'), .5), sw = MM(14), st2 = MM(1);
+  const over = [...WORN.values()].some((w) => w.on && w.piece === 'undercloth') ? MM(4) : MM(.5);
+  const onSkin = (P) => { const O = P.clone().addScaledVector(FRONT, .4 * H), h = castSkin(O, back, .8 * H); return h ? O.addScaledVector(back, h.distance) : null; };
+  let belt = null;
+  if (p.cod_belt) {   // the belt round the waist on the skin itself too (over the undercloth): under the rest
+    const n = 48, bw = MM(16), secs = [];
+    for (let q = 0; q <= n; q++) {
+      const f = q / n * TAU, d = FRONT.clone().multiplyScalar(Math.cos(f)).addScaledVector(X, Math.sin(f));
+      const O = Cw.clone().addScaledVector(d, .5 * H), h = castSkin(O, d.clone().negate(), .5 * H), r = h ? .5 * H - h.distance : .12 * H;
+      const P = Cw.clone().addScaledVector(d, r + over);
+      secs.push([[0, -bw / 2], [0, bw / 2], [st2, bw / 2], [st2, -bw / 2]].map(([o, e]) => loc(P.clone().addScaledVector(d, o).addScaledVector(UP, e))));
+    }
+    loft(secs, LEATHER, 'strap', false, false);
+    belt = true;
+  }
   for (const j of [1, NU - 2]) {
-    const A0 = F[NV - 1][j], W0 = new V3(A0.x, Cw.y, A0.z), Sw = skin(W0) || W0;
-    const Bt = Sw.clone().addScaledVector(FRONT, .002 * H + (belt ? st2 : 0));
+    const A0 = F[NV - 1][j], W0 = new V3(A0.x, Cw.y, A0.z), Sw = onSkin(W0) || W0;
+    const Bt = Sw.clone().addScaledVector(FRONT, over + (belt ? st2 : 0));
     const ax = Bt.clone().sub(A0).normalize(), out = FRONT.clone().addScaledVector(ax, -FRONT.dot(ax)).normalize(), wide = new V3().crossVectors(ax, out).normalize();
-    const n = 6, path = Array.from({ length: n + 1 }, (_, q) => {   // along the body between them (not straight through the belly)
-      const P = A0.clone().lerp(Bt, q / n), S1 = skin(P), d = S1 ? S1.clone().sub(P).dot(FRONT) + .002 * H : 0;
-      return P.addScaledVector(FRONT, Math.max(0, d));
+    const n = 6, path = Array.from({ length: n + 1 }, (_, q) => {   // from the cup down onto the skin, then along it up to the waist
+      const P = A0.clone().lerp(Bt, q / n), S1 = onSkin(P);
+      return q < 2 || !S1 ? P : S1.addScaledVector(FRONT, over);
     });
     loft([A0.clone().addScaledVector(ax, -.01 * H), ...path.slice(1), Bt.clone().addScaledVector(ax, belt ? .009 * H : .004 * H)].map((O) =>
       [[-sw / 2, 0], [sw / 2, 0], [sw / 2, st2], [-sw / 2, st2]].map(([u, v]) => loc(O.clone().addScaledVector(wide, u).addScaledVector(out, v)))), LEATHER, 'strap');
   }
-  return belt ? [{ side: 'C', acc, R: wx }, { side: 'C', acc: belt.acc, R: wx }] : [{ side: 'C', acc, R: wx }];
+  return [{ side: 'C', acc, R: wx }];
 }
 // ---- the body in another pose, for a piece that is fitted to it (a cloak lies over arms hanging down): its skin moved
 // by its weights (each bone's turn from its rest), with a ray tree of its own; made once per body
