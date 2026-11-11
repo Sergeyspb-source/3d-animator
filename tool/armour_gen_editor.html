@@ -54,6 +54,10 @@
   .sl input[type=range] { grid-column:1 / 3; width:100%; accent-color:var(--accent); margin:2px 0 0; }
   .sl .inf { grid-column:1 / 3; font-size:11.5px; color:var(--muted); }
   label.chk { display:flex; align-items:center; gap:6px; margin:6px 0; }
+  .libgrid { display:grid; grid-template-columns:repeat(4, 1fr); gap:4px; margin:4px 0; max-height:220px; overflow:auto; }
+  .libgrid button { padding:0; border:1px solid var(--line); border-radius:4px; background:none; cursor:pointer; position:relative; }
+  .libgrid img { width:100%; aspect-ratio:1; object-fit:cover; display:block; border-radius:3px; }
+  .libgrid button.on { outline:2px solid var(--accent); }
   .gen { margin:6px 0; } .gen summary { cursor:pointer; font-size:12.5px; }
   .gen .grow2 { display:flex; gap:8px; align-items:flex-start; margin-top:4px; } .gen canvas { position:static; inset:auto; width:120px; height:auto; touch-action:auto; border:1px solid var(--line); border-radius:4px; flex:none; }   /* (not the view's: the page's canvas rule stretches every canvas over the stage) */
   .gen .genctl { flex:1; min-width:0; } .gen .row { margin:2px 0; gap:4px; } .gen select { max-width:100%; } .gen .row .note { width:58px; flex:none; } .gen input[type=range] { accent-color:var(--accent); }
@@ -3720,7 +3724,11 @@ function lookSpecs(p) {   // the seven materials as Blender bakes them (blender_
   return [plate, { kind: 'leather', col: strap, spot: scuff(strap), rough: .75, metal: 0 }, metalSpec,
     { ...metalSpec, pattern: 'mail' }, { ...clothSpec, pattern: 'quilt' }, p.trim === 'leather' ? { kind: 'leather', col: leather.map((x) => x * .6), spot: scuff(leather), rough: .75, metal: 0 }
       : { kind: 'metal', col: tc, spot: spotOf(tm, tc), rough: tr, metal: tmm, bump: p.hammer * .5 },
-    { kind: 'leather', col: wood.map((x) => Math.min(1, x * 1.25)), spot: wood.map((x) => x * .8), rough: .88, metal: 0 }];   // bare boards, unpainted
+    { kind: 'leather', col: wood.map((x) => Math.min(1, x * 1.25)), spot: wood.map((x) => x * .8), rough: .88, metal: 0 }]   // bare boards, unpainted
+    .map((spec, i) => {   // a slot given a library material: its maps and its tile (a sample's side, in this character's units)
+      const m = (p.libmat || {})[['plate', 'strap', 'detail', 'mail', 'quilt', 'trim', 'wood'][i]];
+      return m ? { ...spec, tex: { color: m.color, normal: m.normal || null, rough: m.rough || null, metal: m.metal || null, tile: MM(m.size_cm * 10) } } : spec;
+    });
 }
 const quiltTile = (p) => (p.quilt_lines ? 'channels' : 'quilt');   // quilting in channels along, or diamonds
 function patterned(p) {   // mail or quilting anywhere in the piece
@@ -3736,6 +3744,14 @@ function applyLook(p, R) {
   LOOK.specs = specs;
   for (const [role, slot] of Object.entries(ROLE_MAT)) {
     const s = specs[slot], m = mats[role], tile = s.pattern ? patternTile(s.pattern === 'quilt' ? quiltTile(p) : s.pattern) : null;
+    if (s.tex) {   // a library material: its own maps, a sample of «tile» on a side (the UVs are in LOOK.U)
+      const k = LOOK.U / s.tex.tile, set = (t) => { if (t) t.repeat.set(k, k); return t; };
+      m.map = set(libTex(s.tex.color, true)); m.normalMap = s.tex.normal ? set(libTex(s.tex.normal, false)) : null;
+      m.roughnessMap = s.tex.rough ? set(libTex(s.tex.rough, false)) : null; m.roughness = s.tex.rough ? 1 : s.rough;
+      m.metalnessMap = s.tex.metal ? set(libTex(s.tex.metal, false)) : null; m.metalness = s.tex.metal ? 1 : s.metal;
+      m.bumpMap = null; m.needsUpdate = true; continue;
+    }
+    m.normalMap = m.roughnessMap = m.metalnessMap = null;
     m.map = lookTexture(s, p.wear, p.seed, tile, tile ? LOOK.n : 1);
     m.roughness = s.rough; m.metalness = s.metal;
     m.bumpMap = tile ? tile.bump : reliefTexture(s.kind, p.seed); m.bumpScale = tile ? 3 : s.kind === 'metal' ? 2.4 * (s.bump ?? .5) : .6;
@@ -4036,7 +4052,14 @@ function buildPanel() {
       `<div class="row"><span class="note">{{js:ag.leather}}</span><input type="color" id="i_tint"><span class="note" style="margin-left:8px">{{js:ag.cloth}}</span><input type="color" id="i_cloth"></div>` +
       `<div class="row" style="margin-top:6px"><span class="note">{{js:ag.texture}}</span><select id="i_tex"><option>512</option><option>1024</option><option>2048</option></select>` +
       `<span class="note" style="margin-left:8px">{{js:ag.seed}}</span><input type="number" id="i_seed" style="width:60px" step="1"></div>` +
-      `<div class="note" style="margin-top:6px">{{js:ag.look_note}}</div>` : '') + '</div>').join('');
+      `<div class="note" style="margin-top:6px">{{js:ag.look_note}}</div>` +
+      `<details id="libBox" class="gen"><summary>{{js:ag.lib}}</summary><div class="note">{{js:ag.lib_info}}</div>` +
+      `<div class="row"><select id="lib_slot">${LIB_SLOTS.map((k) => `<option value="${k}">${DATA.lib_slots[k] || k}</option>`).join('')}</select>` +
+      `<select id="lib_src"><option value="ambientcg">ambientCG</option><option value="polyhaven">Poly Haven</option></select></div>` +
+      `<div class="row"><input type="text" id="lib_q" style="flex:1" placeholder="wood, leather, fabric…"><button id="lib_go">{{js:ag.lib_search}}</button></div>` +
+      `<div class="row"><span class="seg" id="lib_cats">${LIB_CATS.map(([q, k]) => `<button data-q="${q}">${DATA.lib_cats[k] || k}</button>`).join('')}</span></div>` +
+      `<div class="libgrid" id="lib_res"></div>` +
+      `<div class="row" id="lib_curRow"><span class="note" id="lib_cur" style="flex:1"></span><span class="note">{{js:ag.lib_size}}</span><input type="number" id="lib_size" style="width:56px" min="2" max="1000" step="5"><button id="lib_clear">{{js:ag.lib_clear}}</button></div></details>` : '') + '</div>').join('');
   $('groups').innerHTML = html;
   for (const sp of ALL) $('i_' + sp[0]).addEventListener('input', (e) => { S.p[sp[0]] = +e.target.value; changed(sp[0]); });
   $('i_buckle').addEventListener('change', (e) => { S.p.buckle = e.target.checked; changed('buckle'); });
@@ -4056,6 +4079,7 @@ function buildPanel() {
   $('i_tint').addEventListener('input', (e) => { S.p.tint = e.target.value; changed('look'); });
   $('i_cloth').addEventListener('input', (e) => { S.p.cloth = e.target.value; changed('look'); });
   $('i_tex').addEventListener('change', (e) => { S.p.tex = +e.target.value; });
+  libWire();
   $('i_seed').addEventListener('change', (e) => { S.p.seed = Math.round(+e.target.value || 1); changed('seed'); });
   $('matSeg').addEventListener('click', (e) => { const m = e.target.dataset.mat; if (m) { S.p.material = m; changed('look'); } });
   $('surfSeg').addEventListener('click', (e) => { const m = e.target.dataset.surf; if (m) { S.p.surface = m; changed('surface'); } });
@@ -4253,6 +4277,17 @@ function meshesOf(acc) {   // one skinned mesh per role (each lights up on its o
     for (const ids of same.values()) if (ids.length > 1) {
       const n = new V3(); for (const i of ids) n.add(new V3().fromBufferAttribute(N, i)); n.normalize();
       for (const i of ids) N.setXYZ(i, n.x, n.y, n.z);
+    }
+    const spec = (LOOK.specs || [])[ROLE_MAT[role]];
+    if (spec && spec.tex) {   // a library material: laid by the position (each point on the plane its normal is most across), as
+      // Blender's box projection lays it - a loft's own UVs (round a shield's middle, along a grip) would twist it
+      const U = g.attributes.uv;
+      for (let i = 0; i < U.count; i++) {
+        const x = pos[3 * i], y = pos[3 * i + 1], z = pos[3 * i + 2], ax = Math.abs(N.getX(i)), ay = Math.abs(N.getY(i)), az = Math.abs(N.getZ(i));
+        const [a, b] = ax >= ay && ax >= az ? [z, y] : ay >= az ? [x, z] : [x, y];
+        U.setXY(i, a / LOOK.U, b / LOOK.U);
+      }
+      U.needsUpdate = true;
     }
     const m = new THREE.SkinnedMesh(g, mats[role]); m.bind(SKEL, new THREE.Matrix4()); m.frustumCulled = false; m.userData.role = role; m.userData.src = Int32Array.from(src);
     out.push(m);
@@ -5481,6 +5516,57 @@ $('saved').addEventListener('change', (e) => {
 });
 
 
+
+// ------------------------------------------------------------------ the materials' library (ambientCG, Poly Haven: CC0)
+// a ready material for a slot instead of the procedural look: searched there, downloaded once (matlib.py), shown here
+// tiled by its real size (a sample of size_cm on a side), baked by Blender (node_mat: box-projected so, the wear over it)
+const LIB_SLOTS = ['plate', 'strap', 'detail', 'mail', 'quilt', 'trim', 'wood'];   // (blender_armour_gen.SLOTS, the editor's PLATE.. WOOD)
+const LIB_CATS = [['wood', 'wood'], ['planks', 'planks'], ['leather', 'leather'], ['fabric', 'fabric'], ['metal', 'metal'], ['rust', 'rust'], ['painted', 'paint'], ['gold', 'gold']];
+const LIB_TEX = new Map();
+function libTex(path, colour) {
+  let t = LIB_TEX.get(path);
+  if (!t) { t = new THREE.TextureLoader().load(fileUrl(path)); t.wrapS = t.wrapT = THREE.RepeatWrapping; if (colour) t.colorSpace = THREE.SRGBColorSpace; LIB_TEX.set(path, t); }
+  return t;
+}
+function libFound(list) {
+  $('lib_res').innerHTML = list.map((x, i) => `<button data-i="${i}" title="${x.name} · ${x.size_cm} cm"><img src="${x.thumb}" alt="${x.name}" loading="lazy"></button>`).join('') || `<span class="note">{{js:ag.lib_none}}</span>`;
+  LIB_FOUND = list;
+}
+let LIB_FOUND = [];
+function libSync() {
+  const slot = $('lib_slot').value, m = (S.p.libmat || {})[slot];
+  $('lib_cur').textContent = m ? `${m.name} (${m.source === 'polyhaven' ? 'Poly Haven' : 'ambientCG'})` : '{{js:ag.lib_procedural}}';
+  $('lib_size').value = m ? m.size_cm : ''; $('lib_size').disabled = $('lib_clear').disabled = !m;
+  for (const b of $('lib_res').children) b.classList.toggle('on', !!m && LIB_FOUND[+b.dataset.i] && LIB_FOUND[+b.dataset.i].id === m.id);
+}
+async function libSearch(q) {
+  $('lib_q').value = q;
+  const js = await send('matlib_search', { source: $('lib_src').value, q }, '{{js:ag.lib_searching}}', '_matlib_search');
+  if (js && js.ok) { libFound(js.found); libSync(); }
+}
+function libWire() {
+  if (!$('libBox')) return;
+  $('lib_go').addEventListener('click', () => libSearch($('lib_q').value));
+  $('lib_q').addEventListener('keydown', (e) => { if (e.key === 'Enter') libSearch($('lib_q').value); });
+  $('lib_cats').addEventListener('click', (e) => { const q = e.target.dataset.q; if (q) libSearch(q); });
+  $('lib_slot').addEventListener('change', libSync);
+  $('lib_res').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-i]'); if (!b) return;
+    const x = LIB_FOUND[+b.dataset.i], slot = $('lib_slot').value;
+    const js = await send('matlib_get', { source: x.source, id: x.id, size_cm: x.size_cm, dir: DATA.materials_dir }, '{{js:ag.lib_getting}}'.replace('{0}', x.name), '_matlib_get');
+    if (!js || !js.ok) return;
+    S.p.libmat = { ...(S.p.libmat || {}), [slot]: js.material }; changed('libmat'); libSync();
+  });
+  $('lib_size').addEventListener('input', (e) => {
+    const slot = $('lib_slot').value, m = (S.p.libmat || {})[slot], v = +e.target.value; if (!m || !(v > 0)) return;
+    S.p.libmat = { ...S.p.libmat, [slot]: { ...m, size_cm: v } }; changed('libmat');
+  });
+  $('lib_clear').addEventListener('click', () => {
+    const slot = $('lib_slot').value; if (!(S.p.libmat || {})[slot]) return;
+    const next = { ...S.p.libmat }; delete next[slot]; S.p.libmat = next; changed('libmat'); libSync();
+  });
+  $('libBox').addEventListener('toggle', () => { if ($('libBox').open && !LIB_FOUND.length) libSearch(S.piece === 'shield' ? 'wood' : 'leather'); });
+}
 // ------------------------------------------------------------------ the painting generator (paints as the pavises were)
 // A picture for a shield's face (or for any piece, put on with the «Picture» brush): a field of a colour, a pattern over
 // it (a lattice with dots, scales, vines, drops, checks), a border with a thin line, in the middle a coat of arms

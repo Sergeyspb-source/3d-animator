@@ -20,6 +20,7 @@ import i18n
 from i18n import t as _t
 
 import landmarks as LM
+import matlib
 import wear_files as WF
 
 ROOT = Path(__file__).resolve().parent
@@ -280,8 +281,11 @@ def editor_page(rigged: Path, decals_dir: Path | None = None) -> str:
             "presets": PRESETS, "mat_labels": {k: _t(f"ag.mat_{k}") for k in PRESETS},
             "surface_labels": {k: _t(f"ag.surf_{k}") for k in SURFACES}, "saved": saved(rigged), "worn": worn(rigged),
             "decals": decals(decals_dir) if decals_dir else [], "decals_dir": decals_dir.resolve().as_posix() if decals_dir else "",
+            "materials_dir": (decals_dir.parent / "materials").resolve().as_posix() if decals_dir else "",   # the library's downloads
             "fist": LM.fist_hand(rigged), "web": web_assets(),
             "gen_labels": {k: _t(f"ag.gen_{k}") for k in GEN_WORDS},
+            "lib_slots": {k: _t(f"ag.lib_slot_{k}") for k in ("plate", "strap", "detail", "mail", "quilt", "trim", "wood")},
+            "lib_cats": {k: _t(f"ag.lib_cat_{k}") for k in ("wood", "planks", "leather", "fabric", "metal", "rust", "paint", "gold")},
             **{grp: {k: _t(f"ag.{grp.split('_')[0]}_{k}") for k in keys} for grp, keys in CHOICES.items()}}
     return page.replace("@@DATA@@", json.dumps(data, ensure_ascii=False).replace("</", "<\\/"))
 
@@ -494,6 +498,23 @@ def handle(cfg, text):
     req = json.loads(text)
     if req.get("action") == "wardrobe":
         return LM.wear(cfg, text), None
+    if req.get("action") in ("matlib_search", "matlib_get"):   # the materials' library: answered in <stem>_<action>.wear.json
+        rigged = Path(req["rigged"])
+        try:
+            if req["action"] == "matlib_search":
+                found = matlib.search(req.get("source") or "ambientcg", req.get("q") or "")
+                res = {"ok": True, "found": found, "log": _t("ag.lib_found", len(found))}
+            else:
+                folder = Path(req.get("dir") or Path(cfg["export_dir"]) / "materials").resolve()
+                roots = [Path(cfg["export_dir"]).resolve(), Path(cfg["work_dir"]).resolve()]
+                if not any(folder == r or r in folder.parents for r in roots):
+                    raise ValueError(folder)
+                mat = matlib.get(folder, req.get("source") or "ambientcg", str(req.get("id") or ""), float(req.get("size_cm") or 0))
+                res = {"ok": True, "material": mat, "log": _t("ag.lib_got", mat["name"])}
+        except Exception as e:  # noqa: BLE001
+            res = {"ok": False, "log": _t("lm.error", e)}
+        WF.status(cfg, rigged, "_" + req["action"]).write_text(json.dumps({"id": req.get("id"), **res}, ensure_ascii=False), encoding="utf-8")
+        return res["log"], None
     if req.get("action") == "decal_save":   # answered in <stem>_decal_<name>.wear.json
         rigged = Path(req["rigged"])
         try:
