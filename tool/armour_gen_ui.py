@@ -63,7 +63,7 @@ PIECES = {"bracer": ("forearm", "hand", "forearm", ("Spine", "Hips", "Chest", "U
           "footwear": ("leg", "foot", "foot", (), "foot", "joint", (0, 0, 0, 0), dict(footwear="foot_ankle_boot", foot_gap=6)),
           # a codpiece: a cup over the groin on a belt, rigid on the hips (built in the editor: armour_gen_editor codpiece)
           "codpiece": ("hips", "spine", "hips", (), "hips", "groin", (0, 0, 0, 0),
-                       dict(codpiece="cod_plate", material="steel", trim="steel", cod_size=100, cod_proj=100, cod_top=0, straps=0, rigidity=1,
+                       dict(codpiece="cod_plate", material="steel", trim="steel", cod_size=100, cod_proj=100, cod_top=0, cod_belt=False, straps=0, rigidity=1,
                             surface="plain")),
           # the same generator's cups on the knees (poleyns): the thigh, the knee, the shin
           "poleyn": ("upleg", "leg", "leg", (), "knee", "joint", (0, 0, 0, 0), dict(poleyn="poleyn_winged_plate", limb_gap=8, wing=100)),

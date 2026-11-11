@@ -199,6 +199,8 @@
  "ag.style_cod_leather": "Boiled leather",
  "ag.style_cod_cloth": "Stuffed cloth (landsknecht)",
  "ag.codpiece_group": "Codpiece",
+ "ag.cod_belt": "Belt round the waist",
+ "ag.cod_belt_info": "a thin belt close to the body, under the plates; without it the codpiece hangs on two straps going up to the waist under the cuirass",
  "ag.cod_size": "Size",
  "ag.cod_proj": "Bulge",
  "ag.cod_proj_info": "how far the cup stands out",
