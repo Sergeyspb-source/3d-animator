@@ -63,6 +63,8 @@ def get(folder: Path, source: str, mid: str, size_cm: float = 0) -> dict:
     """The material's maps on disk (downloaded the first time): {source, id, name, color, normal, rough, metal?, size_cm}."""
     mid = re.sub(r"[^A-Za-z0-9_-]+", "_", mid)
     d = Path(folder) / f"{source}_{mid}"
+    if source == "custom":   # (made here: nothing to download)
+        return json.loads((d / "material.json").read_text(encoding="utf-8"))
     meta = d / "material.json"
     if meta.exists():
         return json.loads(meta.read_text(encoding="utf-8"))
@@ -88,4 +90,106 @@ def get(folder: Path, source: str, mid: str, size_cm: float = 0) -> dict:
     if "color" not in out:
         raise RuntimeError(f"{source} {mid}: no colour map")
     meta.write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
+    return out
+
+
+# ---------------------------------------------------------------- your own materials (export/materials/custom_<name>)
+def _maps_from(rgb, strength=2.5):
+    """A normal map (OpenGL: green up) and a roughness from a colour photograph: its brightness taken as the height
+    (blurred a little, so its grain, not its noise), the darker hollows rougher."""
+    import numpy as np
+    from PIL import Image, ImageFilter
+    lum = np.asarray(Image.fromarray(rgb).convert("L").filter(ImageFilter.GaussianBlur(1.2)), np.float32) / 255
+    h = (lum - lum.mean()) / (lum.std() + 1e-6) * .08
+    dx = (np.roll(h, -1, 1) - np.roll(h, 1, 1)) * .5 * strength * 10   # (wrapping round: a seamless texture stays so)
+    dy = (np.roll(h, -1, 0) - np.roll(h, 1, 0)) * .5 * strength * 10
+    n = np.dstack([-dx, dy, np.ones_like(h)])
+    n /= np.linalg.norm(n, axis=2, keepdims=True)
+    nrm = ((n * .5 + .5) * 255).round().astype(np.uint8)
+    lo, hi = np.percentile(lum, 2), np.percentile(lum, 98)
+    t = np.clip((lum - lo) / max(hi - lo, 1e-3), 0, 1)
+    rough = ((.88 - .4 * t) * 255).round().astype(np.uint8)
+    return nrm, rough
+
+
+def _seamless(a):
+    """Tiles without a seam: the picture cross-faded with itself moved by half (its own seams then in the middle, where
+    the original is whole); sin-shaped weights, so no line where either fades."""
+    import numpy as np
+    h, w = a.shape[:2]
+    s = np.roll(np.roll(a, h // 2, 0), w // 2, 1).astype(np.float32)
+    wy = np.sin(np.pi * (np.arange(h) + .5) / h) ** .7
+    wx = np.sin(np.pi * (np.arange(w) + .5) / w) ** .7
+    k = np.minimum(wy[:, None], wx[None, :])
+    if a.ndim == 3:
+        k = k[:, :, None]
+    return (a.astype(np.float32) * k + s * (1 - k)).round().clip(0, 255).astype(np.uint8)
+
+
+def custom(folder: Path, name: str, files: list, size_cm: float = 30, seamless: bool = True, metal: bool = False) -> dict:
+    """Your own material from pictures (data URLs): the colour, and a normal map, a roughness, a metalness if given
+    (told by the file's name: «normal»/«nrm», «rough», «metal»; a DirectX normal, «dx» in its name, turned to OpenGL's),
+    else worked out from the colour. Saved as the library's are: export/materials/custom_<name>/material.json."""
+    import base64
+    import numpy as np
+    from PIL import Image
+    mid = re.sub(r"[^A-Za-z0-9_-]+", "_", name).strip("_")[:40] or "material"
+    d = Path(folder) / f"custom_{mid}"
+    d.mkdir(parents=True, exist_ok=True)
+    def load(f):
+        im = Image.open(io.BytesIO(base64.b64decode(str(f["data"]).split(",", 1)[1])))
+        im = im.convert("RGB")
+        if max(im.size) > 2048:
+            k = 2048 / max(im.size)
+            im = im.resize((round(im.size[0] * k), round(im.size[1] * k)), Image.LANCZOS)
+        return im
+    kinds = {}
+    for f in files:
+        low = str(f.get("name", "")).lower()
+        kind = ("normal" if re.search(r"normal|nrm|_n\b|_n\.", low) else "rough" if "rough" in low else "metal" if "metal" in low
+                else None if re.search(r"height|disp|_ao\b|ambient|occlusion|bump", low) else "color")
+        if kind and kind not in kinds:
+            kinds[kind] = (f, low)
+    if "color" not in kinds:
+        raise ValueError("no colour picture")
+    col = np.asarray(load(kinds["color"][0]))
+    if seamless:
+        col = _seamless(col)
+    size = (col.shape[1], col.shape[0])
+    out = {"source": "custom", "id": mid, "name": name, "size_cm": float(size_cm or 30)}
+    Image.fromarray(col).save(d / "color.jpg", quality=92)
+    nrm_auto, rough_auto = _maps_from(col)
+    for kind in ("normal", "rough", "metal"):
+        if kind in kinds:
+            a = np.asarray(load(kinds[kind][0]).resize(size, Image.LANCZOS))
+            if kind == "normal" and re.search(r"\bdx\b|_dx|directx", kinds[kind][1]):
+                a = a.copy(); a[:, :, 1] = 255 - a[:, :, 1]
+            if kind != "normal":
+                a = a[:, :, 0]
+            if seamless:
+                a = _seamless(a)
+        elif kind == "normal":
+            a = nrm_auto
+        elif kind == "rough":
+            a = rough_auto
+        elif metal:
+            a = np.full(col.shape[:2], 255, np.uint8)
+        else:
+            continue
+        Image.fromarray(a).save(d / f"{kind}.jpg", quality=92)
+        out[kind] = (d / f"{kind}.jpg").resolve().as_posix()
+    out["color"] = (d / "color.jpg").resolve().as_posix()
+    (d / "material.json").write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
+    return out
+
+
+def customs(folder: Path) -> list:
+    """Your own materials made so far, as search results: [{source, id, name, thumb (a file), size_cm}]."""
+    out = []
+    for m in sorted(Path(folder).glob("custom_*/material.json")) if Path(folder).exists() else []:
+        try:
+            j = json.loads(m.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        out.append({"source": "custom", "id": j["id"], "name": j.get("name", j["id"]), "thumb": j["color"], "size_cm": j.get("size_cm", 30)})
     return out

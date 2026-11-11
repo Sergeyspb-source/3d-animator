@@ -258,14 +258,15 @@ def save_decal(cfg, req) -> dict:
     import base64
     name = re.sub(r"[^A-Za-z0-9_-]+", "_", str(req.get("name") or "")).strip("_")[:60]
     data = str(req.get("png") or "")
-    if not name or not data.startswith("data:image/png;base64,"):
+    ext = ".png" if data.startswith("data:image/png;base64,") else ".jpg" if data.startswith("data:image/jpeg;base64,") else None
+    if not name or not ext:
         return {"ok": False, "log": _t("ag.decal_bad")}
     folder = Path(req.get("dir") or Path(cfg["export_dir"]) / "decals").resolve()   # the folder the page's pictures are from
     roots = [Path(cfg["export_dir"]).resolve(), Path(cfg["work_dir"]).resolve()]
     if not any(folder == r or r in folder.parents for r in roots):
         return {"ok": False, "log": _t("ag.decal_bad")}
     folder.mkdir(parents=True, exist_ok=True)
-    f = folder / f"{name}.png"
+    f = folder / f"{name}{ext}"
     f.write_bytes(base64.b64decode(data.split(",", 1)[1]))
     return {"ok": True, "log": _t("ag.decal_saved", f.name), "decal": {"name": name, "path": f.resolve().as_posix(), "label": name}}
 
@@ -282,8 +283,10 @@ def editor_page(rigged: Path, decals_dir: Path | None = None) -> str:
             "surface_labels": {k: _t(f"ag.surf_{k}") for k in SURFACES}, "saved": saved(rigged), "worn": worn(rigged),
             "decals": decals(decals_dir) if decals_dir else [], "decals_dir": decals_dir.resolve().as_posix() if decals_dir else "",
             "materials_dir": (decals_dir.parent / "materials").resolve().as_posix() if decals_dir else "",   # the library's downloads
+            "concepts_dir": (decals_dir.parent / "concepts").resolve().as_posix() if decals_dir else "",   # «Texture from a picture»'s pictures
             "fist": LM.fist_hand(rigged), "web": web_assets(),
             "gen_labels": {k: _t(f"ag.gen_{k}") for k in GEN_WORDS},
+            "proj_views": {k: _t(f"ag.proj_{k}") for k in ("front", "back", "left", "right")},
             "lib_slots": {k: _t(f"ag.lib_slot_{k}") for k in ("plate", "strap", "detail", "mail", "quilt", "trim", "wood")},
             "lib_cats": {k: _t(f"ag.lib_cat_{k}") for k in ("wood", "planks", "leather", "fabric", "metal", "rust", "paint", "gold")},
             **{grp: {k: _t(f"ag.{grp.split('_')[0]}_{k}") for k in keys} for grp, keys in CHOICES.items()}}
@@ -503,17 +506,25 @@ def handle(cfg, text):
     req = json.loads(text)
     if req.get("action") == "wardrobe":
         return LM.wear(cfg, text), None
-    if req.get("action") in ("matlib_search", "matlib_get"):   # the materials' library: answered in <stem>_<action>.wear.json
+    if req.get("action") in ("matlib_search", "matlib_get", "matlib_custom"):   # the materials' library: answered in <stem>_<action>.wear.json
         rigged = Path(req["rigged"])
         try:
+            folder = Path(req.get("dir") or Path(cfg["export_dir"]) / "materials").resolve()
+            roots = [Path(cfg["export_dir"]).resolve(), Path(cfg["work_dir"]).resolve()]
+            if not any(folder == r or r in folder.parents for r in roots):
+                raise ValueError(folder)
             if req["action"] == "matlib_search":
-                found = matlib.search(req.get("source") or "ambientcg", req.get("q") or "")
+                if req.get("source") == "custom":   # your own: made here, filtered by the words
+                    words = [w for w in re.split(r"\W+", (req.get("q") or "").lower()) if w]
+                    found = [x for x in matlib.customs(folder) if all(w in x["name"].lower() for w in words)]
+                else:
+                    found = matlib.search(req.get("source") or "ambientcg", req.get("q") or "")
                 res = {"ok": True, "found": found, "log": _t("ag.lib_found", len(found))}
+            elif req["action"] == "matlib_custom":
+                mat = matlib.custom(folder, str(req.get("name") or "material"), req.get("files") or [], float(req.get("size_cm") or 30),
+                                    bool(req.get("seamless", True)), bool(req.get("metal")))
+                res = {"ok": True, "material": mat, "log": _t("ag.lib_custom_made", mat["name"])}
             else:
-                folder = Path(req.get("dir") or Path(cfg["export_dir"]) / "materials").resolve()
-                roots = [Path(cfg["export_dir"]).resolve(), Path(cfg["work_dir"]).resolve()]
-                if not any(folder == r or r in folder.parents for r in roots):
-                    raise ValueError(folder)
                 mat = matlib.get(folder, req.get("source") or "ambientcg", str(req.get("id") or ""), float(req.get("size_cm") or 0))
                 res = {"ok": True, "material": mat, "log": _t("ag.lib_got", mat["name"])}
         except Exception as e:  # noqa: BLE001

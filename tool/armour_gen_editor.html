@@ -54,10 +54,13 @@
   .sl input[type=range] { grid-column:1 / 3; width:100%; accent-color:var(--accent); margin:2px 0 0; }
   .sl .inf { grid-column:1 / 3; font-size:11.5px; color:var(--muted); }
   label.chk { display:flex; align-items:center; gap:6px; margin:6px 0; }
+  label.filebtn { display:inline-block; color:var(--fg); background:var(--bg); border:1px solid var(--line); border-radius:7px; padding:4px 9px; cursor:pointer; margin-right:8px; }
+  label.filebtn:hover { border-color:var(--accent); }
   .libgrid { display:grid; grid-template-columns:repeat(4, 1fr); gap:4px; margin:4px 0; max-height:220px; overflow:auto; }
   .libgrid button { padding:0; border:1px solid var(--line); border-radius:4px; background:none; cursor:pointer; position:relative; }
   .libgrid img { width:100%; aspect-ratio:1; object-fit:cover; display:block; border-radius:3px; }
   .libgrid button.on { outline:2px solid var(--accent); }
+  #projViews button.has:not(.on)::after { content:' ●'; color:var(--accent); font-size:9px; vertical-align:middle; }
   .gen { margin:6px 0; } .gen summary { cursor:pointer; font-size:12.5px; }
   .gen .grow2 { display:flex; gap:8px; align-items:flex-start; margin-top:4px; } .gen canvas { position:static; inset:auto; width:120px; height:auto; touch-action:auto; border:1px solid var(--line); border-radius:4px; flex:none; }   /* (not the view's: the page's canvas rule stretches every canvas over the stage) */
   .gen .genctl { flex:1; min-width:0; } .gen .row { margin:2px 0; gap:4px; } .gen select { max-width:100%; } .gen .row .note { width:58px; flex:none; } .gen input[type=range] { accent-color:var(--accent); }
@@ -3648,12 +3651,15 @@ vec3 decals(inout vec3 col) {   // over the colour; returns (roughness, metalnes
   for (int i = 0; i < ${DECAL_N}; i++) {
     if (i >= uDecalN) break;
     vec3 rel = vRest - uDecalP[i];
-    if (abs(dot(rel, uDecalNr[i])) > uDecalA[i].w || dot(vRestN, uDecalNr[i]) < .2) continue;   // (not the far face: a board's back)
+    // a picture projected from a view («Texture from a picture»: uDecalCol.x set) reaches through all the piece, and
+    // fades out as the surface turns away from that view (the next view's picture takes over at the sides)
+    float fc = dot(vRestN, uDecalNr[i]); bool proj = uDecalCol[i].w > .5 && uDecalCol[i].x > .5;
+    if (abs(dot(rel, uDecalNr[i])) > uDecalA[i].w || fc < (proj ? .05 : .2)) continue;   // (not the far face: a board's back)
     vec2 q = vec2(dot(rel, uDecalU[i]), dot(rel, uDecalV[i]));
     if (abs(q.x) > 1. || abs(q.y) > 1.) continue;
     vec2 cell = vec2(float(i - (i / 4) * 4), float(i / 4));
-    vec4 t = texture2D(uDecalAtlas, (cell + (q * .49 + .5)) / 4.);
-    float w = t.a * uDecalA[i].z;
+    vec4 t = texture2D(uDecalAtlas, (cell + (q * .496 + .5)) / 4.);
+    float w = t.a * uDecalA[i].z * (proj ? smoothstep(.05, .5, fc) : 1.);
     col = mix(col, uDecalCol[i].w > .5 ? t.rgb : uDecalCol[i].rgb, w);
     rm = vec3(mix(rm.xy, uDecalA[i].xy, w / max(rm.z + w * (1. - rm.z), 1e-4)), rm.z + w * (1. - rm.z));
   }
@@ -4140,11 +4146,20 @@ function buildPanel() {
       `<div class="note" style="margin-top:6px">{{js:ag.look_note}}</div>` +
       `<details id="libBox" class="gen"><summary>{{js:ag.lib}}</summary><div class="note">{{js:ag.lib_info}}</div>` +
       `<div class="row"><select id="lib_slot">${LIB_SLOTS.map((k) => `<option value="${k}">${DATA.lib_slots[k] || k}</option>`).join('')}</select>` +
-      `<select id="lib_src"><option value="ambientcg">ambientCG</option><option value="polyhaven">Poly Haven</option></select></div>` +
+      `<select id="lib_src"><option value="ambientcg">ambientCG</option><option value="polyhaven">Poly Haven</option><option value="custom">{{js:ag.lib_own}}</option></select></div>` +
+      `<div class="row" title="{{js:ag.lib_add_title}}"><label class="filebtn"><input type="file" id="lib_files" accept="image/*" multiple hidden><span>{{js:ag.lib_add}}</span></label>` +
+      `<label class="chk"><input type="checkbox" id="lib_seam" checked> {{js:ag.lib_seamless}}</label><label class="chk"><input type="checkbox" id="lib_metal"> {{js:ag.lib_metal}}</label></div>` +
       `<div class="row"><input type="text" id="lib_q" style="flex:1" placeholder="wood, leather, fabric…"><button id="lib_go">{{js:ag.lib_search}}</button></div>` +
       `<div class="row"><span class="seg" id="lib_cats">${LIB_CATS.map(([q, k]) => `<button data-q="${q}">${DATA.lib_cats[k] || k}</button>`).join('')}</span></div>` +
       `<div class="libgrid" id="lib_res"></div>` +
-      `<div class="row" id="lib_curRow"><span class="note" id="lib_cur" style="flex:1"></span><span class="note">{{js:ag.lib_size}}</span><input type="number" id="lib_size" style="width:56px" min="2" max="1000" step="5"><button id="lib_clear">{{js:ag.lib_clear}}</button></div></details>` : '') + '</div>').join('');
+      `<div class="row" id="lib_curRow"><span class="note" id="lib_cur" style="flex:1"></span><span class="note">{{js:ag.lib_size}}</span><input type="number" id="lib_size" style="width:56px" min="2" max="1000" step="5"><button id="lib_clear">{{js:ag.lib_clear}}</button></div></details>` +
+      `<details id="projBox" class="gen"><summary>{{js:ag.proj}}</summary><div class="note">{{js:ag.proj_info}}</div>` +
+      `<div class="row"><span class="seg" id="projViews">${PROJ_VIEWS.map((v) => `<button data-pv="${v}">${DATA.proj_views[v] || v}</button>`).join('')}</span></div>` +
+      `<div class="row"><label class="filebtn"><input type="file" id="proj_file" accept="image/*" hidden><span>{{js:ag.proj_load}}</span></label>` +
+      `<button id="proj_align" title="{{js:ag.proj_align_title}}">{{js:ag.proj_align}}</button><button id="proj_fit" title="{{js:ag.proj_fit_title}}">{{js:ag.proj_fit}}</button><button id="proj_del">{{js:ag.proj_del}}</button></div>` +
+      `<div class="row"><span class="note">{{js:ag.proj_strength}}</span><input type="range" id="proj_a" min="0" max="1" step=".05" style="flex:1">` +
+      `<span class="note">{{js:ag.proj_ghost}}</span><input type="range" id="proj_op" min="0" max="1" step=".05" value=".5" style="width:70px"></div>` +
+      `<div class="row" id="proj_copyRow"><button id="proj_copy" class="grow"></button></div><div class="note" id="proj_state"></div></details>` : '') + '</div>').join('');
   $('groups').innerHTML = html;
   for (const sp of ALL) $('i_' + sp[0]).addEventListener('input', (e) => { S.p[sp[0]] = +e.target.value; changed(sp[0]); });
   $('i_buckle').addEventListener('change', (e) => { S.p.buckle = e.target.checked; changed('buckle'); });
@@ -4164,7 +4179,7 @@ function buildPanel() {
   $('i_tint').addEventListener('input', (e) => { S.p.tint = e.target.value; changed('look'); });
   $('i_cloth').addEventListener('input', (e) => { S.p.cloth = e.target.value; changed('look'); });
   $('i_tex').addEventListener('change', (e) => { S.p.tex = +e.target.value; });
-  libWire();
+  libWire(); projWire();
   $('i_seed').addEventListener('change', (e) => { S.p.seed = Math.round(+e.target.value || 1); changed('seed'); });
   $('matSeg').addEventListener('click', (e) => { const m = e.target.dataset.mat; if (m) { S.p.material = m; changed('look'); } });
   $('surfSeg').addEventListener('click', (e) => { const m = e.target.dataset.surf; if (m) { S.p.surface = m; changed('surface'); } });
@@ -4239,6 +4254,7 @@ function syncPanel() {
   pinchSync();
   if (S.idle) { $('sidesRow').hidden = true; $('styleRow').hidden = true; }   // nothing being made: only the piece's choice
   $('groups').hidden = S.idle; $('pinchBox').hidden = S.idle;
+  if (typeof projSync === 'function') projSync();
 }
 function setPiece(k, keep) {
   S.idle = false;
@@ -4971,7 +4987,8 @@ const decalImg = (path) => {
   if (!im) { im = new Image(); im.crossOrigin = 'anonymous'; im.onload = () => decalSync(); im.src = fileUrl(path); DECAL_IMG.set(path, im); }
   return im;
 };
-const atlasCanvas = document.createElement('canvas'); atlasCanvas.width = atlasCanvas.height = 1024;
+const ATLAS = 2048, CELL = ATLAS / 4;   // (a picture over the whole character wants more than a brush's)
+const atlasCanvas = document.createElement('canvas'); atlasCanvas.width = atlasCanvas.height = ATLAS;
 const atlasTex = new THREE.CanvasTexture(atlasCanvas); atlasTex.colorSpace = THREE.SRGBColorSpace; DECAL.uDecalAtlas.value = atlasTex;
 let decalGhost = null;   // the picture under the pointer before it is put on (a layer not yet in the list)
 function decalFrame(n, ang) {   // the picture's right and up on the surface: right across the up direction, then turned
@@ -4980,16 +4997,17 @@ function decalFrame(n, ang) {   // the picture's right and up on the surface: ri
   return [right.clone().multiplyScalar(c).addScaledVector(upv, s), right.clone().multiplyScalar(-s).addScaledVector(upv, c), N];
 }
 function decalSync() {
-  const list = [...(S.p.paints || []).filter((L) => L.t === 'decal'), ...(decalGhost || [])].slice(-DECAL_N);
-  const ctx = atlasCanvas.getContext('2d'); ctx.clearRect(0, 0, 1024, 1024);
+  const all = [...(S.p.paints || []).filter((L) => L.t === 'decal'), ...(decalGhost || [])], pj = all.filter((L) => L.proj);
+  const list = [...pj, ...all.filter((L) => !L.proj).slice(-(DECAL_N - pj.length))];   // (the views' pictures first: under the others, always kept)
+  const ctx = atlasCanvas.getContext('2d'); ctx.clearRect(0, 0, ATLAS, ATLAS);
   list.forEach((L, i) => {
     const im = decalImg(L.img), [R, U, N] = decalFrame(L.n, L.ang || 0), asp = L.asp || 1;
-    if (im.complete && im.naturalWidth) ctx.drawImage(im, (i % 4) * 256, (3 - Math.floor(i / 4)) * 256, 256, 256);   // the canvas's top row is the texture's last
+    if (im.complete && im.naturalWidth) ctx.drawImage(im, (i % 4) * CELL, (3 - Math.floor(i / 4)) * CELL, CELL, CELL);   // the canvas's top row is the texture's last
     DECAL.uDecalP.value[i].fromArray(L.p); DECAL.uDecalNr.value[i].copy(N);
     DECAL.uDecalU.value[i].copy(R).multiplyScalar((L.flip ? -1 : 1) / (L.r * asp)); DECAL.uDecalV.value[i].copy(U).multiplyScalar(1 / L.r);
     const lk = L.look === 'image' ? null : new THREE.Color(lookOf(L).c);
-    DECAL.uDecalCol.value[i].set(lk ? lk.r : 0, lk ? lk.g : 0, lk ? lk.b : 0, lk ? 0 : 1);
-    DECAL.uDecalA.value[i].set(L.look === 'image' ? .5 : lookOf(L).r, L.look === 'image' ? 0 : lookOf(L).m, L.ghost ? .6 * L.a : L.a, L.r);
+    DECAL.uDecalCol.value[i].set(lk ? lk.r : L.proj ? 1 : 0, lk ? lk.g : 0, lk ? lk.b : 0, lk ? 0 : 1);
+    DECAL.uDecalA.value[i].set(L.look === 'image' ? .5 : lookOf(L).r, L.look === 'image' ? 0 : lookOf(L).m, L.ghost ? .6 * L.a : L.a, L.proj ? 1e3 : L.r);
   });
   DECAL.uDecalN.value = list.length; atlasTex.needsUpdate = true;
 }
@@ -5802,25 +5820,33 @@ $('saved').addEventListener('change', (e) => {
 const LIB_SLOTS = ['plate', 'strap', 'detail', 'mail', 'quilt', 'trim', 'wood'];   // (blender_armour_gen.SLOTS, the editor's PLATE.. WOOD)
 const LIB_CATS = [['wood', 'wood'], ['planks', 'planks'], ['leather', 'leather'], ['fabric', 'fabric'], ['metal', 'metal'], ['rust', 'rust'], ['painted', 'paint'], ['gold', 'gold']];
 const LIB_TEX = new Map();
+async function imageData(file, max) {
+  const url = URL.createObjectURL(file), im = new Image(); im.src = url;
+  try { await im.decode(); } finally { URL.revokeObjectURL(url); }
+  const k = Math.min(1, max / Math.max(im.naturalWidth, im.naturalHeight)), cv = document.createElement('canvas');
+  cv.width = Math.round(im.naturalWidth * k); cv.height = Math.round(im.naturalHeight * k);
+  cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height);
+  return cv.toDataURL('image/jpeg', .92);
+}
 function libTex(path, colour) {
   let t = LIB_TEX.get(path);
   if (!t) { t = new THREE.TextureLoader().load(fileUrl(path)); t.wrapS = t.wrapT = THREE.RepeatWrapping; if (colour) t.colorSpace = THREE.SRGBColorSpace; LIB_TEX.set(path, t); }
   return t;
 }
 function libFound(list) {
-  $('lib_res').innerHTML = list.map((x, i) => `<button data-i="${i}" title="${x.name} · ${x.size_cm} cm"><img src="${x.thumb}" alt="${x.name}" loading="lazy"></button>`).join('') || `<span class="note">{{js:ag.lib_none}}</span>`;
+  $('lib_res').innerHTML = list.map((x, i) => `<button data-i="${i}" title="${x.name} · ${x.size_cm} cm"><img src="${x.source === 'custom' ? fileUrl(x.thumb) : x.thumb}" alt="${x.name}" loading="lazy"></button>`).join('') || `<span class="note">{{js:ag.lib_none}}</span>`;
   LIB_FOUND = list;
 }
 let LIB_FOUND = [];
 function libSync() {
   const slot = $('lib_slot').value, m = (S.p.libmat || {})[slot];
-  $('lib_cur').textContent = m ? `${m.name} (${m.source === 'polyhaven' ? 'Poly Haven' : 'ambientCG'})` : '{{js:ag.lib_procedural}}';
+  $('lib_cur').textContent = m ? `${m.name} (${m.source === 'polyhaven' ? 'Poly Haven' : m.source === 'custom' ? '{{js:ag.lib_own}}' : 'ambientCG'})` : '{{js:ag.lib_procedural}}';
   $('lib_size').value = m ? m.size_cm : ''; $('lib_size').disabled = $('lib_clear').disabled = !m;
   for (const b of $('lib_res').children) b.classList.toggle('on', !!m && LIB_FOUND[+b.dataset.i] && LIB_FOUND[+b.dataset.i].id === m.id);
 }
 async function libSearch(q) {
   $('lib_q').value = q;
-  const js = await send('matlib_search', { source: $('lib_src').value, q }, '{{js:ag.lib_searching}}', '_matlib_search');
+  const js = await send('matlib_search', { source: $('lib_src').value, q, dir: DATA.materials_dir }, '{{js:ag.lib_searching}}', '_matlib_search');
   if (js && js.ok) { libFound(js.found); libSync(); }
 }
 function libWire() {
@@ -5829,6 +5855,22 @@ function libWire() {
   $('lib_q').addEventListener('keydown', (e) => { if (e.key === 'Enter') libSearch($('lib_q').value); });
   $('lib_cats').addEventListener('click', (e) => { const q = e.target.dataset.q; if (q) libSearch(q); });
   $('lib_slot').addEventListener('change', libSync);
+  $('lib_src').addEventListener('change', () => libSearch($('lib_src').value === 'custom' ? '' : $('lib_q').value));
+  // your own: the pictures chosen (the colour; a normal map, a roughness, a metalness told by their names) made a
+  // material there (matlib.custom: seamless, the missing maps worked out from the colour), put on the slot chosen
+  $('lib_files').addEventListener('change', async (e) => {
+    const fl = [...e.target.files]; e.target.value = ''; if (!fl.length) return;
+    const files = [];
+    for (const f of fl) files.push({ name: f.name, data: await imageData(f, 2048) });
+    const base = (fl.find((f) => !/normal|nrm|rough|metal|height|disp|_ao/i.test(f.name)) || fl[0]).name.replace(/\.[^.]+$/, '');
+    const name = base.replace(/[_-]?(color|colour|albedo|diffuse|basecolor|base_color|col)$/i, '') || base;
+    const js = await send('matlib_custom', { name, files, size_cm: 30, seamless: $('lib_seam').checked, metal: $('lib_metal').checked, dir: DATA.materials_dir },
+      '{{js:ag.lib_custom_making}}'.replace('{0}', name), '_matlib_custom');
+    if (!js || !js.ok) return;
+    for (const k of ['color', 'normal', 'rough', 'metal']) if (js.material[k]) { const t = LIB_TEX.get(js.material[k]); if (t) { t.dispose(); LIB_TEX.delete(js.material[k]); } }
+    S.p.libmat = { ...(S.p.libmat || {}), [$('lib_slot').value]: js.material }; changed('libmat');
+    $('lib_src').value = 'custom'; await libSearch('');
+  });
   $('lib_res').addEventListener('click', async (e) => {
     const b = e.target.closest('[data-i]'); if (!b) return;
     const x = LIB_FOUND[+b.dataset.i], slot = $('lib_slot').value;
@@ -5845,6 +5887,137 @@ function libWire() {
     const next = { ...S.p.libmat }; delete next[slot]; S.p.libmat = next; changed('libmat'); libSync();
   });
   $('libBox').addEventListener('toggle', () => { if ($('libBox').open && !LIB_FOUND.length) libSearch(S.piece === 'shield' ? 'wood' : 'leather'); });
+}
+// ------------------------------------------------------------------ «Texture from a picture» (as Tripo makes one from an image)
+// A concept of the armour (front, back, the sides) laid over the character in that view and projected onto the piece:
+// each view's picture on what faces that way, fading out as the surface turns (the next view's takes over at the
+// sides); what no view sees keeps the piece's own material. Each view is a picture layer («decal», proj: no depth
+// limit, the soft turn): Blender bakes it as it bakes the pictures (decal_weight), into the piece's own unwrap, so any
+// piece takes it however its unwrap is cut. Laid on the rest pose; the same concept goes on the next piece in a click.
+const PROJ_VIEWS = ['front', 'back', 'left', 'right'];
+const PROJ_N = { front: [0, 0, 1], back: [0, 0, -1], left: [1, 0, 0], right: [-1, 0, 0] };   // (towards the viewer; the character's left is +X)
+const PROJ = { view: 'front', align: false, op: .5, drag: null };
+let PROJ_LAST = null, projGhost = null;
+const projLayers = () => (S.p.paints || []).filter((L) => L.t === 'decal' && L.proj);
+const projOf = (v) => projLayers().find((L) => L.view === v);
+function projFit(asp) {   // the picture over the whole character in that view: its middle, as tall as the body
+  const bb = bodyGeo.boundingBox, c = bb.getCenter(new V3()), h = (bb.max.y - bb.min.y) / 2 * 1.03;
+  return { p: c.toArray().map((x) => Math.round(x * 1e5) / 1e5), r: Math.round(Math.max(h, (bb.max.x - bb.min.x) / 2 / asp) * 1e5) / 1e5 };
+}
+function projSource() {   // the concept on another piece: the last one set here, else a saved piece's
+  if (PROJ_LAST && PROJ_LAST.length) return { from: '', layers: PROJ_LAST };
+  for (const x of [...DATA.saved].reverse()) {
+    const ls = ((x.params || {}).paints || []).filter((L) => L.t === 'decal' && L.proj);
+    if (ls.length) return { from: x.item, layers: ls };
+  }
+  return null;
+}
+function projSync() {
+  if (!$('projBox')) return;
+  for (const b of $('projViews').children) { b.classList.toggle('on', b.dataset.pv === PROJ.view); b.classList.toggle('has', !!projOf(b.dataset.pv)); }
+  const L = projOf(PROJ.view);
+  $('proj_align').disabled = $('proj_fit').disabled = $('proj_del').disabled = $('proj_a').disabled = !L;
+  $('proj_align').classList.toggle('on', PROJ.align && !!L);
+  if (L) $('proj_a').value = L.a;
+  const src = projLayers().length ? null : projSource();
+  $('proj_copyRow').hidden = !src;
+  if (src) $('proj_copy').textContent = src.from ? '{{js:ag.proj_copy_from}}'.replace('{0}', src.from) : '{{js:ag.proj_copy}}';
+  $('proj_state').textContent = projLayers().map((x) => DATA.proj_views[x.view] || x.view).join(', ');
+  projGhostSync();
+}
+function projGhostSync() {   // the picture being laid, half seen over the character, while that view is aligned
+  const L = projOf(PROJ.view), show = !!L && $('projBox') && $('projBox').open && PROJ.align;
+  if (!show) { if (projGhost) projGhost.visible = false; return; }
+  if (!projGhost) {
+    projGhost = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.MeshBasicMaterial({ transparent: true, depthTest: false, depthWrite: false, side: THREE.DoubleSide }));
+    projGhost.renderOrder = 20; scene.add(projGhost);
+  }
+  const m = projGhost.material;
+  if (m.userData.img !== L.img) {
+    if (m.map) m.map.dispose();
+    m.map = new THREE.TextureLoader().load(fileUrl(L.img)); m.map.colorSpace = THREE.SRGBColorSpace; m.userData.img = L.img; m.needsUpdate = true;
+  }
+  m.opacity = PROJ.op;
+  const [R, U, N] = decalFrame(L.n, 0);
+  projGhost.matrixAutoUpdate = false;
+  projGhost.matrix.makeBasis(R.clone().multiplyScalar(L.r * (L.asp || 1)), U.clone().multiplyScalar(L.r), N).setPosition(new V3(...L.p).addScaledVector(N, .3 * HEIGHT));
+  projGhost.matrixWorldNeedsUpdate = true; projGhost.visible = true;
+}
+function projLook(v) {   // the camera straight from that view, the rest pose (the picture is laid on it)
+  if (pose !== 'rest') { pose = 'rest'; for (const b of $('poses').children) b.classList.toggle('on', b.dataset.p === 'rest'); applyPose(); }
+  view('front', PROJ_N[v], true);
+}
+function projSetAlign(on) {
+  PROJ.align = on && !!projOf(PROJ.view);
+  controls.enabled = !PROJ.align;
+  if (PROJ.align) { if (PINCH.on) { PINCH.on = false; pinchSync(); } projLook(PROJ.view); }
+  projSync();
+}
+function projWire() {
+  if (!$('projBox')) return;
+  $('projViews').addEventListener('click', (e) => {
+    const v = e.target.closest('[data-pv]'); if (!v) return;
+    PROJ.view = v.dataset.pv; projLook(PROJ.view); projSetAlign(PROJ.align);
+  });
+  $('proj_file').addEventListener('change', async (e) => {
+    const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+    const data = await imageData(f, 2048), im = new Image(); im.src = data; await im.decode();
+    const asp = im.naturalWidth / Math.max(1, im.naturalHeight);
+    const name = ('concept_' + f.name.replace(/\.[^.]+$/, '') + '_' + PROJ.view).replace(/[^A-Za-z0-9_-]+/g, '_').slice(0, 60);
+    const js = await send('decal_save', { name, png: data, dir: DATA.concepts_dir }, '{{js:ag.proj_saving}}', '_decal_' + name);
+    if (!js || !js.ok) return;
+    DECAL_IMG.delete(js.decal.path);
+    const old = projOf(PROJ.view), place = old && Math.abs((old.asp || 1) - asp) < .01 ? { p: old.p, r: old.r } : projFit(asp);
+    const L = { t: 'decal', proj: 1, view: PROJ.view, img: js.decal.path, name: js.decal.name, n: PROJ_N[PROJ.view], ang: 0, flip: false, asp: Math.round(asp * 1e4) / 1e4, a: old ? old.a : 1, look: 'image', ...place };
+    S.p.paints = [...(S.p.paints || []).filter((x) => !(x.proj && x.view === PROJ.view)), L];
+    PROJ_LAST = projLayers(); changed('paint'); projSetAlign(true);
+  });
+  $('proj_align').addEventListener('click', () => projSetAlign(!PROJ.align));
+  $('proj_fit').addEventListener('click', () => {
+    const L = projOf(PROJ.view); if (!L) return;
+    S.p.paints = S.p.paints.map((x) => (x === L ? { ...x, ...projFit(x.asp || 1) } : x)); PROJ_LAST = projLayers(); changed('paint'); projSync();
+  });
+  $('proj_del').addEventListener('click', () => {
+    S.p.paints = (S.p.paints || []).filter((x) => !(x.proj && x.view === PROJ.view)); PROJ_LAST = projLayers(); projSetAlign(false); changed('paint');
+  });
+  $('proj_a').addEventListener('input', (e) => {
+    const L = projOf(PROJ.view); if (!L) return;
+    L.a = +e.target.value; decalSync();
+  });
+  $('proj_a').addEventListener('change', () => { S.p.paints = [...S.p.paints]; PROJ_LAST = projLayers(); changed('paint'); });
+  $('proj_op').addEventListener('input', (e) => { PROJ.op = +e.target.value; projGhostSync(); });
+  $('proj_copy').addEventListener('click', () => {
+    const src = projSource(); if (!src) return;
+    S.p.paints = [...src.layers.map((x) => ({ ...x })), ...(S.p.paints || []).filter((x) => !x.proj)]; changed('paint'); projSync();
+  });
+  $('projBox').addEventListener('toggle', () => { if (!$('projBox').open) projSetAlign(false); projSync(); });
+  // aligning: the left button drags the picture in its plane, the wheel makes it bigger or smaller (round the pointer)
+  cnv.addEventListener('pointerdown', (e) => {
+    if (!PROJ.align || e.button !== 0) return;
+    const L = projOf(PROJ.view); if (!L) return;
+    e.preventDefault(); e.stopPropagation(); cnv.setPointerCapture(e.pointerId);
+    PROJ.drag = { x: e.clientX, y: e.clientY, p: [...L.p], px: pxWorld(new V3(...L.p)) };
+  }, true);
+  cnv.addEventListener('pointermove', (e) => {
+    const D = PROJ.drag, L = projOf(PROJ.view); if (!D || !L) return;
+    const [R, U] = decalFrame(L.n, 0), dx = (e.clientX - D.x) * D.px, dy = -(e.clientY - D.y) * D.px;
+    L.p = new V3(...D.p).addScaledVector(R, dx).addScaledVector(U, dy).toArray().map((x) => Math.round(x * 1e5) / 1e5);
+    decalSync(); projGhostSync();
+  });
+  const up = () => { if (!PROJ.drag) return; PROJ.drag = null; S.p.paints = [...S.p.paints]; PROJ_LAST = projLayers(); changed('paint'); };
+  cnv.addEventListener('pointerup', up); cnv.addEventListener('pointercancel', up);
+  cnv.addEventListener('wheel', (e) => {
+    if (!PROJ.align) return;
+    const L = projOf(PROJ.view); if (!L) return;
+    e.preventDefault(); e.stopPropagation();
+    const k = Math.exp(-e.deltaY * .0012), [R, U] = decalFrame(L.n, 0), rect = cnv.getBoundingClientRect(), C = new V3(...L.p), px = pxWorld(C);
+    const c = new THREE.Vector2(...[C.clone().project(camera)].map((v) => [(v.x + 1) / 2 * rect.width, (1 - v.y) / 2 * rect.height])[0]);
+    const mx = (e.clientX - rect.left - c.x) * px, my = -(e.clientY - rect.top - c.y) * px;   // the point under the pointer stays
+    L.r = Math.round(L.r * k * 1e5) / 1e5;
+    L.p = C.addScaledVector(R, mx * (1 - k)).addScaledVector(U, my * (1 - k)).toArray().map((x) => Math.round(x * 1e5) / 1e5);
+    decalSync(); projGhostSync();
+    clearTimeout(PROJ.wt); PROJ.wt = setTimeout(() => { S.p.paints = [...S.p.paints]; PROJ_LAST = projLayers(); changed('paint'); }, 400);
+  }, { passive: false, capture: true });
 }
 // ------------------------------------------------------------------ the painting generator (paints as the pavises were)
 // A picture for a shield's face (or for any piece, put on with the «Picture» brush): a field of a colour, a pattern over

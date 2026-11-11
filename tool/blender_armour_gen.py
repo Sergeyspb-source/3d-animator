@@ -352,14 +352,23 @@ def decal_weight(P, L, NR=None):
     right = np.cross(up, n); right /= np.linalg.norm(right); upv = np.cross(n, right)
     a = float(L.get("ang") or 0); R = math.cos(a) * right + math.sin(a) * upv; U = -math.sin(a) * right + math.cos(a) * upv
     r = float(L["r"]); rel = P - o
+    if L.get("proj"):   # a view's picture («Texture from a picture»): its own width (the editor's asp), through all the piece
+        asp = float(L.get("asp") or asp)
     x = rel @ R / (r * asp) * (-1 if L.get("flip") else 1); y = rel @ U / r
-    inside = (np.abs(x) <= 1) & (np.abs(y) <= 1) & (np.abs(rel @ n) <= r)
-    if NR is not None:   # not the far face (a board's back)
+    inside = (np.abs(x) <= 1) & (np.abs(y) <= 1) & (L.get("proj") or (np.abs(rel @ n) <= r))
+    fade = None
+    if L.get("proj") and NR is not None:   # what faces the view, fading as it turns away (the faces' normals turned outward)
+        f = (NR @ n) * _SIDE.get("out", 1.)
+        inside &= f > .05
+        fade = _smooth(.05, .5, f)
+    elif NR is not None:   # not the far face (a board's back)
         inside &= _facing(P, NR, o, n) > .2
     h, w = px.shape[:2]
-    ix = np.clip(((x * .49 + .5) * (w - 1)).round().astype(int), 0, w - 1); iy = np.clip(((y * .49 + .5) * (h - 1)).round().astype(int), 0, h - 1)
+    k = .496 if L.get("proj") else .49
+    ix = np.clip(((x * k + .5) * (w - 1)).round().astype(int), 0, w - 1); iy = np.clip(((y * k + .5) * (h - 1)).round().astype(int), 0, h - 1)
     s = px[iy, ix]
-    return np.where(inside, s[:, 3], 0).astype(np.float32), s[:, :3]
+    a = s[:, 3] * (fade if fade is not None else 1)
+    return np.where(inside, a, 0).astype(np.float32), s[:, :3]
 
 
 def _pixels_wh(im, w, h):
@@ -460,6 +469,10 @@ def paint_layers(obj, mats, imgs, size, item, paint):
     ks = [k for k in P if k in NR]
     live = {k: np.linalg.norm(NR[k], axis=1) > .5 for k in ks}   # (the pixels on a face: the rest of the image is empty)
     _SIDE.update(P=np.concatenate([P[k][live[k]] for k in ks]), N=np.concatenate([NR[k][live[k]] for k in ks]), memo={})
+    # which way the faces' normals go here: out of the piece (as the editor's) if they point away from its middle on
+    # the whole - a view's picture goes on what faces that view
+    AP, AN = _SIDE["P"], _SIDE["N"]
+    _SIDE["out"] = float(np.sign(np.einsum("ij,ij->i", AP - AP.mean(axis=0), AN).sum()) or 1.)
     masks = {}
     for li, L in enumerate(layers):
         if L.get("pts"):
