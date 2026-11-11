@@ -2065,7 +2065,7 @@ function shieldBoard(acc, Fr, p, bossAt = [0, 0]) {   // the board in its frame 
   // a damage goes on the side it was put on, and «over the whole shield» puts it on +A)
   const rev = (rings) => rings.map((r) => [...r].reverse());
   loft(rev(fr), PLATE, 'plate', true, false); loft(rev(bk).reverse(), WOOD, 'wood', false, true);
-  loft([fr[fr.length - 1], bk[0]], WOOD, 'wood', false, false);   // its edge
+  loft([fr[fr.length - 1], bk[bk.length - 1]], WOOD, 'wood', false, false);   // its edge (the face's rim to the back's: not to the back's middle, a cone of wood under the covering that came through it on a bent or ridged board)
   const rimW = .02 * R * p.s_rim / 100 * 3;   // a metal band round the edge
   if (p.s_rim > 0) loft(Array.from({ length: n + 1 }, (_, j) => {
     const [x, y] = outline[j % n], d = Math.hypot(x, y) || 1, nx = x / d, ny = y / d, z = dome(x, y);
