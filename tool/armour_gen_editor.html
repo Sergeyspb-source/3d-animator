@@ -4558,7 +4558,7 @@ function meshesOf(acc) {   // one skinned mesh per role (each lights up on its o
 // as «Generate» makes it (once per style and parameters, armour_gen_ui.made_preview) and shown on its bones, with what
 // it hides
 const madeCache = new Map();
-let helmetObj = null, madePending = null;
+let helmetObj = null, madePending = null, madeTimer = 0, madeFailed = null;
 async function madePreview(piece, sides) {
   const style = S.p[piece];
   // (placed by hand - along, turned, sized - not here: the preview moved so at once, Blender makes it so on «Generate»)
@@ -4611,10 +4611,14 @@ function rebuildMade() {
   if (piece !== 'helmet' && !sides.length) { $('warn').textContent = '{{js:ag.choose_a_side}}'; $('warn').hidden = false; lastBuild = null; $('go').disabled = true; return; }
   const key = [piece, S.p[piece], S.p.head_gap, ['elbow', 'poleyn'].includes(piece) ? MADE_GAP0 : S.p.limb_gap, S.p.wing, S.p.foot_gap, S.p.visor_angle, S.p.cheek_angle, S.p.tail, S.p.brim, ...sides].join('_'), h = madeCache.get(key);
   if (!h) {
-    if (madePending !== key) {
+    // one preview at a time, of the last state, once its sliders rest (a wing dragged: not one per value on the way,
+    // each queued after the other for minutes); when it is made, the state then is looked at again
+    clearTimeout(madeTimer);
+    if (!madePending && madeFailed !== key) madeTimer = setTimeout(() => {
+      if (madePending || S.piece !== piece) return;
       madePending = key;
-      madePreview(piece, sides).then((x) => { if (x) madeCache.set(key, x); madePending = null; if (x) changed('made'); });
-    }
+      madePreview(piece, sides).then((x) => { if (x) madeCache.set(key, x); else madeFailed = key; madePending = null; changed('made'); });   // (a failed one not tried again and again)
+    }, 600);
     if (previewMask) { previewMask = null; hideBody(); }
     $('info').textContent = '{{js:ag.helmet_making}}'; $('go').disabled = true; lastBuild = null;
     return;
