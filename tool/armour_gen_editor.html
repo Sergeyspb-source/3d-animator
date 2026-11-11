@@ -3930,10 +3930,19 @@ Object.assign(STYLES, {
 const styleSet = () => (S.piece === 'cuirass' ? STYLES.cuirass : isLimb() ? STYLES.limb : STYLES[S.piece] || null);
 function applyStyle(k) {
   const set = styleSet(); if (!set || !set[k]) return;
+  // a shield of another shape is another shield: the last one's pictures, dents, pinches, its place on the arm and its
+  // name are not this one's (a cover made for a pavise does not fit a round one; «Generate» would make it over the old)
+  const newShape = S.piece === 'shield' && set[k].shield !== S.p.shield;
+  if (newShape) {
+    S.p.paints = []; S.p.pinches = [];
+    for (const [f] of NODE_FIELDS) S.p[f] = 0;
+    S.name = ''; S.nameTouched = false;
+  }
   Object.assign(S.p, set[k]);
   if (isLimb()) S.p.straps = S.piece === 'greave' || S.piece === 'cuisse' ? 3 : 2;   // a greave has three straps, a bracer two
   if (['weapon_greatsword', 'weapon_greataxe'].includes(k) && S.sides.length > 1) S.sides = ['R'];   // a two-handed one: one, held in both
   S.style = k; changed('style');
+  if (newShape) genStale = true;   // the generator's picture made again for this outline (when it is open)
 }
 // [group title, the roles it lights, [key, min, max, step, label, info, unit, shown when]]
 const SPEC = [
@@ -4243,8 +4252,7 @@ function setPiece(k, keep) {
     S.p.pinches = []; S.p.paints = [];
   }
   // a name that is another kind's piece (a cuirass opened, then «Weapon» chosen) is not kept: it would be made over it
-  const other = DATA.saved.find((x) => x.item === S.name && x.piece !== k);
-  if (!S.nameTouched || (!keep && other)) { S.name = ''; S.nameTouched = false; }   // (named by the rule: autoName)
+  if (!S.nameTouched || !keep) { S.name = ''; S.nameTouched = false; }   // (a piece chosen anew: a new one, named by the rule)   // (named by the rule: autoName)
   if (k === 'weapon' || (k === 'shield' && S.p.s_hand)) fistPose();   // a weapon is seen in the fist that holds it
   if (isCloth(k) && pose === 'rest') {   // a cloak over the arms hanging (a skirt beside them)
     pose = 'down'; for (const b of $('poses').children) b.classList.toggle('on', b.dataset.p === 'down');
@@ -4278,7 +4286,11 @@ const fractions = (p) => ({ ...p, t0: p.t0 / 100, t1: p.t1 / 100, gap: p.gap / 1
   top_cut: p.top_cut / 100, bottom_cut: p.bottom_cut / 100, yoke: p.yoke / 100, cuff: p.cuff / 100 });
 // the chosen pose kept whatever way it ends (a style's piece still loading, nothing to build): the rest pose it is made
 // on was left on screen meanwhile - a T-pose for a second or two when a piece was chosen
-function rebuild() { try { rebuildNow(); } finally { applyPose(); } }
+let genStale = false;
+function rebuild() {
+  try { rebuildNow(); } finally { applyPose(); }
+  if (genStale) { genStale = false; if ($('genBox').open) genPreview(); }
+}
 function rebuildNow() {
   if (bodyFor !== S.piece && [...WORN.values()].some((w) => w.on)) buildBody();   // which worn pieces are over it changed
   if (!bodyGeo) return;
@@ -4504,6 +4516,8 @@ $('views').addEventListener('click', (e) => e.target.dataset.v && view(e.target.
 window.agView = (v, eye, whole) => view(v, eye, whole);
 window.agParts = () => parts.map((x) => ({ side: x.side, v: Array.from(x.acc.v) }));   // the tests measure what is built
 window.agReach = () => reach.last || null;
+window.agItem = () => ({ item: itemName(), touched: S.nameTouched, shield: S.p.shield, paints: (S.p.paints || []).length, node: NODE_FIELDS.map(([f]) => S.p[f] || 0),
+  shown: [...WORN.entries()].filter(([, w]) => w.on && w.root && w.root.visible).map(([k]) => k), brush: PINCH.on });   // (the tests)
 window.agStale = () => staleList().map((x) => x.item);   // (the tests: what «Rebuild by layers» would make again)
 window.agBones = (re) => { const out = {}; for (const part of parts) { const a = part.acc; for (let i = 0; i < a.bi.length; i++) if (a.bw[i] > .05) { const n = boneNames[a.bi[i]]; if (!re || new RegExp(re).test(n)) out[n] = (out[n] || 0) + 1; } } return out; };   // for the tests: vertices per bone
 window.agNaN = () => ({ parts: parts.map((x) => [x.acc.v.length / 3, x.acc.v.filter((v) => !Number.isFinite(v)).length, Math.max(...x.acc.f.flat())]), meshes: pieceGroup.children.map((m) => [m.userData.part, m.geometry.attributes.position.count, [...m.geometry.attributes.position.array].filter((v) => !Number.isFinite(v)).length]) });   // for the tests
@@ -5248,9 +5262,11 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('pointerdown', (e) => {   // the app's page too: a Ctrl+A there stays otherwise
   if (!inField(e.target)) { getSelection().removeAllRanges(); try { if (window.parent !== window) window.parent.getSelection().removeAllRanges(); } catch (er) { /* another origin */ } }
 }, true);
-function setGizmo(m) { gizmoMode = m; for (const b of $('gizmoSeg').children) b.classList.toggle('on', b.dataset.g === m); gizmoSync(); }
+function setGizmo(m) {
+  if (PINCH.on) { PINCH.on = false; hot([], null); pinchSync(); }   // (the brush on hides it: taking the gizmo puts the brush down)
+  gizmoMode = m; for (const b of $('gizmoSeg').children) b.classList.toggle('on', b.dataset.g === m); gizmoSync(); }
 window.addEventListener('keydown', (e) => {   // G, R, S: the shield's gizmo moves, turns, scales (by the key's place: any layout)
-  if (e.ctrlKey || e.metaKey || e.altKey || PINCH.on || !nodePart() || inField(e.target)) return;
+  if (e.ctrlKey || e.metaKey || e.altKey || !nodePart() || inField(e.target)) return;
   const m = { KeyG: 'translate', KeyR: 'rotate', KeyS: 'scale' }[e.code]; if (!m) return;
   e.preventDefault(); setGizmo(m);
 });
@@ -5375,6 +5391,10 @@ async function make() {
   if (js && js.ok) {
     const i = DATA.saved.findIndex((x) => x.item === item);
     S.name = item; S.nameTouched = true;   // its name kept: «Generate» again makes this piece over, not a «_2»
+    // and in the history: a step back before it was made named it by the rule, which now gives a «_2» - another
+    // item, this one (made, worn) shown again over the preview, the two faces fighting
+    const named = (j) => { const x = JSON.parse(j); if (x.piece === S.piece && !x.touched) { x.name = item; x.touched = true; } return JSON.stringify(x); };
+    HIST.undo = HIST.undo.map(named); HIST.redo = HIST.redo.map(named); if (HIST.at !== null) HIST.at = named(HIST.at);
     const entry = { item, piece: S.piece, style: S.style, sides: [...S.sides], params: { ...S.p }, under: [...WORN.entries()].filter(([k, w]) => k !== item && w.on && layerOf(w)).map(([k]) => k) };
     if (i >= 0) DATA.saved[i] = entry; else DATA.saved.push(entry);
     listSaved(item);
@@ -5526,6 +5546,7 @@ function showQa(points) {
 }
 $('qaHide').addEventListener('click', () => showQa(null));
 let qaOut = null;   // the shield's «off the arm» the check found keeps the body out of it
+const QA_OUT_MAX = 8;   // cm: further out a shield no longer lies on the arm (offered as a move only up to this)
 $('qaFix').addEventListener('click', () => {
   if (qaOut === null) return;
   const el = $('n_s_pz'); el.value = qaOut; el.dispatchEvent(new Event('input'));
@@ -5538,13 +5559,20 @@ $('qa').addEventListener('click', async () => {
   busy = true; $('qa').disabled = true;
   let js = null;
   try { js = await send('qa', { item: itemName(), piece: S.piece, sides: twoHand ? ['L', 'R'] : S.sides.filter((x) => x !== 'C') }, '{{js:ag.qa_running}}', '_qa_' + itemName()); } finally { busy = false; $('qa').disabled = false; }
-  if (js && js.ok && S.piece === 'shield' && js.need > 0) {   // the shift out that keeps the body out of it, as the slider's share of its size
-    const cm = MM(10), now = S.p.s_pz || 0;   // (cm on the node's Z: off the arm)
-    qaOut = now + Math.ceil(js.need / cm * 2) / 2 + .5;
-    $('qaFix').textContent = '{{js:ag.qa_shield_out}}'.replace('{0}', (qaOut - now).toFixed(1)); $('qaFix').hidden = false;
+  let rep = null;
+  if (js && js.ok && js.report) try { rep = await (await fetch(fileUrl(js.report) + '?t=' + Date.now())).json(); } catch (e) { console.error(e); }
+  if (js && js.ok && S.piece === 'shield' && js.need > 0) {   // the shift out that keeps the body out of it, on the node's Z
+    const cm = MM(10), now = S.p.s_pz || 0, by = Math.ceil(js.need / cm * 2) / 2 + .5;   // (cm on the node's Z: off the arm)
+    if (by <= QA_OUT_MAX) {
+      qaOut = now + by;
+      $('qaFix').textContent = '{{js:ag.qa_shield_out}}'.replace('{0}', by.toFixed(1)); $('qaFix').hidden = false;
+    } else {   // deeper: moved that far out it would hang in the air - the shield is too big for where the clip holds the arm
+      const deep = rep ? rep.clips.filter((c) => c.need / cm > QA_OUT_MAX).map((c) => c.clip).join(', ') : '';
+      $('status').textContent += '\n' + '{{js:ag.qa_shield_far}}'.replace('{0}', Math.round(js.need / cm)).replace('{1}', deep);
+    }
   }
-  if (js && js.ok && js.report) {
-    try { const rep = await (await fetch(fileUrl(js.report) + '?t=' + Date.now())).json(); showQa(rep.points); } catch (e) { console.error(e); }
+  if (rep) {
+    showQa(rep.points);
     if (pose !== 'rest') { pose = 'rest'; for (const b of $('poses').children) b.classList.toggle('on', b.dataset.p === 'rest'); applyPose(); }
   }
 });

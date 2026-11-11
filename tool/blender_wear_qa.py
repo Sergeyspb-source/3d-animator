@@ -41,7 +41,7 @@ actions = [a for a in bpy.data.actions if any(fc.data_path.startswith("pose.bone
 before = set(bpy.data.objects)
 bpy.ops.import_scene.gltf(filepath=job["piece"])
 new = [o for o in bpy.data.objects if o not in before]
-pieces = [o for o in new if o.type == "MESH"]
+pieces = [o for o in new if o.type == "MESH" and not o.name.startswith(PARTS)]   # (not the importer's bone shape: a 1 m Icosphere round the origin)
 for o in pieces:   # onto the character's skeleton, by the bones' names
     for m in o.modifiers:
         if m.type == "ARMATURE":
@@ -189,6 +189,8 @@ def held_check():
     clips, out_pts, need_all = [], set(), []
     step = max(1, int(job.get("step", 3)))
     for act in actions:
+        if any(act.name.lower().startswith(x + "_") for x in job.get("skip_clips") or []):   # (another weapon's clip)
+            continue
         f0, f1 = set_clip(act)
         worst, need, facing = (0, f0), 0.0, 0
         for f in range(f0, f1 + 1, step):

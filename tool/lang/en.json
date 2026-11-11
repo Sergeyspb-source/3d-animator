@@ -328,6 +328,7 @@
  "ag.qa_running": "Checking in the animations (about a minute)…",
  "ag.qa_shield_more": "More than the slider allows: turn the shield («Turn») or make it smaller.",
  "ag.qa_shield_out": "Move the shield out by {0} cm",
+ "ag.qa_shield_far": "The shield catches the body by {0} cm ({1}). It cannot be moved out that far: it would hang in the air. Make it smaller, turn it or hold it higher. The red points are where the body goes into it.",
  "ag.qa_shield_out_title": "As much as keeps the body out of the shield in every frame (the position's Z); then «Generate» and check again.",
  "ag.qa_summary": "Clips checked: {0}, {1} s.",
  "ag.qa_title": "The piece is put on the character with its animations (as in the fitting room); in every clip it looks for where the skin comes out through it and where the mask leaves a hole. The places are marked red. A weapon or a shield: where it goes through the body (not the arm holding it), and for a shield how far to move it off the arm.",

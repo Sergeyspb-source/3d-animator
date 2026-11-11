@@ -413,6 +413,11 @@ def qa(cfg, req) -> dict:
         sides = [x for x in req.get("sides") or [] if x in ("L", "R")] or ["R"]
         tables = [LM.bone_names(n) for n in ("mixamo", "godot")]
         ids = [] if kind == "sheath" else [f"{j}_{sd}" for sd in sides for j in ("arm", "forearm", "hand", *(f"{f}{k}" for f in LM.FIST_FINGERS for k in (1, 2, 3, 4)))]
+        # the spear's and the bow's clips hold the off hand on the shaft or the bow: not what a shield's arm (or another
+        # weapon's) does, so not checked for it
+        made = WF.path(rigged, item, ".fit.json")
+        w = ((json.loads(made.read_text(encoding="utf-8")).get("procedural") or {}).get("params") or {}).get("weapon") if made.exists() else None
+        job["skip_clips"] = [x for x in ("spear", "bow") if not (kind == "weapon" and w == x)]
         job["held"] = {"skip": sorted({t[i] for t in tables for i in ids if i in t}), "shield": kind == "shield",
                        "fore": [t["hips" if kind == "sheath" else f"forearm_{sides[0]}"] for t in tables], "hips": [t["hips"] for t in tables]}
     (work / "qa_job.json").write_text(json.dumps(job, ensure_ascii=False, indent=1), encoding="utf-8")
