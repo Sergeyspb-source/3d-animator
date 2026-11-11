@@ -6261,7 +6261,23 @@ async function uvRefresh(keep) {   // keep: the status said before stays (what w
 async function uvUse(js) {   // the textures found or loaded: the piece made again with them, its result shown
   if (!js || !js.ok || !js.uvtex || !Object.keys(js.uvtex).length) return;
   S.p.uvtex = { ...(S.p.uvtex || {}), ...js.uvtex }; changed('uvtex'); uvSync();
-  const log = js.log, r = await make();
+  const base = { ...DEFAULTS, ...PIECES[S.piece].defaults };   // (a piece made before a parameter was added: its default)
+  const log = js.log, e = uvMade(), bare = (p) => { const q = { ...base, ...p }; delete q.uvtex; return sorted(q); };
+  // the piece made as it is now (no paint over its colours, nothing else changed): the textures put into its GLB,
+  // not made again; else (or when the server finds its unwrap is not the GLB's) made with them
+  if (e && !(S.p.paints || []).length && bare(e.params) === bare(S.p)) {
+    const q = await send('uv_apply', { item: itemName(), piece: S.piece, uvtex: S.p.uvtex }, '{{js:ag.uv_applying}}', '_uv_apply');
+    if (q && q.ok) {
+      e.params = { ...S.p };
+      const item = itemName(), w = DATA.worn.find((x) => x.item === item); if (w) w.v = Math.round(Date.now() / 1000);
+      const old = WORN.get(item); if (old) { scene.remove(old.root); WORN.delete(item); }
+      await loadResult(q.glb);
+      $('status').textContent = log + '\n' + q.log; await uvRefresh(true);
+      return;
+    }
+    if (!(q && q.need_make)) return;
+  }
+  const r = await make();
   if (r && r.ok) { $('status').textContent = log + '\n' + r.log; await uvRefresh(true); }
 }
 function uvWire() {

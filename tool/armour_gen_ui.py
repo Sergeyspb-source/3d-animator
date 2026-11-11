@@ -309,15 +309,37 @@ def _uv_fit(src: Path, mask: Path, size: int) -> tuple:
     bg = np.median(corners, axis=0)   # its background: what its corners are
     far = np.linalg.norm(a - bg, axis=2) > 22
     cont = np.asarray(Image.fromarray((far * 255).astype(np.uint8)).filter(ImageFilter.MaxFilter(3)).filter(ImageFilter.MinFilter(5)), np.float32) > 127
-    if corners.std(axis=0).mean() > 8:   # its corners not one flat colour: a picture over the whole square, no background
+    # painted on this unwrap: what is not its background lies within our islands (an edit model's on <part>_color.png,
+    # its background flat or not); else a picture over the whole square (its corners not one flat colour: left as it
+    # is), else one on another layout (its background on our islands: filled, said)
+    aligned = cont.sum() > 0 and (cont & m).sum() / cont.sum() > .9 and cont.mean() < .97
+    if not aligned and corners.std(axis=0).mean() > 8:
         cont = np.ones_like(m)
     holes = m & ~cont
     share = float(holes.sum() / max(1, m.sum()))
-    aligned = cont.sum() > 0 and (cont & m).sum() / cont.sum() > .9 and not cont.all()
-    if aligned:   # painted on this unwrap (its islands within ours): inside them as it is; only the rim the bake's margin adds
-        # round each island (its background there would show as a seam on the model) takes the island's colour
-        inner = np.asarray(Image.fromarray((m * 255).astype(np.uint8)).filter(ImageFilter.MinFilter(17)), np.float32) > 127
-        holes = m & ~cont & ~inner
+    rim_share = 0.
+    if aligned:   # painted on this unwrap (its islands within ours): inside them as it is, but what is not the surface -
+        # its background in them, and the light rim an image model paints along every fragment's edge (a seam lit up on
+        # the model: the edges are the unwrap's seams) - taken from the nearest real surface (DeepSeek's clean_generated)
+        from scipy import ndimage as nd
+        dt = nd.distance_transform_edt(m)
+        lum = a.mean(axis=2)
+        mid = float(np.median(lum[m & (dt > 8)])) if (m & (dt > 8)).any() else float(lum[m].mean())
+        lab, nl = nd.label(m)   # (a thin island - a strap's arc - all «rim»: kept as it is)
+        thick = np.concatenate([[False], np.asarray(nd.maximum(dt, lab, index=np.arange(1, nl + 1))) > 8]) if nl else np.array([False])
+        rim = m & thick[lab] & (dt <= 5) & ((((a[..., 0] - a[..., 2]) > 12) & (lum > 150)) | (lum > mid + 35))
+        valid = nd.binary_erosion(m & cont & ~rim, iterations=1)
+        rim_share = float(rim.sum() / max(1, m.sum()))
+        if valid.any():
+            idx = nd.distance_transform_edt(~valid, return_distances=False, return_indices=True)
+            near = a[idx[0], idx[1]]
+            soft = np.stack([nd.gaussian_filter(near[..., c], 1.1) for c in range(3)], -1)
+            fill = m & ~valid
+            a = np.where(fill[..., None], .6 * near + .4 * soft, a)
+            idx2 = nd.distance_transform_edt(~m, return_distances=False, return_indices=True)   # 8 px past every island
+            pad = ~m & (nd.distance_transform_edt(~m) <= 8)
+            a = np.where(pad[..., None], a[idx2[0], idx2[1]], a)
+        holes = np.zeros_like(m)
         share = 0.
     if holes.any() and not aligned:   # first the texture itself, from places moved by a few steps that have it; what is left: push-pull
         rest, orig = holes.copy(), a.copy()
@@ -345,7 +367,85 @@ def _uv_fit(src: Path, mask: Path, size: int) -> tuple:
         a = np.where(cont[..., None], a, fill)
     out = src.with_name(src.stem + "_fit.png")
     Image.fromarray(a.clip(0, 255).astype(np.uint8)).save(out)
-    return out, share
+    return out, share, rim_share
+
+
+def glb_swap_images(glb: Path, swaps: dict) -> list:
+    """A GLB's base colour pictures replaced in it: swaps {material name: picture path}; each material's picture made the
+    size its old one was, PNG; the binary chunk laid out again (its views in order, 4-byte aligned). -> the names done"""
+    import struct
+    import io as _io
+    from PIL import Image
+    raw = Path(glb).read_bytes()
+    magic, ver, _ = struct.unpack_from("<III", raw, 0)
+    if magic != 0x46546C67:
+        raise ValueError("not a GLB")
+    jl, jt = struct.unpack_from("<II", raw, 12)
+    J = json.loads(raw[20:20 + jl].decode("utf-8"))
+    o = 20 + jl
+    bl, bt = struct.unpack_from("<II", raw, o)
+    BIN = raw[o + 8:o + 8 + bl]
+    views = [BIN[v.get("byteOffset", 0):v.get("byteOffset", 0) + v["byteLength"]] for v in J["bufferViews"]]
+    done = []
+    for mi, mat in enumerate(J.get("materials", [])):
+        src = swaps.get(mat.get("name"))
+        t = ((mat.get("pbrMetallicRoughness") or {}).get("baseColorTexture") or {}).get("index")
+        if not src or t is None:
+            continue
+        img = J["images"][J["textures"][t]["source"]]
+        if "bufferView" not in img:
+            continue
+        old = Image.open(_io.BytesIO(views[img["bufferView"]]))
+        new = Image.open(src).convert("RGB")
+        if new.size != old.size:
+            new = new.resize(old.size, Image.LANCZOS)
+        buf = _io.BytesIO(); new.save(buf, "PNG")
+        views[img["bufferView"]] = buf.getvalue(); img["mimeType"] = "image/png"
+        done.append(mat.get("name"))
+    out, off = bytearray(), 0
+    for v, data in zip(J["bufferViews"], views):
+        pad = (-len(out)) % 4
+        out += b"\0" * pad
+        v["byteOffset"] = len(out); v["byteLength"] = len(data)
+        out += data
+    out += b"\0" * ((-len(out)) % 4)
+    J["buffers"][0]["byteLength"] = len(out)
+    js = json.dumps(J, separators=(",", ":")).encode("utf-8")
+    js += b" " * ((-len(js)) % 4)
+    total = 12 + 8 + len(js) + 8 + len(out)
+    Path(glb).write_bytes(struct.pack("<III", magic, ver, total) + struct.pack("<II", len(js), 0x4E4F534A) + js
+                          + struct.pack("<II", len(out), 0x004E4942) + bytes(out))
+    return done
+
+
+def uv_apply(cfg, req) -> dict:
+    """The textures given back put into the piece made, as they are, without making it again (its geometry, unwrap,
+    weights the same): each part's base colour picture replaced in its GLB (and its source copy), its parameters kept
+    with them. Only when the unwrap given out is the GLB's (made with it) and the hashes agree: else need_make."""
+    rigged = Path(req["rigged"])
+    item = re.sub(r"[^A-Za-z0-9_-]+", "_", req.get("item") or "").strip("_")
+    piece = req.get("piece")
+    glb, d = WF.path(rigged, item, ".glb", piece), uv_dir(rigged, item, piece)
+    info = d / "uv.json"
+    if not glb.exists() or not info.exists() or abs(glb.stat().st_mtime - info.stat().st_mtime) > 600:
+        return {"ok": False, "need_make": True, "log": _t("ag.uv_apply_make")}
+    j = json.loads(info.read_text(encoding="utf-8"))
+    tex = req.get("uvtex") or {}
+    if any(sl not in j["slots"] or t.get("hash") != j["slots"][sl]["hash"] or not Path(str(t.get("path") or "")).exists() for sl, t in tex.items()):
+        return {"ok": False, "need_make": True, "log": _t("ag.uv_apply_make")}
+    swaps = {f"{item}_{sl}": t["path"] for sl, t in tex.items()}
+    done = glb_swap_images(glb, swaps)
+    src = WF.path(rigged, item, ".src.glb", piece)
+    shutil.copy2(glb, src)
+    fit = WF.path(rigged, item, ".fit.json", piece)
+    if fit.exists():   # (its parameters with the textures: «Generate» again keeps them)
+        fj = json.loads(fit.read_text(encoding="utf-8"))
+        fj.setdefault("procedural", {}).setdefault("params", {})["uvtex"] = tex
+        fit.write_text(json.dumps(fj, ensure_ascii=False, indent=1), encoding="utf-8")
+    import os as _os
+    _os.utime(info, None)   # (the unwrap still the GLB's: their times kept together)
+    return {"ok": True, "glb": glb.resolve().as_posix(), "done": done,
+            "log": _t("ag.uv_applied_fast", ", ".join(_t(f"ag.lib_slot_{x[len(item) + 1:]}") for x in done)) if done else _t("ag.uv_apply_make")}
 
 
 def uv_action(cfg, req) -> dict:
@@ -392,10 +492,12 @@ def uv_action(cfg, req) -> dict:
             user = {sl: (d / f"{sl}_user.png").resolve().as_posix()}   # (the one loaded: the others as they are)
         fits, notes = {}, []
         for sl, p in user.items():
-            f, share = _uv_fit(Path(p), d / f"{sl}_mask.png", j["size"])
+            f, share, rim = _uv_fit(Path(p), d / f"{sl}_mask.png", j["size"])
             fits[sl] = f.resolve().as_posix()
             if share > .03:   # painted on another layout: its background fell on the islands
                 notes.append(_t("ag.uv_holes", _t(f"ag.lib_slot_{sl}"), round(share * 100)))
+            elif rim > .005:   # its painted rims taken off
+                notes.append(_t("ag.uv_rim", _t(f"ag.lib_slot_{sl}"), round(rim * 100, 1)))
         out["user"] = user
         out["uvtex"] = {sl: {"path": p, "hash": j["slots"][sl]["hash"]} for sl, p in fits.items()}
         out["log"] = (_t("ag.uv_taken", ", ".join(_t(f"ag.lib_slot_{s}") for s in user)) if user else _t("ag.uv_no_user", d)) + "".join("\n" + x for x in notes)
@@ -691,10 +793,10 @@ def handle(cfg, text):
             res = {"ok": False, "log": _t("lm.error", e)}
         WF.status(cfg, rigged, "_" + req["action"]).write_text(json.dumps({"id": req.get("id"), **res}, ensure_ascii=False), encoding="utf-8")
         return res["log"], None
-    if req.get("action") in ("uv_info", "uv_put", "uv_open", "ai_texture"):   # answered in <stem>_<action>.wear.json
+    if req.get("action") in ("uv_info", "uv_put", "uv_open", "ai_texture", "uv_apply"):   # answered in <stem>_<action>.wear.json
         rigged = Path(req["rigged"])
         try:
-            res = uv_action(cfg, req)
+            res = uv_apply(cfg, req) if req["action"] == "uv_apply" else uv_action(cfg, req)
         except Exception as e:  # noqa: BLE001
             res = {"ok": False, "log": _t("lm.error", e)}
         WF.status(cfg, rigged, "_" + req["action"]).write_text(json.dumps({"id": req.get("id"), **res}, ensure_ascii=False), encoding="utf-8")
