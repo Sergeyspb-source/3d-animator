@@ -271,6 +271,48 @@ def save_decal(cfg, req) -> dict:
     return {"ok": True, "log": _t("ag.decal_saved", f.name), "decal": {"name": name, "path": f.resolve().as_posix(), "label": name}}
 
 
+def uv_dir(rigged: Path, item: str, piece=None) -> Path:
+    """«Texture by the unwrap»: the piece's unwrap pictures and the textures painted on them, next to it."""
+    item = re.sub(r"[^A-Za-z0-9_-]+", "_", item or "").strip("_")
+    return WF.path(rigged, item, ".glb", piece).parent / f"{item}_uv"
+
+
+def uv_action(cfg, req) -> dict:
+    """uv_info: the unwrap given out with the piece made last ({folder, size, slots: {slot: {hash}}, user: {slot: path}});
+    uv_put: a texture for a slot (a data URL) saved as <slot>_user.png there, or (no data) the <slot>_user.png files
+    found there (painted elsewhere) - each with its unwrap's hash, for the next «Generate»; uv_open: the folder shown."""
+    rigged = Path(req["rigged"])
+    d = uv_dir(rigged, req.get("item") or "", req.get("piece"))
+    info = d / "uv.json"
+    if not info.exists():
+        return {"ok": False, "log": _t("ag.uv_none"), "folder": d.resolve().as_posix()}
+    j = json.loads(info.read_text(encoding="utf-8"))
+    user = {f.stem[:-5]: f.resolve().as_posix() for f in d.glob("*_user.png") if f.stem[:-5] in j["slots"]}
+    out = {"ok": True, "folder": d.resolve().as_posix(), "size": j["size"], "slots": j["slots"], "user": user}
+    if req["action"] == "uv_open":
+        import os
+        os.startfile(str(d))   # (the app runs on Windows)
+        out["log"] = _t("ag.uv_opened", d)
+    elif req["action"] == "uv_put":
+        if req.get("data"):
+            from PIL import Image
+            import io as _io
+            sl = str(req.get("slot") or "")
+            if sl not in j["slots"]:
+                return {"ok": False, "log": _t("ag.uv_bad_slot", sl)}
+            im = Image.open(_io.BytesIO(base64.b64decode(str(req["data"]).split(",", 1)[1]))).convert("RGB")
+            if im.size != (j["size"], j["size"]):
+                im = im.resize((j["size"], j["size"]), Image.LANCZOS)
+            im.save(d / f"{sl}_user.png")
+            user[sl] = (d / f"{sl}_user.png").resolve().as_posix()
+            out["user"] = user
+        out["uvtex"] = {sl: {"path": p, "hash": j["slots"][sl]["hash"]} for sl, p in user.items()}
+        out["log"] = _t("ag.uv_taken", ", ".join(_t(f"ag.lib_slot_{s}") for s in user)) if user else _t("ag.uv_no_user", d)
+    else:
+        out["log"] = _t("ag.uv_ready", d)
+    return out
+
+
 def editor_page(rigged: Path, decals_dir: Path | None = None) -> str:
     page = i18n.fill(EDITOR.read_text(encoding="utf-8"))
     data = {"rigged": rigged.resolve().as_posix(), "rigged_v": int(rigged.stat().st_mtime), "stem": LM._stem(rigged),
@@ -352,7 +394,8 @@ def generate(cfg, req) -> dict:
            "seed": int(params.get("seed", 1)), "fist": LM.fist_hand(rigged),
            "two": req.get("two") if re.fullmatch(r"[LR](_-?\d+){9}", str(req.get("two") or "")) else "",
            "point": req.get("point") if re.fullmatch(r"-?\d+(_-?\d+){2}", str(req.get("point") or "")) else "",
-           "fist_grip": piece == "shield" and bool(params.get("s_hand"))}   # a shield held by its bar: the fingers close as on a weapon
+           "fist_grip": piece == "shield" and bool(params.get("s_hand")),   # a shield held by its bar: the fingers close as on a weapon
+           "uv_out": str(work / "uv"), "uvtex": params.get("uvtex") or {}}   # «Texture by the unwrap»: given out, taken back
     if piece == "undercloth":
         job["style"] = params.get("cloth_style")
     if PIECES[piece][5] in ("held", "cloak"):   # held, not worn (the fingers round a grip stay); a cloak swings off the body
@@ -375,6 +418,11 @@ def generate(cfg, req) -> dict:
         return {"ok": False, "log": _t("ag.failed") + (bad or (r.stdout + r.stderr)[-1500:])}
     info = json.loads(line.split(" ", 1)[1])
     shutil.copy2(work / "piece.glb", out)
+    if (work / "uv").exists():   # the unwrap's pictures next to the piece (<item>_uv/), a texture painted there kept
+        ud = uv_dir(rigged, item, piece)
+        ud.mkdir(parents=True, exist_ok=True)
+        for f in (work / "uv").iterdir():
+            shutil.copy2(f, ud / f.name)
     if (work / "mask.json").exists():   # what of the body it hides: SF3DEquip.wear() takes it away while it is on
         shutil.copy2(work / "mask.json", WF.path(rigged, item, ".mask.json", piece))
     else:   # a held piece hides nothing: an older piece's mask of that name goes
@@ -388,6 +436,8 @@ def generate(cfg, req) -> dict:
         encoding="utf-8")
     shots = [str(work / f"preview_{v}.png") for v in ("front", "side", "close") if (work / f"preview_{v}.png").exists()]
     msg = _t("ag.done", out.name, info["vertices"], ", ".join(info["bones"]), (datetime.now() - t).seconds)
+    for sl, st in (info.get("uvtex") or {}).items():
+        msg += "\n" + _t("ag.uv_applied" if st == "ok" else "ag.uv_changed", _t(f"ag.lib_slot_{sl}"))
     if info.get("over_clothes"):
         msg += "\n" + _t("ag.over_clothes")
     mask = WF.path(rigged, item, ".mask.json", piece)
@@ -527,6 +577,14 @@ def handle(cfg, text):
             else:
                 mat = matlib.get(folder, req.get("source") or "ambientcg", str(req.get("id") or ""), float(req.get("size_cm") or 0))
                 res = {"ok": True, "material": mat, "log": _t("ag.lib_got", mat["name"])}
+        except Exception as e:  # noqa: BLE001
+            res = {"ok": False, "log": _t("lm.error", e)}
+        WF.status(cfg, rigged, "_" + req["action"]).write_text(json.dumps({"id": req.get("id"), **res}, ensure_ascii=False), encoding="utf-8")
+        return res["log"], None
+    if req.get("action") in ("uv_info", "uv_put", "uv_open"):   # answered in <stem>_<action>.wear.json
+        rigged = Path(req["rigged"])
+        try:
+            res = uv_action(cfg, req)
         except Exception as e:  # noqa: BLE001
             res = {"ok": False, "log": _t("lm.error", e)}
         WF.status(cfg, rigged, "_" + req["action"]).write_text(json.dumps({"id": req.get("id"), **res}, ensure_ascii=False), encoding="utf-8")

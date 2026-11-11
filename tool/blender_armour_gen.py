@@ -215,12 +215,14 @@ def bake(obj, mats, size, out_dir, item, paint=None):
             else:
                 nt.links.new(bsdf.outputs[0], out.inputs[0])
         bpy.ops.object.bake(type=btype, margin=4)
+    uv_user(obj, mats, imgs, size, item)
     if paint and paint.get("layers"):
         paint_layers(obj, mats, imgs, size, item, paint)
     for (mn, kind), im in imgs.items():
         im.filepath_raw = str(Path(out_dir) / f"{im.name}.png")
         im.file_format = "PNG"
         im.save()
+    uv_package(obj, mats, imgs, size, item)
     for m, metal in mats:   # rebuilt for the game: image textures into a Principled BSDF
         nt = m.node_tree
         for nd in list(nt.nodes):
@@ -234,6 +236,98 @@ def bake(obj, mats, size, out_dir, item, paint=None):
         bsdf.inputs["Metallic"].default_value = metal
         if (m.name, "metal") in imgs:   # painted: gold on leather, paint on steel
             mt = N("ShaderNodeTexImage"); mt.image = imgs[(m.name, "metal")]; L(mt.outputs[0], bsdf.inputs["Metallic"])
+
+
+# ---------------------------------------------------------------- «Texture by the unwrap»
+# Each material's unwrap (its own: smart_project per material, below) given out as pictures - its islands over the
+# colours baked, the islands' mask, their edges - for a texture to be painted on it elsewhere (by hand, by an image
+# model: the editor gives the prompt), and that texture taken back: it is the material's colour when the unwrap is
+# still the one it was painted on (the same UVs: a hash of them), the paint and the damage then laid over it.
+UV_INFO = {}   # slot -> "ok" | "changed" (a texture given but the unwrap no longer its)
+
+
+def _slot(m):
+    return m.name[len(item) + 1:] if m.name.startswith(item + "_") else m.name
+
+
+def uv_hash(obj, mi):
+    import hashlib
+    me = obj.data
+    uv = np.empty(len(me.loops) * 2, np.float32); me.uv_layers["UVMap"].data.foreach_get("uv", uv); uv = uv.reshape(-1, 2)
+    mat = np.empty(len(me.polygons), np.int32); me.polygons.foreach_get("material_index", mat)
+    ls = np.empty(len(me.polygons), np.int32); me.polygons.foreach_get("loop_start", ls)
+    lt = np.empty(len(me.polygons), np.int32); me.polygons.foreach_get("loop_total", lt)
+    idx = np.concatenate([np.arange(a, a + t) for a, t, k in zip(ls, lt, mat) if k == mi] or [np.zeros(0, np.int64)])
+    return hashlib.md5(np.round(uv[idx] * 4096).astype(np.int32).tobytes()).hexdigest()[:16]
+
+
+def uv_user(obj, mats, imgs, size, item):
+    for mi, (m, _) in enumerate(mats):
+        t = (job.get("uvtex") or {}).get(_slot(m))
+        if not t or not Path(str(t.get("path") or "")).exists():
+            continue
+        if t.get("hash") != uv_hash(obj, mi):
+            UV_INFO[_slot(m)] = "changed"
+            continue
+        b = bpy.data.images.load(str(t["path"]))
+        if tuple(b.size) != (size, size):
+            b.scale(size, size)
+        px = _pixels(b, size).copy(); bpy.data.images.remove(b)
+        px[:, 3] = 1
+        imgs[(m.name, "color")].pixels.foreach_set(px.ravel())
+        UV_INFO[_slot(m)] = "ok"
+
+
+def uv_package(obj, mats, imgs, size, item):
+    """Per material in job["uv_out"]: <slot>_color.png (its colours as baked), <slot>_mask.png (its islands white),
+    <slot>_lines.png (the islands' edges on nothing), <slot>_layout.png (the edges over the colours); uv.json."""
+    if not job.get("uv_out"):
+        return
+    d = Path(job["uv_out"]); d.mkdir(parents=True, exist_ok=True)
+    def one(nt):
+        v = nt.nodes.new("ShaderNodeValue"); v.outputs[0].default_value = 1.
+        return v.outputs[0]
+    mask = bake_aux(obj, mats, size, item, "uvmask", one)
+    me = obj.data
+    uv = np.empty(len(me.loops) * 2, np.float32); me.uv_layers["UVMap"].data.foreach_get("uv", uv); uv = uv.reshape(-1, 2)
+    info = {"size": size, "slots": {}}
+    def save(name, arr):
+        im = bpy.data.images.new(f"{item}_uvpack_{name}", size, size, alpha=True)
+        im.pixels.foreach_set(arr.astype(np.float32).ravel())
+        im.filepath_raw = str(d / f"{name}.png"); im.file_format = "PNG"; im.save()
+        bpy.data.images.remove(im)
+    for mi, (m, _) in enumerate(mats):
+        sl = _slot(m)
+        if not any(p.material_index == mi for p in me.polygons):
+            continue
+        col = _pixels(imgs[(m.name, "color")], size).copy(); col[:, 3] = 1
+        mk = np.clip(mask[m.name][:, 0], 0, 1)
+        lines = np.zeros((size, size), np.float32)   # the islands' edges (an edge of one face only, on the unwrap), a pixel wide
+        count, seg = {}, {}
+        for p in me.polygons:
+            if p.material_index != mi:
+                continue
+            ls = list(p.loop_indices)
+            for a, b in zip(ls, ls[1:] + ls[:1]):
+                ka, kb = tuple(np.round(uv[a] * 8192).astype(int)), tuple(np.round(uv[b] * 8192).astype(int))
+                k = (ka, kb) if ka <= kb else (kb, ka)
+                count[k] = count.get(k, 0) + 1; seg[k] = (a, b)
+        for k, c in count.items():
+            if c == 1:
+                a, b = seg[k]
+                (x0, y0), (x1, y1) = uv[a] * (size - 1), uv[b] * (size - 1)
+                n = int(max(abs(x1 - x0), abs(y1 - y0))) + 1
+                xs = np.clip(np.round(np.linspace(x0, x1, n + 1)).astype(int), 0, size - 1)
+                ys = np.clip(np.round(np.linspace(y0, y1, n + 1)).astype(int), 0, size - 1)
+                lines[ys, xs] = 1
+        lines = lines.ravel()
+        save(f"{sl}_color", col)
+        save(f"{sl}_mask", np.stack([mk, mk, mk, np.ones_like(mk)], axis=1))
+        save(f"{sl}_lines", np.stack([lines * 0, lines * 0, lines * 0, lines], axis=1))
+        lay = col.copy(); lay[:, :3] = lay[:, :3] * (1 - lines[:, None]) + np.array([1, .1, .6])[None, :] * lines[:, None]
+        save(f"{sl}_layout", lay)
+        info["slots"][sl] = {"hash": uv_hash(obj, mi), "faces": sum(1 for p in me.polygons if p.material_index == mi)}
+    (d / "uv.json").write_text(json.dumps(info, indent=1), encoding="utf-8")
 
 
 def _pixels(im, size):
@@ -963,4 +1057,4 @@ bpy.context.view_layer.objects.active = arm
 bpy.ops.export_scene.gltf(filepath=job["out"], export_format="GLB", use_selection=True, export_skins=True,
                           export_animations=False, export_influence_nb=8)
 print("ARMOUR_GEN_OK " + json.dumps({"vertices": len(mesh.vertices), "bones": bones, "radius": round(R, 4),
-                                     "sides": sides, "over_clothes": bool(mj.get("over_clothes"))}), flush=True)
+                                     "sides": sides, "over_clothes": bool(mj.get("over_clothes")), "uvtex": UV_INFO}), flush=True)
