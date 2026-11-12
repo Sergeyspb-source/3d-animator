@@ -1672,7 +1672,7 @@ function mailCoif(p) {
   const faceAt = (v) => {
     if (v.y >= cy) return v.clone().sub(E).dot(FRONT) > -.5 * d && ovalF(v) < 1;
     if (v.y <= vBot || v.clone().sub(NK).dot(FRONT) < -.3 * d) return false;
-    return Math.abs(v.x - E.x) < axx * Math.pow((v.y - vBot) / Math.max(1e-6, cy - vBot), .8);
+    return Math.abs(v.x - E.x) < axx * Math.pow(Math.min(1, (v.y - vBot) / Math.max(1e-6, .35 * (cy - vBot))), .7);   // (as wide as the face all down the neck's front, closing only at its foot: no collar left beside it)
   };
   const cellMid = (j, i) => P[j][i].o.clone().add(P[j + 1][i].o).add(P[j][i + 1].o).add(P[j + 1][i + 1].o).multiplyScalar(.25);
   const faceCell = Array.from({ length: NT }, (_, j) => Array.from({ length: NV }, (_, i) => faceAt(cellMid(j, i))));
@@ -1682,7 +1682,7 @@ function mailCoif(p) {
   // round the neck from the head's sides to the shoulders) it falls most of the way in onto what is under it (COIF_SAG of
   // the air under it gone), the lines then smoothed round and down (no ridges between them)
   P.forEach((col, j) => { for (let i = 1; i < col.length; i++) {
-    if (!inner(j % NT, i)) continue;   // (the opening's rim stays on the hull: hung, its edge peeled off the face)
+    if (!inner(j % NT, i) && col[i].o.y > cy) continue;   // (the opening's rim round the face stays on the hull: hung, its edge peeled off the face; down the neck it hangs)
     const q = col[i], h = castOn(bodyGeo, q.o.clone().addScaledVector(q.n, MM(1)), q.n.clone().negate(), .2 * H);
     // (round the neck it falls in; below the neck's foot, on the cape, less: it hangs from the shoulders, not sucked
     // into the armpits - its rows folded over there)
