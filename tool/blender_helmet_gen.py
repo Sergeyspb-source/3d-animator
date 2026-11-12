@@ -8,7 +8,8 @@ job.json: {"style": kettle_hat | open_bascinet | barbute | visored_bascinet | sa
            "params": {"gap": air over the head, a share of its half depth, "visor_angle", "cheek_angle" (degrees),
                       "tail": a sallet's tail, "brim": a kettle hat's brim, shares of their usual size},
            "out": piece.glb, "work": a folder (the generators' textures),
-           "character": rigged.glb, "names": {naming: {joint: bone}}, "mask": mask.json}
+           "character": rigged.glb, "names": {naming: {joint: bone}}, "mask": mask.json,
+           "under": [the GLBs of what is worn on the head under it: a coif - measured with the head]}
 
 The generators build for a human head, in metres, with fixed eye slits and rivets. The head is measured on the skin:
 the eyes, its depth and width at the brow, its top, the chin (where the face's front goes back sharply), the neck and
@@ -85,13 +86,51 @@ for o in body:
     k = len(verts)
     verts += [o.matrix_world @ v.co for v in o.data.vertices]
     polys += [tuple(k + i for i in f.vertices) for f in o.data.polygons]
-tree = BVHTree.FromPolygons(verts, polys)
 H = max(v.z for v in verts) - min(v.z for v in verts)
+# what is worn on the head under it (a coif, a padded one: job["under"]): measured as the head is - the helmet goes
+# over it (made on the skin alone, a mail coif came out through it): a ray out from the head's inside meets the skin,
+# then the layers on it (their inner and outer walls) - the outermost of them close over the skin counts
+uverts, upolys = [], []
+for g in job.get("under") or []:
+    had = set(bpy.data.objects)
+    try:
+        bpy.ops.import_scene.gltf(filepath=g)
+    except Exception as e:  # noqa: BLE001
+        print("UNDER_SKIPPED", g, e, flush=True)
+        continue
+    new = [o for o in bpy.data.objects if o not in had]
+    for o in new:
+        if o.type == "ARMATURE":
+            o.data.pose_position = "REST"
+    bpy.context.view_layer.update()
+    for o in new:
+        if o.type == "MESH":
+            k = len(uverts)
+            uverts += [o.matrix_world @ v.co for v in o.data.vertices]
+            upolys += [tuple(k + i for i in f.vertices) for f in o.data.polygons]
+    for o in new:
+        bpy.data.objects.remove(o, do_unlink=True)
+tree = BVHTree.FromPolygons(verts, polys)
+treeU = BVHTree.FromPolygons(uverts, upolys) if upolys else None
 
 
 def hit(org, d, far):
-    h = tree.ray_cast(org, Vector(d), far)
-    return h[3] if h[0] is not None else None
+    d = Vector(d)
+    h = tree.ray_cast(org, d, far)
+    if h[0] is None:
+        return None
+    r = h[3]
+    if treeU is not None:   # the layers worn on it there
+        t = 0.0
+        for _ in range(8):
+            q = treeU.ray_cast(org + d * (t + 1e-4), d, far)
+            if q[0] is None:
+                break
+            t += 1e-4 + q[3]
+            if t > r + .06 * H:
+                break
+            r = max(r, t)
+    return r
 
 
 J = W @ head_b.head_local
@@ -232,7 +271,7 @@ if style == "kettle_hat":   # the brim at the brow, the crown over the rest of t
     dims = {"rx": (half_w + gap) / s, "ry": ry_m, "height": (E.z + top - base_z + gap) / s}
 else:
     base_z = E.z - EYE_Z * s
-    dims = {"rx": (half_w + gap) / s, "ry": ry_m, "height": (E.z + top - base_z + gap) / s - style_base()["brow_z"]}
+    dims = {"rx": (half_w + gap) / s, "ry": ry_m, "height": ((E.z + top - base_z + gap) / s - style_base()["brow_z"]) * X.RISE.get(style, 1)}
 bpy.ops.object.select_all(action="DESELECT")   # their mesh preparation unwraps whatever is selected
 root, p, eye_z = build(dims)
 parts = flatten(root)

@@ -5,6 +5,7 @@ bakes its materials and exports it. The result lies next to the character like a
 (<model>/<armor|clothes|weapons>/<item>.glb with its fit.json: wear_files), so the Godot fitting room and the editor's
 other pieces see it."""
 import base64
+import hashlib
 import html as _html
 import json
 import os
@@ -598,6 +599,25 @@ def editor_page(rigged: Path, decals_dir: Path | None = None) -> str:
     return page.replace("@@DATA@@", json.dumps(data, ensure_ascii=False).replace("</", "<\\/"))
 
 
+def _under(rigged: Path, req) -> list:
+    """The GLBs of what is worn under a helmet on the head - a mail coif, a padded one - among the pieces the editor
+    has on under it (req «under»: their items), by what each was made as (its .fit.json)."""
+    home, out = Path(rigged).parent, []
+    for item in req.get("under") or []:
+        item = re.sub(r"[^A-Za-z0-9_-]+", "_", str(item))
+        for cat in WF.CATS:
+            g, fit = home / cat / f"{item}.glb", home / cat / f"{item}.fit.json"
+            if not (g.is_file() and fit.is_file()):
+                continue
+            try:
+                pr = json.loads(fit.read_text(encoding="utf-8")).get("procedural") or {}
+            except (OSError, ValueError):
+                continue
+            if pr.get("piece") == "coif" or (pr.get("piece") == "undercloth" and (pr.get("params") or {}).get("cloth_style") == "coif"):
+                out.append(str(g))
+    return sorted(out)
+
+
 def made_preview(cfg, req) -> dict:
     """A piece the generators make (MADE: a helmet, elbows), of a style, made for the character to look at while it is
     chosen (as «Generate» makes it, 5-20 s): work/helmets/<character>/<style>_<the parameters>.glb with its mask, made
@@ -610,12 +630,15 @@ def made_preview(cfg, req) -> dict:
     sides = [x for x in req.get("sides") or [] if x in ("L", "R")]
     tag = "".join(f"_{k[0]}{round(hp[k] * (1 if 'angle' in k else 100))}" for k in ("gap", *own.get(style, ()))) + ("_" + "".join(sides) if sides else "")
     tag += "".join(f"_{k[:2]}{round(hp[k] * 10)}" for k in ("slide", "twist", "size") if k in hp and hp[k] != (100 if k == "size" else 0))   # (placed by hand)
+    under = _under(rigged, req) if piece == "helmet" else []
+    if under:   # (over a coif: another helmet; the coif made again, another again)
+        tag += "_u" + hashlib.md5("|".join(f"{u}{int(Path(u).stat().st_mtime)}" for u in under).encode()).hexdigest()[:6]
     d = Path(cfg["work_dir"]) / "helmets" / LM._slug(LM._stem(rigged))
     d.mkdir(parents=True, exist_ok=True)
     glb, mask = d / f"{style}{tag}.glb", d / f"{style}{tag}.mask.json"
     if not (glb.exists() and mask.exists() and glb.stat().st_mtime > max(rigged.stat().st_mtime, (ROOT / script).stat().st_mtime)):
         job = {"style": style[len(prefix):], "params": hp, "sides": sides, "out": str(glb), "work": str(d), "character": str(rigged),
-               "names": {n: LM.bone_names(n) for n in ("mixamo", "godot")}, "mask": str(mask)}
+               "names": {n: LM.bone_names(n) for n in ("mixamo", "godot")}, "mask": str(mask), "under": under}
         (d / f"{style}{tag}.job.json").write_text(json.dumps(job, ensure_ascii=False), encoding="utf-8")
         blender = cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe"
         r = subprocess.run([blender, "-b", "--factory-startup", "-P", str(ROOT / script), "--", str(d / f"{style}{tag}.job.json")],
@@ -669,6 +692,8 @@ def generate(cfg, req) -> dict:
     if made:
         style = params.get(piece) if params.get(piece) in made[1] else made[1][0]
         job.update(style=style[len(made[2]):], params=made[3](params))
+        if piece == "helmet":
+            job["under"] = _under(rigged, req)
     (work / "job.json").write_text(json.dumps(job, ensure_ascii=False, indent=1), encoding="utf-8")
     blender = cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe"
     t = datetime.now()

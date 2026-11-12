@@ -30,6 +30,9 @@ STYLES = {
     "morion": {"height": 0.110, "peak_sweep": 0.0, "neck_z": 0.030, "crest": 0.0},
     "close_helm": {"height": 0.109, "peak_sweep": 0.002, "neck_z": -0.075, "visor_projection": 0.039, "crest": 0.002},
 }
+# a pointed helm rises so much over the head (its apex): its sides, going in to the point, would cut into the skull's
+# dome (a coif's under it more so) at the head's own height
+RISE = {"nasal_helm": 1.3, "spangenhelm": 1.15}
 
 
 def shell(p, name, mat, coll, rows, exclude=lambda a, z: False, extra=None, thickness=None, trim=.0008):
@@ -71,14 +74,17 @@ def rivets_round(p, mats, coll, z, n, out=1.03, skip=None):
         rivet(f"Band_Rivet_{i:02}", Vector((p["rx"] * out * math.sin(a), -p["ry"] * out * math.cos(a), z)), nrm, .0022, mats["steel"], coll)
 
 
-def cone_rows(p, z_bot, sharp=1.0, steps=26):
-    """A cone's rows from its apex (brow_z + height) down to z_bot: straight sides (sharp 1) to a dome (sharp 0)."""
+def cone_rows(p, z_bot, sharp=1.0, steps=26, ogive=0.0):
+    """A cone's rows from its apex (brow_z + height) down to z_bot: straight sides (sharp 1) to a dome (sharp 0); an
+    ogive (ogive: its power, under 1) pointed at the top with sides swelling out (round a dome under them)."""
     zt, zb = p["brow_z"] + p["height"], p["brow_z"]
     rows = []
     for i in range(steps + 1):
         v = i / steps   # 0 the apex .. 1 the brow: a cone's straight line, a dome's quarter circle
         k = v * sharp + math.sin(v * math.pi / 2) * (1 - sharp)
         z = zb + (zt - zb) * ((1 - v) * sharp + math.cos(v * math.pi / 2) * (1 - sharp))
+        if ogive:
+            k, z = math.sin(v * math.pi / 2) ** ogive, zt + (zb - zt) * v
         rows.append((max(k, 1e-4) if i else 0, z))
     for z in (p["brow_z"] - .012, p["brow_z"] - .025, 0.045, 0.035, 0.028, 0.022, 0.012, 0.0, -0.02, -0.04, -0.06, -0.08, -0.1, -0.115):
         if z < rows[-1][1] - 1e-6 and z >= z_bot - 1e-6:
@@ -106,7 +112,7 @@ def nasal(p, mats, coll, top, bottom, width=.010):
 
 # ---------------------------------------------------------------- the constructions
 def nasal_helm(p, mats, coll):
-    rows = cone_rows(p, p["neck_z"], sharp=.75)
+    rows = cone_rows(p, p["neck_z"], ogive=.8)
     shell(p, "Nasal_Helm_Shell", mats["steel"], coll, rows, extra=peak_forward(p))
     shell(p, "Suspended_Liner", mats["liner"], coll, [(k * .95, z - .004) for k, z in rows], extra=peak_forward(p), thickness=.001, trim=0)
     band(p, "Brow_Band", mats["steel"], coll, -math.pi, math.pi, p["neck_z"] + .016, p["neck_z"], out=1.025)
@@ -116,7 +122,7 @@ def nasal_helm(p, mats, coll):
 
 
 def spangenhelm(p, mats, coll):
-    rows = cone_rows(p, p["neck_z"], sharp=.45)
+    rows = cone_rows(p, p["neck_z"], ogive=.65)
     shell(p, "Spangen_Shell", mats["steel"], coll, rows, extra=peak_forward(p))
     shell(p, "Suspended_Liner", mats["liner"], coll, [(k * .95, z - .004) for k, z in rows], extra=peak_forward(p), thickness=.001, trim=0)
     zt = p["brow_z"] + p["height"]

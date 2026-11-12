@@ -4933,7 +4933,8 @@ async function madePreview(piece, sides) {
   const style = S.p[piece];
   // (placed by hand - along, turned, sized - not here: the preview moved so at once, Blender makes it so on «Generate»)
   const live = ['elbow', 'poleyn'].includes(piece) ? { made_slide: 0, made_twist: 0, made_size: 100, limb_gap: MADE_GAP0 } : {};   // (its gap too: out from the limb's axis here)
-  const js = await send('made_preview', { piece, style, sides, params: { ...S.p, ...live } }, '{{js:ag.helmet_making}}', '_helmet_' + style);
+  const under = piece === 'helmet' ? [...WORN.entries()].filter(([, w]) => w.on && layerOf(w)).map(([k]) => k) : [];   // (a coif under it: measured with the head)
+  const js = await send('made_preview', { piece, style, sides, params: { ...S.p, ...live }, under }, '{{js:ag.helmet_making}}', '_helmet_' + style);
   if (!js || !js.ok) return null;
   const gltf = await new GLTFLoader().loadAsync(fileUrl(js.preview.glb) + '?v=' + js.preview.v);
   gltf.scene.traverse((o) => {
@@ -4979,7 +4980,8 @@ function madePlace(root, piece) {
 function rebuildMade() {
   const piece = S.piece, sides = piece !== 'helmet' ? [...S.sides] : [];
   if (piece !== 'helmet' && !sides.length) { $('warn').textContent = '{{js:ag.choose_a_side}}'; $('warn').hidden = false; lastBuild = null; $('go').disabled = true; return; }
-  const key = [piece, S.p[piece], S.p.head_gap, ['elbow', 'poleyn'].includes(piece) ? MADE_GAP0 : S.p.limb_gap, S.p.wing, S.p.foot_gap, S.p.visor_angle, S.p.cheek_angle, S.p.tail, S.p.brim, ...sides].join('_'), h = madeCache.get(key);
+  // (a helmet: and the coifs on under it - put on or off, another one)
+  const key = [piece, S.p[piece], S.p.head_gap, piece === 'helmet' ? [...WORN.entries()].filter(([k, w]) => w.on && /coif/.test(k)).map(([k]) => k).join('+') : '', ['elbow', 'poleyn'].includes(piece) ? MADE_GAP0 : S.p.limb_gap, S.p.wing, S.p.foot_gap, S.p.visor_angle, S.p.cheek_angle, S.p.tail, S.p.brim, ...sides].join('_'), h = madeCache.get(key);
   if (!h) {
     // one preview at a time, of the last state, once its sliders rest (a wing dragged: not one per value on the way,
     // each queued after the other for minutes); when it is made, the state then is looked at again
