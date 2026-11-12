@@ -1666,7 +1666,9 @@ function mailCoif(p) {
   } }
   const topY = E.y + .45 * d, botY = chinY + .08 * d, cy = (topY + botY) / 2, ay = (topY - botY) / 2, axx = .9 * d;
   const ovalF = (v) => ((v.x - E.x) / axx) ** 2 + ((v.y - cy) / ay) ** 2;
-  const faceAt = (v) => v.clone().sub(E).dot(FRONT) > -.5 * d && ovalF(v) < 1;
+  // and below the chin a V down the throat to the neck's foot (no bib standing out under the chin: as a coif's slit)
+  const vNeck = (v) => v.y < botY && v.y > NK.y && Math.abs(v.x - E.x) < .55 * d * (v.y - NK.y) / Math.max(1e-6, botY - NK.y) && v.clone().sub(E).dot(FRONT) > -2 * d;
+  const faceAt = (v) => (v.clone().sub(E).dot(FRONT) > -.5 * d && ovalF(v) < 1) || vNeck(v);
   const cellMid = (j, i) => P[j][i].o.clone().add(P[j + 1][i].o).add(P[j][i + 1].o).add(P[j + 1][i + 1].o).multiplyScalar(.25);
   const faceCell = Array.from({ length: NT }, (_, j) => Array.from({ length: NV }, (_, i) => faceAt(cellMid(j, i))));
   const shown = (j, i) => [[j, i], [j - 1, i], [j, i - 1], [j - 1, i - 1]].some(([a, b]) => b >= 0 && b < NV && !faceCell[(a + NT) % NT][b]);
@@ -1720,6 +1722,7 @@ function mailCoif(p) {
     for (let k = 0; k < 14; k++) { const m = a.clone().lerp(b, .5); if (isIn(m) === me) a = m; else b = m; }
     q.copy(a.lerp(b, .5));
   }
+  for (let i = 0; i <= NV; i++) { P[NT][i].o.copy(P[0][i].o); P[NT][i].n.copy(P[0][i].n); }   // (the seam's two columns one again: each was moved on its own)
   const capY = E.y + .55 * d;
   for (let j = 0; j <= NT; j++) for (let i = 0; i <= NV; i++) { const q = P[j][i].o; if (q.y > capY) uvs[j][i] = [(q.x - O.x) / U, (q.z - O.z) / U]; }
 
