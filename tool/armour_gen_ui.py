@@ -71,9 +71,9 @@ PIECES = {"bracer": ("forearm", "hand", "forearm", ("Spine", "Hips", "Chest", "U
           "gorget": ("spine2", "head", "neck", (), "torso", "neck", (0, 0, 0, 0),
                      dict(material="steel", trim="steel", gap=6, gorget_lames=4, gorget_low=40, gorget_high=60, bevor=False, bevor_high=100,
                           straps=0, rigidity=1, surface="plain")),
-          # a mail pelerine (pixane): the gorget's builder, one mantle of mail over the shoulders
+          # a mail pelerine (pixane): the cloak's hanging cloth of mail, closed round, over the shoulders
           "pelerine": ("spine2", "head", "neck", (), "torso", "neck", (0, 0, 0, 0),
-                       dict(material="iron", trim="", surface="mail", gap=6, gorget_low=160, gorget_high=40, straps=0, rigidity=1, cell=5)),
+                       dict(material="iron", trim="", surface="mail", gap=6, straps=0, rigidity=1, cell=5)),
           # besagews (rondels): round plates in front of the armpits, each side
           "rondel": ("arm", "forearm", "arm", (), "shoulder", "held", (0, 0, 0, 0),
                      dict(rondel="rondel_plain", material="steel", trim="steel", gap=6, rondel_size=100, rondel_drop=0, straps=0, rigidity=1, surface="plain")),

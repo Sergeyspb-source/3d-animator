@@ -2372,5 +2372,16 @@
  "ag.helmet_strap_info": "The chin strap goes under the chin by itself; here it is raised (+) or lowered (−), the next slider moves it forward (+) or back (−). Shares of the head's half depth.",
  "ag.helmet_strap_fwd": "Strap: forward / back",
  "ed.anchor": "Anchor",
- "ed.anchor_hint": "Where it grows from: «Size» and «Rotate» go about the chosen point of the piece (like a canvas size in a picture editor). ↑ — the top stays, the piece grows down: the straps stay on the shoulders."
+ "ed.anchor_hint": "Where it grows from: «Size» and «Rotate» go about the chosen point of the piece (like a canvas size in a picture editor). ↑ — the top stays, the piece grows down: the straps stay on the shoulders.",
+ "ag.pel_len_info": "at the sides, over the shoulders: from the neck's foot down, a share of the height",
+ "ag.pel_point": "Point before and behind",
+ "ag.pel_point_info": "how much longer the pelerine is in front and behind (a point), a share of the height",
+ "ag.rondel_in": "To the chest / to the arm",
+ "ag.rondel_in_info": "the besagew nearer the chest's middle (+) or the arm (−)",
+ "ag.rondel_out": "Off the body",
+ "ag.rondel_out_info": "farther from the skin; it never goes into it",
+ "ag.rondel_tilt": "Turned out",
+ "ag.rondel_tilt_info": "0: facing straight forward; more: turned out towards the arm",
+ "ag.rondel_spin": "Spin",
+ "ag.rondel_spin_info": "turned round its own axis (the flutes, the spike)"
 }
