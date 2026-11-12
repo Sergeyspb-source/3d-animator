@@ -76,7 +76,7 @@ PIECES = {"bracer": ("forearm", "hand", "forearm", ("Spine", "Hips", "Chest", "U
                        dict(material="iron", trim="", surface="mail", gap=6, straps=0, rigidity=1, cell=5)),
           # besagews (rondels): round plates in front of the armpits, each side
           "rondel": ("arm", "forearm", "arm", (), "shoulder", "held", (0, 0, 0, 0),
-                     dict(rondel="rondel_plain", material="steel", trim="steel", gap=6, rondel_size=100, rondel_drop=0, straps=0, rigidity=1, surface="plain")),
+                     dict(rondel="rondel_plain", material="steel", trim="steel", gap=6, s_size=100, s_px=0, s_py=0, s_pz=0, s_rx=0, s_ry=0, s_rz=0, straps=0, rigidity=1, surface="plain")),
           # a codpiece: a cup over the groin on a belt, rigid on the hips (built in the editor: armour_gen_editor codpiece)
           "codpiece": ("hips", "spine", "hips", (), "hips", "groin", (0, 0, 0, 0),
                        dict(codpiece="cod_plate", material="steel", trim="steel", cod_size=100, cod_proj=100, cod_top=0, cod_belt=False, straps=0, rigidity=1,
