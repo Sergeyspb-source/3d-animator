@@ -1597,6 +1597,7 @@ function hull2(pts) {   // the convex hull of 2D points [x, y], in order round
   for (let i = P.length - 1; i >= 0; i--) { const q = P[i]; while (hi.length >= 2 && cr(hi[hi.length - 2], hi[hi.length - 1], q) <= 0) hi.pop(); hi.push(q); }
   return lo.slice(0, -1).concat(hi.slice(0, -1));
 }
+const COIF_SAG = .7;   // how much of the air under the hull a coif's mail falls in by (1: onto the body)
 function mailCoif(p) {
   const J = (k) => joint(k), HJ = J('head'), NK = J('neck'), aL = J('arm_L'); if (!HJ || !NK || !PB.head) return [];
   const H = HEIGHT, D = THREE.MathUtils.degToRad, eyes = ['eye_L', 'eye_R'].map(J).filter(Boolean);
@@ -1654,8 +1655,34 @@ function mailCoif(p) {
     return [top.map((x) => x[0]), top.map((x) => x[1] / tot)];
   };
   const P = cols.map((c, j) => Array.from({ length: NV + 1 }, (_, i) => { const q = c.at(hemS[j] * i / NV); return { o: O.clone().addScaledVector(c.dh, q.x).addScaledVector(UP, q.y), n: i ? c.dh.clone().multiplyScalar(q.nx).addScaledVector(UP, q.ny).normalize() : UP.clone() }; }));   // (the crown's one point: straight up out, the same for every line - no hole there)
+  // it hangs, not stands: mail is a heavy cloth - where the hull bridges a hollow (before the throat from the chin,
+  // round the neck from the head's sides to the shoulders) it falls most of the way in onto what is under it (COIF_SAG of
+  // the air under it gone), the lines then smoothed round and down (no ridges between them)
+  for (const col of P) for (let i = 1; i < col.length; i++) {
+    const q = col[i], h = castOn(bodyGeo, q.o.clone().addScaledVector(q.n, MM(1)), q.n.clone().negate(), .2 * H);
+    if (h && h.distance > gap + MM(1)) q.o.addScaledVector(q.n, -(h.distance - MM(1) - gap) * COIF_SAG);
+  }
+  for (let it = 0; it < 4; it++) {
+    const nx = P.map((col, j) => col.map((q, i) => { if (!i || i === col.length - 1) return q.o.clone();
+      const a = P[(j + NT - 1) % NT][i].o, b = P[(j + 1) % NT][i].o, u = col[i - 1].o, w = col[i + 1].o;
+      return q.o.clone().multiplyScalar(.4).addScaledVector(a.clone().add(b).add(u).add(w), .15); }));
+    P.forEach((col, j) => col.forEach((q, i) => q.o.copy(nx[j][i])));
+    for (let i = 0; i <= NV; i++) P[NT][i].o.copy(P[0][i].o);   // (the seam's two columns one)
+  }
   // off the body between the rays too (a shoulder blade, a deltoid's top between the hull's points)
-  for (const col of P) for (const q of col) { const c = clearanceAt(bodyGeo, q.o); if (c && c.d < MM(2)) q.o.addScaledVector(q.n, MM(2) - c.d); }
+  // (and between the points: each cell's middle - a nipple, a collarbone between four - its corners out with it)
+  const need = gap + MM(2), faceAt = (v) => v.clone().sub(E).dot(FRONT) > -.5 * d && v.y < E.y + .45 * d && v.y > E.y - 1.0 * d && Math.abs(v.x - E.x) < 1.0 * d;
+  const faceCell = Array.from({ length: NT }, (_, j) => Array.from({ length: NV }, (_, i) => faceAt(P[j][i].o.clone().add(P[j + 1][i].o).add(P[j][i + 1].o).add(P[j + 1][i + 1].o).multiplyScalar(.25))));
+  for (let it = 0; it < 3; it++) {
+    const shown = (j, i) => [[j, i], [j - 1, i], [j, i - 1], [j - 1, i - 1]].some(([a, b]) => b >= 0 && b < NV && !faceCell[(a + NT) % NT][b]);
+    P.forEach((col, j) => col.forEach((q, i) => { if (!shown(j % NT, i)) return; const c = clearanceAt(bodyGeo, q.o); if (c && c.d < need) q.o.addScaledVector(c.n, need - c.d); }));
+    for (let j = 0; j < NT; j++) for (let i = 0; i < NV; i++) {
+      const m = P[j][i].o.clone().add(P[j + 1][i].o).add(P[j][i + 1].o).add(P[j + 1][i + 1].o).multiplyScalar(.25);
+      if (faceCell[j][i]) continue;   // (the face's opening: nothing there to keep off the face - its corners on the rim were thrown out as horns)
+      const c = clearanceAt(bodyGeo, m);
+      if (c && c.d < need) for (const [jj, ii] of [[j, i], [j + 1, i], [j, i + 1], [j + 1, i + 1]]) P[jj][ii].o.addScaledVector(c.n, need - c.d);
+    }
+  }
   // UVs: down each line (the length), round each row from the front's middle; over the crown flat from above (round
   // it, the rings drawn in to a point there - a whirl)
   const jF = NT / 2, uvs = P.map(() => new Array(NV + 1).fill(0).map(() => [0, 0]));
@@ -1668,7 +1695,7 @@ function mailCoif(p) {
   for (let j = 0; j <= NT; j++) for (let i = 0; i <= NV; i++) { const q = P[j][i].o; if (q.y > capY) uvs[j][i] = [(q.x - O.x) / U, (q.z - O.z) / U]; }
   // the face: an oval from the brow to the chin, before the ears
   const face = (v) => v.clone().sub(E).dot(FRONT) > -.5 * d && v.y < E.y + .45 * d && v.y > E.y - 1.0 * d && Math.abs(v.x - E.x) < 1.0 * d;
-  const V = P.map((col, j) => col.map((q, i) => { const w = { direct: wOf(q.o) }, A = q.o.clone().addScaledVector(q.n, gap); return [acc.vert(A.clone().addScaledVector(q.n, thm), uvs[j][i][0], uvs[j][i][1], w), acc.vert(A, uvs[j][i][0], uvs[j][i][1], w)]; }));
+  const V = P.map((col, j) => col.map((q, i) => { const w = { direct: wOf(q.o) }, A = q.o.clone(); return [acc.vert(A.clone().addScaledVector(q.n, thm), uvs[j][i][0], uvs[j][i][1], w), acc.vert(A, uvs[j][i][0], uvs[j][i][1], w)]; }));
   for (let j = 0; j < NT; j++) for (let i = 0; i < NV; i++) {
     const c = P[j][i].o.clone().add(P[j + 1][i].o).add(P[j][i + 1].o).add(P[j + 1][i + 1].o).multiplyScalar(.25);
     if (face(c)) continue;
