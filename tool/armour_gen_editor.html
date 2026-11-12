@@ -4294,7 +4294,7 @@ function buildPanel() {
       `<div class="row"><select id="uv_ai_model" style="flex:1;min-width:0"></select><span class="note" id="uv_ai_price"></span></div>` +
       `<div class="row"><button id="uv_ai_go" class="grow"></button></div><div class="note" id="uv_ai_note"></div>` +
       `<div class="note" style="margin-top:6px">{{js:ag.uv_set_info}}</div>` +
-      `<div class="row"><label class="chk"><input type="checkbox" id="uv_set_strap"> {{js:ag.uv_set_strap}}</label><label class="chk"><input type="checkbox" id="uv_set_detail"> {{js:ag.uv_set_detail}}</label></div>` +
+      `<div class="row"><label class="chk"><input type="checkbox" id="uv_set_strap"> {{js:ag.uv_set_strap}}</label><label class="chk"><input type="checkbox" id="uv_set_detail"> {{js:ag.uv_set_detail}}</label><label class="chk" title="{{js:ag.uv_set_cloth_title}}"><input type="checkbox" id="uv_set_cloth"> {{js:ag.uv_set_cloth}}</label></div>` +
       `<div class="row"><button id="uv_set" class="grow">{{js:ag.uv_set}}</button></div>` +
       `<div class="row" style="margin-top:4px"><select id="uv_slot"></select><label class="filebtn"><input type="file" id="uv_file" accept="image/*" hidden><span>{{js:ag.uv_load}}</span></label><button id="uv_take" title="{{js:ag.uv_take_title}}">{{js:ag.uv_take}}</button></div>` +
       `<div class="note" id="uv_applied"></div><div class="row"><button id="uv_clear">{{js:ag.uv_clear}}</button></div></details>` : '') + '</div>').join('');
@@ -5856,10 +5856,10 @@ function layersSync() {
   $('layersGo').disabled = !n || !!BAKE.left.length || REBUILDING;
   $('layersGo').title = n ? '{{js:ag.layers_rebuild_info}}' : '{{js:ag.layers_none}}';
 }
-async function rebuildLayers(only) {   // (only: these pieces, made again in this order - a material put on them all)
+async function rebuildLayers(only, quiet) {   // (only: these pieces, made again in this order - a material put on them all; quiet: asked already)
   if (busy || REBUILDING || BAKE.left.length) return;
   const list = only || staleList();
-  if (!list.length || !confirm('{{js:ag.layers_confirm}}'.replace('{0}', list.length).replace('{1}', list.map((x) => x.item).join(', ')))) return;
+  if (!list.length || !quiet && !confirm('{{js:ag.layers_confirm}}'.replace('{0}', list.length).replace('{1}', list.map((x) => x.item).join(', ')))) return;
   REBUILDING = true; $('layersGo').disabled = true;
   const keep = { piece: S.piece, idle: S.idle, p: S.p, sides: S.sides, name: S.name, touched: S.nameTouched, style: S.style };
   for (const w of DATA.worn) if (layerOf(w) && !WORN.get(w.item)) await wearPiece(w, false);   // every worn one loaded (off, as it was)
@@ -6342,12 +6342,41 @@ async function uvUse(js) {   // the textures found or loaded: the piece made aga
 // «Apply to the whole set»: this piece's texture (or its colours) the sample; every other piece ticked in «Worn» that
 // has an unwrap repainted after it by the model chosen (its own colours + the sample), its colours brought to the
 // sample's, put into its GLB (made again where it cannot be: paint on it, its unwrap changed)
+async function uvRemake(list) {   // pieces made again from their saved parameters (the bake queue), waited for: true when done
+  const saved = list.map((w) => DATA.saved.find((x) => x.item === w.item)).filter(Boolean);
+  const own = saved.filter(ownKind).sort((a, b) => (LAYER[a.piece] || 0) - (LAYER[b.piece] || 0)), made = saved.filter((x) => MADE.includes(x.piece));
+  if (own.length) await rebuildLayers(own, true);
+  if (made.length) {
+    if (!BAKE.left.length) BAKE.batch = Date.now();
+    for (const x of made) {
+      const job = { item: x.item, piece: x.piece, style: x.style || null, sides: x.sides || [], params: { ...DEFAULTS, ...PIECES[x.piece].defaults, ...x.params }, mesh: null, under: [], two: '', point: '' };
+      const js = await send('bake', { batch: BAKE.batch, job }, '{{js:ag.bake_sending}}'.replace('{0}', x.item), '_bakeq_' + x.item);
+      if (!js || !js.ok) return false;
+      BAKE.left.push(x.item);
+    }
+    layersSync(); bakeWatch();
+  }
+  for (let t = 0; t < 900 && BAKE.left.length; t++) await new Promise((r) => setTimeout(r, 2000));   // (up to 30 minutes)
+  return !BAKE.left.length;
+}
 async function uvSet() {
   const I = UV.info; if (!I || busy) return;
   const me = itemName(), model = $('uv_ai_model').value;
   const slots = ['plate', ...($('uv_set_strap').checked ? ['strap'] : []), ...($('uv_set_detail').checked ? ['detail', 'trim', 'mail'] : [])].filter((sl) => I.slots[sl]);
-  const items = DATA.worn.filter((w) => w.item !== me && WORN.get(w.item) && WORN.get(w.item).on && !HELD.includes(w.piece));
+  const CLOTHES = ['undercloth', 'trousers', 'skirt', 'tabard', 'cloak'];   // (cloth under or over the armour: not the armour's material)
+  const items = DATA.worn.filter((w) => w.item !== me && WORN.get(w.item) && WORN.get(w.item).on && !HELD.includes(w.piece)
+    && ($('uv_set_cloth').checked || !CLOTHES.includes(w.piece)));
   if (!items.length) { $('status').textContent = '{{js:ag.uv_set_none}}'; return; }
+  // the pieces made before their unwrap was given out: made again first (in the background), waited for
+  const bare = [];
+  for (const w of items) {
+    const js = await send('uv_info', { item: w.item, piece: w.piece }, '{{js:ag.uv_reading}}', '_uv_info');
+    if (!js || !js.ok) bare.push(w);
+  }
+  if (bare.length) {
+    if (!confirm('{{js:ag.uv_set_bare}}'.replace('{0}', bare.length).replace('{1}', bare.map((w) => w.item).join(', ')))) return;
+    if (!(await uvRemake(bare))) { $('status').textContent = '{{js:ag.uv_set_bare_failed}}'; return; }
+  }
   if (!confirm('{{js:ag.uv_set_confirm}}'.replace('{0}', items.length).replace('{1}', items.map((w) => w.item).join(', ')).replace('{2}', slots.map((k) => DATA.lib_slots[k] || k).join(', ')).replace('{3}', $('uv_ai_price').textContent ? ' (' + $('uv_ai_price').textContent + ')' : ''))) return;
   const prompt = uvPrompt('edit') + '\n' + '{{js:ag.uv_set_ref}}', log = [];
   for (const [n, w] of items.entries()) {
