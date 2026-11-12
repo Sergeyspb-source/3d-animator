@@ -1653,14 +1653,19 @@ function mailCoif(p) {
     const top = [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4), tot = top.reduce((z, x) => z + x[1], 0) || 1; while (top.length < 4) top.push([top[0] ? top[0][0] : 0, 0]);
     return [top.map((x) => x[0]), top.map((x) => x[1] / tot)];
   };
-  const P = cols.map((c, j) => Array.from({ length: NV + 1 }, (_, i) => { const q = c.at(hemS[j] * i / NV); return { o: O.clone().addScaledVector(c.dh, q.x).addScaledVector(UP, q.y), n: c.dh.clone().multiplyScalar(q.nx).addScaledVector(UP, q.ny).normalize() }; }));
-  // UVs: down each line (the length), round each row from the front's middle
+  const P = cols.map((c, j) => Array.from({ length: NV + 1 }, (_, i) => { const q = c.at(hemS[j] * i / NV); return { o: O.clone().addScaledVector(c.dh, q.x).addScaledVector(UP, q.y), n: i ? c.dh.clone().multiplyScalar(q.nx).addScaledVector(UP, q.ny).normalize() : UP.clone() }; }));   // (the crown's one point: straight up out, the same for every line - no hole there)
+  // off the body between the rays too (a shoulder blade, a deltoid's top between the hull's points)
+  for (const col of P) for (const q of col) { const c = clearanceAt(bodyGeo, q.o); if (c && c.d < MM(2)) q.o.addScaledVector(q.n, MM(2) - c.d); }
+  // UVs: down each line (the length), round each row from the front's middle; over the crown flat from above (round
+  // it, the rings drawn in to a point there - a whirl)
   const jF = NT / 2, uvs = P.map(() => new Array(NV + 1).fill(0).map(() => [0, 0]));
   for (let j = 0; j <= NT; j++) { let sv = 0; for (let i = 0; i <= NV; i++) { if (i) sv += P[j][i].o.distanceTo(P[j][i - 1].o); uvs[j][i][1] = -sv / U; } }
   for (let i = 0; i <= NV; i++) {
     for (let j = jF + 1; j <= NT; j++) uvs[j][i][0] = uvs[j - 1][i][0] + P[j][i].o.distanceTo(P[j - 1][i].o) / U;
     for (let j = jF - 1; j >= 0; j--) uvs[j][i][0] = uvs[j + 1][i][0] - P[j][i].o.distanceTo(P[j + 1][i].o) / U;
   }
+  const capY = E.y + .55 * d;
+  for (let j = 0; j <= NT; j++) for (let i = 0; i <= NV; i++) { const q = P[j][i].o; if (q.y > capY) uvs[j][i] = [(q.x - O.x) / U, (q.z - O.z) / U]; }
   // the face: an oval from the brow to the chin, before the ears
   const face = (v) => v.clone().sub(E).dot(FRONT) > -.5 * d && v.y < E.y + .45 * d && v.y > E.y - 1.0 * d && Math.abs(v.x - E.x) < 1.0 * d;
   const V = P.map((col, j) => col.map((q, i) => { const w = { direct: wOf(q.o) }, A = q.o.clone().addScaledVector(q.n, gap); return [acc.vert(A.clone().addScaledVector(q.n, thm), uvs[j][i][0], uvs[j][i][1], w), acc.vert(A, uvs[j][i][0], uvs[j][i][1], w)]; }));
