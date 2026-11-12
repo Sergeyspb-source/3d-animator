@@ -3108,7 +3108,7 @@ function pelerine(p) {
   const dir = (th, el) => front.clone().multiplyScalar(Math.cos(th)).addScaledVector(side, Math.sin(th)).multiplyScalar(Math.cos(el)).addScaledVector(UP, Math.sin(el));
   // (over the pieces worn under it: the outermost of the hits stacked on the skin)
   const outermost = (o, d, far) => { const all = castAll(o, d, far); let k = 0; while (k + 1 < all.length && all[k + 1].distance - all[k].distance < .03 * H) k++; return all[k] || null; };
-  const ths = Array.from({ length: NT }, (_, j) => Math.PI + j / NT * TAU);   // from the back round (its UVs' seam there)
+  const ths = Array.from({ length: NT }, (_, j) => Math.PI + j / NT * TAU);   // from the back's middle round (open there)
   const face = ths.map(() => new Int32Array(NE).fill(-1));
   let raw = Array.from({ length: NE }, (_, i) => ths.map((th, j) => { const h = outermost(C, dir(th, elev(i)), .6 * H); if (h) face[j][i] = h.faceIndex; return h ? h.distance : NaN; }));
   raw = fill(raw);
@@ -3119,9 +3119,20 @@ function pelerine(p) {
   // front and behind) - over a shoulder no farther than the arm's root (the skin there runs out along the arm)
   const neckY = N.y + (p.pel_lift ?? 0) / 100 * H, len = (p.pel_len ?? 11) / 100 * H, pt = (p.pel_point ?? 4) / 100 * H;
   const rCap = 1.25 * C.distanceTo(aL);
+  const headB = new Uint8Array(boneNames.length); if (PB.head) PB.head.traverse((b) => { if (b.isBone && boneNames.indexOf(b.name) >= 0) headB[boneNames.indexOf(b.name)] = 1; });
+  const onHead = (f) => {   // a triangle mostly the head's (or its face's bones')
+    if (f < 0) return false;
+    let on = 0, tot = 0;
+    for (let c = 0; c < 3; c++) { const vi = bodyGeo.index.array[3 * f + c]; for (let k = 0; k < 4; k++) { const w = vW[4 * vi + k]; tot += w; if (headB[vBone[4 * vi + k]]) on += w; } }
+    return tot > 0 && on / tot > .5;
+  };
   const f0 = new Array(NT).fill(0), f1 = new Array(NT).fill(NE - 1);
   for (let j = 0; j < NT; j++) {
-    let i = 0; while (i < NE - 1 && P(i, j).y > neckY) i++;
+    // its top: from well down on the neck's foot up, while still at or below that height, on the neck (not the head:
+    // a jaw, an ear - the head hangs out over the neck, its rays meet it lower than the neck's top) and the skin going
+    // on without a jump
+    let i = 0; while (i < NE - 1 && P(i, j).y > N.y - .01 * H) i++;
+    while (i > 0 && P(i - 1, j).y <= neckY && !onHead(face[j][i - 1]) && Math.abs(raw[i - 1][j] - raw[i][j]) < .015 * H) i--;
     f0[j] = i;
     const L = len + pt * Math.cos(ths[j]) ** 2;
     let sAcc = 0, prev = P(i, j), q = i + .25;
@@ -3144,13 +3155,44 @@ function pelerine(p) {
     if (w && w.distance < r + 2 * thm) X.addScaledVector(d, Math.max(w.distance - 2 * thm, at(raw, fi, j)) - r);
     return { X, d, f: face[j][Math.round(fi)] };
   }));
-  const vAt = base.map(() => new Array(NT).fill(0)), uAt = base.map(() => new Array(NT + 1).fill(0));
+  // open behind (its two edges a column apart either side of the back's middle), fastened there by thin straps
+  // with buckles: so it is put on. Its UVs: across from the front's middle (the rings there straight down, not
+  // sheared by the rows' lengths), down from the height of the neck's foot (its top edge is higher at the throat than
+  // at the sides: from there each line's rings would start at another height - stripes)
+  const cols = Array.from({ length: NT - 1 }, (_, k) => k + 1), jF = NT / 2;
+  const vAt = base.map(() => new Array(NT).fill(0)), uAt = base.map(() => new Array(NT).fill(0));
   for (let i = 1; i < nv; i++) for (let j = 0; j < NT; j++) vAt[i][j] = vAt[i - 1][j] + base[i][j].X.distanceTo(base[i - 1][j].X);
-  for (let i = 0; i < nv; i++) for (let j = 1; j <= NT; j++) uAt[i][j] = uAt[i][j - 1] + base[i][j % NT].X.distanceTo(base[i][j - 1].X);
+  for (let j = 0; j < NT; j++) {   // where each line passes the neck's foot
+    let a0 = -(N.y - base[0][j].X.y);
+    for (let i = 0; i < nv - 1; i++) {
+      const y0 = base[i][j].X.y, y1 = base[i + 1][j].X.y;
+      if (y0 >= N.y && y1 < N.y) { a0 = vAt[i][j] + (vAt[i + 1][j] - vAt[i][j]) * (y0 - N.y) / Math.max(1e-9, y0 - y1); break; }
+      if (i === 0 && y0 < N.y) break;
+    }
+    for (let i = 0; i < nv; i++) vAt[i][j] -= a0;
+  }
+  for (let i = 0; i < nv; i++) {
+    for (let j = jF + 1; j < NT; j++) uAt[i][j] = uAt[i][j - 1] + base[i][j].X.distanceTo(base[i][j - 1].X);
+    for (let j = jF - 1; j >= 0; j--) uAt[i][j] = uAt[i][j + 1] - base[i][j].X.distanceTo(base[i][j + 1].X);
+  }
   const acc = new Acc(); acc.w = weigher('cloak', chest, .3);   // (the skin's under it: over a shoulder the arm's too)
-  const rows = Array.from({ length: nv }, (_, i) => i), angs = Array.from({ length: NT + 1 }, (_, j) => j);
-  solid(acc, rows, angs, true, (i, j, sd) => base[i][j % NT].X.clone().addScaledVector(base[i][j % NT].d, sd * thm), MAIL, 'mail',
-    (i, j) => [uAt[i][j] / U, -vAt[i][j % NT] / U], (i, j) => base[i][j % NT].f);
+  const rows = Array.from({ length: nv }, (_, i) => i);
+  solid(acc, rows, cols, false, (i, j, sd) => base[i][cols[j]].X.clone().addScaledVector(base[i][cols[j]].d, sd * thm), MAIL, 'mail',
+    (i, j) => [uAt[i][cols[j]] / U, -vAt[i][cols[j]] / U], (i, j) => base[i][cols[j]].f);
+  // the straps across the opening: riveted a little in from each edge, a buckle on the middle
+  const sw = MM(5), out = thm + MM(1.2);
+  for (const t of [.18, .6]) {
+    const i = Math.round(t * (nv - 1)), A = base[i][3], B = base[i][NT - 3], f = base[i][0].f;
+    const Pa = A.X.clone().addScaledVector(A.d, out), Pb = B.X.clone().addScaledVector(B.d, out), M = Pa.clone().lerp(Pb, .5);
+    const nM = base[i][0].d.clone(), Pm = M.clone().addScaledVector(nM, Math.max(0, base[i][0].X.clone().addScaledVector(nM, out).sub(M).dot(nM)));   // (over the gap: no lower than the mail's line there)
+    cord(acc, Pa, Pm, A.d.clone().add(nM).normalize(), sw, f); cord(acc, Pm, Pb, B.d.clone().add(nM).normalize(), sw, f);
+    for (const [P, d] of [[Pa, A.d], [Pb, B.d]]) rivet(acc, P.clone().addScaledVector(d, MM(1)), d, MM(3.5), DETAIL, 'rivet', f);
+    const x = Pb.clone().sub(Pa).normalize(), z = nM.clone().addScaledVector(x, -nM.dot(x)).normalize(), y = z.clone().cross(x).normalize(), bt = MM(1.2), c = Pm.clone().addScaledVector(z, MM(2));
+    for (const s2 of [-1, 1]) {   // the buckle: a frame of four bars
+      box(acc, c.clone().addScaledVector(x, s2 * 1.4 * sw), [x, y, z], bt, 1.25 * sw, bt * 1.2, DETAIL, 'buckle', f);
+      box(acc, c.clone().addScaledVector(y, s2 * 1.25 * sw), [x, y, z], 1.4 * sw, bt, bt * 1.2, DETAIL, 'buckle', f);
+    }
+  }
   return [{ side: 'C', acc, R: .1 * H }];
 }
 // ---- a skirt: the same cloth from a ring round the waist (skirt_lift above the hips' joint) down over the hips and the
