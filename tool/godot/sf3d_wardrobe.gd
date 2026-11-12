@@ -362,11 +362,19 @@ func _ui() -> void:
 	speed.value_changed.connect(func(v): if _player: _player.speed_scale = v)
 	box.add_child(speed)
 	box.add_child(_label("{{js:gd.pieces}}"))
+	var boxes := {}   # piece -> its tick
 	for name in _worn:
 		var cb := CheckBox.new()
 		cb.text = name
 		cb.button_pressed = not (name in String(_args.get("off", "")).split(",", false))
-		cb.toggled.connect(func(on): Equip.show(_worn[name], on))
+		# one thing in a hand: ticking a weapon unticks the others held in a hand it takes (a two-hander takes both)
+		cb.toggled.connect(func(on):
+			if on:
+				for other in boxes:
+					if other != name and boxes[other].button_pressed and _hands(other).any(func(h): return h in _hands(name)):
+						boxes[other].button_pressed = false
+			Equip.show(_worn[name], on))
+		boxes[name] = cb
 		box.add_child(cb)
 		var meshes: Array = _worn[name]
 		if not meshes.is_empty() and meshes[0].has_meta("sf3d_cloth"):   # a cloak: a wind from the front swings it
@@ -392,6 +400,27 @@ func _ui() -> void:
 			ar.value_changed.connect(func(v): Equip.arrows(_worn[name], int(v)))
 			box.add_child(ar)
 	box.add_child(_label("{{js:gd.mouse_hint}}"))
+	var taken := []   # (put on together, two in a hand: the first kept, the others unticked)
+	for name in boxes:
+		if not boxes[name].button_pressed:
+			continue
+		var hs := _hands(name)
+		if hs.any(func(h): return h in taken):
+			boxes[name].button_pressed = false
+		else:
+			taken.append_array(hs)
+
+
+func _hands(name: String) -> Array:   # the hands a piece holds in ("L", "R"): its grip's, and a two-hander's other one
+	var out := []
+	for mi in _worn.get(name, []):
+		if is_instance_valid(mi) and mi.has_meta("sf3d_hold"):
+			for h in String(mi.get_meta("sf3d_hold")) + String(mi.get_meta("sf3d_two", "")):
+				if not h in out:
+					out.append(h)
+	if out.is_empty() and name.begins_with("shield"):   # a shield strapped on the forearm: its hand is not free (a shield's on the left)
+		out.append("L")
+	return out
 
 
 func _label(text: String) -> Label:
