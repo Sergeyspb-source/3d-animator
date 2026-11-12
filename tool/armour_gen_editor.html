@@ -1507,7 +1507,11 @@ function hauberk(p) {
   const D = THREE.MathUtils.degToRad, { limb: tl } = limbOf('cuirass', 'C'), U = (p.cell || 5) / 1000 * HEIGHT * 8;
   const along = (v, s, a, b) => { const A = joint(a + '_' + s), B = joint(b + '_' + s); if (!A || !B) return 0; const d = B.clone().sub(A); return v.clone().sub(A).dot(d) / d.lengthSq(); };
   const sideOf = (v) => (v.x >= tl.a.x ? 'L' : 'R');
-  const keep = (v, part) => (part === 'torso' || part === 'thigh' ? torsoT(v) > -.06   // (on down under the skirt's top: no skin between them - the hips' sides go with the thighs)
+  // the shirt on the body down over the hips to the crotch (the hips' sides go with the thighs); the skirt goes on from
+  // there, hanging - over the waist one layer only, no second ring round it
+  const down0 = cast(tl.a, tl.u.clone().negate(), tl.len), tcr0 = down0 ? -down0.distance / tl.len : -.12;
+  const tcut = tcr0 + .06;
+  const keep = (v, part) => (part === 'torso' || part === 'thigh' ? torsoT(v) > tcut
     : part === 'upper_arm' ? sl > 0 && along(v, sideOf(v), 'arm', 'forearm') <= Math.min(1.05, sl / .5)
     : part === 'forearm' ? sl > .5 && along(v, sideOf(v), 'forearm', 'hand') <= (sl - .5) / .5 * .97 : false);
   keep.key = 'hauberk' + Math.round(sl * 20);
@@ -1530,8 +1534,20 @@ function hauberk(p) {
   const down = cast(tl.a, tl.u.clone().negate(), tl.len), tcr = down ? -down.distance / tl.len : -.12;
   const thighs = ['L', 'R'].filter((s) => PB['upleg_' + s] && PB['leg_' + s]).map((s) => joint('upleg_' + s).distanceTo(joint('leg_' + s)));
   const thigh = (thighs.length ? thighs.reduce((x, y) => x + y) / thighs.length : .25 * HEIGHT) / tl.len;
-  if (hem > 0) out.push(...buildPiece('tassets', ['C'], { ...p, surface: 'mail', t0: Math.min(tcr - hem * thigh, .02), t1: .1, splits: 0, sector: 360, flare: .22, folds: .12,
-    wrap: false, front_panel: false, hem_band: false, relief: .95, rigidity: .1, straps: 0, gap: (p.gap ?? .04) + ease + .05, thickness: p.thickness ?? .06,
+  // the skirt hangs on from the shirt's bottom ring (floor: its radius round the body there - as a garment's skirt from
+  // its body), its top tucked in under it: one surface on, not a second ring round the waist
+  const NA = 72, ring = new Array(NA).fill(0), acc0 = out[0] && out[0].acc;
+  if (acc0) for (let i = 0; i < acc0.v.length; i += 3) {
+    const v = new V3(acc0.v[i], acc0.v[i + 1], acc0.v[i + 2]), t = v.clone().sub(tl.a).dot(tl.u) / tl.len;
+    if (t < tcut - .01 || t > tcut + .04) continue;
+    const r = v.clone().sub(tl.axis(t)), j = Math.round(((tl.angOf(r.clone().normalize()) / TAU) % 1 + 1) % 1 * NA) % NA;
+    ring[j] = Math.max(ring[j], r.length());
+  }
+  for (let it = 0; it < NA && ring.some((x) => !x); it++) for (let j = 0; j < NA; j++) if (!ring[j]) ring[j] = Math.max(ring[(j + 1) % NA], ring[(j + NA - 1) % NA]);
+  const floor = (a) => { const x = ((a / TAU) % 1 + 1) % 1 * NA, j = Math.floor(x) % NA, k = x - Math.floor(x); return ring[j] * (1 - k) + ring[(j + 1) % NA] * k; };
+  if (hem > 0) out.push(...buildPiece('tassets', ['C'], { ...p, surface: 'mail', t0: Math.min(tcr - hem * thigh, tcut - .05), t1: tcut + .05, splits: 0, sector: 360, flare: .22, folds: .12,
+    wrap: false, front_panel: false, hem_band: false, relief: .95, rigidity: .1, straps: 0, gap: (p.gap ?? .04) + ease, thickness: p.thickness ?? .06,
+    ...(ring.some((x) => x > 0) ? { floor, tuck: tcut } : {}),
     slits: slit > 0 ? [[0, slit, D(5)], [Math.PI, slit, D(5)]] : [] }));
   return out;
 }
@@ -1540,7 +1556,7 @@ function hauberk(p) {
 function mailCoif(p) {
   const under = [...WORN.values()].some((w) => w.on && w.piece === 'undercloth' && /coif/.test(w.item || ''));
   const hood = coif({ ...p, cloth_quilt: false, mail: true, gap: (p.gap ?? .04) + (under ? .5 : 0) });
-  const cape = pelerine({ ...p, pel_len: p.coif_cape ?? 6, pel_point: (p.coif_cape ?? 6) / 3, pel_lift: 1, pel_gap: under ? .6 : .3, coifCape: true });
+  const cape = pelerine({ ...p, pel_len: p.coif_cape ?? 6, pel_point: (p.coif_cape ?? 6) * .9, pel_lift: 1, pel_gap: under ? .6 : .3, coifCape: true });
   return [...hood, ...cape];
 }
 function braies(p, long) {   // loose linen trousers: to the knee, or down to the ankle gathered there
@@ -1611,8 +1627,13 @@ function coif(p) {
   acc.w = (q) => q.direct;
   const eyes = ['eye_L', 'eye_R'].map(J).filter(Boolean), E = eyes.length ? eyes.reduce((a, b) => a.add(b), new V3()).multiplyScalar(1 / eyes.length) : J('head');
   const HJ = J('head'), hits = [1, -1].map((x) => cast(new V3(HJ.x, E.y, HJ.z), new V3(x, 0, 0), HEIGHT)), skull = hits.every(Boolean) ? (hits[0].distance + hits[1].distance) / 2 : .05 * HEIGHT;
-  const keep = (v) => Math.abs(v.x - HJ.x) < 1.2 * skull;
-  keep.key = 'coif';
+  // a mail coif: the skull's own half width at each height (a goblin's is wider at the back of its crown than at its
+  // eyes: cut at the eyes' width, its crown came out through the hood), the ears past it under the hood (hidden)
+  const ys = Array.from({ length: 12 }, (_, i) => J('neck').y + (HJ.y + 2.5 * skull - J('neck').y) * i / 11);
+  const half = ys.map((y) => { const h2 = [1, -1].map((x) => cast(new V3(HJ.x, y, HJ.z), new V3(x, 0, 0), HEIGHT)); return h2.every(Boolean) ? Math.max(h2[0].distance, h2[1].distance) : skull; });
+  const halfAt = (y) => { const f = Math.max(0, Math.min(ys.length - 1.001, (y - ys[0]) / (ys[1] - ys[0]))), i = Math.floor(f); return half[i] * (1 - (f - i)) + half[i + 1] * (f - i); };
+  const keep = p.mail ? (v) => Math.abs(v.x - HJ.x) < 1.1 * halfAt(v.y) : (v) => Math.abs(v.x - HJ.x) < 1.2 * skull;
+  keep.key = p.mail ? 'coif_mail' : 'coif';
   const R = .02 * HEIGHT, gap = p.gap * R, thick = p.thickness * R * (p.cloth_quilt ? 2.2 : 1);
   const d = HJ.distanceTo(E), c = new V3(), fn = new V3(), e1 = new V3(), e2 = new V3();
   // (a mail coif's opening wider: the whole face to before the ears, the cheeks and the jaw - its rings went over them)
@@ -1631,8 +1652,15 @@ function coif(p) {
     return !face(c) && !(p.mail && [a, b2, c2].some((k) => face(B.pos[k]))) && fn.y > (p.mail ? -.9 : -.6);   // (a mail one: under the chin over the throat too)
   });
   const quilt = !!p.cloth_quilt;
-  shellOf(acc, B, ids, gap, p.mail ? MM(3) : thick, p.mail ? MAIL : quilt ? CLOTH : PLATE, p.mail ? 'mail' : quilt ? 'quilt' : 'plate', (i) => ({ direct: B.w[i] }), null, 3);
-  return [{ side: 'C', acc, R }];
+  // a mail one's rings round the head and down it (its seam behind), not boxed by the faces' ways
+  const U = (p.cell || 5) / 1000 * HEIGHT * 8, fa = Math.atan2(FRONT.x, FRONT.z);
+  const uvH = p.mail ? (q) => [((Math.atan2(q.x - HJ.x, q.z - HJ.z) - fa + 3 * Math.PI) % TAU) * skull * 1.1 / U, q.y / U] : null;
+  shellOf(acc, B, ids, gap, p.mail ? MM(3) : thick, p.mail ? MAIL : quilt ? CLOTH : PLATE, p.mail ? 'mail' : quilt ? 'quilt' : 'plate', (i) => ({ direct: B.w[i] }), null, 3, uvH);
+  if (!p.mail) return [{ side: 'C', acc, R }];
+  // the ears under the hood: the head's skin past its sides hidden (on screen as in the game)
+  const ear = (v) => Math.abs(v.x - HJ.x) >= 1.1 * halfAt(v.y) && v.y > J('neck').y;
+  ear.key = 'coif_ears';
+  return [{ side: 'C', acc, R, mask: bodySkin(new Set(['head']), ear).keys }];
 }
 // ---- thin cloth on the body (under the armour: a shirt, tights): the character's own skin, the parts it covers, out by
 // the gap - one surface, so nothing between the body and the sleeves (the armpits, the shoulders, as a vest and
@@ -3243,7 +3271,9 @@ function pelerine(p) {
   const NT = 72, NE = 110, E0 = D(88), E1 = D(-55), elev = (i) => E0 + (E1 - E0) * i / (NE - 1);
   const dir = (th, el) => front.clone().multiplyScalar(Math.cos(th)).addScaledVector(side, Math.sin(th)).multiplyScalar(Math.cos(el)).addScaledVector(UP, Math.sin(el));
   // (over the pieces worn under it: the outermost of the hits stacked on the skin)
-  const outermost = (o, d, far) => { const all = castAll(o, d, far); let k = 0; while (k + 1 < all.length && all[k + 1].distance - all[k].distance < .05 * H) k++; return all[k] || null; };
+  // (only through the pieces worn: the skin again past them - a chin over the neck, the ray going on up - is not a layer)
+  const worn = (h) => bodyGeo.index.array[3 * h.faceIndex] >= SKIN_VERTS;
+  const outermost = (o, d, far) => { const all = castAll(o, d, far); let k = 0; while (k + 1 < all.length && worn(all[k + 1]) && all[k + 1].distance - all[k].distance < .05 * H) k++; return all[k] || null; };
   const ths = Array.from({ length: NT }, (_, j) => Math.PI + j / NT * TAU);   // from the back's middle round (open there)
   const face = ths.map(() => new Int32Array(NE).fill(-1));
   // the skin (where it starts and ends: the neck's foot, the shoulders, the arms' roots - the body's own) and the

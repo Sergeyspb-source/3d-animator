@@ -936,6 +936,25 @@ if job.get("mask"):   # what of the body the piece hides (the game takes it away
         hb = {head_b.name} | {b.name for b in head_b.children_recursive}
         keys -= {tuple(x) for x in where(body, hb, lambda q: True)}
         keys |= {tuple(x) for x in held(body, hb, [obj], Vector((HJ.x, HJ.y, E.z)))}
+    if job.get("piece") == "coif" and head_b:   # a mail coif: the ears past the skull's sides go under its hood (as the editor's preview)
+        from body_mask import _bvh
+        Wa = arm.matrix_world
+        HJ = Wa @ head_b.head_local
+        neck_b = arm.data.bones.get(names.get("neck", ""))
+        zn = (Wa @ neck_b.head_local).z if neck_b else HJ.z - .1
+        hb = {head_b.name} | {b.name for b in head_b.children_recursive}
+        tree = _bvh(body)
+        def _half(z):
+            ds = [tree.ray_cast(Vector((HJ.x, HJ.y, z)), Vector((sx, 0, 0)), 2.0) for sx in (1, -1)]
+            ds = [h[3] for h in ds if h[0] is not None]
+            return max(ds) if ds else None
+        hs = {}
+        def half(z):
+            k = round(z, 3)
+            if k not in hs:
+                hs[k] = _half(k)
+            return hs[k]
+        keys |= {tuple(x) for x in where(body, hb, lambda q: q.z > zn and half(q.z) is not None and abs(q.x - HJ.x) >= 1.1 * half(q.z))}
     Path(job["mask"]).write_text(json.dumps([list(x) for x in sorted(keys)]), encoding="utf-8")
 
 # the separate parts (a quiver's arrows) their own objects, «Wear_<item>__arrow_<k>»: the game shows as many as are left
