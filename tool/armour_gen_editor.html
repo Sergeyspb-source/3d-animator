@@ -3117,8 +3117,13 @@ function pelerine(p) {
   const P = (fi, j) => C.clone().addScaledVector(dir(ths[j], E0 + (E1 - E0) * fi / (NE - 1)), at(raw, fi, j));
   // each line round: from where it is at the neck's foot (pel_lift above it) down the skin pel_len (pel_point more in
   // front and behind) - over a shoulder no farther than the arm's root (the skin there runs out along the arm)
-  const neckY = N.y + (p.pel_lift ?? 0) / 100 * H, len = (p.pel_len ?? 11) / 100 * H, pt = (p.pel_point ?? 4) / 100 * H;
-  const rCap = 1.25 * C.distanceTo(aL);
+  const lift = (p.pel_lift ?? 0) / 100 * H, up = Math.max(0, lift), len = (p.pel_len ?? 11) / 100 * H, pt = (p.pel_point ?? 4) / 100 * H;
+  // the neck's foot: a plane through its joint square to the neck's way up (half way to straight up): in front, under a
+  // neck leaning forward, lower than the joint (the throat is not covered: no collar under the chin), behind no higher
+  // than the joint
+  const Hd = joint('head'), nu = (Hd ? Hd.clone().sub(N).normalize() : UP.clone()).add(UP).normalize();
+  const onNeckFoot = (X) => X.clone().sub(N).dot(nu) <= up && X.y <= N.y + up + .005 * H;
+  const rCap = C.distanceTo(aL) + .06 * H;   // (past the shoulder's joint by the deltoid's thickness: the arm from there)
   const headB = new Uint8Array(boneNames.length); if (PB.head) PB.head.traverse((b) => { if (b.isBone && boneNames.indexOf(b.name) >= 0) headB[boneNames.indexOf(b.name)] = 1; });
   const onHead = (f) => {   // a triangle mostly the head's (or its face's bones')
     if (f < 0) return false;
@@ -3131,16 +3136,25 @@ function pelerine(p) {
     // its top: from well down on the neck's foot up, while still at or below that height, on the neck (not the head:
     // a jaw, an ear - the head hangs out over the neck, its rays meet it lower than the neck's top) and the skin going
     // on without a jump
-    let i = 0; while (i < NE - 1 && P(i, j).y > N.y - .01 * H) i++;
-    while (i > 0 && P(i - 1, j).y <= neckY && !onHead(face[j][i - 1]) && Math.abs(raw[i - 1][j] - raw[i][j]) < .015 * H) i--;
-    f0[j] = i;
-    const L = len + pt * Math.cos(ths[j]) ** 2;
-    let sAcc = 0, prev = P(i, j), q = i + .25;
+    let i = 0; while (i < NE - 1 && (P(i, j).y > N.y - .01 * H || !onNeckFoot(P(i, j)))) i++;
+    while (i > 0 && onNeckFoot(P(i - 1, j)) && !onHead(face[j][i - 1]) && Math.abs(raw[i - 1][j] - raw[i][j]) < .015 * H) i--;
+    let q0 = i;   // a lower neckline (pel_lift under 0): so far on down the skin from there
+    if (lift < 0) { let s2 = 0, pv = P(q0, j); while (q0 < NE - 2 && s2 < -lift) { q0 += .25; const X = P(q0, j); s2 += X.distanceTo(pv); pv = X; } }
+    f0[j] = q0;
+    // down the skin its length (longer before and behind), but never shorter than to under the shoulders' joints'
+    // height - it is there to cover the shoulders: before and behind them, and over them out to the arm's root (no
+    // farther: the skin there runs out along the arm)
+    const L = len + pt * Math.cos(ths[j]) ** 2, xOut = Math.abs(aL.x - C.x) + .04 * H, yMin = Math.min(aL.y, aR.y) - .02 * H;
+    let sAcc = 0, prev = P(q0, j), q = q0 + .25, qL = -1, qM = -1;
     for (; q < NE - 1; q += .25) {
       const X = P(q, j); sAcc += X.distanceTo(prev); prev = X;
-      if (sAcc >= L || at(raw, q, j) > rCap) break;
+      if (qL < 0 && sAcc >= L) qL = q;
+      if (qM < 0 && X.y < yMin) qM = q;
+      if (at(raw, q, j) > rCap || Math.abs(X.x - C.x) >= xOut) { qM = q; break; }   // over the arm's root
+      if (qL >= 0 && qM >= 0) break;
+      if (qM >= 0 && Math.abs(X.x - C.x) > .65 * xOut) break;   // (long: not on down the flank under an arm - into the armpit)
     }
-    f1[j] = q;
+    f1[j] = Math.min(q, Math.max(qL < 0 ? q : qL, qM, q0 + 1));   // (its length not reached: as far as the rays go)
   }
   const circ = (a) => blur([a], 3, true)[0];   // smoothed round (the neckline, the hem)
   const s0 = circ(f0), s1 = circ(f1);
@@ -4428,7 +4442,7 @@ SPEC.push(['{{js:ag.gorget_group}}', ['plate', 'trim'], [
   ['gorget_high', 10, 120, 5, '{{js:ag.gorget_high}}', '{{js:ag.gorget_high_info}}', 'pc', isP('gorget')],
   ['pel_len', 4, 30, 1, '{{js:ag.cloak_len}}', '{{js:ag.pel_len_info}}', 'pc', isP('pelerine')],
   ['pel_point', 0, 25, 1, '{{js:ag.pel_point}}', '{{js:ag.pel_point_info}}', 'pc', isP('pelerine')],
-  ['pel_lift', -4, 6, .5, '{{js:ag.pel_lift}}', '{{js:ag.pel_lift_info}}', 'pc', isP('pelerine')],
+  ['pel_lift', -3, 4, .5, '{{js:ag.pel_lift}}', '{{js:ag.pel_lift_info}}', 'pc', isP('pelerine')],
   ['pel_gap', 0, 2, .1, '{{js:ag.cloak_gap}}', '{{js:ag.cloak_gap_info}}', 'pc', isP('pelerine')],
   ['bevor_high', 40, 160, 5, '{{js:ag.bevor_high}}', '{{js:ag.bevor_high_info}}', 'pc', () => S.piece === 'gorget' && !!S.p.bevor]], isP('gorget', 'pelerine')]);
 const NODE_GI = SPEC.length;   // the gizmo's numbers: a shield's place, the besagews'
