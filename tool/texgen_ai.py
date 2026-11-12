@@ -62,15 +62,18 @@ def price(model: str) -> str:
     return f"${best:.3f}" if best else ""
 
 
-def edit(key: str, model: str, prompt: str, image: Path, timeout: int = 600) -> tuple:
-    """The picture repainted by the model: (png bytes, its cost in USD or None)."""
+def edit(key: str, model: str, prompt: str, image: Path, timeout: int = 600, refs=()) -> tuple:
+    """The picture repainted by the model (refs: more pictures after it - a sample to follow): (png bytes, its cost in
+    USD or None)."""
     if not key:
         raise RuntimeError("no key")
     m = next((x for x in models() if x["id"] == model), None)
     params = set(m["params"]) if m else {"aspect_ratio", "input_references"}
-    data = base64.b64encode(Path(image).read_bytes()).decode()
-    body = {"model": model, "prompt": prompt, "n": 1,
-            "input_references": [{"type": "image_url", "image_url": {"url": f"data:image/png;base64,{data}"}}]}
+    def ref(pth):
+        b = Path(pth).read_bytes()
+        mime = "image/jpeg" if b[:3] == b"\xff\xd8\xff" else "image/png"
+        return {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{base64.b64encode(b).decode()}"}}
+    body = {"model": model, "prompt": prompt, "n": 1, "input_references": [ref(image), *(ref(r) for r in refs if r and Path(r).exists())]}
     if "aspect_ratio" in params:
         body["aspect_ratio"] = "1:1"
     if "resolution" in params:

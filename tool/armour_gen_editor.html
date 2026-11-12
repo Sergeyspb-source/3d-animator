@@ -4274,7 +4274,8 @@ function buildPanel() {
       `<div class="row"><input type="text" id="lib_q" style="flex:1" placeholder="wood, leather, fabric…"><button id="lib_go">{{js:ag.lib_search}}</button></div>` +
       `<div class="row"><span class="seg" id="lib_cats">${LIB_CATS.map(([q, k]) => `<button data-q="${q}">${DATA.lib_cats[k] || k}</button>`).join('')}</span></div>` +
       `<div class="libgrid" id="lib_res"></div>` +
-      `<div class="row" id="lib_curRow"><span class="note" id="lib_cur" style="flex:1"></span><span class="note">{{js:ag.lib_size}}</span><input type="number" id="lib_size" style="width:56px" min="2" max="1000" step="5"><button id="lib_clear">{{js:ag.lib_clear}}</button></div></details>` +
+      `<div class="row" id="lib_curRow"><span class="note" id="lib_cur" style="flex:1"></span><span class="note">{{js:ag.lib_size}}</span><input type="number" id="lib_size" style="width:56px" min="2" max="1000" step="5"><button id="lib_clear">{{js:ag.lib_clear}}</button></div>` +
+      `<div class="row"><button id="lib_all" class="grow" title="{{js:ag.lib_all_title}}">{{js:ag.lib_all}}</button></div></details>` +
       `<details id="projBox" class="gen"><summary>{{js:ag.proj}}</summary><div class="note">{{js:ag.proj_info}}</div>` +
       `<div class="row"><span class="seg" id="projViews">${PROJ_VIEWS.map((v) => `<button data-pv="${v}">${DATA.proj_views[v] || v}</button>`).join('')}</span></div>` +
       `<div class="row"><label class="filebtn"><input type="file" id="proj_file" accept="image/*" hidden><span>{{js:ag.proj_load}}</span></label>` +
@@ -4292,6 +4293,9 @@ function buildPanel() {
       `<div class="note" style="margin-top:6px"><b>OpenRouter</b> — {{js:ag.ai_info}}</div>` +
       `<div class="row"><select id="uv_ai_model" style="flex:1;min-width:0"></select><span class="note" id="uv_ai_price"></span></div>` +
       `<div class="row"><button id="uv_ai_go" class="grow"></button></div><div class="note" id="uv_ai_note"></div>` +
+      `<div class="note" style="margin-top:6px">{{js:ag.uv_set_info}}</div>` +
+      `<div class="row"><label class="chk"><input type="checkbox" id="uv_set_strap"> {{js:ag.uv_set_strap}}</label><label class="chk"><input type="checkbox" id="uv_set_detail"> {{js:ag.uv_set_detail}}</label></div>` +
+      `<div class="row"><button id="uv_set" class="grow">{{js:ag.uv_set}}</button></div>` +
       `<div class="row" style="margin-top:4px"><select id="uv_slot"></select><label class="filebtn"><input type="file" id="uv_file" accept="image/*" hidden><span>{{js:ag.uv_load}}</span></label><button id="uv_take" title="{{js:ag.uv_take_title}}">{{js:ag.uv_take}}</button></div>` +
       `<div class="note" id="uv_applied"></div><div class="row"><button id="uv_clear">{{js:ag.uv_clear}}</button></div></details>` : '') + '</div>').join('');
   $('groups').innerHTML = html;
@@ -5852,9 +5856,9 @@ function layersSync() {
   $('layersGo').disabled = !n || !!BAKE.left.length || REBUILDING;
   $('layersGo').title = n ? '{{js:ag.layers_rebuild_info}}' : '{{js:ag.layers_none}}';
 }
-async function rebuildLayers() {
+async function rebuildLayers(only) {   // (only: these pieces, made again in this order - a material put on them all)
   if (busy || REBUILDING || BAKE.left.length) return;
-  const list = staleList();
+  const list = only || staleList();
   if (!list.length || !confirm('{{js:ag.layers_confirm}}'.replace('{0}', list.length).replace('{1}', list.map((x) => x.item).join(', ')))) return;
   REBUILDING = true; $('layersGo').disabled = true;
   const keep = { piece: S.piece, idle: S.idle, p: S.p, sides: S.sides, name: S.name, touched: S.nameTouched, style: S.style };
@@ -6086,6 +6090,14 @@ function libWire() {
     const slot = $('lib_slot').value, m = (S.p.libmat || {})[slot], v = +e.target.value; if (!m || !(v > 0)) return;
     S.p.libmat = { ...S.p.libmat, [slot]: { ...m, size_cm: v } }; changed('libmat');
   });
+  $('lib_all').addEventListener('click', () => {   // this slot's material on every own piece ticked in «Worn», all made again
+    const slot = $('lib_slot').value, m = (S.p.libmat || {})[slot]; if (!m) return;
+    const list = DATA.saved.filter((x) => ownKind(x) && x.item !== itemName() && WORN.get(x.item) && WORN.get(x.item).on)
+      .sort((a, b) => (LAYER[a.piece] || 0) - (LAYER[b.piece] || 0));
+    if (!list.length) { $('status').textContent = '{{js:ag.uv_set_none}}'; return; }
+    for (const x of list) x.params = { ...x.params, libmat: { ...(x.params.libmat || {}), [slot]: m } };
+    rebuildLayers(list).catch((er) => { console.error(er); $('status').textContent = er.message; });
+  });
   $('lib_clear').addEventListener('click', () => {
     const slot = $('lib_slot').value; if (!(S.p.libmat || {})[slot]) return;
     const next = { ...S.p.libmat }; delete next[slot]; S.p.libmat = next; changed('libmat'); libSync();
@@ -6271,6 +6283,7 @@ function uvSync() {
   const sl = $('uv_slot').value, M = UV.models;
   $('uv_ai_go').textContent = '{{js:ag.ai_go}}'.replace('{0}', (DATA.lib_slots[sl] || sl || '').replace(/\s*\(.*\)/, ''));
   $('uv_ai_go').disabled = !I || !M || !M.has_key || !$('uv_ai_model').value || busy;
+  $('uv_set').disabled = $('uv_ai_go').disabled;
   $('uv_ai_note').textContent = M && !M.has_key ? '{{js:ag.ai_no_key}}' : '';
   const on = Object.keys(S.p.uvtex || {});
   $('uv_applied').textContent = on.length ? '{{js:ag.uv_on}}'.replace('{0}', on.map((k) => DATA.lib_slots[k] || k).join(', ')) : '';
@@ -6326,10 +6339,46 @@ async function uvUse(js) {   // the textures found or loaded: the piece made aga
   const r = await make();
   if (r && r.ok) { $('status').textContent = log + '\n' + r.log; await uvRefresh(true); }
 }
+// «Apply to the whole set»: this piece's texture (or its colours) the sample; every other piece ticked in «Worn» that
+// has an unwrap repainted after it by the model chosen (its own colours + the sample), its colours brought to the
+// sample's, put into its GLB (made again where it cannot be: paint on it, its unwrap changed)
+async function uvSet() {
+  const I = UV.info; if (!I || busy) return;
+  const me = itemName(), model = $('uv_ai_model').value;
+  const slots = ['plate', ...($('uv_set_strap').checked ? ['strap'] : []), ...($('uv_set_detail').checked ? ['detail', 'trim', 'mail'] : [])].filter((sl) => I.slots[sl]);
+  const items = DATA.worn.filter((w) => w.item !== me && WORN.get(w.item) && WORN.get(w.item).on && !HELD.includes(w.piece));
+  if (!items.length) { $('status').textContent = '{{js:ag.uv_set_none}}'; return; }
+  if (!confirm('{{js:ag.uv_set_confirm}}'.replace('{0}', items.length).replace('{1}', items.map((w) => w.item).join(', ')).replace('{2}', slots.map((k) => DATA.lib_slots[k] || k).join(', ')).replace('{3}', $('uv_ai_price').textContent ? ' (' + $('uv_ai_price').textContent + ')' : ''))) return;
+  const prompt = uvPrompt('edit') + '\n' + '{{js:ag.uv_set_ref}}', log = [];
+  for (const [n, w] of items.entries()) {
+    const tex = {};
+    for (const sl of slots) {
+      const ref = (S.p.uvtex && S.p.uvtex[sl] && S.p.uvtex[sl].path) || `${I.folder}/${sl}_color.png`;
+      $('status').textContent = '{{js:ag.uv_set_progress}}'.replace('{0}', n + 1).replace('{1}', items.length).replace('{2}', w.item).replace('{3}', DATA.lib_slots[sl] || sl);
+      const js = await send('ai_texture', { item: w.item, piece: w.piece, slot: sl, model, prompt, ref, ref_mask: `${I.folder}/${sl}_mask.png` }, $('status').textContent, '_ai_texture');
+      if (js && js.ok && js.uvtex) Object.assign(tex, js.uvtex);
+      else if (js && sl === 'plate') log.push(`${w.item}: ${String(js.log || '').split('\n')[0]}`);
+    }
+    if (!Object.keys(tex).length) continue;
+    const x = DATA.saved.find((y) => y.item === w.item);
+    const all = { ...((x && x.params.uvtex) || {}), ...tex };
+    const q = await send('uv_apply', { item: w.item, piece: w.piece, uvtex: all }, '{{js:ag.uv_applying}}', '_uv_apply');
+    if (x) x.params = { ...x.params, uvtex: all };
+    if (q && q.ok) {
+      const ww = DATA.worn.find((y) => y.item === w.item); if (ww) ww.v = Math.round(Date.now() / 1000);
+      const old = WORN.get(w.item); if (old) { if (old.root) scene.remove(old.root); WORN.delete(w.item); }
+      if (ww) await wearPiece(ww, true);
+      log.push(`${w.item}: ✓`);
+    } else log.push(`${w.item}: ${q && q.need_make ? '{{js:ag.uv_set_remake}}' : (q && q.log) || '?'}`);
+  }
+  listWorn();
+  $('status').textContent = '{{js:ag.uv_set_done}}' + '\n' + log.join('\n');
+}
 function uvWire() {
   if (!$('uvBox')) return;
   $('uvBox').addEventListener('toggle', async () => { if ($('uvBox').open) { await uvRefresh(); await uvModels(); } });
   $('uv_slot').addEventListener('change', uvSync);
+  $('uv_set').addEventListener('click', () => uvSet().catch((er) => { console.error(er); $('status').textContent = er.message; }));
   $('uv_ai_model').addEventListener('change', () => { try { localStorage.setItem('ag_ai_model', $('uv_ai_model').value); } catch (e) { /* none */ } uvPrice(); uvSync(); });
   $('uv_ai_go').addEventListener('click', async () => {   // the part's colours repainted there, then put on and made
     if (!UV.info || busy) return;

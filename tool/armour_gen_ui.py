@@ -294,6 +294,24 @@ def uv_dir(rigged: Path, item: str, piece=None) -> Path:
     return WF.path(rigged, item, ".glb", piece).parent / f"{item}_uv"
 
 
+def _match_colour(img: Path, mask: Path, ref: Path, ref_mask: Path):
+    """The picture's colours inside its islands brought to the reference's inside its own (each channel's mean and
+    spread in YCbCr: the brightness, the contrast and the tint as the reference's, its own pattern kept)."""
+    import numpy as np
+    from PIL import Image
+    a = Image.open(img).convert("RGB"); r = Image.open(ref).convert("RGB")
+    ma = (np.asarray(Image.open(mask).convert("L").resize(a.size), np.float32) > 127) if Path(mask).is_file() else np.ones(a.size[::-1], bool)
+    mr = (np.asarray(Image.open(ref_mask).convert("L").resize(r.size), np.float32) > 127) if ref_mask and Path(ref_mask).is_file() else np.ones(r.size[::-1], bool)
+    if ma.sum() < 100 or mr.sum() < 100:
+        return
+    A = np.asarray(a.convert("YCbCr"), np.float32).copy(); B = np.asarray(r.convert("YCbCr"), np.float32)
+    for c in range(3):
+        x, y = A[..., c][ma], B[..., c][mr]
+        k = float(np.clip(y.std() / max(x.std(), 1e-3), .6, 1.6))
+        A[..., c] = np.where(ma, (A[..., c] - x.mean()) * k + y.mean(), A[..., c])
+    Image.fromarray(np.clip(A, 0, 255).astype(np.uint8), "YCbCr").convert("RGB").save(img)
+
+
 def _uv_fit(src: Path, mask: Path, size: int) -> tuple:
     """A texture given back made to fit the unwrap: its size, and the holes in it - where an island of the mask meets
     its empty background (a picture painted on another layout, as an image model draws its own) - filled from the
@@ -432,6 +450,9 @@ def uv_apply(cfg, req) -> dict:
         return {"ok": False, "need_make": True, "log": _t("ag.uv_apply_make")}
     j = json.loads(info.read_text(encoding="utf-8"))
     tex = req.get("uvtex") or {}
+    fit0 = WF.path(rigged, item, ".fit.json", piece)
+    if fit0.exists() and ((json.loads(fit0.read_text(encoding="utf-8")).get("procedural") or {}).get("params") or {}).get("paints"):
+        return {"ok": False, "need_make": True, "log": _t("ag.uv_apply_make")}   # (paint over its colours: baked with them)
     if any(sl not in j["slots"] or t.get("hash") != j["slots"][sl]["hash"] or not Path(str(t.get("path") or "")).exists() for sl, t in tex.items()):
         return {"ok": False, "need_make": True, "log": _t("ag.uv_apply_make")}
     swaps = {f"{item}_{sl}": t["path"] for sl, t in tex.items()}
@@ -475,11 +496,14 @@ def uv_action(cfg, req) -> dict:
                 return {"ok": False, "log": _t("ag.ai_no_key")}
             model = str(req.get("model") or texgen_ai.DEFAULT)
             t0 = datetime.now()
-            png, cost = texgen_ai.edit(key, model, str(req.get("prompt") or ""), d / f"{sl}_color.png")
+            ref = str(req.get("ref") or "")   # «Apply to the whole set»: the reference piece's texture, a sample to follow
+            png, cost = texgen_ai.edit(key, model, str(req.get("prompt") or ""), d / f"{sl}_color.png", refs=[ref] if ref else ())
             keep = d / f"{sl}_ai_{re.sub(r'[^A-Za-z0-9_.-]+', '_', model.split('/')[-1])}_{t0:%H%M%S}.png"   # (each one kept)
             keep.write_bytes(png)
             from PIL import Image
             Image.open(keep).convert("RGB").save(d / f"{sl}_user.png")
+            if ref and Path(ref).exists():   # its colours brought to the reference's (a model drifts a little even with a sample)
+                _match_colour(d / f"{sl}_user.png", d / f"{sl}_mask.png", Path(ref), Path(str(req.get("ref_mask") or "")))
             user = {sl: (d / f"{sl}_user.png").resolve().as_posix()}
             out["ai"] = {"model": model, "cost": cost, "file": keep.name, "seconds": (datetime.now() - t0).seconds}
         elif req.get("data"):
