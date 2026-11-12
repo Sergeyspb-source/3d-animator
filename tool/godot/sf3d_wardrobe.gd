@@ -329,8 +329,16 @@ func _ui() -> void:
 	var panel := PanelContainer.new()
 	panel.position = Vector2(10, 10)
 	layer.add_child(panel)
+	# (scrolled: many pieces put on go on past the window's bottom; the wheel over it scrolls it, not the camera)
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	panel.add_child(scroll)
+	var fit := func(): scroll.custom_minimum_size = Vector2(260, maxf(200.0, get_viewport().get_visible_rect().size.y - 40.0))
+	fit.call()
+	get_viewport().size_changed.connect(fit)
 	var box := VBoxContainer.new()
-	panel.add_child(box)
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(box)
 	box.add_child(_label("{{js:gd.animations}}"))
 	_list.custom_minimum_size = Vector2(230, 240)
 	for c in _clips():
