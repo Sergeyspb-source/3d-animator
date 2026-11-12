@@ -320,7 +320,7 @@ async function loadCharacter() {
 // in «Armour» are known by their body part («torso»: a breastplate). A piece made under others already worn: those
 // were fitted without it - «Rebuild by layers» makes them again over it.
 const LAYER = { undercloth: .5, trousers: 1, footwear: 1.5, foot: 1.5, brayette: 2, bracer: 3, rerebrace: 3, greave: 3, cuisse: 3,
-  forearm: 3, upperarm: 3, arm: 3, leg: 3, upleg: 3, tassets: 3, hips: 3, glove: 3.2, hand: 3.2, codpiece: 2.5, fauld: 2.8, culet: 2.8, elbow: 3.5, gorget: 4.5, pelerine: 4.6, rondel: 5.2, poleyn: 3.5, knee: 3.5, cuirass: 4, torso: 4,
+  forearm: 3, upperarm: 3, arm: 3, leg: 3, upleg: 3, tassets: 3, hips: 3, glove: 3.2, hand: 3.2, codpiece: 2.5, fauld: 2.8, culet: 2.8, elbow: 3.5, gorget: 4.5, pelerine: 5.4, rondel: 5.2, poleyn: 3.5, knee: 3.5, cuirass: 4, torso: 4,
   pauldron: 5, shoulder: 5, helmet: 5, head: 5, tabard: 6, skirt: 6, cloak: 7 };
 const CLOTH_KINDS = ['cloak', 'skirt', 'tabard'];   // over the new piece: not a wall to keep it under (the cloth is made again over it)
 let UNDER_T = 0;   // the piece being built: its thickness as a share of a profile's size (kept so far inside a wall over it)
@@ -328,6 +328,7 @@ let UNDER_T = 0;   // the piece being built: its thickness as a share of a profi
 // is fitted over nothing
 const HELD = ['weapon', 'shield', 'sheath'], layerOf = (w) => !HELD.includes(w.piece) && !['weapon', 'shield'].includes(S.piece);   // a belt goes over the armour ticked
 const isOuter = (w) => (S.piece === 'helmet' ? ['helmet', 'head'].includes(w.piece)   // a helmet: not over another
+  : S.piece === 'pelerine' ? ['gorget', 'helmet', 'head'].includes(w.piece) || (LAYER[w.piece] || 0) > LAYER.pelerine   // over all the armour but what is on the neck and the head (a gorget's collar over it)
   : w.piece === 'elbow' ? ['bracer', 'rerebrace'].includes(S.piece)   // elbows go over the arm's pieces
   : w.piece === 'poleyn' ? ['greave', 'cuisse', 'trousers'].includes(S.piece)   // poleyns over the leg's
     : (LAYER[w.piece] || 0) > (LAYER[S.piece] || 99));
@@ -3107,14 +3108,18 @@ function pelerine(p) {
   const NT = 72, NE = 110, E0 = D(88), E1 = D(-55), elev = (i) => E0 + (E1 - E0) * i / (NE - 1);
   const dir = (th, el) => front.clone().multiplyScalar(Math.cos(th)).addScaledVector(side, Math.sin(th)).multiplyScalar(Math.cos(el)).addScaledVector(UP, Math.sin(el));
   // (over the pieces worn under it: the outermost of the hits stacked on the skin)
-  const outermost = (o, d, far) => { const all = castAll(o, d, far); let k = 0; while (k + 1 < all.length && all[k + 1].distance - all[k].distance < .03 * H) k++; return all[k] || null; };
+  const outermost = (o, d, far) => { const all = castAll(o, d, far); let k = 0; while (k + 1 < all.length && all[k + 1].distance - all[k].distance < .05 * H) k++; return all[k] || null; };
   const ths = Array.from({ length: NT }, (_, j) => Math.PI + j / NT * TAU);   // from the back's middle round (open there)
   const face = ths.map(() => new Int32Array(NE).fill(-1));
+  // the skin (where it starts and ends: the neck's foot, the shoulders, the arms' roots - the body's own) and the
+  // outermost of what is worn on it there (what it lies on: always over the armour - a cuirass, pauldrons, besagews)
+  const faceS = ths.map(() => new Int32Array(NE).fill(-1));
   let raw = Array.from({ length: NE }, (_, i) => ths.map((th, j) => { const h = outermost(C, dir(th, elev(i)), .6 * H); if (h) face[j][i] = h.faceIndex; return h ? h.distance : NaN; }));
-  raw = fill(raw);
+  let rawS = Array.from({ length: NE }, (_, i) => ths.map((th, j) => { const h = cast(C, dir(th, elev(i)), .6 * H); if (h) faceS[j][i] = h.faceIndex; return h ? h.distance : NaN; }));
+  raw = fill(raw); rawS = fill(rawS);
   const sm = blur(raw, 2, true).map((row, i) => row.map((x, j) => Math.max(x, raw[i][j])));   // (a mantle, not every bump: never under the skin)
   const at = (g, fi, j) => { const i0 = Math.max(0, Math.min(NE - 2, Math.floor(fi))), k = Math.max(0, Math.min(1, fi - i0)); return g[i0][j] * (1 - k) + g[i0 + 1][j] * k; };
-  const P = (fi, j) => C.clone().addScaledVector(dir(ths[j], E0 + (E1 - E0) * fi / (NE - 1)), at(raw, fi, j));
+  const P = (fi, j) => C.clone().addScaledVector(dir(ths[j], E0 + (E1 - E0) * fi / (NE - 1)), at(rawS, fi, j));   // (on the skin)
   // each line round: from where it is at the neck's foot (pel_lift above it) down the skin pel_len (pel_point more in
   // front and behind) - over a shoulder no farther than the arm's root (the skin there runs out along the arm)
   const lift = (p.pel_lift ?? 0) / 100 * H, up = Math.max(0, lift), len = (p.pel_len ?? 11) / 100 * H, pt = (p.pel_point ?? 4) / 100 * H;
@@ -3137,7 +3142,7 @@ function pelerine(p) {
     // a jaw, an ear - the head hangs out over the neck, its rays meet it lower than the neck's top) and the skin going
     // on without a jump
     let i = 0; while (i < NE - 1 && (P(i, j).y > N.y - .01 * H || !onNeckFoot(P(i, j)))) i++;
-    while (i > 0 && onNeckFoot(P(i - 1, j)) && !onHead(face[j][i - 1]) && Math.abs(raw[i - 1][j] - raw[i][j]) < .015 * H) i--;
+    while (i > 0 && onNeckFoot(P(i - 1, j)) && !onHead(faceS[j][i - 1]) && Math.abs(rawS[i - 1][j] - rawS[i][j]) < .015 * H) i--;
     let q0 = i;   // a lower neckline (pel_lift under 0): so far on down the skin from there
     if (lift < 0) { let s2 = 0, pv = P(q0, j); while (q0 < NE - 2 && s2 < -lift) { q0 += .25; const X = P(q0, j); s2 += X.distanceTo(pv); pv = X; } }
     f0[j] = q0;
@@ -3150,7 +3155,7 @@ function pelerine(p) {
       const X = P(q, j); sAcc += X.distanceTo(prev); prev = X;
       if (qL < 0 && sAcc >= L) qL = q;
       if (qM < 0 && X.y < yMin) qM = q;
-      if (at(raw, q, j) > rCap || Math.abs(X.x - C.x) >= xOut) { qM = q; break; }   // over the arm's root
+      if (at(rawS, q, j) > rCap || Math.abs(X.x - C.x) >= xOut) { qM = q; break; }   // over the arm's root
       if (qL >= 0 && qM >= 0) break;
       if (qM >= 0 && Math.abs(X.x - C.x) > .65 * xOut) break;   // (long: not on down the flank under an arm - into the armpit)
     }
