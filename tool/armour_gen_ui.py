@@ -71,6 +71,12 @@ PIECES = {"bracer": ("forearm", "hand", "forearm", ("Spine", "Hips", "Chest", "U
           "gorget": ("spine2", "head", "neck", (), "torso", "neck", (0, 0, 0, 0),
                      dict(material="steel", trim="steel", gap=6, gorget_lames=4, gorget_low=40, gorget_high=60, bevor=False, bevor_high=100,
                           straps=0, rigidity=1, surface="plain")),
+          # a mail pelerine (pixane): the gorget's builder, one mantle of mail over the shoulders
+          "pelerine": ("spine2", "head", "neck", (), "torso", "neck", (0, 0, 0, 0),
+                       dict(material="iron", trim="", surface="mail", gap=6, gorget_low=160, gorget_high=40, straps=0, rigidity=1, cell=5)),
+          # besagews (rondels): round plates in front of the armpits, each side
+          "rondel": ("arm", "forearm", "arm", (), "shoulder", "held", (0, 0, 0, 0),
+                     dict(rondel="rondel_plain", material="steel", trim="steel", gap=6, rondel_size=100, rondel_drop=0, straps=0, rigidity=1, surface="plain")),
           # a codpiece: a cup over the groin on a belt, rigid on the hips (built in the editor: armour_gen_editor codpiece)
           "codpiece": ("hips", "spine", "hips", (), "hips", "groin", (0, 0, 0, 0),
                        dict(codpiece="cod_plate", material="steel", trim="steel", cod_size=100, cod_proj=100, cod_top=0, cod_belt=False, straps=0, rigidity=1,
@@ -164,7 +170,7 @@ CHOICES = {"opening_labels": ("none", "left", "right", "back", "front"), "closur
            "shoulder_labels": ("straps", "yoke", "none"),
            "style_labels": ("leather", "steel", "mail", "splints", "covered", "plate_mail", "lamellar", "brigandine", "tights", "wool", "leather_tr",
                             "mail_chausses", "plate_cuisses", "hidden_plate", "plate_and_mail", "compact", "extended", "carrier",
-                            "short_mail", "wrap_mail", "carrier_mail", "lames", *HELMETS, *ELBOWS, *POLEYNS, "cod_plate", "cod_leather", "cod_cloth", *FOOTWEAR, *GLOVES, *CLOTHS,
+                            "short_mail", "wrap_mail", "carrier_mail", "lames", *HELMETS, *ELBOWS, *POLEYNS, "cod_plate", "cod_leather", "cod_cloth", "rondel_plain", "rondel_spike", "rondel_fluted", *FOOTWEAR, *GLOVES, *CLOTHS,
                             *(f"weapon_{w}" for w in WEAPONS), *(f"shield_{x}" for x in SHIELDS), *(f"sheath_{x}" for x in SHEATHS)),
            "thigh_labels": ("none", "mail", "plate", "panels", "plate_mail"), "knee_labels": ("none", "patch", "cop")}
 

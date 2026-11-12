@@ -110,6 +110,7 @@ def style_of(kind: str, params: dict, style=None) -> str:
            "elbow": re.sub(r"^elbow_", "", str(p.get("elbow") or "")), "footwear": re.sub(r"^foot_", "", str(p.get("footwear") or "")),
            "poleyn": re.sub(r"^poleyn_", "", str(p.get("poleyn") or "")),
            "codpiece": re.sub(r"^cod_", "", str(p.get("codpiece") or "")),
+           "rondel": re.sub(r"^rondel_", "", str(p.get("rondel") or "")),
            "undercloth": p.get("cloth_style"), "sheath": p.get("sheath")}.get(kind)
     if own:
         return slug(own)
