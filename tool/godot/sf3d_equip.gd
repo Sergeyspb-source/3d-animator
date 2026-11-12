@@ -1126,6 +1126,24 @@ class Grip extends SkeletonModifier3D:
 		var pa := sk.get_bone_global_pose(sk.get_bone_parent(hand))
 		sk.set_bone_pose_rotation(hand, (pa.affine_inverse() * G2).basis.get_rotation_quaternion())
 
+	func _carry(sk: Skeleton3D, t: Dictionary) -> void:   # the holding hand turned (about the wrist) so the haft points down, a little forward
+		var M := _palm(sk, t["from"])
+		var fwd := _forward(sk)
+		if M.is_empty() or fwd == Vector3.ZERO:
+			return
+		var n: Array = t["n"]
+		var A := ((M["F"] as Basis) * Vector3(n[3], n[4], n[5])).normalized()
+		var D := (Vector3.DOWN * 0.85 + fwd * 0.5).normalized()
+		var ang := A.angle_to(D)
+		var axis := A.cross(D)
+		if ang < 1e-3 or axis.length() < 1e-6:
+			return
+		var hand: int = M["hand"]
+		var G := sk.get_bone_global_pose(hand)
+		var G2 := Transform3D(Basis(Quaternion(axis.normalized(), ang)) * G.basis, G.origin)
+		var pa := sk.get_bone_global_pose(sk.get_bone_parent(hand))
+		sk.set_bone_pose_rotation(hand, (pa.affine_inverse() * G2).basis.get_rotation_quaternion())
+
 	func _forward(sk: Skeleton3D) -> Vector3:   # the way the hips face: across them (right to left) x up the spine
 		var l := -1
 		var r := -1
@@ -1270,9 +1288,15 @@ class Grip extends SkeletonModifier3D:
 			return
 		for side in _point:   # a spear's head forward first: the other hand reaches the haft where it is then
 			_keep_forward(sk, side, _point[side])
-		var throwing := "throw" in _clip()   # (thrown from one hand: the other one is not brought to the haft)
+		var clip := _clip()
+		var throwing := "throw" in clip   # (thrown from one hand: the other one is not brought to the haft)
+		# idle, walking, running: a two-hander carried in one hand, its point down and a little forward (the clips hold the
+		# hand as for a one-hander: reached for by the other hand, the holding arm was wrung across the body)
+		var resting := ["idle", "walk", "run"].any(func(w): return w in clip)
 		for side in _two:   # the other hands onto their hafts first: their fingers close then
-			if not throwing:
+			if resting:
+				_carry(sk, _two[side])
+			elif not throwing:
 				_reach(sk, side, _two[side])
 		for side in _held:
 			if int(_held[side]) <= 0:
