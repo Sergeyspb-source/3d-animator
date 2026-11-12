@@ -63,6 +63,7 @@ static func wear(character: Node, piece: PackedScene, mask := "") -> Array[MeshI
 				for k in range(1, 10):
 					nums.append(float(two[k]) / 1000.0)
 				mi.set_meta("sf3d_two", two[0])
+				mi.set_meta("sf3d_two_nums", nums)
 				_grip(skel).two_hand(hold.substr(0, 1), two[0], nums, true)
 			var gr := nm.get_slice("__grasp_", 1).get_slice("__", 0).split("_") if "__grasp_" in nm else PackedStringArray()
 			if gr.size() == 15:   # the fingers round its grip by contact (the editor's magnet): both hands holding it
@@ -71,11 +72,13 @@ static func wear(character: Node, piece: PackedScene, mask := "") -> Array[MeshI
 					degs.append(float(g))
 				_grip(skel).grasp(hold.substr(0, 1), degs, true)
 				mi.set_meta("sf3d_grasp", hold.substr(0, 1) + (two[0] if two.size() == 10 else ""))
+				mi.set_meta("sf3d_grasp_degs", degs)
 				if two.size() == 10:
 					_grip(skel).grasp(two[0], degs, true)
 			var pt := nm.get_slice("__point_", 1).get_slice("__", 0).split("_") if "__point_" in nm else PackedStringArray()
 			if pt.size() == 3:   # a spear: its head kept forward
 				mi.set_meta("sf3d_point", hold.substr(0, 1))
+				mi.set_meta("sf3d_point_v", Vector3(float(pt[0]), float(pt[1]), float(pt[2])) / 1000.0)
 				_grip(skel).point(hold.substr(0, 1), Vector3(float(pt[0]), float(pt[1]), float(pt[2])) / 1000.0, true)
 	inst.free()
 	if not cloth.is_empty() and out.size() > 0:   # a cloak: its chains swing
@@ -917,6 +920,20 @@ static func show(meshes: Array, on: bool) -> void:
 	for mi in meshes:
 		if is_instance_valid(mi):
 			mi.visible = on and bool(mi.get_meta("sf3d_arrow_on", true))
+			# a weapon hidden lets its hands go: the fist, the other hand on its haft, its head kept forward, the fingers
+			# round its grip (hidden in the fitting room, a two-hander's other hand still reached for it - the arms
+			# drawn behind the back)
+			if mi.has_meta("sf3d_hold") and bool(mi.get_meta("sf3d_held_on", true)) != on:
+				mi.set_meta("sf3d_held_on", on)
+				var g := _grip(mi.get_parent())
+				g.hold(mi.get_meta("sf3d_hold"), on)
+				if mi.has_meta("sf3d_two"):
+					g.two_hand(String(mi.get_meta("sf3d_hold")).substr(0, 1), mi.get_meta("sf3d_two"), mi.get_meta("sf3d_two_nums", []), on)
+				if mi.has_meta("sf3d_point"):
+					g.point(mi.get_meta("sf3d_point"), mi.get_meta("sf3d_point_v", Vector3.ZERO), on)
+				if mi.has_meta("sf3d_grasp"):
+					for sd in String(mi.get_meta("sf3d_grasp")):
+						g.grasp(sd, mi.get_meta("sf3d_grasp_degs", []), on)
 			if mi.has_meta("sf3d_character"):
 				character = mi.get_meta("sf3d_character")
 	if character:

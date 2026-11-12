@@ -3,7 +3,7 @@
 ## piece put on through SF3DEquip, its clips to play, the pieces on and off, and a camera that orbits the character
 ## (left drag), pans (right drag) and zooms (wheel).
 ##
-## A picture, then quit: godot --path <project> -- --shot=out.png [--anim=walk] [--at=0.5] [--yaw=30] [--zoom=2]
+## A picture, then quit: godot --path <project> -- --shot=out.png [--anim=walk] [--at=0.5] [--yaw=30] [--zoom=2] [--off=item,item]
 ## [--pitch=-0.5] [--rise=0.3] (the look down, the point looked at raised by that share of the height)
 ## [--focus=RightHand] (the point looked at: that bone, where the clip has it when the picture is taken)
 extends Node3D
@@ -43,6 +43,9 @@ func _ready() -> void:
 		_args[kv[0]] = kv[1] if kv.size() > 1 else ""
 	for p in pieces:
 		_worn[p.resource_path.get_file().get_basename().trim_prefix("wear_")] = Equip.wear(_model, p)
+	for n in String(_args.get("off", "")).split(",", false):   # --off=item,item: put on, taken off at once (as unticked)
+		if _worn.has(n):
+			Equip.show(_worn[n], false)
 	var players := _model.find_children("*", "AnimationPlayer", true, false)
 	if players.size() > 0:
 		_player = players[0]
@@ -362,7 +365,7 @@ func _ui() -> void:
 	for name in _worn:
 		var cb := CheckBox.new()
 		cb.text = name
-		cb.button_pressed = true
+		cb.button_pressed = not (name in String(_args.get("off", "")).split(",", false))
 		cb.toggled.connect(func(on): Equip.show(_worn[name], on))
 		box.add_child(cb)
 		var meshes: Array = _worn[name]
