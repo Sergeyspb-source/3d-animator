@@ -1666,9 +1666,14 @@ function mailCoif(p) {
   } }
   const topY = E.y + .45 * d, botY = chinY + .08 * d, cy = (topY + botY) / 2, ay = (topY - botY) / 2, axx = .9 * d;
   const ovalF = (v) => ((v.x - E.x) / axx) ** 2 + ((v.y - cy) / ay) ** 2;
-  // and below the chin a V down the throat to the neck's foot (no bib standing out under the chin: as a coif's slit)
-  const vNeck = (v) => v.y < botY && v.y > NK.y && Math.abs(v.x - E.x) < .55 * d * (v.y - NK.y) / Math.max(1e-6, botY - NK.y) && v.clone().sub(E).dot(FRONT) > -2 * d;
-  const faceAt = (v) => (v.clone().sub(E).dot(FRONT) > -.5 * d && ovalF(v) < 1) || vNeck(v);
+  // below the eyes it opens on down over the chin and the jaw's underside to a point at the neck's foot (a V-neck: no
+  // mail under the chin standing out as a bib) - as wide as the oval at its middle, narrowing down to the point
+  const vBot = Math.min(NK.y, aL ? aL.y : NK.y) - .02 * H;   // (the throat's foot: the neck's joint sits up under the jaw on some)
+  const faceAt = (v) => {
+    if (v.y >= cy) return v.clone().sub(E).dot(FRONT) > -.5 * d && ovalF(v) < 1;
+    if (v.y <= vBot || v.clone().sub(NK).dot(FRONT) < -.3 * d) return false;
+    return Math.abs(v.x - E.x) < axx * Math.pow((v.y - vBot) / Math.max(1e-6, cy - vBot), .8);
+  };
   const cellMid = (j, i) => P[j][i].o.clone().add(P[j + 1][i].o).add(P[j][i + 1].o).add(P[j + 1][i + 1].o).multiplyScalar(.25);
   const faceCell = Array.from({ length: NT }, (_, j) => Array.from({ length: NV }, (_, i) => faceAt(cellMid(j, i))));
   const shown = (j, i) => [[j, i], [j - 1, i], [j, i - 1], [j - 1, i - 1]].some(([a, b]) => b >= 0 && b < NV && !faceCell[(a + NT) % NT][b]);
