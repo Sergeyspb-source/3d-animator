@@ -2376,5 +2376,22 @@
  "ag.node_group": "Placement",
  "ag.node_rondel": "Drag the besagew in the view: arrows move it, rings turn it, cubes size it (keys G, R, S); the right one mirrors the left. The numbers below are the same, exactly: the shift along the plate's axes (X across, Y up, Z off the body), the turns about them. It never goes into the skin: moved in, it stays on it",
  "ag.pel_lift": "Neckline",
- "ag.pel_lift_info": "the top edge above (+) or below (−) the neck's foot; no collar"
+ "ag.pel_lift_info": "the top edge above (+) or below (−) the neck's foot; no collar",
+ "ag.piece_hauberk": "Hauberk (mail shirt)",
+ "ag.piece_coif": "Coif (mail hood)",
+ "ag.style_hauberk_long": "Hauberk to the knees",
+ "ag.style_haubergeon": "Haubergeon (short)",
+ "ag.style_coif_short": "Short cape",
+ "ag.style_coif_long": "Long cape",
+ "ag.hauberk_group": "Mail",
+ "ag.hb_hem": "Hem",
+ "ag.hb_hem_info": "how far the skirt comes down the thigh from the crotch, a share of the thigh: 0 at the crotch, 100 to the knee",
+ "ag.hb_sleeve": "Sleeves",
+ "ag.hb_sleeve_info": "0 none, 50 to the elbow, 100 to the wrist",
+ "ag.hb_slits": "Slits before and behind",
+ "ag.hb_slits_info": "the skirt slit to ride, a share of its length; 0 none",
+ "ag.hb_ease": "Looser",
+ "ag.hb_ease_info": "how much looser the mail is than the gambeson under it",
+ "ag.coif_cape": "The coif's cape",
+ "ag.coif_cape_info": "its cape's length over the shoulders, a share of the height"
 }

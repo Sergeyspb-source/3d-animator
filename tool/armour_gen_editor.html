@@ -320,7 +320,7 @@ async function loadCharacter() {
 // in «Armour» are known by their body part («torso»: a breastplate). A piece made under others already worn: those
 // were fitted without it - «Rebuild by layers» makes them again over it.
 const LAYER = { undercloth: .5, trousers: 1, footwear: 1.5, foot: 1.5, brayette: 2, bracer: 3, rerebrace: 3, greave: 3, cuisse: 3,
-  forearm: 3, upperarm: 3, arm: 3, leg: 3, upleg: 3, tassets: 3, hips: 3, glove: 3.2, hand: 3.2, codpiece: 2.5, fauld: 2.8, culet: 2.8, elbow: 3.5, gorget: 4.5, pelerine: 5.4, rondel: 5.2, poleyn: 3.5, knee: 3.5, cuirass: 4, torso: 4,
+  forearm: 3, upperarm: 3, arm: 3, leg: 3, upleg: 3, tassets: 3, hips: 3, glove: 3.2, hand: 3.2, codpiece: 2.5, fauld: 2.8, culet: 2.8, elbow: 3.5, gorget: 4.5, pelerine: 5.4, rondel: 5.2, hauberk: 2.4, coif: 3.8, poleyn: 3.5, knee: 3.5, cuirass: 4, torso: 4,
   pauldron: 5, shoulder: 5, helmet: 5, head: 5, tabard: 6, skirt: 6, cloak: 7 };
 const CLOTH_KINDS = ['cloak', 'skirt', 'tabard'];   // over the new piece: not a wall to keep it under (the cloth is made again over it)
 let UNDER_T = 0;   // the piece being built: its thickness as a share of a profile's size (kept so far inside a wall over it)
@@ -1424,19 +1424,22 @@ const bowOn = (acc, sh, t, a, s, down) => { prepShell(sh); bow(acc, pt(sh, t, a,
 // the direction d round a limb's axis, as its angle
 const angAt = (limb, d) => limb.angOf(d.clone().addScaledVector(limb.u, -d.dot(limb.u)).normalize());
 function sleeve(p, G, s, thick) {   // round the upper arm from the shoulder over the elbow, round the forearm to the wrist
-  const acc = new Acc(), gap = p.gap + .7 * G.ease, sf = { ...p, surface: p.cloth_quilt ? 'quilt' : 'plain' };
-  const { limb: ul } = limbOf('rerebrace', s), PU = profile('sleeve_up' + s, ul, -.2, 1.08, { foreign: PIECES.rerebrace.foreign, limbOnly: true });
+  const acc = new Acc(), gap = p.gap + .7 * G.ease, sf = { ...p, surface: G.mail ? 'mail' : p.cloth_quilt ? 'quilt' : 'plain' };
+  // (G.sleeveTo: how far it goes - 0 a cap at the shoulder, .5 the elbow, 1 the wrist)
+  const to = G.sleeveTo ?? 1, upTb = to >= .5 ? 1.08 : -.05 + 1.13 * to / .5, loTb = to > .5 ? -.08 + 1.05 * (to - .5) / .5 : null;
+  const { limb: ul } = limbOf('rerebrace', s), PU = profile('sleeve_up' + s, ul, -.2, upTb, { foreign: PIECES.rerebrace.foreign, limbOnly: true, over: 1.6 });   // (over a sleeve worn under it)
   PU.shell(gap, G.relief ?? .3);
   acc.w = weigher('limb', PB['arm_' + s], p.rigidity);
   // a little wider at its top, most under the arm: over the armhole's edge, which turns in under it (the armpit's folds)
   const upA = angAt(ul, UP), under = (a) => (1 - Math.cos(a - upA)) / 2;
-  const up = { limb: ul, P: PU, ta: -.2, tb: 1.08, top: 'a', arcs: arcsOf(0, 360, 0), R: PU.R, thick,
-    r: (t, a) => PU.rIn(t, a) + (G.tight ? 0 : .18) * PU.R * smooth(.15, -.1, t) * (.4 + .6 * under(a)) };
+  const up = { limb: ul, P: PU, ta: -.2, tb: upTb, top: 'a', arcs: arcsOf(0, 360, 0), R: PU.R, thick,
+    r: (t, a) => PU.rIn(t, a) + (G.tight ? 0 : G.sleeveTop ?? .18) * PU.R * smooth(.15, -.1, t) * (.4 + .6 * under(a)) };
   surface(acc, up, sf);
-  const { limb: fl } = limbOf('bracer', s), PF = profile('sleeve_lo' + s, fl, -.08, .97, { foreign: PIECES.bracer.foreign, limbOnly: true });
+  if (loTb === null) return { side: s, acc, R: PU.R };
+  const { limb: fl } = limbOf('bracer', s), PF = profile('sleeve_lo' + s, fl, -.08, loTb, { foreign: PIECES.bracer.foreign, limbOnly: true, over: 1.6 });
   PF.shell(gap, G.relief ?? .3);
   const tuck = (t) => smooth(.12, -.08, t) * 1.8 * thick;   // in under the upper one at the elbow
-  const lo = { limb: fl, P: PF, ta: -.08, tb: .97, top: 'a', arcs: arcsOf(0, 360, 0), R: PF.R, thick,
+  const lo = { limb: fl, P: PF, ta: -.08, tb: loTb, top: 'a', arcs: arcsOf(0, 360, 0), R: PF.R, thick,
     r: (t, a) => Math.max(PF.rSkin(t, a) + .3 * p.gap * PF.R, PF.rIn(t, a) - tuck(t)) };
   acc.w = weigher('limb', PB['forearm_' + s], p.rigidity);
   surface(acc, lo, sf);
@@ -1449,7 +1452,8 @@ function sleeve(p, G, s, thick) {   // round the upper arm from the shoulder ove
   }
   if (G.voiders) {   // mail at the armpit, over the sleeve's top on the body's side
     const inn = angAt(ul, outer.clone().negate()), D = THREE.MathUtils.degToRad;
-    surface(acc, { limb: ul, P: PU, ta: -.2, tb: .32, top: 'a', arcs: [[inn - D(75), inn + D(75), false]], R: PU.R, thick,
+    const vw = D(G.voidW || 75), va = G.voidW ? -.3 : -.2;   // (a hauberk's: wider, up over the armhole's edge in front and behind)
+    surface(acc, { limb: ul, P: PU, ta: va, tb: .32, top: 'a', arcs: [[inn - vw, inn + vw, false]], R: PU.R, thick,
       r: (t, a) => up.outer(t, a) + .02 * PU.R }, { ...p, surface: 'mail' });
   }
   return { side: s, acc, R: PU.R };
@@ -1471,10 +1475,10 @@ function collar(p, G, thick) {   // standing round the neck from inside the body
 }
 function garment(p, G) {
   const D = THREE.MathUtils.degToRad;
-  const q = { ...p, surface: p.cloth_quilt ? 'quilt' : 'plain', material: 'cloth', stitch: false, trim: '', straps: 0, spaulders: 0, mail_under: false,
+  const q = { ...p, surface: G.mail ? 'mail' : p.cloth_quilt ? 'quilt' : 'plain', material: G.mail ? p.material : 'cloth', stitch: false, trim: '', straps: 0, spaulders: 0, mail_under: false,
     two_plates: false, low_surface: 'same', anatomy: 0, point: 0, ridge: 0, garment: true, gap: p.gap + G.ease };
   const [body] = buildPiece('cuirass', ['C'], { ...q, t0: G.top, waist: G.waist, sector: 360, opening: G.open ? 'front' : 'none',
-    closure: G.open || 'across', ties: G.ties || 0, shoulders: 'yoke', neckline: G.collar ? .03 : .08, armhole: 30, relief: G.relief ?? .3, neck_tie: !!G.neckTie });
+    closure: G.open || 'across', ties: G.ties || 0, shoulders: 'yoke', neckline: G.neckline ?? (G.collar ? .03 : .08), armhole: 30, relief: G.relief ?? .3, neck_tie: !!G.neckTie });
   const out = [body], thick = body.thick;
   // the hem from the crotch (straight down from the hips) and the thigh's length, along the torso
   const { limb: tl } = limbOf('cuirass', 'C'), down = cast(tl.a, tl.u.clone().negate(), tl.len), tcr = down ? -down.distance / tl.len : -.12;
@@ -1491,6 +1495,23 @@ function garment(p, G) {
   if (G.sleeves) for (const s of 'LR') if (PB['arm_' + s] && PB['forearm_' + s]) out.push(sleeve(p, G, s, .9 * thick));
   if (G.collar) { const c = collar(p, G, thick); if (c) out.push(c); }
   return out;
+}
+// ---- a hauberk: a mail shirt cut as a garment is (the body, a skirt hanging from it, sleeves), all of mail: down to
+// the knees (a haubergeon: to the hips) with slits before and behind to ride, sleeves to the wrists (or the elbows);
+// over the gambeson, under the plates
+function hauberk(p) {
+  const slit = (p.hb_slits ?? 45) / 100;
+  return garment({ ...p, cloth_quilt: false, rigidity: p.rigidity ?? .3 }, { top: .02, hem: (p.hb_hem ?? 90) / 100, waist: .45, ease: (p.hb_ease ?? 5) / 100, flare: .22, folds: .12,
+    sleeves: (p.hb_sleeve ?? 100) > 0, sleeveTo: (p.hb_sleeve ?? 100) / 100, mail: true, relief: .4, neckline: .03, voiders: true, voidW: 125, sleeveTop: .4,
+    slits: slit > 0 ? [[0, slit, 5], [180, slit, 5]] : [] });
+}
+// ---- a mail coif: a hood of mail round the head and the neck (the padded coif's bag, the face cut out of it) and its
+// short cape over the shoulders (the pelerine's mantle, from up the neck); over a padded coif worn under it
+function mailCoif(p) {
+  const under = [...WORN.values()].some((w) => w.on && w.piece === 'undercloth' && /coif/.test(w.item || ''));
+  const hood = coif({ ...p, cloth_quilt: false, mail: true, gap: (p.gap ?? .04) + (under ? .5 : 0) });
+  const cape = pelerine({ ...p, pel_len: p.coif_cape ?? 6, pel_point: (p.coif_cape ?? 6) / 3, pel_lift: 2.5, pel_gap: under ? .6 : .3, coifCape: true });
+  return [...hood, ...cape];
 }
 function braies(p, long) {   // loose linen trousers: to the knee, or down to the ankle gathered there
   return buildPiece('trousers', ['C'], { ...p, surface: 'plain', material: 'cloth', t0: .14, t1: long ? .9 : .5, loose: long ? .5 : .6, folds: .35,
@@ -1576,7 +1597,7 @@ function coif(p) {
     return !face(c) && fn.y > -.6;
   });
   const quilt = !!p.cloth_quilt;
-  shellOf(acc, B, ids, gap, thick, quilt ? CLOTH : PLATE, quilt ? 'quilt' : 'plate', (i) => ({ direct: B.w[i] }), null, 3);
+  shellOf(acc, B, ids, gap, p.mail ? MM(3) : thick, p.mail ? MAIL : quilt ? CLOTH : PLATE, p.mail ? 'mail' : quilt ? 'quilt' : 'plate', (i) => ({ direct: B.w[i] }), null, 3);
   return [{ side: 'C', acc, R }];
 }
 // ---- thin cloth on the body (under the armour: a shirt, tights): the character's own skin, the parts it covers, out by
@@ -3200,7 +3221,7 @@ function pelerine(p) {
     (i, j) => [uAt[i][cols[j]] / U, -vAt[i][cols[j]] / U], (i, j) => base[i][cols[j]].f);
   // the straps across the opening: riveted a little in from each edge, a buckle on the middle
   const sw = MM(5), out = thm + MM(1.2);
-  for (const t of [.18, .6]) {
+  for (const t of p.coifCape ? [] : [.18, .6]) {   // (a coif's cape: one with its hood)
     const i = Math.round(t * (nv - 1)), A = base[i][3], B = base[i][NT - 3], f = base[i][0].f;
     const Pa = A.X.clone().addScaledVector(A.d, out), Pb = B.X.clone().addScaledVector(B.d, out), M = Pa.clone().lerp(Pb, .5);
     const nM = base[i][0].d.clone(), Pm = M.clone().addScaledVector(nM, Math.max(0, base[i][0].X.clone().addScaledVector(nM, out).sub(M).dot(nM)));   // (over the gap: no lower than the mail's line there)
@@ -3450,6 +3471,8 @@ function buildPiece(kind, sides, p) {
   if (kind === 'codpiece') parts.push(...codpiece(p));
   if (kind === 'gorget') parts.push(...gorget(p));
   if (kind === 'pelerine') parts.push(...pelerine(p));
+  if (kind === 'hauberk') parts.push(...hauberk(p));
+  if (kind === 'coif') parts.push(...mailCoif(p));
   if (kind === 'rondel') sides.forEach((side, i) => parts.push(...rondel(side, p, i === 0)));
   if (kind === 'cloak') parts.push(...cloak(p));
   if (kind === 'skirt') parts.push(...skirt(p));
@@ -4241,6 +4264,8 @@ Object.assign(STYLES, {
   helmet: Object.fromEntries(['kettle_hat', 'open_bascinet', 'barbute', 'visored_bascinet', 'sallet', 'armet'].map((k) => [k, { helmet: k }])),
   elbow: Object.fromEntries(['leather', 'mail', 'early_plate', 'winged_plate', 'articulated_plate', 'plate_mail_hybrid'].map((k) => ['elbow_' + k, { elbow: 'elbow_' + k }])),
   rondel: Object.fromEntries(['plain', 'spike', 'fluted'].map((k) => ['rondel_' + k, { rondel: 'rondel_' + k }])),
+  hauberk: { hauberk_long: { hauberk: 'hauberk_long', hb_hem: 90, hb_sleeve: 100, hb_slits: 45 }, haubergeon: { hauberk: 'haubergeon', hb_hem: 15, hb_sleeve: 45, hb_slits: 0 } },
+  coif: { coif_short: { coif: 'coif_short', coif_cape: 5 }, coif_long: { coif: 'coif_long', coif_cape: 10 } },
   codpiece: {   // the steel plate's, boiled leather, a stuffed cloth one (a landsknecht's)
     cod_plate: { codpiece: 'cod_plate', material: 'steel', trim: 'steel', cod_proj: 100 },
     cod_leather: { codpiece: 'cod_leather', material: 'leather', trim: 'brass', cod_proj: 90 },
@@ -4450,9 +4475,16 @@ SPEC.push(['{{js:ag.gorget_group}}', ['plate', 'trim'], [
   ['pel_lift', -3, 4, .5, '{{js:ag.pel_lift}}', '{{js:ag.pel_lift_info}}', 'pc', isP('pelerine')],
   ['pel_gap', 0, 2, .1, '{{js:ag.cloak_gap}}', '{{js:ag.cloak_gap_info}}', 'pc', isP('pelerine')],
   ['bevor_high', 40, 160, 5, '{{js:ag.bevor_high}}', '{{js:ag.bevor_high_info}}', 'pc', () => S.piece === 'gorget' && !!S.p.bevor]], isP('gorget', 'pelerine')]);
+const HAU_GI = SPEC.length;
+SPEC.push(['{{js:ag.hauberk_group}}', ['mail'], [
+  ['hb_hem', 0, 120, 5, '{{js:ag.hb_hem}}', '{{js:ag.hb_hem_info}}', 'pc', isP('hauberk')],
+  ['hb_sleeve', 0, 100, 5, '{{js:ag.hb_sleeve}}', '{{js:ag.hb_sleeve_info}}', 'pc', isP('hauberk')],
+  ['hb_slits', 0, 80, 5, '{{js:ag.hb_slits}}', '{{js:ag.hb_slits_info}}', 'pc', isP('hauberk')],
+  ['hb_ease', 0, 20, 1, '{{js:ag.hb_ease}}', '{{js:ag.hb_ease_info}}', 'pc', isP('hauberk')],
+  ['coif_cape', 2, 20, 1, '{{js:ag.coif_cape}}', '{{js:ag.coif_cape_info}}', 'pc', isP('coif')]], isP('hauberk', 'coif')]);
 const NODE_GI = SPEC.length;   // the gizmo's numbers: a shield's place, the besagews'
 SPEC.push(['{{js:ag.node_group}}', ['plate'], [], () => (S.piece === 'shield' || S.piece === 'rondel') && !isMade()]);
-for (const gi of [0, 1, 2, 3, 5]) { const was = SPEC[gi][3]; SPEC[gi][3] = () => was() && !['codpiece', 'gorget', 'pelerine', 'rondel'].includes(S.piece); }   // (a codpiece, a gorget: their own group, the material)
+for (const gi of [0, 1, 2, 3, 5]) { const was = SPEC[gi][3]; SPEC[gi][3] = () => was() && !['codpiece', 'gorget', 'pelerine', 'rondel', 'hauberk', 'coif'].includes(S.piece); }   // (a codpiece, a gorget: their own group, the material)
 const ALL = SPEC.flatMap((g) => g[2]);
 const DEFAULTS = Object.assign({ gap: 8, thickness: 12, relief: .35, step: 5, rim: 6, rivets: 60, rivet_size: 6, strap_width: 35,
   buckle: true, material: 'iron', wear: .35, tint: '#6b4128', cloth: '#56606e', tex: 1024, seed: 1, surface: 'plates', scale_size: 25,
@@ -4460,7 +4492,7 @@ const DEFAULTS = Object.assign({ gap: 8, thickness: 12, relief: .35, step: 5, ri
   two_plates: false, spaulders: 0, sp_start: 30, sp_reach: 45, sp_span: 260, neckline: 8, armhole: 40, point: 0, ridge: 0, cap: 1.6, trim: '', hammer: .5, arm_share: .7, mail_under: false, hem: 15, sleeves: 30, top_cut: 0, bottom_cut: 0, splints: 6, stitch: false,
   closure: 'across', hinges: false, opening: 'none', shoulders: 'straps', yoke: 70, thigh: 'none', knee: 'none', fly: false, wrap: false,
   front_panel: false, hem_band: false, helmet: 'barbute', head_gap: 7, visor_angle: 0, cheek_angle: 0, tail: 100, brim: 100,
-  strap: 0, strap_fwd: 0, elbow: 'elbow_winged_plate', poleyn: 'poleyn_winged_plate', made_slide: 0, made_twist: 0, made_size: 100, codpiece: 'cod_plate', cod_size: 100, cod_proj: 100, cod_top: 0, cod_belt: false, gorget_lames: 4, gorget_low: 40, gorget_high: 60, bevor: false, bevor_high: 100, rondel: 'rondel_plain', pel_len: 11, pel_point: 4, pel_lift: 0, pel_gap: .4, limb_gap: 8, wing: 100, footwear: 'foot_ankle_boot', foot_gap: 6, glove: 'plain_leather', cuff: 14,
+  strap: 0, strap_fwd: 0, elbow: 'elbow_winged_plate', poleyn: 'poleyn_winged_plate', made_slide: 0, made_twist: 0, made_size: 100, codpiece: 'cod_plate', cod_size: 100, cod_proj: 100, cod_top: 0, cod_belt: false, gorget_lames: 4, gorget_low: 40, gorget_high: 60, bevor: false, bevor_high: 100, rondel: 'rondel_plain', pel_len: 11, pel_point: 4, pel_lift: 0, pel_gap: .4, hauberk: 'hauberk_long', hb_hem: 90, hb_sleeve: 100, hb_slits: 45, hb_ease: 5, coif: 'coif_short', coif_cape: 5, limb_gap: 8, wing: 100, footwear: 'foot_ankle_boot', foot_gap: 6, glove: 'plain_leather', cuff: 14,
   cloth_style: 'shirt', cloth_quilt: false, quilt_lines: false, pinches: [], paints: [],
   weapon: 'sword', shield: 'round', w_len: 100, w_width: 100, w_guard: 100, w_grip: 100, w_grip_r: 100, w_head: 100, grip_along: 0, grip_out: 0,
   grip_tilt: 15, grip_roll: 0, w_two: 0, arrows: 12, cloak_len: 60, cloak_wrap: 172, cloak_flare: 25, cloak_lift: 5, cloak_nape: 120, cloak_gap: .5, skirt_len: 30, skirt_flare: 30, skirt_lift: 6, skirt_slit: 0, skirt_gap: .5, tabard_len: 50, tabard_belt: 8, tabard_flare: 15, tabard_lift: 2, tabard_gap: 1, s_size: 100, s_curve: 30, s_rim: 100, s_boss: 100, s_along: 0, s_out: 0, s_turn: 0, s_hand: false, s_elbow: true, s_bend: 0, s_ridge: 0,
@@ -6010,7 +6042,7 @@ const SURF_STYLES = ['mail', 'scales', 'lamellar', 'brigandine', 'splints', 'qui
 const slugN = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
 function styleOf(kind, p, style) {
   const own = { weapon: p.weapon, shield: p.shield, helmet: p.helmet, glove: p.glove, elbow: String(p.elbow || '').replace(/^elbow_/, ''), poleyn: String(p.poleyn || '').replace(/^poleyn_/, ''), codpiece: String(p.codpiece || '').replace(/^cod_/, ''), rondel: String(p.rondel || '').replace(/^rondel_/, ''),
-    footwear: String(p.footwear || '').replace(/^foot_/, ''), undercloth: p.cloth_style, sheath: p.sheath }[kind];
+    hauberk: String(p.hauberk || '').replace(/^hauberk_/, ''), coif: String(p.coif || '').replace(/^coif_/, ''), footwear: String(p.footwear || '').replace(/^foot_/, ''), undercloth: p.cloth_style, sheath: p.sheath }[kind];
   if (own) return slugN(own);
   if (style) return slugN(String(style).replace(/^(cloth|shield|weapon|sheath|glove|foot|elbow|poleyn)_/, ''));
   if (SURF_STYLES.includes(p.surface)) return p.surface;
@@ -6091,7 +6123,7 @@ const ownKind = (x) => !HELD.includes(x.piece) && !MADE.includes(x.piece) && !!P
 const madeAt = (item) => (DATA.worn.find((w) => w.item === item) || {}).v || 0;   // seconds
 // where on the body a piece is: a lower layer counts for a piece only where they meet (a coif is no reason to make
 // the trousers again, and through them all the armour over them)
-const REGIONS = { trousers: 'hips legs', brayette: 'hips', footwear: 'feet legs', bracer: 'arms', rerebrace: 'arms', elbow: 'arms', poleyn: 'legs', knee: 'legs', codpiece: 'hips', fauld: 'torso hips', culet: 'torso hips', gorget: 'torso head', pelerine: 'torso head', rondel: 'torso arms',
+const REGIONS = { trousers: 'hips legs', brayette: 'hips', footwear: 'feet legs', bracer: 'arms', rerebrace: 'arms', elbow: 'arms', poleyn: 'legs', knee: 'legs', codpiece: 'hips', fauld: 'torso hips', culet: 'torso hips', gorget: 'torso head', pelerine: 'torso head', rondel: 'torso arms', hauberk: 'torso arms hips legs', coif: 'head torso',
   glove: 'hands arms', greave: 'legs feet', cuisse: 'legs', tassets: 'hips legs', cuirass: 'torso hips', pauldron: 'torso arms', helmet: 'head',
   tabard: 'torso hips legs', skirt: 'hips legs', cloak: 'torso arms hips legs', torso: 'torso hips', forearm: 'arms', upperarm: 'arms', arm: 'arms',
   leg: 'legs feet', upleg: 'legs', foot: 'feet', hand: 'hands', head: 'head', hips: 'hips legs', shoulder: 'torso arms' };
