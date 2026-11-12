@@ -4261,7 +4261,7 @@ Object.assign(STYLES, {
     lames: { surface: 'plates', material: 'iron', plates: 4, splits: 4, sector: 360, flare: .3, t0: -45, t1: 10, straps: 1, strap_width: 35, wrap: false, front_panel: false, hem_band: false, gap: 16 },
   },
   // the helmet generators' constructions (vendor/blender_armour)
-  helmet: Object.fromEntries(['kettle_hat', 'open_bascinet', 'barbute', 'visored_bascinet', 'sallet', 'armet'].map((k) => [k, { helmet: k }])),
+  helmet: Object.fromEntries(['kettle_hat', 'open_bascinet', 'barbute', 'visored_bascinet', 'sallet', 'armet', 'nasal_helm', 'spangenhelm', 'great_helm', 'morion', 'close_helm'].map((k) => [k, { helmet: k }])),
   elbow: Object.fromEntries(['leather', 'mail', 'early_plate', 'winged_plate', 'articulated_plate', 'plate_mail_hybrid'].map((k) => ['elbow_' + k, { elbow: 'elbow_' + k }])),
   rondel: Object.fromEntries(['plain', 'spike', 'fluted'].map((k) => ['rondel_' + k, { rondel: 'rondel_' + k }])),
   hauberk: { hauberk_long: { hauberk: 'hauberk_long', hb_hem: 90, hb_sleeve: 100, hb_slits: 45 }, haubergeon: { hauberk: 'haubergeon', hb_hem: 15, hb_sleeve: 45, hb_slits: 0 } },
@@ -4404,12 +4404,12 @@ SPEC.push(['{{js:ag.made_group}}', [], [
   ['made_size', 60, 160, 5, '{{js:ag.made_size}}', '', 'pc', isP('elbow', 'poleyn')],
   ['foot_gap', 0, 20, 1, '{{js:ag.foot_gap}}', '{{js:ag.foot_gap_info}}', 'pc', isP('footwear')],
   ['wing', 0, 150, 5, '{{js:ag.elbow_wing}}', '', 'pc', () => ['elbow', 'poleyn'].includes(S.piece) && /_(winged_plate|articulated_plate|plate_mail_hybrid)$/.test(S.p[S.piece] || '')],
-  ['visor_angle', 0, 65, 5, '{{js:ag.visor_angle}}', '', 'deg', hs('visored_bascinet', 'armet')],
-  ['cheek_angle', 0, 35, 5, '{{js:ag.cheek_angle}}', '', 'deg', hs('armet')],
+  ['visor_angle', 0, 65, 5, '{{js:ag.visor_angle}}', '', 'deg', hs('visored_bascinet', 'armet', 'close_helm')],
+  ['cheek_angle', 0, 35, 5, '{{js:ag.cheek_angle}}', '', 'deg', hs('armet', 'close_helm')],
   ['tail', 0, 130, 5, '{{js:ag.helmet_tail}}', '', 'pc', hs('sallet')],
   ['brim', 40, 170, 5, '{{js:ag.helmet_brim}}', '', 'pc', hs('kettle_hat')],
-  ['strap', -50, 50, 1, '{{js:ag.helmet_strap}}', '{{js:ag.helmet_strap_info}}', 'pc', hs('barbute', 'open_bascinet', 'sallet', 'kettle_hat')],
-  ['strap_fwd', -50, 50, 1, '{{js:ag.helmet_strap_fwd}}', '', 'pc', hs('barbute', 'open_bascinet', 'sallet', 'kettle_hat')]], isMade]);
+  ['strap', -50, 50, 1, '{{js:ag.helmet_strap}}', '{{js:ag.helmet_strap_info}}', 'pc', hs('barbute', 'open_bascinet', 'sallet', 'kettle_hat', 'nasal_helm', 'spangenhelm', 'morion')],
+  ['strap_fwd', -50, 50, 1, '{{js:ag.helmet_strap_fwd}}', '', 'pc', hs('barbute', 'open_bascinet', 'sallet', 'kettle_hat', 'nasal_helm', 'spangenhelm', 'morion')]], isMade]);
 // held things: a weapon's sizes and its grip in the fist, a shield's; the rest of the groups is not theirs
 const isHeld = () => HELD.includes(S.piece), isW = (...k) => () => S.piece === 'weapon' && k.includes(S.p.weapon);
 const isGrip = () => S.piece === 'weapon' || (S.piece === 'shield' && !!S.p.s_hand);   // held in the fist: its grip's sliders

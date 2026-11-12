@@ -121,7 +121,8 @@ SHEATHS = ("scabbard", "dagger", "quiver", "quiver_hip")
 CLOTHS = ("cloth_fitted", "cloth_shirt", "cloth_aketon", "cloth_gambeson", "cloth_doublet", "cloth_voider", "cloth_vest", "cloth_braies", "cloth_braies_long",
           "cloth_coif")
 GLOVES = ("glove_plain_leather", "glove_reinforced_leather", "glove_mail_mitten", "glove_hourglass", "glove_plate_mitten", "glove_hybrid")
-HELMETS = ("kettle_hat", "open_bascinet", "barbute", "visored_bascinet", "sallet", "armet")
+HELMETS = ("kettle_hat", "open_bascinet", "barbute", "visored_bascinet", "sallet", "armet",
+           "nasal_helm", "spangenhelm", "great_helm", "morion", "close_helm")   # (the last five: helmets_extra.py)
 FOOTWEAR = ("foot_leather_shoe", "foot_ankle_boot", "foot_mail_foot", "foot_round_sabaton", "foot_pointed_sabaton", "foot_hybrid_boot")
 ELBOWS = ("elbow_leather", "elbow_mail", "elbow_early_plate", "elbow_winged_plate", "elbow_articulated_plate", "elbow_plate_mail_hybrid")
 POLEYNS = tuple("poleyn_" + x[len("elbow_"):] for x in ELBOWS)
@@ -152,7 +153,9 @@ def _foot_params(params) -> dict:
 # them, the editor's parameters -> the script's, the parameters a style's preview depends on besides the gap)
 MADE = {"helmet": ("blender_helmet_gen.py", HELMETS, "", _helmet_params,
                    {"visored_bascinet": ("visor_angle",), "armet": ("visor_angle", "cheek_angle"), "sallet": ("tail", "strap", "strap_fwd"),
-                    "kettle_hat": ("brim", "strap", "strap_fwd"), "barbute": ("strap", "strap_fwd"), "open_bascinet": ("strap", "strap_fwd")}),
+                    "kettle_hat": ("brim", "strap", "strap_fwd"), "barbute": ("strap", "strap_fwd"), "open_bascinet": ("strap", "strap_fwd"),
+                    "close_helm": ("visor_angle", "cheek_angle"), "nasal_helm": ("strap", "strap_fwd"), "spangenhelm": ("strap", "strap_fwd"),
+                    "morion": ("strap", "strap_fwd")}),
         "elbow": ("blender_elbow_gen.py", ELBOWS, "elbow_", _elbow_params,
                   {k: ("wing",) for k in ("elbow_winged_plate", "elbow_articulated_plate", "elbow_plate_mail_hybrid")}),
         "footwear": ("blender_footwear_gen.py", FOOTWEAR, "foot_", _foot_params, {}),

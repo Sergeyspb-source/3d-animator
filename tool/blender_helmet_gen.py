@@ -3,7 +3,8 @@ vendor/blender_armour (KettleHat, HelmetVariants) to the character's head and pu
 
     blender -b -P blender_helmet_gen.py -- job.json
 
-job.json: {"style": kettle_hat | open_bascinet | barbute | visored_bascinet | sallet | armet,
+job.json: {"style": kettle_hat | open_bascinet | barbute | visored_bascinet | sallet | armet | (helmets_extra) nasal_helm |
+                    spangenhelm | great_helm | morion | close_helm,
            "params": {"gap": air over the head, a share of its half depth, "visor_angle", "cheek_angle" (degrees),
                       "tail": a sallet's tail, "brim": a kettle hat's brim, shares of their usual size},
            "out": piece.glb, "work": a folder (the generators' textures),
@@ -34,6 +35,7 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE / "vendor" / "blender_armour" / "HelmetVariants"))
 sys.path.insert(0, str(HERE / "vendor" / "blender_armour" / "KettleHat"))
 from i18n import t as _t
+import helmets_extra as X   # our five more (nasal helm, spangenhelm, great helm, morion, close helmet)
 
 job = json.loads(Path(sys.argv[sys.argv.index("--") + 1]).read_text(encoding="utf-8"))
 style, prm = job["style"], job.get("params") or {}
@@ -167,9 +169,17 @@ def build(dims):
         root, _ = K.build(p, tex)
         return root, p, -BROW
     G = importlib.import_module("generate_helmet")
-    base = {**G.DEFAULTS, **G.STYLES[style]}
+    base = style_base()
     cfg = {"rx": clamp(dims["rx"], *G.BOUNDS["rx"]), "ry": clamp(dims["ry"], *G.BOUNDS["ry"]),
            "height": clamp(dims["height"], *G.BOUNDS["height"])}
+    if style in X.STYLES:   # ours: the generator's frame and defaults, its checks not (they know its five only)
+        p = {**base, **cfg}
+        if style == "close_helm":
+            p["visor_angle"] = clamp(float(prm.get("visor_angle", 0)), 0, 65)
+            p["cheek_angle"] = clamp(float(prm.get("cheek_angle", 0)), 0, 35)
+            p["visor_projection"] = SNOUT
+        root, _ = X.build(style, p, tex)
+        return root, p, EYE_Z
     if style in ("visored_bascinet", "armet"):
         cfg["visor_angle"] = clamp(float(prm.get("visor_angle", 0)), 0, 65)
     if style in ("visored_bascinet", "armet"):
@@ -181,6 +191,11 @@ def build(dims):
     p = G.validate_config(style, cfg)
     root, _ = G.build(style, p, tex)
     return root, p, EYE_Z
+
+
+def style_base():
+    G = importlib.import_module("generate_helmet")
+    return {**G.DEFAULTS, **(G.STYLES.get(style) or X.STYLES[style])}
 
 
 def _under(o, root):
@@ -210,15 +225,14 @@ def flatten(root):
 if style == "kettle_hat":
     ry_m = importlib.import_module("generate_kettle_hat").DEFAULTS["crown_radius_y"]
 else:
-    G = importlib.import_module("generate_helmet")
-    ry_m = {**G.DEFAULTS, **G.STYLES[style]}["ry"]
+    ry_m = style_base()["ry"]
 s = (half_d + gap) / ry_m
 if style == "kettle_hat":   # the brim at the brow, the crown over the rest of the head
     base_z = E.z + BROW * s
     dims = {"rx": (half_w + gap) / s, "ry": ry_m, "height": (E.z + top - base_z + gap) / s}
 else:
     base_z = E.z - EYE_Z * s
-    dims = {"rx": (half_w + gap) / s, "ry": ry_m, "height": (E.z + top - base_z + gap) / s - {**G.DEFAULTS, **G.STYLES[style]}["brow_z"]}
+    dims = {"rx": (half_w + gap) / s, "ry": ry_m, "height": (E.z + top - base_z + gap) / s - style_base()["brow_z"]}
 bpy.ops.object.select_all(action="DESELECT")   # their mesh preparation unwraps whatever is selected
 root, p, eye_z = build(dims)
 parts = flatten(root)

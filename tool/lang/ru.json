@@ -2393,5 +2393,10 @@
  "ag.hb_ease": "Свободнее",
  "ag.hb_ease_info": "насколько кольчуга свободнее поддоспешника под ней",
  "ag.coif_cape": "Пелерина койфа",
- "ag.coif_cape_info": "длина пелерины на плечах, доля роста"
+ "ag.coif_cape_info": "длина пелерины на плечах, доля роста",
+ "ag.style_nasal_helm": "Норманнский (с наносником)",
+ "ag.style_spangenhelm": "Шпангенхельм",
+ "ag.style_great_helm": "Топфхельм (ведро)",
+ "ag.style_morion": "Морион",
+ "ag.style_close_helm": "Закрытый шлем"
 }

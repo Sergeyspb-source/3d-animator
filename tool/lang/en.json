@@ -2393,5 +2393,10 @@
  "ag.hb_ease": "Looser",
  "ag.hb_ease_info": "how much looser the mail is than the gambeson under it",
  "ag.coif_cape": "The coif's cape",
- "ag.coif_cape_info": "its cape's length over the shoulders, a share of the height"
+ "ag.coif_cape_info": "its cape's length over the shoulders, a share of the height",
+ "ag.style_nasal_helm": "Nasal helm",
+ "ag.style_spangenhelm": "Spangenhelm",
+ "ag.style_great_helm": "Great helm",
+ "ag.style_morion": "Morion",
+ "ag.style_close_helm": "Close helmet"
 }
