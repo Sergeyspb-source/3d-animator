@@ -1217,7 +1217,7 @@ function handSkin(side) {   // {pos, n (normals), w (the skin's weights), seg ([
 }
 // a shell over some of the hand's triangles: off the skin by off, thick, its rim closed; vert(i, p) makes a vertex
 // (its weights), uv by a box projection in pattern units
-function shellOf(acc, H, sel, off, thick, mat, role, wOf, grow, smoothRim = 0) {
+function shellOf(acc, H, sel, off, thick, mat, role, wOf, grow, smoothRim = 0, uvFn = null) {
   const ids = new Map(), out = [], inn = [];
   // the rim's points moved along it toward their neighbours' middle (a plate's outline, not the triangles' staircase)
   const moved = new Map();
@@ -1241,7 +1241,7 @@ function shellOf(acc, H, sel, off, thick, mat, role, wOf, grow, smoothRim = 0) {
   const get = (i) => {
     if (ids.has(i)) return ids.get(i);
     const p0 = moved.get(i) || (grow ? grow(i) : H.pos[i]), n = H.n[i], q = wOf(i);
-    const o = p0.clone().addScaledVector(n, off + thick), m = p0.clone().addScaledVector(n, off), [u, v] = uvOf(p0, n);
+    const o = p0.clone().addScaledVector(n, off + thick), m = p0.clone().addScaledVector(n, off), [u, v] = uvFn ? uvFn(p0, n, i) : uvOf(p0, n);
     const k = out.length; out.push(acc.vert(o, u, v, q)); inn.push(acc.vert(m, u, v, q)); ids.set(i, k); return k;
   };
   const edges = new Map();
@@ -1497,21 +1497,50 @@ function garment(p, G) {
   if (G.collar) { const c = collar(p, G, thick); if (c) out.push(c); }
   return out;
 }
-// ---- a hauberk: a mail shirt cut as a garment is (the body, a skirt hanging from it, sleeves), all of mail: down to
-// the knees (a haubergeon: to the hips) with slits before and behind to ride, sleeves to the wrists (or the elbows);
-// over the gambeson, under the plates
+// ---- a hauberk: a mail shirt - a shirt, as cloth lies on the body (skinCloth: the skin's own surface out over what is
+// worn under it, one piece from the neck over the shoulders down the arms, no gap between the body and the sleeves;
+// the skin's own weights: it moves as the skin does), its skirt hanging from the hips (the soft mail skirt) to the
+// knees with slits before and behind to ride, sleeves to the wrists (or the elbows). Its rings round the body and
+// round each arm (their UVs: the length round and along)
 function hauberk(p) {
-  const slit = (p.hb_slits ?? 45) / 100;
-  return garment({ ...p, cloth_quilt: false, rigidity: p.rigidity ?? .3 }, { top: .02, hem: (p.hb_hem ?? 90) / 100, waist: .45, ease: (p.hb_ease ?? 5) / 100, flare: .22, folds: .12,
-    sleeves: (p.hb_sleeve ?? 100) > 0, sleeveTo: (p.hb_sleeve ?? 100) / 100, mail: true, relief: .4, neckline: .03, voiders: true, voidW: 125, sleeveTop: .4,
-    slits: slit > 0 ? [[0, slit, 5], [180, slit, 5]] : [] });
+  const sl = Math.max(0, Math.min(1, (p.hb_sleeve ?? 100) / 100)), hem = (p.hb_hem ?? 90) / 100, slit = (p.hb_slits ?? 45) / 100, ease = (p.hb_ease ?? 5) / 100;
+  const D = THREE.MathUtils.degToRad, { limb: tl } = limbOf('cuirass', 'C'), U = (p.cell || 5) / 1000 * HEIGHT * 8;
+  const along = (v, s, a, b) => { const A = joint(a + '_' + s), B = joint(b + '_' + s); if (!A || !B) return 0; const d = B.clone().sub(A); return v.clone().sub(A).dot(d) / d.lengthSq(); };
+  const sideOf = (v) => (v.x >= tl.a.x ? 'L' : 'R');
+  const keep = (v, part) => (part === 'torso' || part === 'thigh' ? torsoT(v) > -.06   // (on down under the skirt's top: no skin between them - the hips' sides go with the thighs)
+    : part === 'upper_arm' ? sl > 0 && along(v, sideOf(v), 'arm', 'forearm') <= Math.min(1.05, sl / .5)
+    : part === 'forearm' ? sl > .5 && along(v, sideOf(v), 'forearm', 'hand') <= (sl - .5) / .5 * .97 : false);
+  keep.key = 'hauberk' + Math.round(sl * 20);
+  // the UVs: round the torso's axis (its seam behind) or an arm's (under it), along them, in the rings' unit
+  const fr = angAt(tl, FRONT), armAx = {};
+  for (const s of 'LR') if (joint('arm_' + s) && joint('hand_' + s)) armAx[s] = new Limb(joint('arm_' + s), joint('hand_' + s));
+  const partOf = (i, S) => { const [bi, bw] = S.w[i]; let k = 0; for (let j = 1; j < 4; j++) if (bw[j] > bw[k]) k = j; return bodyPart(boneNames[bi[k]]); };
+  const uv = (q, n, i, S) => {
+    const part = partOf(i, S), al = armAx[sideOf(q)];
+    if ((part === 'upper_arm' || part === 'forearm') && al) {
+      const d = q.clone().sub(al.a), t = d.dot(al.u), rr = d.addScaledVector(al.u, -t), a = Math.atan2(rr.dot(al.p2), rr.dot(al.p1)), dn = al.angOf(UP.clone().negate().addScaledVector(al.u, UP.dot(al.u)).normalize());
+      return [((a - dn + TAU) % TAU) * .04 * HEIGHT / U, t / U];
+    }
+    const d = q.clone().sub(tl.a), t = d.dot(tl.u), rr = d.addScaledVector(tl.u, -t), a = Math.atan2(rr.dot(tl.p2), rr.dot(tl.p1));
+    return [((a - fr + 3 * Math.PI) % TAU) * .12 * HEIGHT / U, t / U];
+  };
+  const q = { ...p, gap: (p.gap ?? .04) + ease, relief: .2 };
+  const out = skinCloth(q, ['torso', 'thigh', 'upper_arm', 'forearm'], keep, { mat: MAIL, role: 'mail', uv, over: true });
+  // the skirt from the hips to the hem (a share of the thigh's length below the crotch), a little out over the shirt's bottom
+  const down = cast(tl.a, tl.u.clone().negate(), tl.len), tcr = down ? -down.distance / tl.len : -.12;
+  const thighs = ['L', 'R'].filter((s) => PB['upleg_' + s] && PB['leg_' + s]).map((s) => joint('upleg_' + s).distanceTo(joint('leg_' + s)));
+  const thigh = (thighs.length ? thighs.reduce((x, y) => x + y) / thighs.length : .25 * HEIGHT) / tl.len;
+  if (hem > 0) out.push(...buildPiece('tassets', ['C'], { ...p, surface: 'mail', t0: Math.min(tcr - hem * thigh, .02), t1: .1, splits: 0, sector: 360, flare: .22, folds: .12,
+    wrap: false, front_panel: false, hem_band: false, relief: .95, rigidity: .1, straps: 0, gap: (p.gap ?? .04) + ease + .05, thickness: p.thickness ?? .06,
+    slits: slit > 0 ? [[0, slit, D(5)], [Math.PI, slit, D(5)]] : [] }));
+  return out;
 }
 // ---- a mail coif: a hood of mail round the head and the neck (the padded coif's bag, the face cut out of it) and its
 // short cape over the shoulders (the pelerine's mantle, from up the neck); over a padded coif worn under it
 function mailCoif(p) {
   const under = [...WORN.values()].some((w) => w.on && w.piece === 'undercloth' && /coif/.test(w.item || ''));
   const hood = coif({ ...p, cloth_quilt: false, mail: true, gap: (p.gap ?? .04) + (under ? .5 : 0) });
-  const cape = pelerine({ ...p, pel_len: p.coif_cape ?? 6, pel_point: (p.coif_cape ?? 6) / 3, pel_lift: 2.5, pel_gap: under ? .6 : .3, coifCape: true });
+  const cape = pelerine({ ...p, pel_len: p.coif_cape ?? 6, pel_point: (p.coif_cape ?? 6) / 3, pel_lift: .5, pel_gap: under ? .6 : .3, coifCape: true });
   return [...hood, ...cape];
 }
 function braies(p, long) {   // loose linen trousers: to the knee, or down to the ankle gathered there
@@ -1586,7 +1615,8 @@ function coif(p) {
   keep.key = 'coif';
   const R = .02 * HEIGHT, gap = p.gap * R, thick = p.thickness * R * (p.cloth_quilt ? 2.2 : 1);
   const d = HJ.distanceTo(E), c = new V3(), fn = new V3(), e1 = new V3(), e2 = new V3();
-  const face = (v) => v.clone().sub(E).dot(FRONT) > -.25 * d && v.y < E.y + .45 * d && v.y > J('neck').y - .1 * HEIGHT;
+  // (a mail coif's opening wider: the whole face to before the ears, the cheeks and the jaw - its rings went over them)
+  const back = p.mail ? .6 : .25, face = (v) => v.clone().sub(E).dot(FRONT) > -back * d && v.y < E.y + .45 * d && v.y > J('neck').y - .1 * HEIGHT;
   // the face's skin moves with the jaw and the lips: what of the bag is nearest to it, with the head
   const S = bodySkin(new Set(['head', 'neck']), keep), hi = boneNames.indexOf(PB.head.name);
   const B = convexBag(S.pos, S.w.map((w, i) => face(S.pos[i]) ? [[hi, hi, hi, hi], [1, 0, 0, 0]] : w), 1);
@@ -1595,7 +1625,8 @@ function coif(p) {
     const [a, b2, c2] = B.tris[t];
     c.copy(B.pos[a]).add(B.pos[b2]).add(B.pos[c2]).multiplyScalar(1 / 3);
     fn.crossVectors(e1.subVectors(B.pos[b2], B.pos[a]), e2.subVectors(B.pos[c2], B.pos[a])).normalize();
-    return !face(c) && fn.y > -.6;
+    // (a mail coif: no triangle with a corner in the face - the bag's long ones from the neck to the jaw reached over the cheek)
+    return !face(c) && !(p.mail && [a, b2, c2].some((k) => face(B.pos[k]))) && fn.y > -.6;
   });
   const quilt = !!p.cloth_quilt;
   shellOf(acc, B, ids, gap, p.mail ? MM(3) : thick, p.mail ? MAIL : quilt ? CLOTH : PLATE, p.mail ? 'mail' : quilt ? 'quilt' : 'plate', (i) => ({ direct: B.w[i] }), null, 3);
@@ -1608,7 +1639,8 @@ function coif(p) {
 // and thighs) - each point pushed out along its normal towards its neighbours' middle, never in; «relief» how much of
 // the body's shape stays (the steps). The quilted ones (cut as clothes are) go on without armour
 const SKIN_FILL = 30, SKIN_SINK = 40, SKIN_BALL = 30;   // mm: no hollow filled deeper; no bump cut deeper; the smoothing's reach
-function skinCloth(p, parts, keep) {
+// o (a hauberk): {mat, role, uv(p, n, i)}, over: out over the pieces worn under it (their outermost close on it)
+function skinCloth(p, parts, keep, o = {}) {
   const S = bodySkin(new Set(parts), keep);
   if (!S.tris.length) return [];
   const n = S.pos.length, nb = Array.from({ length: n }, () => new Set());
@@ -1663,10 +1695,22 @@ function skinCloth(p, parts, keep) {
   }
   { const e = pos.map((v, i) => v.clone().sub(raw[i]).dot(N0[i])).sort((x, y) => x - y), mid = e[n >> 1];
     if (mid < 0) { const N = normalsOf(pos, S.tris); for (let i = 0; i < n; i++) pos[i].addScaledVector(N[i], -mid); } }
+  if (o.over) {   // over what is worn under it: out to the outermost of the layers lying close on it there
+    const N = normalsOf(pos, S.tris), far = .05 * HEIGHT;
+    for (let i = 0; i < n; i++) {
+      let out = 0;
+      for (const h of castAll(pos[i].clone().addScaledVector(N[i], -MM(2)), N[i], far)) {
+        if (bodyGeo.index.array[3 * h.faceIndex] < SKIN_VERTS) continue;   // (the skin: not a layer)
+        if (h.distance - MM(2) > out + .02 * HEIGHT) break;   // (a gap: something else farther out)
+        out = Math.max(out, h.distance - MM(2));
+      }
+      if (out > 0) pos[i].addScaledVector(N[i], out + MM(1));
+    }
+  }
   const H = { pos, n: normalsOf(pos, S.tris), w: S.w, tris: S.tris };
   const R = .02 * HEIGHT, gap = MM(1) + p.gap * R, thick = MM(1.2) + p.thickness * R, acc = new Acc();
   acc.w = (q) => q.direct;
-  shellOf(acc, H, S.tris.map((_, t) => t), gap, thick, PLATE, 'plate', (i) => ({ direct: S.w[i] }), null, 8);   // (8: the cut's staircase smoothed)
+  shellOf(acc, H, S.tris.map((_, t) => t), gap, thick, o.mat ?? PLATE, o.role || 'plate', (i) => ({ direct: S.w[i] }), null, 8, o.uv ? (q, nn, i) => o.uv(q, nn, i, S) : null);   // (8: the cut's staircase smoothed)
   return [{ side: 'C', acc, R, mask: S.keys }];   // (mask: the skin it covers, hidden on screen as the game does)
 }
 const torsoT = (v) => { const { limb } = limbOf('cuirass', 'C'); return v.clone().sub(limb.a).dot(limb.u) / limb.len; };
@@ -2235,7 +2279,8 @@ const basisOf = (f) => new THREE.Matrix4().makeBasis(f.S.clone().negate(), f.E, 
 function gizmoSync() {
   if (POSE_ED.on) {   // the pose's bone: its place and turn as shown, rings only
     const b = POSE_ED.bone;
-    if (!b || showResult) { if (gizmo.object) gizmo.detach(); return; }
+    if (poseMark && b) b.getWorldPosition(poseMark.position);
+    if (!b) { if (gizmo.object) gizmo.detach(); return; }   // (in «Result» too: the made piece on the same bones)
     if (gizmoDrag) return;
     b.getWorldPosition(gizmoObj.position); b.getWorldQuaternion(gizmoObj.quaternion); gizmoObj.scale.set(1, 1, 1);
     if (gizmo.object !== gizmoObj) gizmo.attach(gizmoObj);
@@ -2523,15 +2568,17 @@ function rondel(side, p, withNode) {
   const node = withNode ? { base: F.Fr0, pivot: F.Fr0.C.clone(), frame: F.Fr, bone: PB.spine2 ? 'spine2' : 'spine1', mirror: L ? null : F.cx, shift: L ? C.clone().sub(C0) : mirX(C.clone().sub(C0)) } : null;
   return [{ side, acc, R, ...(node ? { node } : {}) }];
 }
-// ---- ailettes: flat plates standing on the shoulders' tops, upright, facing out (to show arms: a painting goes on
-// them), tied on by two laces; square or a small heater's shape. Placed as the besagews are (the gizmo, the left one's
-// numbers, the right one its mirror)
+// ---- ailettes: flat plates lying on the shoulders' tops, sloping out and down with them (facing up and out: a painting
+// goes on them - arms), tied on by two laces; square or a small heater's shape. Placed as the besagews are (the gizmo,
+// the left one's numbers, the right one its mirror)
+const AILETTE_SLOPE = 40;   // degrees: how far its face is turned out from straight up (the shoulder's slope)
 function ailetteFrame(p) {
   const A = joint('arm_L'); if (!A || !PB.arm_L) return null;
-  const H = HEIGHT, chestX = joint('spine2') || joint('spine1') || A, X = new V3(1, 0, 0);
+  const H = HEIGHT, chestX = joint('spine2') || joint('spine1') || A, X = new V3(1, 0, 0), D = THREE.MathUtils.degToRad;
   const h0 = cast(A.clone().addScaledVector(UP, .3 * H), UP.clone().negate(), .4 * H), T = h0 ? h0.point.clone() : A.clone().addScaledVector(UP, .04 * H);
-  const hh = .045 * H;   // (its half height on a man: about 16 cm tall)
-  const Fr0 = { C: T.addScaledVector(X, .012 * H).addScaledVector(UP, hh - .012 * H), A: X.clone(), E: UP.clone(), S: new V3().crossVectors(X, UP).normalize() };
+  const n = UP.clone().multiplyScalar(Math.cos(D(AILETTE_SLOPE))).addScaledVector(X, Math.sin(D(AILETTE_SLOPE))).normalize();
+  const up = FRONT.clone().addScaledVector(n, -FRONT.dot(n)).normalize();   // (its «up»: forward along the shoulder, a cross on it upright seen from the side)
+  const Fr0 = { C: T.addScaledVector(n, .008 * H), A: n, E: up, S: new V3().crossVectors(n, up).normalize() };
   return { Fr0, Fr: shieldNode(Fr0, p), cx: chestX.x };
 }
 function ailette(side, p, withNode) {
@@ -5232,7 +5279,22 @@ const POSE_EDITS = DATA.poses && typeof DATA.poses === 'object' ? DATA.poses : {
 function applyPoseEdits() {
   for (const [n, q] of Object.entries(POSE_EDITS[pose] || {})) { const b = byName[n]; if (b && q.length === 4) b.quaternion.multiply(new Q(...q)); }
 }
+// the skeleton shown over everything while fixing a pose (its joints are what a click picks), the picked bone marked
+let poseSkel = null, poseMark = null;
+function poseShow() {
+  if (!charRoot) return;
+  if (!poseSkel) {
+    poseSkel = new THREE.SkeletonHelper(charRoot); poseSkel.material.depthTest = false; poseSkel.material.transparent = true; poseSkel.material.opacity = .85; poseSkel.renderOrder = 998;
+    scene.add(poseSkel);
+    poseMark = new THREE.Mesh(new THREE.SphereGeometry(.012 * HEIGHT, 12, 8), new THREE.MeshBasicMaterial({ color: 0xff3020, depthTest: false, transparent: true }));
+    poseMark.renderOrder = 999; scene.add(poseMark);
+  }
+  poseSkel.visible = POSE_ED.on;
+  poseMark.visible = POSE_ED.on && !!POSE_ED.bone;
+  if (poseMark.visible) POSE_ED.bone.getWorldPosition(poseMark.position);
+}
 function poseEdSync() {
+  poseShow();
   $('poseEd').classList.toggle('on', POSE_ED.on);
   $('poseReset').disabled = !Object.keys(POSE_EDITS[pose] || {}).length;
 }
@@ -5242,29 +5304,48 @@ function poseSave() {   // (a moment after the last turn)
   poseSaveT = setTimeout(() => send('pose_save', { poses: POSE_EDITS }, '{{js:ag.pose_saving}}', '_pose_save'), 800);
 }
 $('poseEd').addEventListener('click', () => {
-  POSE_ED.on = !POSE_ED.on; POSE_ED.bone = null;
+  POSE_ED.on = !POSE_ED.on; POSE_ED.bone = null; poseShow();
   if (POSE_ED.on && PINCH.on) { PINCH.on = false; hot([], null); pinchSync(); }
   $('status').textContent = POSE_ED.on ? '{{js:ag.pose_edit_hint}}' : '';
   poseEdSync(); gizmoSync();
 });
 poseEdSync();
 $('poseReset').addEventListener('click', () => { delete POSE_EDITS[pose]; POSE_ED.bone = null; applyPose(); poseEdSync(); poseSave(); });
+function poseJointAt(e) {   // the bone of the skeleton shown nearest the click (its line from its joint to its child's), a few pixels at most
+  const rc = cnv.getBoundingClientRect(), scr = (b) => { const v = b.getWorldPosition(new V3()).project(camera); return v.z > 1 ? null : [rc.left + (v.x + 1) / 2 * rc.width, rc.top + (1 - v.y) / 2 * rc.height]; };
+  let best = null, bd = Infinity;
+  for (const b of BONES) {
+    if (!b || /end$|_end|HeadTop/i.test(b.name)) continue;
+    const A = scr(b); if (!A) continue;
+    const kid = b.children.find((c) => c.isBone), B = kid ? scr(kid) : null;
+    let d;
+    if (B) { const dx = B[0] - A[0], dy = B[1] - A[1], L2 = dx * dx + dy * dy || 1, t = Math.max(0, Math.min(1, ((e.clientX - A[0]) * dx + (e.clientY - A[1]) * dy) / L2)); d = Math.hypot(A[0] + t * dx - e.clientX, A[1] + t * dy - e.clientY); }
+    else d = Math.hypot(A[0] - e.clientX, A[1] - e.clientY);
+    const lim = /Hand(Thumb|Index|Middle|Ring|Pinky)|Toe/.test(b.name) ? 4 : 10;   // (a finger's only right on it: they crowd round a hand)
+    if (d < lim && d < bd) { bd = d; best = b; }
+  }
+  return best;
+}
 function poseBoneAt(e) {   // the bone with the most weight on the body's triangle under the pointer
   const rc = cnv.getBoundingClientRect(), nd = new THREE.Vector2((e.clientX - rc.left) / rc.width * 2 - 1, -(e.clientY - rc.top) / rc.height * 2 + 1);
   const rc2 = new THREE.Raycaster(); rc2.setFromCamera(nd, camera);
-  const h = rc2.intersectObjects(charMeshes.filter((m) => m.visible), false)[0];
-  if (!h || !h.face) return null;
+  // (the body and what is on it: a dressed character's skin under its pieces is hidden - their mask - a click meets them)
+  const shown = (m) => { let o = m; while (o) { if (!o.visible) return false; o = o.parent; } return true; };
+  const targets = [];
+  for (const root of [charRoot, pieceGroup, helmetObj, resultRoot, ...[...WORN.values()].filter((w) => w.on).map((w) => w.root)]) if (root) root.traverse((o) => { if (o.isSkinnedMesh && o.geometry.attributes.skinIndex && shown(o)) targets.push(o); });
+  const h = rc2.intersectObjects(targets, false).find((x) => x.face);
+  if (!h) return null;
   const m = h.object, si = m.geometry.attributes.skinIndex, sw = m.geometry.attributes.skinWeight, by = new Map();
-  for (const i of [h.face.a, h.face.b, h.face.c]) for (let k = 0; k < 4; k++) { const b = m.skeleton.bones[si.getComponent(i, k)], w = sw.getComponent(i, k); if (b && w > 0) by.set(b, (by.get(b) || 0) + w); }
+  for (const i of [h.face.a, h.face.b, h.face.c]) for (let k = 0; k < 4; k++) { const b0 = m.skeleton.bones[si.getComponent(i, k)], b = b0 && (byName[b0.name] || b0), w = sw.getComponent(i, k); if (b && w > 0) by.set(b, (by.get(b) || 0) + w); }
   return [...by.entries()].sort((x, y) => y[1] - x[1])[0]?.[0] || null;
 }
 cnv.addEventListener('pointerdown', (e) => { if (POSE_ED.on && e.button === 0) POSE_ED.down = [e.clientX, e.clientY]; });
 cnv.addEventListener('pointerup', (e) => {
   const d = POSE_ED.down; POSE_ED.down = null;
   if (!POSE_ED.on || !d || e.button !== 0 || gizmo.dragging || Math.hypot(e.clientX - d[0], e.clientY - d[1]) > 4) return;   // (a click, not a turn of the view)
-  const b = poseBoneAt(e); if (!b) return;
+  const b = poseJointAt(e) || poseBoneAt(e); if (!b) return;
   POSE_ED.bone = b; $('status').textContent = '{{js:ag.pose_bone}}' + b.name.replace(/^mixamorig:?/, '');
-  gizmoSync();
+  poseShow(); gizmoSync();
 });
 function poseDragStart() {
   const b = POSE_ED.bone; if (!b) return;

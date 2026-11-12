@@ -2406,7 +2406,7 @@
  "ag.pose_edit_title": "A click on the body picks a bone, the gizmo's rings turn it; the fix is kept for this pose and character",
  "ag.pose_reset": "Reset",
  "ag.pose_reset_title": "Take this pose's fixes away",
- "ag.pose_edit_hint": "Click the body: the bone under the pointer is picked; turn it by the rings",
+ "ag.pose_edit_hint": "Click a joint of the skeleton (or the body, the armour on it): the bone is picked, marked red; turn it by the rings",
  "ag.pose_bone": "Bone: ",
  "ag.pose_saving": "Saving the pose…",
  "ag.pose_saved": "The pose saved"

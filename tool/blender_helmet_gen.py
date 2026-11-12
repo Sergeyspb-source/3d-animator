@@ -387,9 +387,19 @@ obj.matrix_parent_inverse = arm.matrix_world.inverted()
 
 if job.get("mask"):   # what it hides, the ears too
     from body_mask import above, body_mask, ears
-    keys = {tuple(x) for x in body_mask(body, [obj])}
-    keys |= {tuple(x) for x in ears(body, head_bones, centre, half_w, J.z, E.z + top, out=1.0)}   # past the skull's side
-    keys |= {tuple(x) for x in above(body, head_bones, E.z + .25 * top)}   # over the brow: hair, a hat, under the helmet
+    # (only what it closes over: the skin seen past its rim - under a brim, behind an eye slit, round a face's opening -
+    # stays; hidden there, the face showed holes through them)
+    keys = {tuple(x) for x in body_mask(body, [obj], cover=30)}
+    # the ears past the skull's side: under a helmet that closes over them (an open one - a kettle hat, a nasal helm, a
+    # morion - leaves them out below it: taken away, or cut where it meets them, their roots were holes in the head
+    # under its rim; a long ear's tip may come out through its side)
+    if style not in ("kettle_hat", "nasal_helm", "spangenhelm", "morion"):
+        keys |= {tuple(x) for x in ears(body, head_bones, centre, half_w, J.z, E.z + top, out=1.0)}
+    if style not in ("kettle_hat", "nasal_helm", "spangenhelm", "morion"):
+        keys |= {tuple(x) for x in above(body, head_bones, E.z + .25 * top)}   # over the brow: hair, a hat, under the helmet
+    else:   # (an open one: within the skull's sides - not an ear going up beside it, cut it left a hole)
+        from body_mask import where
+        keys |= {tuple(x) for x in where(body, head_bones, lambda q: q.z > E.z + .25 * top and abs(q.x - centre.x) < .95 * half_w)}
     Path(job["mask"]).write_text(json.dumps([list(x) for x in sorted(keys)]), encoding="utf-8")
 
 for o in list(bpy.data.objects):   # the skeleton and the helmet only
