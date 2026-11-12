@@ -1029,6 +1029,15 @@ class Grip extends SkeletonModifier3D:
 	const POINT_MAX := 30.0   # how far from forward a spear's head may turn, degrees
 	var fist := {}   # "index1_L" -> {q: [x, y, z, w], o: [a, b, c]}
 	var _fist_read := false
+	var _player: AnimationPlayer = null   # the character's: a throw is one-handed (the other hand not onto the haft)
+
+	func _clip() -> String:
+		if _player == null or not is_instance_valid(_player):
+			var sk := get_skeleton()
+			var root: Node = sk.owner if sk and sk.owner else sk
+			var found: Array = root.find_children("*", "AnimationPlayer", true, false) if root else []
+			_player = found[0] if found.size() > 0 else null
+		return String(_player.current_animation).to_lower() if _player else ""
 
 	func _fist() -> Dictionary:
 		if not _fist_read:
@@ -1223,8 +1232,10 @@ class Grip extends SkeletonModifier3D:
 			return
 		for side in _point:   # a spear's head forward first: the other hand reaches the haft where it is then
 			_keep_forward(sk, side, _point[side])
+		var throwing := "throw" in _clip()   # (thrown from one hand: the other one is not brought to the haft)
 		for side in _two:   # the other hands onto their hafts first: their fingers close then
-			_reach(sk, side, _two[side])
+			if not throwing:
+				_reach(sk, side, _two[side])
 		for side in _held:
 			if int(_held[side]) <= 0:
 				continue
