@@ -320,7 +320,7 @@ async function loadCharacter() {
 // in «Armour» are known by their body part («torso»: a breastplate). A piece made under others already worn: those
 // were fitted without it - «Rebuild by layers» makes them again over it.
 const LAYER = { undercloth: .5, trousers: 1, footwear: 1.5, foot: 1.5, brayette: 2, bracer: 3, rerebrace: 3, greave: 3, cuisse: 3,
-  forearm: 3, upperarm: 3, arm: 3, leg: 3, upleg: 3, tassets: 3, hips: 3, glove: 3.2, hand: 3.2, codpiece: 2.5, fauld: 2.8, culet: 2.8, elbow: 3.5, gorget: 4.5, pelerine: 5.4, rondel: 5.2, hauberk: 2.4, coif: 3.8, poleyn: 3.5, knee: 3.5, cuirass: 4, torso: 4,
+  forearm: 3, upperarm: 3, arm: 3, leg: 3, upleg: 3, tassets: 3, hips: 3, glove: 3.2, hand: 3.2, codpiece: 2.5, fauld: 2.8, culet: 2.8, elbow: 3.5, gorget: 4.5, pelerine: 5.4, rondel: 5.2, ailette: 5.6, hauberk: 2.4, coif: 3.8, poleyn: 3.5, knee: 3.5, cuirass: 4, torso: 4,
   pauldron: 5, shoulder: 5, helmet: 5, head: 5, tabard: 6, skirt: 6, cloak: 7 };
 const CLOTH_KINDS = ['cloak', 'skirt', 'tabard'];   // over the new piece: not a wall to keep it under (the cloth is made again over it)
 let UNDER_T = 0;   // the piece being built: its thickness as a share of a profile's size (kept so far inside a wall over it)
@@ -2221,7 +2221,7 @@ function shield(side, p) {   // on the forearm's outer side, its face out, its l
 // ---- the shield's gizmo: on its board as shown - the rest frame carried into the pose by the bone it is on - and back:
 // the gizmo's place and turn, in the rest pose, as the node's numbers (shieldNode backwards: its turns about Z, then X,
 // then Y of the board, round the pivot; then its shift along the turned axes)
-const nodePart = () => ((S.piece === 'shield' || S.piece === 'rondel') && !S.idle && !isMade() ? parts.find((x) => x.node) || null : null);
+const nodePart = () => (['shield', 'rondel', 'ailette'].includes(S.piece) && !S.idle && !isMade() ? parts.find((x) => x.node) || null : null);
 // a mirrored node (the right besagew: the left one's numbers): across the plane x = cx, its first axis turned back (a
 // right-handed frame again) - the same both ways
 const mirrorM = (cx) => new THREE.Matrix4().set(-1, 0, 0, 2 * cx, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1), flipM = () => new THREE.Matrix4().makeScale(-1, 1, 1);
@@ -2235,7 +2235,7 @@ function gizmoSync() {
   const np = nodePart();
   if (!np || showResult || PINCH.on || busy) { if (gizmo.object) gizmo.detach(); return; }
   if (gizmoDrag) return;
-  const f = np.node.frame, M = boneShown(np.node.bone).multiply(mirrored(basisOf(f).setPosition(f.C), np.node.mirror));
+  const f = np.node.frame, M = boneShown(np.node.bone).multiply(mirrored(basisOf(f).setPosition(f.C.clone().add(np.node.shift || new V3())), np.node.mirror));
   M.decompose(gizmoObj.position, gizmoObj.quaternion, gizmoObj.scale); gizmoObj.scale.set(1, 1, 1);
   if (gizmo.object !== gizmoObj) gizmo.attach(gizmoObj);
   if (gizmo.mode !== gizmoMode) gizmo.setMode(gizmoMode);
@@ -2246,6 +2246,7 @@ function gizmoMoved() {
   gizmoObj.updateMatrixWorld(true);
   const L = mirrored(boneShown(np.node.bone).invert().multiply(gizmoObj.matrixWorld), np.node.mirror), C = new V3(), q = new Q(), sc = new V3();
   L.decompose(C, q, sc);
+  if (np.node.shift) C.sub(np.node.shift);   // (the gizmo stood where it went off the skin)
   if (gizmoMode === 'scale') { S.p.s_size = Math.max(20, Math.min(400, Math.round(gizmoDrag.size * (sc.x + sc.y + sc.z) / 3))); changed('s_size'); return; }
   const b = np.node.base, B0 = basisOf(b), Rq = new THREE.Matrix4().makeRotationFromQuaternion(q);
   const e = new THREE.Euler().setFromRotationMatrix(B0.clone().transpose().multiply(Rq), 'ZXY');
@@ -2480,7 +2481,7 @@ function rondel(side, p, withNode) {
   const H = HEIGHT, k = (p.s_size ?? 100) / 100, st = p.rondel || 'rondel_plain';
   const R = .03 * H * k, depth = .009 * H * k, th = MM(1.6);   // (about 10 cm across on a man)
   const L = side === 'L', n = L ? F.Fr.A.clone() : mirX(F.Fr.A), e1 = L ? F.Fr.E.clone() : mirX(F.Fr.E), e2 = new V3().crossVectors(n, e1);
-  const C = L ? F.Fr.C.clone() : mirX(F.Fr.C, F.cx);
+  const C = L ? F.Fr.C.clone() : mirX(F.Fr.C, F.cx), C0 = C.clone();
   // never in the skin (an armpit, a pectoral under its edge): its back's points sampled, it goes out along its face's
   // way till all are off the body by a few millimetres
   const back = [];
@@ -2507,8 +2508,61 @@ function rondel(side, p, withNode) {
     lathe([[0, .14 * R], [.35 * R, .05 * R], [.5 * R, .005 * R]], DETAIL, 'rivet', 10);
   } else rivet(acc, top, n, .12 * R, DETAIL, 'rivet', 0);
   // the gizmo on the first one made: its numbers are the left one's (on the right one: through the mirror)
-  const node = withNode ? { base: F.Fr0, pivot: F.Fr0.C.clone(), frame: F.Fr, bone: PB.spine2 ? 'spine2' : 'spine1', mirror: L ? null : F.cx } : null;
+  // (shift: how far it went off the skin, in the left one's terms - the gizmo stands on it, its numbers without it)
+  const node = withNode ? { base: F.Fr0, pivot: F.Fr0.C.clone(), frame: F.Fr, bone: PB.spine2 ? 'spine2' : 'spine1', mirror: L ? null : F.cx, shift: L ? C.clone().sub(C0) : mirX(C.clone().sub(C0)) } : null;
   return [{ side, acc, R, ...(node ? { node } : {}) }];
+}
+// ---- ailettes: flat plates standing on the shoulders' tops, upright, facing out (to show arms: a painting goes on
+// them), tied on by two laces; square or a small heater's shape. Placed as the besagews are (the gizmo, the left one's
+// numbers, the right one its mirror)
+function ailetteFrame(p) {
+  const A = joint('arm_L'); if (!A || !PB.arm_L) return null;
+  const H = HEIGHT, chestX = joint('spine2') || joint('spine1') || A, X = new V3(1, 0, 0);
+  const h0 = cast(A.clone().addScaledVector(UP, .3 * H), UP.clone().negate(), .4 * H), T = h0 ? h0.point.clone() : A.clone().addScaledVector(UP, .04 * H);
+  const hh = .045 * H;   // (its half height on a man: about 16 cm tall)
+  const Fr0 = { C: T.addScaledVector(X, .012 * H).addScaledVector(UP, hh - .012 * H), A: X.clone(), E: UP.clone(), S: new V3().crossVectors(X, UP).normalize() };
+  return { Fr0, Fr: shieldNode(Fr0, p), cx: chestX.x };
+}
+function ailette(side, p, withNode) {
+  const F = ailetteFrame(p); if (!F || !PB['arm_' + side]) return [];
+  const H = HEIGHT, k = (p.s_size ?? 100) / 100, st = p.ailette || 'ailette_square', th = MM(2);
+  const hh = .045 * H * k, hw = .036 * H * k, bow = .006 * H * k;   // its half height, half width, how much it bows out
+  const L = side === 'L', n = L ? F.Fr.A.clone() : mirX(F.Fr.A), e1 = L ? F.Fr.E.clone() : mirX(F.Fr.E), e2 = new V3().crossVectors(n, e1);
+  const C = L ? F.Fr.C.clone() : mirX(F.Fr.C, F.cx), C0 = C.clone();
+  // the outline: its half width at the height y (-1 the bottom .. 1 the top); a heater's narrows to a point below
+  const half = (y) => (st === 'ailette_shield' ? (y > -.15 ? 1 : Math.max(.03, Math.sqrt(Math.max(0, 1 - ((-.15 - y) / .85) ** 2)))) : 1);
+  const NV = 14, NU = 13, ys = Array.from({ length: NV }, (_, i) => -1 + 2 * i / (NV - 1)), xs = Array.from({ length: NU }, (_, j) => -1 + 2 * j / (NU - 1));
+  const at = (x, y, off) => C.clone().addScaledVector(e2, x * hw * half(y)).addScaledVector(e1, y * hh).addScaledVector(n, bow * (1 - x * x * half(y) ** 2) + off);
+  // off the skin and the pieces under it: its back's points, out along its face's way
+  for (let it = 0; it < 10; it++) {
+    let need = 0;
+    for (const y of [-1, -.6, -.2, .3]) for (const x of [-1, -.5, 0, .5, 1]) {
+      const c = clearanceAt(bodyGeo, at(x, y, -th));
+      if (c && c.d < MM(3)) need = Math.max(need, (MM(3) - c.d) / Math.max(.3, Math.abs(c.n.dot(n))));
+    }
+    if (need <= MM(.2)) break;
+    C.addScaledVector(n, need);
+  }
+  const acc = new Acc(), sh = PB['shoulder_' + side] || PB['arm_' + side], iS = Math.max(0, boneNames.indexOf(sh.name)), iA = Math.max(0, boneNames.indexOf(PB['arm_' + side].name));
+  acc.w = () => [[iS, iA, iS, iS], [.6, .4, 0, 0]];
+  solid(acc, ys, xs, false, (i, j, sd) => at(xs[j], ys[i], -(1 - sd) * th), PLATE, 'plate', (i, j) => [(xs[j] + 1) / 2, (ys[i] + 1) / 2], () => 0);
+  if (p.trim) {   // a rolled rim round it
+    const ring = [];
+    for (let j = 0; j < NU; j++) ring.push(at(xs[j], 1, 0));
+    for (let i = NV - 2; i > 0; i--) ring.push(at(1, ys[i], 0));
+    for (let j = NU - 1; j >= 0; j--) ring.push(at(xs[j], -1, 0));
+    for (let i = 1; i < NV - 1; i++) ring.push(at(-1, ys[i], 0));
+    for (let q = 0; q < ring.length; q++) cord(acc, ring[q], ring[(q + 1) % ring.length], n, MM(2.5), 0);
+  }
+  // the laces: from two holes near its bottom down to the shoulder under it
+  for (const x of [-.45, .45]) {
+    const P = at(x, -.75 * (st === 'ailette_shield' ? .6 : 1), MM(1)), h = cast(P.clone().addScaledVector(UP, .002 * H), UP.clone().negate(), .2 * H);
+    if (h) cord(acc, P, h.point.clone().addScaledVector(n, MM(2)), n, MM(1.8), 0);
+    rivet(acc, P, n, MM(3), DETAIL, 'rivet', 0);
+  }
+  // (shift: how far it went off the skin, in the left one's terms - the gizmo stands on it, its numbers without it)
+  const node = withNode ? { base: F.Fr0, pivot: F.Fr0.C.clone(), frame: F.Fr, bone: PB.spine2 ? 'spine2' : 'spine1', mirror: L ? null : F.cx, shift: L ? C.clone().sub(C0) : mirX(C.clone().sub(C0)) } : null;
+  return [{ side, acc, R: hh, ...(node ? { node } : {}) }];
 }
 // a gorget: lames round the neck, each a band a little wider than the one above it (they overlap downwards), from the
 // collar - lying on the shoulders and the chest, or on a breastplate worn under it - up the neck; each as far out as
@@ -3474,6 +3528,7 @@ function buildPiece(kind, sides, p) {
   if (kind === 'hauberk') parts.push(...hauberk(p));
   if (kind === 'coif') parts.push(...mailCoif(p));
   if (kind === 'rondel') sides.forEach((side, i) => parts.push(...rondel(side, p, i === 0)));
+  if (kind === 'ailette') sides.forEach((side, i) => parts.push(...ailette(side, p, i === 0)));
   if (kind === 'cloak') parts.push(...cloak(p));
   if (kind === 'skirt') parts.push(...skirt(p));
   if (kind === 'tabard') parts.push(...tabard(p));
@@ -4264,6 +4319,7 @@ Object.assign(STYLES, {
   helmet: Object.fromEntries(['kettle_hat', 'open_bascinet', 'barbute', 'visored_bascinet', 'sallet', 'armet', 'nasal_helm', 'spangenhelm', 'great_helm', 'morion', 'close_helm'].map((k) => [k, { helmet: k }])),
   elbow: Object.fromEntries(['leather', 'mail', 'early_plate', 'winged_plate', 'articulated_plate', 'plate_mail_hybrid'].map((k) => ['elbow_' + k, { elbow: 'elbow_' + k }])),
   rondel: Object.fromEntries(['plain', 'spike', 'fluted'].map((k) => ['rondel_' + k, { rondel: 'rondel_' + k }])),
+  ailette: { ailette_square: { ailette: 'ailette_square' }, ailette_shield: { ailette: 'ailette_shield' } },
   hauberk: { hauberk_long: { hauberk: 'hauberk_long', hb_hem: 90, hb_sleeve: 100, hb_slits: 45 }, haubergeon: { hauberk: 'haubergeon', hb_hem: 15, hb_sleeve: 45, hb_slits: 0 } },
   coif: { coif_short: { coif: 'coif_short', coif_cape: 5 }, coif_long: { coif: 'coif_long', coif_cape: 10 } },
   codpiece: {   // the steel plate's, boiled leather, a stuffed cloth one (a landsknecht's)
@@ -4483,8 +4539,8 @@ SPEC.push(['{{js:ag.hauberk_group}}', ['mail'], [
   ['hb_ease', 0, 20, 1, '{{js:ag.hb_ease}}', '{{js:ag.hb_ease_info}}', 'pc', isP('hauberk')],
   ['coif_cape', 2, 20, 1, '{{js:ag.coif_cape}}', '{{js:ag.coif_cape_info}}', 'pc', isP('coif')]], isP('hauberk', 'coif')]);
 const NODE_GI = SPEC.length;   // the gizmo's numbers: a shield's place, the besagews'
-SPEC.push(['{{js:ag.node_group}}', ['plate'], [], () => (S.piece === 'shield' || S.piece === 'rondel') && !isMade()]);
-for (const gi of [0, 1, 2, 3, 5]) { const was = SPEC[gi][3]; SPEC[gi][3] = () => was() && !['codpiece', 'gorget', 'pelerine', 'rondel', 'hauberk', 'coif'].includes(S.piece); }   // (a codpiece, a gorget: their own group, the material)
+SPEC.push(['{{js:ag.node_group}}', ['plate'], [], () => ['shield', 'rondel', 'ailette'].includes(S.piece) && !isMade()]);
+for (const gi of [0, 1, 2, 3, 5]) { const was = SPEC[gi][3]; SPEC[gi][3] = () => was() && !['codpiece', 'gorget', 'pelerine', 'rondel', 'ailette', 'hauberk', 'coif'].includes(S.piece); }   // (a codpiece, a gorget: their own group, the material)
 const ALL = SPEC.flatMap((g) => g[2]);
 const DEFAULTS = Object.assign({ gap: 8, thickness: 12, relief: .35, step: 5, rim: 6, rivets: 60, rivet_size: 6, strap_width: 35,
   buckle: true, material: 'iron', wear: .35, tint: '#6b4128', cloth: '#56606e', tex: 1024, seed: 1, surface: 'plates', scale_size: 25,
@@ -4492,7 +4548,7 @@ const DEFAULTS = Object.assign({ gap: 8, thickness: 12, relief: .35, step: 5, ri
   two_plates: false, spaulders: 0, sp_start: 30, sp_reach: 45, sp_span: 260, neckline: 8, armhole: 40, point: 0, ridge: 0, cap: 1.6, trim: '', hammer: .5, arm_share: .7, mail_under: false, hem: 15, sleeves: 30, top_cut: 0, bottom_cut: 0, splints: 6, stitch: false,
   closure: 'across', hinges: false, opening: 'none', shoulders: 'straps', yoke: 70, thigh: 'none', knee: 'none', fly: false, wrap: false,
   front_panel: false, hem_band: false, helmet: 'barbute', head_gap: 7, visor_angle: 0, cheek_angle: 0, tail: 100, brim: 100,
-  strap: 0, strap_fwd: 0, elbow: 'elbow_winged_plate', poleyn: 'poleyn_winged_plate', made_slide: 0, made_twist: 0, made_size: 100, codpiece: 'cod_plate', cod_size: 100, cod_proj: 100, cod_top: 0, cod_belt: false, gorget_lames: 4, gorget_low: 40, gorget_high: 60, bevor: false, bevor_high: 100, rondel: 'rondel_plain', pel_len: 11, pel_point: 4, pel_lift: 0, pel_gap: .4, hauberk: 'hauberk_long', hb_hem: 90, hb_sleeve: 100, hb_slits: 45, hb_ease: 5, coif: 'coif_short', coif_cape: 5, limb_gap: 8, wing: 100, footwear: 'foot_ankle_boot', foot_gap: 6, glove: 'plain_leather', cuff: 14,
+  strap: 0, strap_fwd: 0, elbow: 'elbow_winged_plate', poleyn: 'poleyn_winged_plate', made_slide: 0, made_twist: 0, made_size: 100, codpiece: 'cod_plate', cod_size: 100, cod_proj: 100, cod_top: 0, cod_belt: false, gorget_lames: 4, gorget_low: 40, gorget_high: 60, bevor: false, bevor_high: 100, rondel: 'rondel_plain', ailette: 'ailette_square', pel_len: 11, pel_point: 4, pel_lift: 0, pel_gap: .4, hauberk: 'hauberk_long', hb_hem: 90, hb_sleeve: 100, hb_slits: 45, hb_ease: 5, coif: 'coif_short', coif_cape: 5, limb_gap: 8, wing: 100, footwear: 'foot_ankle_boot', foot_gap: 6, glove: 'plain_leather', cuff: 14,
   cloth_style: 'shirt', cloth_quilt: false, quilt_lines: false, pinches: [], paints: [],
   weapon: 'sword', shield: 'round', w_len: 100, w_width: 100, w_guard: 100, w_grip: 100, w_grip_r: 100, w_head: 100, grip_along: 0, grip_out: 0,
   grip_tilt: 15, grip_roll: 0, w_two: 0, arrows: 12, cloak_len: 60, cloak_wrap: 172, cloak_flare: 25, cloak_lift: 5, cloak_nape: 120, cloak_gap: .5, skirt_len: 30, skirt_flare: 30, skirt_lift: 6, skirt_slit: 0, skirt_gap: .5, tabard_len: 50, tabard_belt: 8, tabard_flare: 15, tabard_lift: 2, tabard_gap: 1, s_size: 100, s_curve: 30, s_rim: 100, s_boss: 100, s_along: 0, s_out: 0, s_turn: 0, s_hand: false, s_elbow: true, s_bend: 0, s_ridge: 0,
@@ -4670,7 +4726,7 @@ function syncPanel() {
   $('r_s_hand').hidden = S.piece !== 'shield';
   $('i_cod_belt').checked = !!S.p.cod_belt; $('i_bevor').checked = !!S.p.bevor; $('r_bevor').hidden = S.piece !== 'gorget';
   $('r_s_elbow').hidden = S.piece !== 'shield' || !S.p.s_hand; $('i_s_elbow').checked = S.p.s_elbow !== false;
-  $('nodeBox').hidden = S.piece !== 'shield' && S.piece !== 'rondel'; $('nodeNote').textContent = S.piece === 'rondel' ? '{{js:ag.node_rondel}}' : '{{js:ag.node}}';
+  $('nodeBox').hidden = !['shield', 'rondel', 'ailette'].includes(S.piece); $('nodeNote').textContent = S.piece === 'shield' ? '{{js:ag.node}}' : '{{js:ag.node_rondel}}';
   for (const b of $('gizmoSeg').children) b.classList.toggle('on', b.dataset.g === gizmoMode);
   for (const k of [...NODE_FIELDS.map((x) => x[0]), 's_size']) { const el = $('n_' + k); if (document.activeElement !== el) el.value = +(S.p[k] || 0).toFixed(1); }
   const legs = S.piece === 'trousers' || S.piece === 'brayette';
@@ -6041,7 +6097,7 @@ async function sendNow(action, extra, wait, statusName) {
 const SURF_STYLES = ['mail', 'scales', 'lamellar', 'brigandine', 'splints', 'quilt'];
 const slugN = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
 function styleOf(kind, p, style) {
-  const own = { weapon: p.weapon, shield: p.shield, helmet: p.helmet, glove: p.glove, elbow: String(p.elbow || '').replace(/^elbow_/, ''), poleyn: String(p.poleyn || '').replace(/^poleyn_/, ''), codpiece: String(p.codpiece || '').replace(/^cod_/, ''), rondel: String(p.rondel || '').replace(/^rondel_/, ''),
+  const own = { weapon: p.weapon, shield: p.shield, helmet: p.helmet, glove: p.glove, elbow: String(p.elbow || '').replace(/^elbow_/, ''), poleyn: String(p.poleyn || '').replace(/^poleyn_/, ''), codpiece: String(p.codpiece || '').replace(/^cod_/, ''), rondel: String(p.rondel || '').replace(/^rondel_/, ''), ailette: String(p.ailette || '').replace(/^ailette_/, ''),
     hauberk: String(p.hauberk || '').replace(/^hauberk_/, ''), coif: String(p.coif || '').replace(/^coif_/, ''), footwear: String(p.footwear || '').replace(/^foot_/, ''), undercloth: p.cloth_style, sheath: p.sheath }[kind];
   if (own) return slugN(own);
   if (style) return slugN(String(style).replace(/^(cloth|shield|weapon|sheath|glove|foot|elbow|poleyn)_/, ''));
@@ -6123,7 +6179,7 @@ const ownKind = (x) => !HELD.includes(x.piece) && !MADE.includes(x.piece) && !!P
 const madeAt = (item) => (DATA.worn.find((w) => w.item === item) || {}).v || 0;   // seconds
 // where on the body a piece is: a lower layer counts for a piece only where they meet (a coif is no reason to make
 // the trousers again, and through them all the armour over them)
-const REGIONS = { trousers: 'hips legs', brayette: 'hips', footwear: 'feet legs', bracer: 'arms', rerebrace: 'arms', elbow: 'arms', poleyn: 'legs', knee: 'legs', codpiece: 'hips', fauld: 'torso hips', culet: 'torso hips', gorget: 'torso head', pelerine: 'torso head', rondel: 'torso arms', hauberk: 'torso arms hips legs', coif: 'head torso',
+const REGIONS = { trousers: 'hips legs', brayette: 'hips', footwear: 'feet legs', bracer: 'arms', rerebrace: 'arms', elbow: 'arms', poleyn: 'legs', knee: 'legs', codpiece: 'hips', fauld: 'torso hips', culet: 'torso hips', gorget: 'torso head', pelerine: 'torso head', rondel: 'torso arms', ailette: 'arms torso', hauberk: 'torso arms hips legs', coif: 'head torso',
   glove: 'hands arms', greave: 'legs feet', cuisse: 'legs', tassets: 'hips legs', cuirass: 'torso hips', pauldron: 'torso arms', helmet: 'head',
   tabard: 'torso hips legs', skirt: 'hips legs', cloak: 'torso arms hips legs', torso: 'torso hips', forearm: 'arms', upperarm: 'arms', arm: 'arms',
   leg: 'legs feet', upleg: 'legs', foot: 'feet', hand: 'hands', head: 'head', hips: 'hips legs', shoulder: 'torso arms' };

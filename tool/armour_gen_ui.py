@@ -84,6 +84,9 @@ PIECES = {"bracer": ("forearm", "hand", "forearm", ("Spine", "Hips", "Chest", "U
           # a mail coif: a hood round the head and the neck, the face open, and its short cape over the shoulders
           "coif": ("spine2", "head", "head", (), "head", "neck", (0, 0, 0, 0),
                    dict(coif="coif_short", coif_cape=5, material="iron", trim="", surface="mail", gap=4, thickness=6, straps=0, rigidity=1, cell=5)),
+          # ailettes: flat plates standing on the shoulders' tops (to show arms), placed by the gizmo as besagews
+          "ailette": ("arm", "forearm", "arm", (), "shoulder", "held", (0, 0, 0, 0),
+                      dict(ailette="ailette_square", material="steel", trim="brass", gap=6, s_size=100, s_px=0, s_py=0, s_pz=0, s_rx=0, s_ry=0, s_rz=0, straps=0, rigidity=1, surface="plain")),
           # a codpiece: a cup over the groin on a belt, rigid on the hips (built in the editor: armour_gen_editor codpiece)
           "codpiece": ("hips", "spine", "hips", (), "hips", "groin", (0, 0, 0, 0),
                        dict(codpiece="cod_plate", material="steel", trim="steel", cod_size=100, cod_proj=100, cod_top=0, cod_belt=False, straps=0, rigidity=1,
@@ -180,7 +183,7 @@ CHOICES = {"opening_labels": ("none", "left", "right", "back", "front"), "closur
            "shoulder_labels": ("straps", "yoke", "none"),
            "style_labels": ("leather", "steel", "mail", "splints", "covered", "plate_mail", "lamellar", "brigandine", "tights", "wool", "leather_tr",
                             "mail_chausses", "plate_cuisses", "hidden_plate", "plate_and_mail", "compact", "extended", "carrier",
-                            "short_mail", "wrap_mail", "carrier_mail", "lames", *HELMETS, *ELBOWS, *POLEYNS, "cod_plate", "cod_leather", "cod_cloth", "rondel_plain", "rondel_spike", "rondel_fluted", "hauberk_long", "haubergeon", "coif_short", "coif_long", *FOOTWEAR, *GLOVES, *CLOTHS,
+                            "short_mail", "wrap_mail", "carrier_mail", "lames", *HELMETS, *ELBOWS, *POLEYNS, "cod_plate", "cod_leather", "cod_cloth", "rondel_plain", "rondel_spike", "rondel_fluted", "ailette_square", "ailette_shield", "hauberk_long", "haubergeon", "coif_short", "coif_long", *FOOTWEAR, *GLOVES, *CLOTHS,
                             *(f"weapon_{w}" for w in WEAPONS), *(f"shield_{x}" for x in SHIELDS), *(f"sheath_{x}" for x in SHEATHS)),
            "thigh_labels": ("none", "mail", "plate", "panels", "plate_mail"), "knee_labels": ("none", "patch", "cop")}
 

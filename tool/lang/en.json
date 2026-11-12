@@ -2374,7 +2374,7 @@
  "ag.pel_point": "Point before and behind",
  "ag.pel_point_info": "how much longer the pelerine is in front and behind (a point), a share of the height",
  "ag.node_group": "Placement",
- "ag.node_rondel": "Drag the besagew in the view: arrows move it, rings turn it, cubes size it (keys G, R, S); the right one mirrors the left. The numbers below are the same, exactly: the shift along the plate's axes (X across, Y up, Z off the body), the turns about them. It never goes into the skin: moved in, it stays on it",
+ "ag.node_rondel": "Drag the plate (a besagew, an ailette) in the view: arrows move it, rings turn it, cubes size it (keys G, R, S); the right one mirrors the left. The numbers below are the same, exactly: the shift along the plate's axes (X across, Y up, Z off the body), the turns about them. It never goes into the skin: moved in, it stays on it",
  "ag.pel_lift": "Neckline",
  "ag.pel_lift_info": "the top edge above (+) or below (−) the neck's foot; no collar",
  "ag.piece_hauberk": "Hauberk (mail shirt)",
@@ -2398,5 +2398,8 @@
  "ag.style_spangenhelm": "Spangenhelm",
  "ag.style_great_helm": "Great helm",
  "ag.style_morion": "Morion",
- "ag.style_close_helm": "Close helmet"
+ "ag.style_close_helm": "Close helmet",
+ "ag.piece_ailette": "Ailettes",
+ "ag.style_ailette_square": "Square",
+ "ag.style_ailette_shield": "Shield-shaped"
 }

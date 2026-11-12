@@ -202,6 +202,8 @@ A «Helmet» is not made of the skin: it is one of eleven constructions - six of
 
 «Besagews» are round plates in front of the armpits: «Plain», «Spiked», «Fluted». They are placed as the shield is - the gizmo in the view (arrows move, rings turn, cubes size; keys G, R, S) or by the numbers in «Placement»; the right one mirrors the left. They never go into the skin (the plate's back is kept off the body). They go half with the shoulder and half with the chest.
 
+«Ailettes» are flat plates standing upright on the shoulders, facing out (a painting - arms - shows well on them), tied on by two laces: «Square», «Shield-shaped». Placed as the besagews are: the gizmo or the numbers in «Placement», the right one mirroring the left; they keep off the skin and what is worn by themselves. Over the pauldrons.
+
 «Hauberk (mail shirt)» is a mail shirt cut as a garment (the body, a skirt, sleeves), all of mail: «Hauberk to the knees» with its skirt slit before and behind (to ride) and sleeves to the wrists, «Haubergeon (short)» to the hips with sleeves to the elbows. Over the gambeson, under the cuirass. Sliders «Hem» (0 at the crotch, 100 to the knee), «Sleeves» (0 none, 50 to the elbow, 100 to the wrist), «Slits before and behind», «Looser». Mail gussets at the armpits.
 
 «Coif (mail hood)» is a hood round the head and the neck, the face open, with a short cape over the shoulders («Short cape», «Long cape»; slider «The coif's cape»). Over a padded coif when one is worn; under the helmet.
