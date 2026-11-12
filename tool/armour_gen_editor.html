@@ -1655,15 +1655,35 @@ function mailCoif(p) {
     return [top.map((x) => x[0]), top.map((x) => x[1] / tot)];
   };
   const P = cols.map((c, j) => Array.from({ length: NV + 1 }, (_, i) => { const q = c.at(hemS[j] * i / NV); return { o: O.clone().addScaledVector(c.dh, q.x).addScaledVector(UP, q.y), n: i ? c.dh.clone().multiplyScalar(q.nx).addScaledVector(UP, q.ny).normalize() : UP.clone() }; }));   // (the crown's one point: straight up out, the same for every line - no hole there)
+  // the face's opening: an oval before the face from the brow to the chin (as far across as the cheeks); its cells left
+  // out, its rim's points then put on the oval itself (no staircase of cells); what is left out not hung, not smoothed
+  // (down to the chin: where the face's front, going down, goes back sharply - to the throat)
+  let chinY = E.y - 1.0 * d;
+  { let prev = null; for (let y = E.y - .4 * d; y > E.y - 3 * d; y -= .04 * d) {
+      const h = cast(new V3(E.x, y, E.z).addScaledVector(FRONT, .5 * H), FRONT.clone().negate(), H), z = h ? h.point.clone().sub(E).dot(FRONT) : null;
+      if (prev !== null && z !== null && prev - z > .25 * d) { chinY = y + .04 * d; break; }
+      if (z !== null) prev = z;
+  } }
+  const topY = E.y + .45 * d, botY = chinY + .08 * d, cy = (topY + botY) / 2, ay = (topY - botY) / 2, axx = .9 * d;
+  const ovalF = (v) => ((v.x - E.x) / axx) ** 2 + ((v.y - cy) / ay) ** 2;
+  const faceAt = (v) => v.clone().sub(E).dot(FRONT) > -.5 * d && ovalF(v) < 1;
+  const cellMid = (j, i) => P[j][i].o.clone().add(P[j + 1][i].o).add(P[j][i + 1].o).add(P[j + 1][i + 1].o).multiplyScalar(.25);
+  const faceCell = Array.from({ length: NT }, (_, j) => Array.from({ length: NV }, (_, i) => faceAt(cellMid(j, i))));
+  const shown = (j, i) => [[j, i], [j - 1, i], [j, i - 1], [j - 1, i - 1]].some(([a, b]) => b >= 0 && b < NV && !faceCell[(a + NT) % NT][b]);
+  const inner = (j, i) => [[j, i], [j - 1, i], [j, i - 1], [j - 1, i - 1]].every(([a, b]) => b < 0 || b >= NV || !faceCell[(a + NT) % NT][b]);   // (no face cell round it)
   // it hangs, not stands: mail is a heavy cloth - where the hull bridges a hollow (before the throat from the chin,
   // round the neck from the head's sides to the shoulders) it falls most of the way in onto what is under it (COIF_SAG of
   // the air under it gone), the lines then smoothed round and down (no ridges between them)
-  for (const col of P) for (let i = 1; i < col.length; i++) {
+  P.forEach((col, j) => { for (let i = 1; i < col.length; i++) {
+    if (!inner(j % NT, i)) continue;   // (the opening's rim stays on the hull: hung, its edge peeled off the face)
     const q = col[i], h = castOn(bodyGeo, q.o.clone().addScaledVector(q.n, MM(1)), q.n.clone().negate(), .2 * H);
-    if (h && h.distance > gap + MM(1)) q.o.addScaledVector(q.n, -(h.distance - MM(1) - gap) * COIF_SAG);
-  }
+    // (round the neck it falls in; below the neck's foot, on the cape, less: it hangs from the shoulders, not sucked
+    // into the armpits - its rows folded over there)
+    const sag = COIF_SAG * (.25 + .75 * smooth(NK.y - .08 * H, NK.y - .01 * H, q.o.y));
+    if (h && h.distance > gap + MM(1)) q.o.addScaledVector(q.n, -(h.distance - MM(1) - gap) * sag);
+  } });
   for (let it = 0; it < 4; it++) {
-    const nx = P.map((col, j) => col.map((q, i) => { if (!i || i === col.length - 1) return q.o.clone();
+    const nx = P.map((col, j) => col.map((q, i) => { if (!i || i === col.length - 1 || !inner(j % NT, i)) return q.o.clone();
       const a = P[(j + NT - 1) % NT][i].o, b = P[(j + 1) % NT][i].o, u = col[i - 1].o, w = col[i + 1].o;
       return q.o.clone().multiplyScalar(.4).addScaledVector(a.clone().add(b).add(u).add(w), .15); }));
     P.forEach((col, j) => col.forEach((q, i) => q.o.copy(nx[j][i])));
@@ -1671,10 +1691,8 @@ function mailCoif(p) {
   }
   // off the body between the rays too (a shoulder blade, a deltoid's top between the hull's points)
   // (and between the points: each cell's middle - a nipple, a collarbone between four - its corners out with it)
-  const need = gap + MM(2), faceAt = (v) => v.clone().sub(E).dot(FRONT) > -.5 * d && v.y < E.y + .45 * d && v.y > E.y - 1.0 * d && Math.abs(v.x - E.x) < 1.0 * d;
-  const faceCell = Array.from({ length: NT }, (_, j) => Array.from({ length: NV }, (_, i) => faceAt(P[j][i].o.clone().add(P[j + 1][i].o).add(P[j][i + 1].o).add(P[j + 1][i + 1].o).multiplyScalar(.25))));
+  const need = gap + MM(2);
   for (let it = 0; it < 3; it++) {
-    const shown = (j, i) => [[j, i], [j - 1, i], [j, i - 1], [j - 1, i - 1]].some(([a, b]) => b >= 0 && b < NV && !faceCell[(a + NT) % NT][b]);
     P.forEach((col, j) => col.forEach((q, i) => { if (!shown(j % NT, i)) return; const c = clearanceAt(bodyGeo, q.o); if (c && c.d < need) q.o.addScaledVector(c.n, need - c.d); }));
     for (let j = 0; j < NT; j++) for (let i = 0; i < NV; i++) {
       const m = P[j][i].o.clone().add(P[j + 1][i].o).add(P[j][i + 1].o).add(P[j + 1][i + 1].o).multiplyScalar(.25);
@@ -1691,18 +1709,28 @@ function mailCoif(p) {
     for (let j = jF + 1; j <= NT; j++) uvs[j][i][0] = uvs[j - 1][i][0] + P[j][i].o.distanceTo(P[j - 1][i].o) / U;
     for (let j = jF - 1; j >= 0; j--) uvs[j][i][0] = uvs[j + 1][i][0] - P[j][i].o.distanceTo(P[j + 1][i].o) / U;
   }
+  // the opening's rim on the oval: each point of a shown cell and a face cell slid towards its neighbour on the other side
+  // of the oval (along its row, else its line) to where the oval is
+  const isIn = (v) => faceAt(v);
+  for (let j = 0; j <= NT; j++) for (let i = 1; i < NV; i++) {
+    const jj = j % NT; if (inner(jj, i) || !shown(jj, i)) continue;
+    const q = P[j][i].o, me = isIn(q);
+    const nb = [P[(j + NT - 1) % NT][i].o, P[(j + 1) % NT][i].o, P[j][i - 1].o, P[j][i + 1].o].find((w) => isIn(w) !== me); if (!nb) continue;
+    let a = q.clone(), b = nb.clone();
+    for (let k = 0; k < 14; k++) { const m = a.clone().lerp(b, .5); if (isIn(m) === me) a = m; else b = m; }
+    q.copy(a.lerp(b, .5));
+  }
   const capY = E.y + .55 * d;
   for (let j = 0; j <= NT; j++) for (let i = 0; i <= NV; i++) { const q = P[j][i].o; if (q.y > capY) uvs[j][i] = [(q.x - O.x) / U, (q.z - O.z) / U]; }
-  // the face: an oval from the brow to the chin, before the ears
-  const face = (v) => v.clone().sub(E).dot(FRONT) > -.5 * d && v.y < E.y + .45 * d && v.y > E.y - 1.0 * d && Math.abs(v.x - E.x) < 1.0 * d;
+
   const V = P.map((col, j) => col.map((q, i) => { const w = { direct: wOf(q.o) }, A = q.o.clone(); return [acc.vert(A.clone().addScaledVector(q.n, thm), uvs[j][i][0], uvs[j][i][1], w), acc.vert(A, uvs[j][i][0], uvs[j][i][1], w)]; }));
   for (let j = 0; j < NT; j++) for (let i = 0; i < NV; i++) {
-    const c = P[j][i].o.clone().add(P[j + 1][i].o).add(P[j][i + 1].o).add(P[j + 1][i + 1].o).multiplyScalar(.25);
-    if (face(c)) continue;
+    if (faceCell[j][i]) continue;
     const o = [V[j][i][0], V[j][i + 1][0], V[j + 1][i + 1][0], V[j + 1][i][0]], n = [V[j][i][1], V[j + 1][i][1], V[j + 1][i + 1][1], V[j][i + 1][1]];
     const A0 = P[j][i].o, nn = P[j][i + 1].o.clone().sub(A0).cross(P[j + 1][i].o.clone().sub(A0));
     const out = nn.dot(P[j][i].n) > 0;
     acc.face(out ? o : [...o].reverse(), MAIL, 'mail'); acc.face(out ? n : [...n].reverse(), MAIL, 'mail');
+    if (i === NV - 1) { const e = [V[j][NV][0], V[j][NV][1], V[j + 1][NV][1], V[j + 1][NV][0]]; acc.face(out ? e : [...e].reverse(), MAIL, 'mail'); }   // (the hem's edge: its thickness closed)
   }
   // the ears under it: the head's skin past the skull's sides hidden (on screen as in the game)
   const skull = (() => { const h2 = [1, -1].map((x) => cast(new V3(HJ.x, E.y, HJ.z), new V3(x, 0, 0), H)); return h2.every(Boolean) ? Math.max(h2[0].distance, h2[1].distance) : .05 * H; })();
