@@ -1540,7 +1540,7 @@ function hauberk(p) {
 function mailCoif(p) {
   const under = [...WORN.values()].some((w) => w.on && w.piece === 'undercloth' && /coif/.test(w.item || ''));
   const hood = coif({ ...p, cloth_quilt: false, mail: true, gap: (p.gap ?? .04) + (under ? .5 : 0) });
-  const cape = pelerine({ ...p, pel_len: p.coif_cape ?? 6, pel_point: (p.coif_cape ?? 6) / 3, pel_lift: .5, pel_gap: under ? .6 : .3, coifCape: true });
+  const cape = pelerine({ ...p, pel_len: p.coif_cape ?? 6, pel_point: (p.coif_cape ?? 6) / 3, pel_lift: 1, pel_gap: under ? .6 : .3, coifCape: true });
   return [...hood, ...cape];
 }
 function braies(p, long) {   // loose linen trousers: to the knee, or down to the ankle gathered there
@@ -1616,7 +1616,9 @@ function coif(p) {
   const R = .02 * HEIGHT, gap = p.gap * R, thick = p.thickness * R * (p.cloth_quilt ? 2.2 : 1);
   const d = HJ.distanceTo(E), c = new V3(), fn = new V3(), e1 = new V3(), e2 = new V3();
   // (a mail coif's opening wider: the whole face to before the ears, the cheeks and the jaw - its rings went over them)
-  const back = p.mail ? .6 : .25, face = (v) => v.clone().sub(E).dot(FRONT) > -back * d && v.y < E.y + .45 * d && v.y > J('neck').y - .1 * HEIGHT;
+  // (and down to the chin only: the throat under it in the mail, as the cape goes on from it)
+  const back = p.mail ? .6 : .25, low = p.mail ? E.y - .95 * d : J('neck').y - .1 * HEIGHT;
+  const face = (v) => v.clone().sub(E).dot(FRONT) > -back * d && v.y < E.y + .45 * d && v.y > low;
   // the face's skin moves with the jaw and the lips: what of the bag is nearest to it, with the head
   const S = bodySkin(new Set(['head', 'neck']), keep), hi = boneNames.indexOf(PB.head.name);
   const B = convexBag(S.pos, S.w.map((w, i) => face(S.pos[i]) ? [[hi, hi, hi, hi], [1, 0, 0, 0]] : w), 1);
@@ -1626,7 +1628,7 @@ function coif(p) {
     c.copy(B.pos[a]).add(B.pos[b2]).add(B.pos[c2]).multiplyScalar(1 / 3);
     fn.crossVectors(e1.subVectors(B.pos[b2], B.pos[a]), e2.subVectors(B.pos[c2], B.pos[a])).normalize();
     // (a mail coif: no triangle with a corner in the face - the bag's long ones from the neck to the jaw reached over the cheek)
-    return !face(c) && !(p.mail && [a, b2, c2].some((k) => face(B.pos[k]))) && fn.y > -.6;
+    return !face(c) && !(p.mail && [a, b2, c2].some((k) => face(B.pos[k]))) && fn.y > (p.mail ? -.9 : -.6);   // (a mail one: under the chin over the throat too)
   });
   const quilt = !!p.cloth_quilt;
   shellOf(acc, B, ids, gap, p.mail ? MM(3) : thick, p.mail ? MAIL : quilt ? CLOTH : PLATE, p.mail ? 'mail' : quilt ? 'quilt' : 'plate', (i) => ({ direct: B.w[i] }), null, 3);
