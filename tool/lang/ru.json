@@ -2401,5 +2401,13 @@
  "ag.style_close_helm": "Закрытый шлем",
  "ag.piece_ailette": "Айлеты",
  "ag.style_ailette_square": "Квадратные",
- "ag.style_ailette_shield": "Щитком"
+ "ag.style_ailette_shield": "Щитком",
+ "ag.pose_edit": "✎ Поправить позу",
+ "ag.pose_edit_title": "Клик по телу выбирает кость, кольца гизмо её поворачивают; правка сохраняется для этой позы и персонажа",
+ "ag.pose_reset": "Сбросить",
+ "ag.pose_reset_title": "Убрать ручные правки этой позы",
+ "ag.pose_edit_hint": "Кликните по телу — выберется кость под курсором; поворачивайте её кольцами",
+ "ag.pose_bone": "Кость: ",
+ "ag.pose_saving": "Сохраняю позу…",
+ "ag.pose_saved": "Поза сохранена"
 }

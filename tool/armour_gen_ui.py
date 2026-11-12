@@ -563,6 +563,19 @@ def uv_action(cfg, req) -> dict:
     return out
 
 
+def poses_file(rigged: Path) -> Path:
+    """The character's poses as put right by hand in the editor («Fix the pose»): work/poses/<its folder>.json."""
+    d = Path(rigged).parent
+    return WF.status_dir(None, rigged).parent.parent / "poses" / f"{d.parent.name}_{d.name}.json"
+
+
+def _poses(rigged: Path) -> dict:
+    try:
+        return json.loads(poses_file(rigged).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
 def editor_page(rigged: Path, decals_dir: Path | None = None) -> str:
     page = i18n.fill(EDITOR.read_text(encoding="utf-8"))
     data = {"rigged": rigged.resolve().as_posix(), "rigged_v": int(rigged.stat().st_mtime), "stem": LM._stem(rigged),
@@ -576,7 +589,7 @@ def editor_page(rigged: Path, decals_dir: Path | None = None) -> str:
             "decals": decals(decals_dir) if decals_dir else [], "decals_dir": decals_dir.resolve().as_posix() if decals_dir else "",
             "materials_dir": (decals_dir.parent / "materials").resolve().as_posix() if decals_dir else "",   # the library's downloads
             "concepts_dir": (decals_dir.parent / "concepts").resolve().as_posix() if decals_dir else "",   # «Texture from a picture»'s pictures
-            "fist": LM.fist_hand(rigged), "web": web_assets(),
+            "fist": LM.fist_hand(rigged), "web": web_assets(), "poses": _poses(rigged),
             "gen_labels": {k: _t(f"ag.gen_{k}") for k in GEN_WORDS},
             "proj_views": {k: _t(f"ag.proj_{k}") for k in ("front", "back", "left", "right")},
             "lib_slots": {k: _t(f"ag.lib_slot_{k}") for k in ("plate", "strap", "detail", "mail", "quilt", "trim", "wood")},
@@ -855,6 +868,18 @@ def handle(cfg, text):
         except Exception as e:  # noqa: BLE001
             res = {"ok": False, "log": _t("lm.error", e)}
         WF.status(cfg, rigged, "_" + req["action"]).write_text(json.dumps({"id": req.get("id"), **res}, ensure_ascii=False), encoding="utf-8")
+        return res["log"], None
+    if req.get("action") == "pose_save":   # answered in <stem>_pose_save.wear.json
+        rigged = Path(req["rigged"])
+        try:
+            poses = {str(k): {str(b): [float(x) for x in q][:4] for b, q in (v or {}).items()} for k, v in (req.get("poses") or {}).items()}
+            f = poses_file(rigged)
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(json.dumps(poses, ensure_ascii=False), encoding="utf-8")
+            res = {"ok": True, "log": _t("ag.pose_saved")}
+        except Exception as e:  # noqa: BLE001
+            res = {"ok": False, "log": _t("lm.error", e)}
+        WF.status(cfg, rigged, "_pose_save").write_text(json.dumps({"id": req.get("id"), **res}, ensure_ascii=False), encoding="utf-8")
         return res["log"], None
     if req.get("action") == "decal_save":   # answered in <stem>_decal_<name>.wear.json
         rigged = Path(req["rigged"])

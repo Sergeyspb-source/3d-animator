@@ -108,6 +108,7 @@
       <span class="seg" id="poses" title="{{ag.pose_title}}">
         <button data-p="rest" class="on">{{ag.pose_rest}}</button><button data-p="side">{{ag.pose_side}}</button><button data-p="front">{{ag.pose_front}}</button><button data-p="elbows">{{ag.pose_elbows}}</button><button data-p="squat">{{ag.pose_squat}}</button><button data-p="stride">{{ag.pose_stride}}</button><button data-p="fist">{{ag.pose_fist}}</button><button data-p="down">{{ag.pose_down}}</button><button data-p="guard" title="{{ag.pose_guard_title}}">{{ag.pose_guard}}</button><button data-p="guard_high" title="{{ag.pose_guard_high_title}}">{{ag.pose_guard_high}}</button><button data-p="two" title="{{ag.pose_two_title}}">{{ag.pose_two}}</button><button data-p="two_high" title="{{ag.pose_two_high_title}}">{{ag.pose_two_high}}</button>
       </span>
+      <span class="seg"><button id="poseEd" title="{{ag.pose_edit_title}}">{{ag.pose_edit}}</button><button id="poseReset" title="{{ag.pose_reset_title}}">{{ag.pose_reset}}</button></span>
       <span class="sep"></span>
       <span class="seg"><button id="undoBtn" title="{{ag.undo_title}}">↶</button><button id="redoBtn" title="{{ag.redo_title}}">↷</button></span>
       <span class="seg" id="clothBar" hidden><button id="clothOn" title="{{ag.cloth_on_title}}">{{ag.cloth_on}}</button></span>
@@ -262,8 +263,8 @@ const gizmoObj = new THREE.Object3D(); scene.add(gizmoObj);
 let gizmoMode = 'translate', gizmoDrag = null;
 gizmo.addEventListener('dragging-changed', (e) => {
   controls.enabled = !e.value;
-  if (e.value) gizmoDrag = { size: S.p.s_size };
-  else { gizmoDrag = null; gizmoObj.scale.set(1, 1, 1); histCommit(); }
+  if (e.value) { gizmoDrag = { size: S.p.s_size }; if (POSE_ED.on) poseDragStart(); }
+  else { gizmoDrag = null; gizmoObj.scale.set(1, 1, 1); if (POSE_ED.on) { poseEdSync(); poseSave(); } else histCommit(); }
 });
 gizmo.addEventListener('objectChange', () => gizmoMoved());
 // the middle button pans the view, not the page (browser autoscroll); the wheel zooms, it does not scroll the app
@@ -2232,6 +2233,15 @@ function boneShown(name) {   // the bone's pose over its rest (identity at rest)
 }
 const basisOf = (f) => new THREE.Matrix4().makeBasis(f.S.clone().negate(), f.E, f.A);   // X across, Y up, Z out of its face (right-handed)
 function gizmoSync() {
+  if (POSE_ED.on) {   // the pose's bone: its place and turn as shown, rings only
+    const b = POSE_ED.bone;
+    if (!b || showResult) { if (gizmo.object) gizmo.detach(); return; }
+    if (gizmoDrag) return;
+    b.getWorldPosition(gizmoObj.position); b.getWorldQuaternion(gizmoObj.quaternion); gizmoObj.scale.set(1, 1, 1);
+    if (gizmo.object !== gizmoObj) gizmo.attach(gizmoObj);
+    if (gizmo.mode !== 'rotate') gizmo.setMode('rotate');
+    return;
+  }
   const np = nodePart();
   if (!np || showResult || PINCH.on || busy) { if (gizmo.object) gizmo.detach(); return; }
   if (gizmoDrag) return;
@@ -2241,6 +2251,7 @@ function gizmoSync() {
   if (gizmo.mode !== gizmoMode) gizmo.setMode(gizmoMode);
 }
 function gizmoMoved() {
+  if (POSE_ED.on) { if (gizmoDrag) poseMoved(); return; }
   const np = nodePart(); if (!np || !gizmoDrag) return;
   const D = THREE.MathUtils.radToDeg, r1 = (x) => Math.round(x * 10) / 10;
   gizmoObj.updateMatrixWorld(true);
@@ -5177,7 +5188,7 @@ function stancePose(kind) {
 function applyPose() {
   if (!charRoot) return;
   restPose();
-  if (STANCES.includes(pose)) { stancePose(pose); charRoot.updateMatrixWorld(true); return; }
+  if (STANCES.includes(pose)) { stancePose(pose); applyPoseEdits(); charRoot.updateMatrixWorld(true); return; }
   const dir = (a, b) => (PB[a] && PB[b] ? joint(b).sub(joint(a)).normalize() : null);
   for (const s of 'LR') {
     if (pose === 'side' || pose === 'front') {   // the arm raised 100° (the collarbone 20° of it), as the clips do
@@ -5208,7 +5219,64 @@ function applyPose() {
       turn(PB['leg_' + s], dir('leg_' + s, 'foot_' + s).cross(FRONT.clone().negate()).normalize(), s === 'L' ? 35 : 20);
     }
   }
+  applyPoseEdits();
   charRoot.updateMatrixWorld(true);
+}
+// ---- a pose put right by hand («Fix the pose»): a click on the body picks the bone most under it, the gizmo's rings
+// turn it; each pose keeps its bones' turns (local, on top of what the pose computes), saved for the character
+// (work/poses/<character>.json) and given back with the editor
+const POSE_ED = { on: false, bone: null, g0: null, q0: null, base: null, down: null };
+const POSE_EDITS = DATA.poses && typeof DATA.poses === 'object' ? DATA.poses : {};
+function applyPoseEdits() {
+  for (const [n, q] of Object.entries(POSE_EDITS[pose] || {})) { const b = byName[n]; if (b && q.length === 4) b.quaternion.multiply(new Q(...q)); }
+}
+function poseEdSync() {
+  $('poseEd').classList.toggle('on', POSE_ED.on);
+  $('poseReset').disabled = !Object.keys(POSE_EDITS[pose] || {}).length;
+}
+let poseSaveT = null;
+function poseSave() {   // (a moment after the last turn)
+  clearTimeout(poseSaveT);
+  poseSaveT = setTimeout(() => send('pose_save', { poses: POSE_EDITS }, '{{js:ag.pose_saving}}', '_pose_save'), 800);
+}
+$('poseEd').addEventListener('click', () => {
+  POSE_ED.on = !POSE_ED.on; POSE_ED.bone = null;
+  if (POSE_ED.on && PINCH.on) { PINCH.on = false; hot([], null); pinchSync(); }
+  $('status').textContent = POSE_ED.on ? '{{js:ag.pose_edit_hint}}' : '';
+  poseEdSync(); gizmoSync();
+});
+poseEdSync();
+$('poseReset').addEventListener('click', () => { delete POSE_EDITS[pose]; POSE_ED.bone = null; applyPose(); poseEdSync(); poseSave(); });
+function poseBoneAt(e) {   // the bone with the most weight on the body's triangle under the pointer
+  const rc = cnv.getBoundingClientRect(), nd = new THREE.Vector2((e.clientX - rc.left) / rc.width * 2 - 1, -(e.clientY - rc.top) / rc.height * 2 + 1);
+  const rc2 = new THREE.Raycaster(); rc2.setFromCamera(nd, camera);
+  const h = rc2.intersectObjects(charMeshes.filter((m) => m.visible), false)[0];
+  if (!h || !h.face) return null;
+  const m = h.object, si = m.geometry.attributes.skinIndex, sw = m.geometry.attributes.skinWeight, by = new Map();
+  for (const i of [h.face.a, h.face.b, h.face.c]) for (let k = 0; k < 4; k++) { const b = m.skeleton.bones[si.getComponent(i, k)], w = sw.getComponent(i, k); if (b && w > 0) by.set(b, (by.get(b) || 0) + w); }
+  return [...by.entries()].sort((x, y) => y[1] - x[1])[0]?.[0] || null;
+}
+cnv.addEventListener('pointerdown', (e) => { if (POSE_ED.on && e.button === 0) POSE_ED.down = [e.clientX, e.clientY]; });
+cnv.addEventListener('pointerup', (e) => {
+  const d = POSE_ED.down; POSE_ED.down = null;
+  if (!POSE_ED.on || !d || e.button !== 0 || gizmo.dragging || Math.hypot(e.clientX - d[0], e.clientY - d[1]) > 4) return;   // (a click, not a turn of the view)
+  const b = poseBoneAt(e); if (!b) return;
+  POSE_ED.bone = b; $('status').textContent = '{{js:ag.pose_bone}}' + b.name.replace(/^mixamorig:?/, '');
+  gizmoSync();
+});
+function poseDragStart() {
+  const b = POSE_ED.bone; if (!b) return;
+  POSE_ED.g0 = gizmoObj.quaternion.clone(); POSE_ED.q0 = b.getWorldQuaternion(new Q());
+  const e = (POSE_EDITS[pose] || {})[b.name];
+  POSE_ED.base = b.quaternion.clone().multiply(e ? new Q(...e).invert() : new Q());   // what the pose itself gives it
+}
+function poseMoved() {
+  const b = POSE_ED.bone; if (!b || !POSE_ED.g0) return;
+  const wq = gizmoObj.quaternion.clone().multiply(POSE_ED.g0.clone().invert()).multiply(POSE_ED.q0);
+  const local = b.parent.getWorldQuaternion(new Q()).invert().multiply(wq);
+  const edit = POSE_ED.base.clone().invert().multiply(local), r6 = (x) => Math.round(x * 1e6) / 1e6;
+  (POSE_EDITS[pose] = POSE_EDITS[pose] || {})[b.name] = edit.toArray().map(r6);
+  b.quaternion.copy(local); charRoot.updateMatrixWorld(true);
 }
 
 // ------------------------------------------------------------------ views and the character's look
@@ -5304,6 +5372,7 @@ $('skins').addEventListener('click', (e) => e.target.dataset.s && skin(e.target.
 $('poses').addEventListener('click', (e) => {
   if (!e.target.dataset.p) return;
   pose = e.target.dataset.p; for (const b of $('poses').children) b.classList.toggle('on', b === e.target);
+  POSE_ED.bone = null; setTimeout(poseEdSync);
   // a cloak in a pose other than the one it is made in is shown as cloth (as the game has it: skinned, it would go
   // through the body); the cloth shown: the body moves into the pose, the cloth goes with it
   if (!cloth && isCloth() && pose !== 'down') setCloth(true);
@@ -6012,14 +6081,15 @@ window.addEventListener('keydown', (e) => {   // G, R, S: the shield's gizmo mov
   const m = { KeyG: 'translate', KeyR: 'rotate', KeyS: 'scale' }[e.code]; if (!m) return;
   e.preventDefault(); setGizmo(m);
 });
+window.agScreen = (xyz) => { const v = new V3(...xyz).project(camera), r = renderer.domElement.getBoundingClientRect(); return [r.left + (v.x + 1) / 2 * r.width, r.top + (1 - v.y) / 2 * r.height]; };   // (the tests)
 window.agGizmo = () => (gizmo.object ? { mode: gizmo.mode, p: gizmoObj.position.toArray(), q: gizmoObj.quaternion.toArray() } : null);   // (the tests)
 window.agGizmoScreen = () => { if (!gizmo.object) return null; const v = gizmoObj.position.clone().project(camera), r = renderer.domElement.getBoundingClientRect(); return [r.left + (v.x + 1) / 2 * r.width, r.top + (1 - v.y) / 2 * r.height]; };   // (the tests)
 window.agGizmoDrag = (move, turn, axis) => {   // (the tests) a drag: the gizmo moved by move (world), turned by turn° about its local axis
   if (!gizmo.object) return null;
-  gizmoDrag = { size: S.p.s_size };
+  gizmoDrag = { size: S.p.s_size }; if (POSE_ED.on) poseDragStart();
   gizmoObj.position.add(new V3(...move));
   if (turn) gizmoObj.quaternion.multiply(new Q().setFromAxisAngle(new V3(...axis), THREE.MathUtils.degToRad(turn)));
-  gizmoMoved(); gizmoDrag = null; histCommit();
+  gizmoMoved(); gizmoDrag = null; if (POSE_ED.on) { poseEdSync(); poseSave(); } else histCommit();
   return { px: S.p.s_px, py: S.p.s_py, pz: S.p.s_pz, rx: S.p.s_rx, ry: S.p.s_ry, rz: S.p.s_rz, want: { p: gizmoObj.position.toArray(), q: gizmoObj.quaternion.toArray() } };
 };
 window.addEventListener('keydown', (e) => {   // by the key's place, so the Russian layout works too
