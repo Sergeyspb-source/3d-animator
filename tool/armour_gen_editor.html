@@ -1852,12 +1852,20 @@ function handFrame(side, p) {   // where the grip goes and how it lies: {C, A, E
   const P = palmOf(side); if (!P) return null;
   const { H, K, across, along, palm, pw } = P, hl = K.distanceTo(H), ring = gripRing(side, P);
   const D = THREE.MathUtils.degToRad;
-  // inside the ring the closed fingers make (else under the knuckles, towards the palm); the sliders move it from there
-  const C = (ring ? ring.C.clone() : H.clone().addScaledVector(along, hl).addScaledVector(palm, .45 * pw))
+  // inside the ring the closed fingers make (else under the knuckles, towards the palm); the sliders move it from there.
+  // «Magnet» (w_magnet, a new piece's default): on the palm's middle instead - from inside the hand out to the palm's
+  // skin, the grip lying on it (its radius out), half way from the wrist to the knuckles: no sliders to set it by hand
+  const r = ring ? Math.max(.06 * pw, ring.R - .3 * ring.seg) : .17 * pw;
+  let C = null;
+  if (p.w_magnet) {
+    const M = H.clone().lerp(K, .55), h = cast(M.clone().addScaledVector(palm, -.05 * hl), palm, hl);
+    if (h) C = h.point.clone().addScaledVector(palm, r * (p.w_grip_r ?? 100) / 100 + MM(1.5));
+  }
+  if (!C) C = (ring ? ring.C.clone() : H.clone().addScaledVector(along, hl).addScaledVector(palm, .45 * pw))
     .addScaledVector(along, p.grip_along / 100 * hl).addScaledVector(palm, p.grip_out / 100 * pw);
   const t = D(p.grip_tilt), A = across.clone().multiplyScalar(Math.cos(t)).addScaledVector(along, Math.sin(t)).normalize();   // towards the fingers, both hands alike
   const E = along.clone().addScaledVector(A, -along.dot(A)).normalize().applyAxisAngle(A, D(p.grip_roll));
-  return { C, A, E, S: new V3().crossVectors(A, E).normalize(), pw, r: ring ? Math.max(.06 * pw, ring.R - .3 * ring.seg) : .17 * pw };
+  return { C, A, E, S: new V3().crossVectors(A, E).normalize(), pw, r };
 }
 function itemMesh(acc, F) {   // the thing's local (a, e, s) to the world, faces and rings
   const P = (a, e, s) => F.C.clone().addScaledVector(F.A, a).addScaledVector(F.E, e).addScaledVector(F.S, s);
@@ -2045,6 +2053,54 @@ function twoHandOf(part, p) {   // at rest: the second grip, the haft's way, the
 // a spear keeps its head forward in the game whatever the clip does with the hand (SF3DEquip.Grip): the head's way in the
 // holding hand's frame, per mille («a1_a2_a3»)
 let spearPoint = '';
+// ---- the hand closed round the grip by contact («Magnet»): each finger, joint by joint from the knuckle out, bent about
+// its own axis (as the fist bends it) until one of its bones beyond that joint meets the grip (the grip's line, its
+// radius and the finger's own thickness): the fingers wrap the grip whatever its size, none going through it. At rest,
+// in the hand's frame: the same degrees close the other hand on a haft (its grip is the mirror one) and the game's
+// hand (SF3DEquip.Grip, «__grasp_<15 degrees>»: index, middle, ring, little finger, thumb, three joints each)
+let grasp = null;   // {side, deg: {finger: [3 degrees]}, code}
+const GRASP_MAX = { finger: [95, 110, 90], thumb: [55, 60, 60] };
+function segLineDist(P, Q, C, A) {   // the nearest a bone from P to Q comes to the grip's line (C, its way A)
+  const d = Q.clone().sub(P), w0 = P.clone().sub(C), a = d.dot(d), b = d.dot(A), dd = d.dot(w0), e = A.dot(w0), den = a - b * b;
+  const t = den > 1e-12 ? Math.max(0, Math.min(1, (b * e - dd) / den)) : 0, X = P.clone().addScaledVector(d, t);
+  return X.distanceTo(C.clone().addScaledVector(A, X.clone().sub(C).dot(A)));
+}
+function graspOf(side, F, r) {
+  const Pm = palmOf(side); if (!Pm) return null;
+  const deg = {}, D = THREE.MathUtils.degToRad;
+  for (const f of FINGER_NAMES) {
+    const J = [1, 2, 3].map((k) => joint(`${f}${k}_${side}`)); if (!J.every(Boolean)) continue;
+    const tip = joint(`${f}4_${side}`) || J[2].clone().add(J[2].clone().sub(J[1]).multiplyScalar(.85));
+    const pts = [...J.map((x) => x.clone()), tip.clone()], ax = fingerAxis(side, f, Pm.palm); if (!ax) continue;
+    const fr = (f === 'thumb' ? 1 / 6.5 : 1 / 9) * Pm.pw, max = GRASP_MAX[f === 'thumb' ? 'thumb' : 'finger'], out = [0, 0, 0];
+    const touches = (k) => { for (let m = k; m < 3; m++) if (segLineDist(pts[m], pts[m + 1], F.C, F.A) < r + fr) return true; return false; };
+    for (let k = 0; k < 3; k++) {
+      if (touches(k)) continue;   // (already on it from here: this joint stays, the next one may still close over it - a thumb)
+      for (let a = 0; a < max[k]; a += 2) {
+        const q = new Q().setFromAxisAngle(ax, D(2)), O = pts[k].clone();
+        const was = pts.map((x) => x.clone());
+        for (let m = k + 1; m < 4; m++) pts[m].sub(O).applyQuaternion(q).add(O);
+        if (touches(k)) { for (let m = 0; m < 4; m++) pts[m].copy(was[m]); break; }
+        out[k] += 2;
+      }
+    }
+    // (on the grip from the start - a thumb lies along the grip's line beyond the index: it closes over it as a fist's)
+    deg[f] = out.some((x) => x > 0) ? out : [...GRIP_DEG[f === 'thumb' ? 'thumb' : 'finger']];
+  }
+  return { side, deg, code: FINGER_NAMES.flatMap((f) => deg[f] || GRIP_DEG[f === 'thumb' ? 'thumb' : 'finger']).map((x) => Math.round(x)).join('_') };
+}
+// the hand closed round the grip (the magnet's grasp), else as remembered in the markup, else by GRIP_DEG
+function closeHand(s) {
+  if (grasp && S.piece === 'weapon' && S.p.w_magnet) {
+    const P = palmOf(s); if (!P) return;
+    for (const f of FINGER_NAMES) {
+      const ax = fingerAxis(s, f, P.palm), d = grasp.deg[f] || GRIP_DEG[f === 'thumb' ? 'thumb' : 'finger']; if (!ax) continue;
+      for (let k = 1; k <= 3; k++) { const b = PB[`${f}${k}_${s}`]; if (b) turn(b, ax, d[k - 1]); }
+    }
+    return true;
+  }
+  return false;
+}
 function pointCode(part) {
   const M = palmOf(part.side); if (!M) return '';
   return part.F.A.clone().applyMatrix4(handBasis(M.across, M.palm).transpose()).toArray().map((x) => Math.round(x * 1000)).join('_');
@@ -3609,6 +3665,7 @@ function buildPiece(kind, sides, p) {
   if (kind === 'weapon') for (const side of sides) { const w = weapon(side, p); if (w) parts.push(w); }
   twoHand = kind === 'weapon' && sides.length === 1 && p.w_two && p.weapon !== 'dagger' && parts[0] ? twoHandOf(parts[0], p) : null;
   spearPoint = kind === 'weapon' && sides.length === 1 && p.weapon === 'spear' && parts[0] ? pointCode(parts[0]) : '';
+  grasp = kind === 'weapon' && p.w_magnet && parts[0] && parts[0].F ? graspOf(parts[0].side, parts[0].F, parts[0].F.r * (p.w_grip_r ?? 100) / 100 * .9) : null;
   if (kind === 'shield') for (const side of sides) { const w = shield(side, p); if (w) parts.push(w); }
   if (kind === 'sheath') sides.forEach((side, i) => { const w = sheath(side, p, i === 0); if (w) parts.push(...w); });
   if (kind === 'undercloth') parts.push(...undercloth(p));
@@ -4570,8 +4627,8 @@ SPEC.push(['{{js:ag.held_group}}', ['plate', 'strap', 'trim', 'quilt'], [
   ['w_grip', 60, 200, 5, '{{js:ag.w_grip}}', '', 'pc', isW('sword', 'dagger', 'greatsword')],
   ['w_grip_r', 50, 200, 5, '{{js:ag.w_grip_r}}', '{{js:ag.w_grip_r_info}}', 'pc', isGrip],
   ['w_head', 40, 200, 5, '{{js:ag.w_head}}', '', 'pc', isW('axe', 'mace', 'spear', 'staff', 'greataxe', 'warhammer', 'club')],
-  ['grip_along', -60, 60, 2, '{{js:ag.grip_along}}', '{{js:ag.grip_along_info}}', 'pc', isGrip],
-  ['grip_out', -40, 40, 2, '{{js:ag.grip_out}}', '{{js:ag.grip_out_info}}', 'pc', isGrip],
+  ['grip_along', -60, 60, 2, '{{js:ag.grip_along}}', '{{js:ag.grip_along_info}}', 'pc', () => isGrip() && !S.p.w_magnet],
+  ['grip_out', -40, 40, 2, '{{js:ag.grip_out}}', '{{js:ag.grip_out_info}}', 'pc', () => isGrip() && !S.p.w_magnet],
   ['grip_tilt', -60, 60, 5, '{{js:ag.grip_tilt}}', '{{js:ag.grip_tilt_info}}', 'deg', isGrip],
   ['grip_roll', -180, 180, 5, '{{js:ag.grip_roll}}', '{{js:ag.grip_roll_info}}', 'deg', isGrip],
   ['w_two', -120, 120, 5, '{{js:ag.w_two}}', '{{js:ag.w_two_info}}', 'pc', isW('sword', 'axe', 'mace', 'spear', 'staff', 'greatsword', 'greataxe', 'warhammer', 'club')],
@@ -4638,7 +4695,7 @@ const DEFAULTS = Object.assign({ gap: 8, thickness: 12, relief: .35, step: 5, ri
   two_plates: false, spaulders: 0, sp_start: 30, sp_reach: 45, sp_span: 260, neckline: 8, armhole: 40, point: 0, ridge: 0, cap: 1.6, trim: '', hammer: .5, arm_share: .7, mail_under: false, hem: 15, sleeves: 30, top_cut: 0, bottom_cut: 0, splints: 6, stitch: false,
   closure: 'across', hinges: false, opening: 'none', shoulders: 'straps', yoke: 70, thigh: 'none', knee: 'none', fly: false, wrap: false,
   front_panel: false, hem_band: false, helmet: 'barbute', head_gap: 7, visor_angle: 0, cheek_angle: 0, tail: 100, brim: 100,
-  strap: 0, strap_fwd: 0, elbow: 'elbow_winged_plate', poleyn: 'poleyn_winged_plate', made_slide: 0, made_twist: 0, made_size: 100, codpiece: 'cod_plate', cod_size: 100, cod_proj: 100, cod_top: 0, cod_belt: false, gorget_lames: 4, gorget_low: 40, gorget_high: 60, bevor: false, bevor_high: 100, rondel: 'rondel_plain', ailette: 'ailette_square', pel_len: 11, pel_point: 4, pel_lift: 0, pel_gap: .4, hauberk: 'hauberk_long', hb_hem: 90, hb_sleeve: 100, hb_slits: 45, hb_ease: 5, coif: 'coif_short', coif_cape: 5, limb_gap: 8, wing: 100, footwear: 'foot_ankle_boot', foot_gap: 6, glove: 'plain_leather', cuff: 14,
+  strap: 0, strap_fwd: 0, elbow: 'elbow_winged_plate', poleyn: 'poleyn_winged_plate', made_slide: 0, made_twist: 0, made_size: 100, codpiece: 'cod_plate', cod_size: 100, cod_proj: 100, cod_top: 0, cod_belt: false, gorget_lames: 4, gorget_low: 40, gorget_high: 60, bevor: false, bevor_high: 100, w_magnet: true, rondel: 'rondel_plain', ailette: 'ailette_square', pel_len: 11, pel_point: 4, pel_lift: 0, pel_gap: .4, hauberk: 'hauberk_long', hb_hem: 90, hb_sleeve: 100, hb_slits: 45, hb_ease: 5, coif: 'coif_short', coif_cape: 5, limb_gap: 8, wing: 100, footwear: 'foot_ankle_boot', foot_gap: 6, glove: 'plain_leather', cuff: 14,
   cloth_style: 'shirt', cloth_quilt: false, quilt_lines: false, pinches: [], paints: [],
   weapon: 'sword', shield: 'round', w_len: 100, w_width: 100, w_guard: 100, w_grip: 100, w_grip_r: 100, w_head: 100, grip_along: 0, grip_out: 0,
   grip_tilt: 15, grip_roll: 0, w_two: 0, arrows: 12, cloak_len: 60, cloak_wrap: 172, cloak_flare: 25, cloak_lift: 5, cloak_nape: 120, cloak_gap: .5, skirt_len: 30, skirt_flare: 30, skirt_lift: 6, skirt_slit: 0, skirt_gap: .5, tabard_len: 50, tabard_belt: 8, tabard_flare: 15, tabard_lift: 2, tabard_gap: 1, s_size: 100, s_curve: 30, s_rim: 100, s_boss: 100, s_along: 0, s_out: 0, s_turn: 0, s_hand: false, s_elbow: true, s_bend: 0, s_ridge: 0,
@@ -4700,7 +4757,8 @@ function buildPanel() {
         NODE_FIELDS.filter((x) => x[1] === g).map(([k, , ax, tip, st]) => `<label title="${tip}">${ax}<input type="number" id="n_${k}" step="${st}"></label>`).join('') + `</div>`).join('') +
       `<div class="nrow"><span class="nlbl">{{js:ag.node_scale}}</span><label title="{{js:ag.s_size}}">%<input type="number" id="n_s_size" step="5" min="20" max="400"></label></div></div>` : '') +
     (gi === GOR_GI ? `<label class="chk" id="r_bevor" title="{{js:ag.bevor_info}}"><input type="checkbox" id="i_bevor"> {{js:ag.bevor}}</label>` : '') +
-    (gi === HELD_GI ? `<label class="chk" id="r_s_hand"><input type="checkbox" id="i_s_hand"> {{js:ag.s_hand}}</label>` +
+    (gi === HELD_GI ? `<label class="chk" id="r_w_magnet" title="{{js:ag.w_magnet_info}}"><input type="checkbox" id="i_w_magnet"> {{js:ag.w_magnet}}</label>` +
+      `<label class="chk" id="r_s_hand"><input type="checkbox" id="i_s_hand"> {{js:ag.s_hand}}</label>` +
       `<label class="chk" id="r_s_elbow"><input type="checkbox" id="i_s_elbow"> {{js:ag.s_elbow}}</label>` +
       '' : '') +
     (gi === 4 ? `<div class="row" style="margin:4px 0 6px"><span class="seg" id="matSeg">${Object.keys(PRESETS).map((m) => `<button data-mat="${m}">${DATA.mat_labels[m]}</button>`).join('')}</span></div>` +
@@ -4749,6 +4807,7 @@ function buildPanel() {
   $('i_s_hand').addEventListener('change', (e) => { S.p.s_hand = e.target.checked; if (S.p.s_hand) fistPose(); changed('s_hand'); });
   $('i_cod_belt').addEventListener('change', (e) => { S.p.cod_belt = e.target.checked; changed('cod_belt'); });
   $('i_bevor').addEventListener('change', (e) => { S.p.bevor = e.target.checked; changed('bevor'); });
+  $('i_w_magnet').addEventListener('change', (e) => { S.p.w_magnet = e.target.checked; changed('w_magnet'); });
   $('i_s_elbow').addEventListener('change', (e) => { S.p.s_elbow = e.target.checked; changed('s_elbow'); });
   $('gizmoSeg').addEventListener('click', (e) => { const g = e.target.closest('[data-g]'); if (g) setGizmo(g.dataset.g); });
   for (const k of [...NODE_FIELDS.map((x) => x[0]), 's_size']) $('n_' + k).addEventListener('input', (e) => {
@@ -4814,6 +4873,7 @@ function syncPanel() {
   }
   for (const k of ['buckle', 'cuffs', 'two_plates', 'mail_under', 'stitch', 'hinges', 'fly', 'wrap', 'front_panel', 'hem_band', 's_hand']) $('i_' + k).checked = !!S.p[k];
   $('r_s_hand').hidden = S.piece !== 'shield';
+  $('r_w_magnet').hidden = !isGrip(); $('i_w_magnet').checked = !!S.p.w_magnet;
   $('i_cod_belt').checked = !!S.p.cod_belt; $('i_bevor').checked = !!S.p.bevor; $('r_bevor').hidden = S.piece !== 'gorget';
   $('r_s_elbow').hidden = S.piece !== 'shield' || !S.p.s_hand; $('i_s_elbow').checked = S.p.s_elbow !== false;
   $('nodeBox').hidden = !['shield', 'rondel', 'ailette'].includes(S.piece); $('nodeNote').textContent = S.piece === 'shield' ? '{{js:ag.node}}' : '{{js:ag.node_rondel}}';
@@ -5098,8 +5158,8 @@ function restPose() {
 }
 // ---- the stances: an idle guard with a weapon and a shield, an idle guard with a weapon in both hands (to judge a held
 // piece as it is carried, not in a T-pose); the knees a little bent, the left foot forward
-function handClose(s) {   // the fist: as remembered in the markup, else each finger in its own plane
-  if (applyFist(s)) return;
+function handClose(s) {   // the fist: round the grip by contact (the magnet), as remembered in the markup, else each finger in its own plane
+  if (closeHand(s) || applyFist(s)) return;
   const P = palmOf(s); if (!P) return;
   for (const f of FINGER_NAMES) {
     const ax = fingerAxis(s, f, P.palm); if (!ax) continue;
@@ -5286,7 +5346,7 @@ function applyPose() {
       turn(PB['leg_' + s], dir('leg_' + s, 'foot_' + s).cross(FRONT.clone().negate()).normalize(), 100);
     } else if (pose === 'fist') {   // the hand closed as round a grip: as remembered in the markup, else each finger in its own plane (GRIP_DEG)
       if (s === 'L' && twoHand && S.piece === 'weapon') { readyStance(twoHand); reach(twoHand); }   // in both hands: held in front, the other hand onto the haft
-      if (applyFist(s)) continue;
+      if (closeHand(s) || applyFist(s)) continue;
       const P = palmOf(s); if (!P) continue;
       for (const f of FINGER_NAMES) {
         const ax = fingerAxis(s, f, P.palm); if (!ax) continue;   // the rest pose's: the turns below keep it
@@ -5436,6 +5496,7 @@ $('views').addEventListener('click', (e) => e.target.dataset.v && view(e.target.
 window.agView = (v, eye, whole) => view(v, eye, whole);
 window.agShow = () => ({ result: showResult, root: !!(resultRoot && resultRoot.visible), preview: pieceGroup.visible, worn: [...WORN.entries()].filter(([, w]) => w.on && w.root && w.root.visible).map(([k]) => k) });   // (the tests)
 window.agCamDist = () => camera.position.distanceTo(controls.target);   // (the tests)
+window.agLookAt = (p, dist, eye) => { controls.target.set(...p); camera.position.copy(controls.target).addScaledVector(new V3(...eye).normalize(), dist); camera.lookAt(controls.target); controls.update(); };   // (the tests: close to a point)
 window.agProjR = () => { const L = (S.p.paints || []).find((x) => x.proj); return L ? L.r : null; };   // (the tests)
 window.agParts = () => parts.map((x) => ({ side: x.side, v: Array.from(x.acc.v) }));   // the tests measure what is built
 window.agReach = () => reach.last || null;
@@ -6320,7 +6381,7 @@ async function make() {
   let js = null;
   try {
     js = await send('generate', { item, piece: S.piece, replace, style: S.style, sides: lastBuild.sides.filter((s) => s !== 'C'),
-      params: { ...S.p }, two: S.piece === 'weapon' ? twoCode() : '', point: S.piece === 'weapon' ? spearPoint : '', mesh: isMade() ? null : payload(), under: [...WORN.entries()].filter(([, w]) => w.on && layerOf(w)).map(([k]) => k) }, '{{js:ag.working}}', '_wear_' + item);
+      params: { ...S.p }, two: S.piece === 'weapon' ? twoCode() : '', point: S.piece === 'weapon' ? spearPoint : '', grasp: S.piece === 'weapon' && grasp ? grasp.code : '', mesh: isMade() ? null : payload(), under: [...WORN.entries()].filter(([, w]) => w.on && layerOf(w)).map(([k]) => k) }, '{{js:ag.working}}', '_wear_' + item);
   } catch (e) { $('status').textContent = '{{js:ed.could_not_send_to_sf3d}}' + e.message; console.error(e); }
   busy = false; $('go').disabled = !lastBuild;
   if (js && js.ok) {
@@ -6409,7 +6470,7 @@ async function rebuildLayers(only, quiet) {   // (only: these pieces, made again
   try {
     for (const x of list) {
       for (const [k, e] of WORN) e.on = k !== x.item;   // every other one on
-      S.piece = x.piece; S.p = { ...DEFAULTS, ...PIECES[x.piece].defaults, ...x.params }; S.sides = x.sides && x.sides.length ? [...x.sides] : ['L', 'R'];
+      S.piece = x.piece; S.p = { ...DEFAULTS, ...PIECES[x.piece].defaults, ...x.params, ...('w_magnet' in (x.params || {}) ? {} : { w_magnet: false }) }; S.sides = x.sides && x.sides.length ? [...x.sides] : ['L', 'R'];
       S.name = x.item; S.nameTouched = true; S.idle = false;
       buildBody(); rebuild();
       if (!parts.length || !lastBuild) throw new Error('{{js:ag.layers_stopped}}'.replace('{0}', x.item));
@@ -6556,7 +6617,7 @@ $('layersGo').addEventListener('click', () => rebuildLayers().catch((er) => { co
 $('savedDel').addEventListener('click', () => { const x = DATA.saved[+$('saved').value]; removePiece(x ? x.item : ''); });
 $('saved').addEventListener('change', (e) => {
   const x = DATA.saved[+e.target.value]; if (e.target.value === '' || !x) return;
-  S.p = { ...DEFAULTS, ...PIECES[x.piece].defaults, ...x.params }; S.sides = x.sides && x.sides.length ? [...x.sides] : ['L', 'R'];
+  S.p = { ...DEFAULTS, ...PIECES[x.piece].defaults, ...x.params, ...('w_magnet' in (x.params || {}) ? {} : { w_magnet: false }) }; S.sides = x.sides && x.sides.length ? [...x.sides] : ['L', 'R'];
   S.name = x.item; S.nameTouched = true; setPiece(x.piece, true);
 });
 
@@ -6889,7 +6950,7 @@ async function uvRemake(list) {   // pieces made again from their saved paramete
   if (made.length) {
     if (!BAKE.left.length) BAKE.batch = Date.now();
     for (const x of made) {
-      const job = { item: x.item, piece: x.piece, style: x.style || null, sides: x.sides || [], params: { ...DEFAULTS, ...PIECES[x.piece].defaults, ...x.params }, mesh: null, under: [], two: '', point: '' };
+      const job = { item: x.item, piece: x.piece, style: x.style || null, sides: x.sides || [], params: { ...DEFAULTS, ...PIECES[x.piece].defaults, ...x.params, ...('w_magnet' in (x.params || {}) ? {} : { w_magnet: false }) }, mesh: null, under: [], two: '', point: '' };
       const js = await send('bake', { batch: BAKE.batch, job }, '{{js:ag.bake_sending}}'.replace('{0}', x.item), '_bakeq_' + x.item);
       if (!js || !js.ok) return false;
       BAKE.left.push(x.item);

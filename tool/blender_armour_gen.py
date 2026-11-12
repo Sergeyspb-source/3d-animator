@@ -589,8 +589,10 @@ mesh.uv_layers.active = mesh.uv_layers["UVMap"]
 mesh.uv_layers["UVMap"].active_render = True
 # a weapon (a shield by its bar) held in a fist: the hands are named in the mesh's name (SF3DEquip closes their fingers round the grip)
 # in both hands: the other hand's grip, in the holding hand's frame (SF3DEquip.Grip reaches it): «__two_L_<9 numbers>»;
-# a spear: its head's way in that frame, kept forward in the game: «__point_<3 numbers>»
+# a spear: its head's way in that frame, kept forward in the game: «__point_<3 numbers>»; the fingers closed round the
+# grip by contact (the editor's magnet): «__grasp_<15 degrees>»
 hold = (f"__hold_{''.join(sides)}" + (f"__two_{job['two']}" if job.get("two") else "") + (f"__point_{job['point']}" if job.get("point") else "")
+        + (f"__grasp_{job['grasp']}" if job.get("grasp") else "")
         if (kind == "weapon" or job.get("fist_grip")) and sides != ["C"] else "")
 obj = bpy.data.objects.new(f"Wear_{item}" + hold, mesh)
 bpy.context.scene.collection.objects.link(obj)

@@ -2409,5 +2409,7 @@
  "ag.pose_edit_hint": "Click a joint of the skeleton (or the body, the armour on it): the bone is picked, marked red; turn it by the rings",
  "ag.pose_bone": "Bone: ",
  "ag.pose_saving": "Saving the pose…",
- "ag.pose_saved": "The pose saved"
+ "ag.pose_saved": "The pose saved",
+ "ag.w_magnet": "Snap to the palm's middle",
+ "ag.w_magnet_info": "the grip lies on the palm's middle by itself (on its skin), the fingers close round it; held in both hands both palms on the haft, the holding (right) one above, the other below. Untick to move the grip by the sliders"
 }

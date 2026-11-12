@@ -681,6 +681,7 @@ def generate(cfg, req) -> dict:
            "seed": int(params.get("seed", 1)), "fist": LM.fist_hand(rigged),
            "two": req.get("two") if re.fullmatch(r"[LR](_-?\d+){9}", str(req.get("two") or "")) else "",
            "point": req.get("point") if re.fullmatch(r"-?\d+(_-?\d+){2}", str(req.get("point") or "")) else "",
+           "grasp": req.get("grasp") if re.fullmatch(r"\d+(_\d+){14}", str(req.get("grasp") or "")) else "",   # the fingers round the grip (the magnet)
            "fist_grip": piece == "shield" and bool(params.get("s_hand")),   # a shield held by its bar: the fingers close as on a weapon
            "uv_out": str(work / "uv"), "uvtex": params.get("uvtex") or {},   # «Texture by the unwrap»: given out, taken back
            "uv_prev": str(uv_dir(rigged, item, piece))}   # (its unwrap kept there: the same mesh unwrapped as before)

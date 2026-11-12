@@ -64,6 +64,15 @@ static func wear(character: Node, piece: PackedScene, mask := "") -> Array[MeshI
 					nums.append(float(two[k]) / 1000.0)
 				mi.set_meta("sf3d_two", two[0])
 				_grip(skel).two_hand(hold.substr(0, 1), two[0], nums, true)
+			var gr := nm.get_slice("__grasp_", 1).get_slice("__", 0).split("_") if "__grasp_" in nm else PackedStringArray()
+			if gr.size() == 15:   # the fingers round its grip by contact (the editor's magnet): both hands holding it
+				var degs := []
+				for g in gr:
+					degs.append(float(g))
+				_grip(skel).grasp(hold.substr(0, 1), degs, true)
+				mi.set_meta("sf3d_grasp", hold.substr(0, 1) + (two[0] if two.size() == 10 else ""))
+				if two.size() == 10:
+					_grip(skel).grasp(two[0], degs, true)
 			var pt := nm.get_slice("__point_", 1).get_slice("__", 0).split("_") if "__point_" in nm else PackedStringArray()
 			if pt.size() == 3:   # a spear: its head kept forward
 				mi.set_meta("sf3d_point", hold.substr(0, 1))
@@ -890,6 +899,9 @@ static func take_off(meshes: Array) -> void:
 				_grip(mi.get_parent()).two_hand("", mi.get_meta("sf3d_two"), [], false)
 			if mi.has_meta("sf3d_point"):
 				_grip(mi.get_parent()).point(mi.get_meta("sf3d_point"), Vector3.ZERO, false)
+			if mi.has_meta("sf3d_grasp"):
+				for sd in String(mi.get_meta("sf3d_grasp")):
+					_grip(mi.get_parent()).grasp(sd, [], false)
 		if is_instance_valid(mi):
 			if mi.has_meta("sf3d_character"):
 				character = mi.get_meta("sf3d_character")
@@ -1060,6 +1072,15 @@ class Grip extends SkeletonModifier3D:
 		else:
 			_two.erase(side)
 		hold(side, on)
+
+	## the fingers' degrees round a grip (armour_gen_editor.html graspOf: index, middle, ring, little finger, thumb, three
+	## joints each), over the fist and the default angles
+	var _grasp := {}
+	func grasp(side: String, degs: Array, on: bool) -> void:
+		if on:
+			_grasp[side] = degs
+		else:
+			_grasp.erase(side)
 
 	## a spear held (armour_gen_editor.html pointCode): its head's way in the holding hand's frame
 	func point(side: String, a: Vector3, on: bool) -> void:
@@ -1250,7 +1271,7 @@ class Grip extends SkeletonModifier3D:
 			var t1 := _bone(sk, side, "Thumb", 1)
 			if hand < 0 or i1 < 0 or p1 < 0:
 				continue
-			if _fist().keys().any(func(k): return String(k).ends_with("_" + side)):
+			if not _grasp.has(side) and _fist().keys().any(func(k): return String(k).ends_with("_" + side)):
 				_closed(sk, side, i1, p1, t1, hand)
 				continue
 			var H := sk.get_bone_global_pose(hand).origin
@@ -1272,6 +1293,9 @@ class Grip extends SkeletonModifier3D:
 					to = (palm * 0.6 + (P - I).normalized() * 0.8).normalized()
 				var axis := (sk.get_bone_global_pose(b2).origin - sk.get_bone_global_pose(b1).origin).cross(to).normalized()
 				var degs: Array = THUMB if finger == "Thumb" else FINGER
+				if _grasp.has(side):
+					var gi: int = ["Index", "Middle", "Ring", "Pinky", "Thumb"].find(finger)
+					degs = (_grasp[side] as Array).slice(gi * 3, gi * 3 + 3)
 				for j in [1, 2, 3]:
 					var b := _bone(sk, side, finger, j)
 					if b >= 0:
