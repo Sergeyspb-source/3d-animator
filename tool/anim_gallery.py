@@ -22,102 +22,102 @@ SRC = {"base": M2M / "human-base-animations.glb", "addon": M2M / "human-addon-an
        "mocap": M2M / "human-mocap-animations.glb"}
 S, SS, GS = ["sword"], ["sword", "shield"], ["greatsword"]   # what is in the hands
 
-# (group, source, clip in the source, label, loop, weapons); "twohand" / "shield": SF3D's procedural clips made with
-# both hands on one sword / a shield on the left arm
+# (group: its anim.<key> text, source, clip in the source, label, loop, weapons); "twohand" / "shield": SF3D's procedural
+# clips made with both hands on one sword / a shield on the left arm
 CLIPS = [
-    (_t("anim.locomotion"), "base", "Idle_A", _t("anim.idle"), True, []),
-    (_t("anim.locomotion"), "addon", "Idle_Subtle", _t("anim.idle_restrained"), True, []),
-    (_t("anim.locomotion"), "base", "Walk", _t("anim.walk"), True, []),
-    (_t("anim.locomotion"), "addon", "Walk_Large", _t("anim.heavy_walk"), True, []),
-    (_t("anim.locomotion"), "base", "Jog", _t("anim.jog"), True, []),
-    (_t("anim.locomotion"), "base", "Sprint", _t("anim.sprint"), True, []),
-    (_t("anim.locomotion"), "addon", "Walk_Backwards", _t("anim.step_back"), True, []),
-    (_t("anim.locomotion"), "addon", "Strafe_left", _t("anim.side_step_left"), True, []),
-    (_t("anim.locomotion"), "addon", "Strafe_right", _t("anim.side_step_right"), True, []),
-    (_t("anim.locomotion"), "base", "Crouch_Idle", _t("anim.crouch"), True, []),
-    (_t("anim.locomotion"), "base", "Crouch_Walk", _t("anim.crouch_walk"), True, []),
-    (_t("anim.locomotion"), "addon", "Walk_Stealth", _t("anim.sneak"), True, []),
-    (_t("anim.locomotion"), "addon", "Run_Stealth", _t("anim.sneak_run"), True, []),
-    (_t("anim.locomotion"), "addon", "Crawl", _t("anim.crawl"), True, []),
-    (_t("anim.locomotion"), "mocap", "Turn_Left_90", _t("anim.turn_left_90"), False, []),
-    (_t("anim.locomotion"), "mocap", "Turn_Right_90", _t("anim.turn_right_90"), False, []),
-    (_t("anim.locomotion"), "mocap", "Turn_Left_180", _t("anim.turn_around_180"), False, []),
-    (_t("anim.jumps"), "base", "Jump_Start", _t("anim.jump_take_off"), False, []),
-    (_t("anim.jumps"), "base", "Jump_air", _t("anim.jump_in_the_air"), True, []),
-    (_t("anim.jumps"), "base", "Jump_Land", _t("anim.jump_landing"), False, []),
-    (_t("anim.jumps"), "addon", "Jump_2", _t("anim.standing_jump"), False, []),
-    (_t("anim.jumps"), "addon", "Run Jump", _t("anim.running_jump"), False, []),
-    (_t("anim.jumps"), "base", "NinjaJump_Start", _t("anim.high_jump_take_off"), False, []),
-    (_t("anim.jumps"), "base", "NinjaJump_Idle", _t("anim.high_jump_in_the_air"), True, []),
-    (_t("anim.jumps"), "base", "NinjaJump_Land", _t("anim.high_jump_landing"), False, []),
-    (_t("anim.jumps"), "addon", "Backflip", _t("anim.backflip"), False, []),
-    (_t("anim.jumps"), "addon", "Land_Three_Point", _t("anim.three_point_landing"), False, []),
-    (_t("anim.dodges_and_rolls"), "addon", "Dodge_back", _t("anim.hop_back"), False, []),
-    (_t("anim.dodges_and_rolls"), "addon", "Dodge_left", _t("anim.dodge_left"), False, []),
-    (_t("anim.dodges_and_rolls"), "addon", "Dodge_right", _t("anim.dodge_right"), False, []),
-    (_t("anim.dodges_and_rolls"), "base", "Roll", _t("anim.roll"), False, []),
-    (_t("anim.dodges_and_rolls"), "base", "Slide_Start", _t("anim.slide_start"), False, []),
-    (_t("anim.dodges_and_rolls"), "base", "Slide", _t("anim.slide"), True, []),
-    (_t("anim.dodges_and_rolls"), "base", "Slide_Exit", _t("anim.slide_exit"), False, []),
-    (_t("anim.sword"), "base", "Idle_Sword", _t("anim.sword_stance"), True, S),
-    (_t("anim.sword"), "base", "Sword_Attack", _t("anim.sword_strike"), False, S),
-    (_t("anim.sword"), "base", "Sword_Regular_A", _t("anim.combo_strike_1"), False, S),
-    (_t("anim.sword"), "base", "Sword_Regular_B", _t("anim.combo_strike_2"), False, S),
-    (_t("anim.sword"), "base", "Sword_Regular_C", _t("anim.combo_strike_3"), False, S),
-    (_t("anim.sword"), "base", "Sword_Regular_Combo", _t("anim.three_strike_combo"), False, S),
-    (_t("anim.sword"), "addon", "Sword_Attack_Air_Vertical", _t("anim.jumping_overhead_strike"), False, S),
-    (_t("anim.sword"), "base", "Sword_Block", _t("anim.sword_block"), False, S),
-    (_t("anim.sword_and_shield"), "base", "Idle_Shield", _t("anim.shield_stance"), True, SS),
-    (_t("anim.sword_and_shield"), "base", "Shield_OneShot", _t("anim.shield_bash"), False, SS),
-    (_t("anim.sword_and_shield"), "base", "Idle_Shield_Break", _t("anim.shield_broken"), False, SS),
-    (_t("anim.sword_and_shield"), "shield", "idle_loop", _t("anim.stance_procedural"), True, SS),
-    (_t("anim.sword_and_shield"), "shield", "walk_loop", _t("anim.walk_with_shield"), True, SS),
-    (_t("anim.sword_and_shield"), "shield", "attack_slash", _t("anim.strike_from_behind_the_shield"), False, SS),
-    (_t("anim.sword_and_shield"), "shield", "block_loop", _t("anim.shield_block"), True, SS),
-    (_t("anim.two_handed_sword"), "twohand", "idle_loop", _t("anim.stance"), True, GS),
-    (_t("anim.two_handed_sword"), "twohand", "walk_loop", _t("anim.walk"), True, GS),
-    (_t("anim.two_handed_sword"), "twohand", "run_loop", _t("anim.run"), True, GS),
-    (_t("anim.two_handed_sword"), "twohand", "attack_slash", _t("anim.diagonal_strike"), False, GS),
-    (_t("anim.two_handed_sword"), "twohand", "attack_overhead", _t("anim.overhead_strike"), False, GS),
-    (_t("anim.two_handed_sword"), "twohand", "block_loop", _t("anim.block"), True, GS),
-    (_t("anim.two_handed_sword"), "twohand", "hit", _t("anim.hit"), False, GS),
-    (_t("anim.defence"), "addon", "Defend", _t("anim.cover_with_arms"), False, []),
-    (_t("anim.defence"), "base", "Hit_Knockback", _t("anim.knocked_back"), False, []),
-    (_t("anim.magic"), "base", "Spell_Simple_Enter", _t("anim.spell_wind_up"), False, []),
-    (_t("anim.magic"), "base", "Spell_Simple_Idle", _t("anim.spell_hold"), True, []),
-    (_t("anim.magic"), "base", "Spell_Simple_Shoot", _t("anim.spell_release"), False, []),
-    (_t("anim.magic"), "base", "Spell_Simple_Exit", _t("anim.spell_finish"), False, []),
-    (_t("anim.magic"), "addon", "Two-hand Blast", _t("anim.two_handed_force_blast"), False, []),
-    (_t("anim.magic"), "addon", "Power Up", _t("anim.charging_power"), False, []),
-    (_t("anim.magic"), "addon", "Levitate Entrance", _t("anim.levitation_lift_off"), False, []),
-    (_t("anim.magic"), "addon", "Levitate Idle", _t("anim.levitation"), True, []),
-    (_t("anim.magic"), "addon", "Meditate", _t("anim.meditation"), True, []),
-    (_t("anim.unarmed"), "addon", "Fighting Idle", _t("anim.fighting_stance"), True, []),
-    (_t("anim.unarmed"), "addon", "Fighting Left Jab", _t("anim.left_jab"), False, []),
-    (_t("anim.unarmed"), "addon", "Fighting Right Jab", _t("anim.right_jab"), False, []),
-    (_t("anim.unarmed"), "base", "Punch_Cross", _t("anim.straight_punch"), False, []),
-    (_t("anim.unarmed"), "base", "Melee_Hook", _t("anim.hook"), False, []),
-    (_t("anim.unarmed"), "mocap", "Kick_Breach", _t("anim.kick"), False, []),
-    (_t("anim.unarmed"), "addon", "Attack_Ground_Pound", _t("anim.ground_slam"), False, []),
-    (_t("anim.bow_and_throwing"), "addon", "Bow Pull Back", _t("anim.bow_draw"), False, []),
-    (_t("anim.bow_and_throwing"), "addon", "Bow Pull Hold", _t("anim.bow_hold"), True, []),
-    (_t("anim.bow_and_throwing"), "addon", "Bow Release", _t("anim.bow_shoot"), False, []),
-    (_t("anim.bow_and_throwing"), "base", "OverhandThrow", _t("anim.overhand_throw"), False, []),
-    (_t("anim.bow_and_throwing"), "addon", "Throw Object", _t("anim.item_throw"), False, []),
-    (_t("anim.damage_and_death"), "base", "Hit_Chest", _t("anim.hit_in_the_chest"), False, []),
-    (_t("anim.damage_and_death"), "base", "Hit_Head", _t("anim.hit_in_the_head"), False, []),
-    (_t("anim.damage_and_death"), "addon", "Idle Hurt", _t("anim.wounded"), True, []),
-    (_t("anim.damage_and_death"), "addon", "Dizzy", _t("anim.stunned"), True, []),
-    (_t("anim.damage_and_death"), "addon", "Death_A", _t("anim.death_1"), False, []),
-    (_t("anim.damage_and_death"), "addon", "Death_B", _t("anim.death_2"), False, []),
-    (_t("anim.damage_and_death"), "addon", "Death_C", _t("anim.death_3"), False, []),
-    (_t("anim.damage_and_death"), "base", "Death_D", _t("anim.death_4"), False, []),
-    (_t("anim.emotes"), "addon", "Victory", _t("anim.victory"), False, []),
-    (_t("anim.emotes"), "addon", "Victory Fist Pump", _t("anim.victory_fist_up"), False, []),
-    (_t("anim.emotes"), "addon", "Greeting", _t("anim.greeting"), False, []),
-    (_t("anim.emotes"), "addon", "Angry", _t("anim.angry"), False, []),
-    (_t("anim.emotes"), "mocap", "Insult", _t("anim.taunt"), False, []),
-    (_t("anim.emotes"), "mocap", "Cheer_One_arm", _t("anim.cheering"), False, []),
+    ("locomotion", "base", "Idle_A", _t("anim.idle"), True, []),
+    ("locomotion", "addon", "Idle_Subtle", _t("anim.idle_restrained"), True, []),
+    ("locomotion", "base", "Walk", _t("anim.walk"), True, []),
+    ("locomotion", "addon", "Walk_Large", _t("anim.heavy_walk"), True, []),
+    ("locomotion", "base", "Jog", _t("anim.jog"), True, []),
+    ("locomotion", "base", "Sprint", _t("anim.sprint"), True, []),
+    ("locomotion", "addon", "Walk_Backwards", _t("anim.step_back"), True, []),
+    ("locomotion", "addon", "Strafe_left", _t("anim.side_step_left"), True, []),
+    ("locomotion", "addon", "Strafe_right", _t("anim.side_step_right"), True, []),
+    ("locomotion", "base", "Crouch_Idle", _t("anim.crouch"), True, []),
+    ("locomotion", "base", "Crouch_Walk", _t("anim.crouch_walk"), True, []),
+    ("locomotion", "addon", "Walk_Stealth", _t("anim.sneak"), True, []),
+    ("locomotion", "addon", "Run_Stealth", _t("anim.sneak_run"), True, []),
+    ("locomotion", "addon", "Crawl", _t("anim.crawl"), True, []),
+    ("locomotion", "mocap", "Turn_Left_90", _t("anim.turn_left_90"), False, []),
+    ("locomotion", "mocap", "Turn_Right_90", _t("anim.turn_right_90"), False, []),
+    ("locomotion", "mocap", "Turn_Left_180", _t("anim.turn_around_180"), False, []),
+    ("jumps", "base", "Jump_Start", _t("anim.jump_take_off"), False, []),
+    ("jumps", "base", "Jump_air", _t("anim.jump_in_the_air"), True, []),
+    ("jumps", "base", "Jump_Land", _t("anim.jump_landing"), False, []),
+    ("jumps", "addon", "Jump_2", _t("anim.standing_jump"), False, []),
+    ("jumps", "addon", "Run Jump", _t("anim.running_jump"), False, []),
+    ("jumps", "base", "NinjaJump_Start", _t("anim.high_jump_take_off"), False, []),
+    ("jumps", "base", "NinjaJump_Idle", _t("anim.high_jump_in_the_air"), True, []),
+    ("jumps", "base", "NinjaJump_Land", _t("anim.high_jump_landing"), False, []),
+    ("jumps", "addon", "Backflip", _t("anim.backflip"), False, []),
+    ("jumps", "addon", "Land_Three_Point", _t("anim.three_point_landing"), False, []),
+    ("dodges_and_rolls", "addon", "Dodge_back", _t("anim.hop_back"), False, []),
+    ("dodges_and_rolls", "addon", "Dodge_left", _t("anim.dodge_left"), False, []),
+    ("dodges_and_rolls", "addon", "Dodge_right", _t("anim.dodge_right"), False, []),
+    ("dodges_and_rolls", "base", "Roll", _t("anim.roll"), False, []),
+    ("dodges_and_rolls", "base", "Slide_Start", _t("anim.slide_start"), False, []),
+    ("dodges_and_rolls", "base", "Slide", _t("anim.slide"), True, []),
+    ("dodges_and_rolls", "base", "Slide_Exit", _t("anim.slide_exit"), False, []),
+    ("sword", "base", "Idle_Sword", _t("anim.sword_stance"), True, S),
+    ("sword", "base", "Sword_Attack", _t("anim.sword_strike"), False, S),
+    ("sword", "base", "Sword_Regular_A", _t("anim.combo_strike_1"), False, S),
+    ("sword", "base", "Sword_Regular_B", _t("anim.combo_strike_2"), False, S),
+    ("sword", "base", "Sword_Regular_C", _t("anim.combo_strike_3"), False, S),
+    ("sword", "base", "Sword_Regular_Combo", _t("anim.three_strike_combo"), False, S),
+    ("sword", "addon", "Sword_Attack_Air_Vertical", _t("anim.jumping_overhead_strike"), False, S),
+    ("sword", "base", "Sword_Block", _t("anim.sword_block"), False, S),
+    ("sword_and_shield", "base", "Idle_Shield", _t("anim.shield_stance"), True, SS),
+    ("sword_and_shield", "base", "Shield_OneShot", _t("anim.shield_bash"), False, SS),
+    ("sword_and_shield", "base", "Idle_Shield_Break", _t("anim.shield_broken"), False, SS),
+    ("sword_and_shield", "shield", "idle_loop", _t("anim.stance_procedural"), True, SS),
+    ("sword_and_shield", "shield", "walk_loop", _t("anim.walk_with_shield"), True, SS),
+    ("sword_and_shield", "shield", "attack_slash", _t("anim.strike_from_behind_the_shield"), False, SS),
+    ("sword_and_shield", "shield", "block_loop", _t("anim.shield_block"), True, SS),
+    ("two_handed_sword", "twohand", "idle_loop", _t("anim.stance"), True, GS),
+    ("two_handed_sword", "twohand", "walk_loop", _t("anim.walk"), True, GS),
+    ("two_handed_sword", "twohand", "run_loop", _t("anim.run"), True, GS),
+    ("two_handed_sword", "twohand", "attack_slash", _t("anim.diagonal_strike"), False, GS),
+    ("two_handed_sword", "twohand", "attack_overhead", _t("anim.overhead_strike"), False, GS),
+    ("two_handed_sword", "twohand", "block_loop", _t("anim.block"), True, GS),
+    ("two_handed_sword", "twohand", "hit", _t("anim.hit"), False, GS),
+    ("defence", "addon", "Defend", _t("anim.cover_with_arms"), False, []),
+    ("defence", "base", "Hit_Knockback", _t("anim.knocked_back"), False, []),
+    ("magic", "base", "Spell_Simple_Enter", _t("anim.spell_wind_up"), False, []),
+    ("magic", "base", "Spell_Simple_Idle", _t("anim.spell_hold"), True, []),
+    ("magic", "base", "Spell_Simple_Shoot", _t("anim.spell_release"), False, []),
+    ("magic", "base", "Spell_Simple_Exit", _t("anim.spell_finish"), False, []),
+    ("magic", "addon", "Two-hand Blast", _t("anim.two_handed_force_blast"), False, []),
+    ("magic", "addon", "Power Up", _t("anim.charging_power"), False, []),
+    ("magic", "addon", "Levitate Entrance", _t("anim.levitation_lift_off"), False, []),
+    ("magic", "addon", "Levitate Idle", _t("anim.levitation"), True, []),
+    ("magic", "addon", "Meditate", _t("anim.meditation"), True, []),
+    ("unarmed", "addon", "Fighting Idle", _t("anim.fighting_stance"), True, []),
+    ("unarmed", "addon", "Fighting Left Jab", _t("anim.left_jab"), False, []),
+    ("unarmed", "addon", "Fighting Right Jab", _t("anim.right_jab"), False, []),
+    ("unarmed", "base", "Punch_Cross", _t("anim.straight_punch"), False, []),
+    ("unarmed", "base", "Melee_Hook", _t("anim.hook"), False, []),
+    ("unarmed", "mocap", "Kick_Breach", _t("anim.kick"), False, []),
+    ("unarmed", "addon", "Attack_Ground_Pound", _t("anim.ground_slam"), False, []),
+    ("bow_and_throwing", "addon", "Bow Pull Back", _t("anim.bow_draw"), False, []),
+    ("bow_and_throwing", "addon", "Bow Pull Hold", _t("anim.bow_hold"), True, []),
+    ("bow_and_throwing", "addon", "Bow Release", _t("anim.bow_shoot"), False, []),
+    ("bow_and_throwing", "base", "OverhandThrow", _t("anim.overhand_throw"), False, []),
+    ("bow_and_throwing", "addon", "Throw Object", _t("anim.item_throw"), False, []),
+    ("damage_and_death", "base", "Hit_Chest", _t("anim.hit_in_the_chest"), False, []),
+    ("damage_and_death", "base", "Hit_Head", _t("anim.hit_in_the_head"), False, []),
+    ("damage_and_death", "addon", "Idle Hurt", _t("anim.wounded"), True, []),
+    ("damage_and_death", "addon", "Dizzy", _t("anim.stunned"), True, []),
+    ("damage_and_death", "addon", "Death_A", _t("anim.death_1"), False, []),
+    ("damage_and_death", "addon", "Death_B", _t("anim.death_2"), False, []),
+    ("damage_and_death", "addon", "Death_C", _t("anim.death_3"), False, []),
+    ("damage_and_death", "base", "Death_D", _t("anim.death_4"), False, []),
+    ("emotes", "addon", "Victory", _t("anim.victory"), False, []),
+    ("emotes", "addon", "Victory Fist Pump", _t("anim.victory_fist_up"), False, []),
+    ("emotes", "addon", "Greeting", _t("anim.greeting"), False, []),
+    ("emotes", "addon", "Angry", _t("anim.angry"), False, []),
+    ("emotes", "mocap", "Insult", _t("anim.taunt"), False, []),
+    ("emotes", "mocap", "Cheer_One_arm", _t("anim.cheering"), False, []),
 ]
 PROC = {"twohand": dict(twohand=True, blade="fingers"), "shield": dict(shield=True, blade="fingers")}
 
@@ -127,8 +127,15 @@ def _key(group, source, clip):   # the clip's name in the GLB and the page: uniq
 
 
 def build(cfg, rigged, out_html, log=print):
+    out_glb, name, work = clips_glb(cfg, rigged, log)
+    return _page(out_glb, Path(out_html), name, work, log)
+
+
+def clips_glb(cfg, rigged, log=print):
+    """Every clip of CLIPS on this character: (the GLB with them, the character's name, the work folder). Retargeted
+    once; again only when the character, the retargeting or the procedural clips change."""
     import hanim as HA
-    rigged, out_html = Path(rigged), Path(out_html)
+    rigged = Path(rigged)
     blender = cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe"
     name = re.sub(r"[^\w-]+", "_", re.sub(r"_landmarks_rigged$|_rigged$", "", rigged.stem)).strip("_") or "character"
     work = Path(cfg["work_dir"]) / "anim_gallery" / name
@@ -155,7 +162,14 @@ def build(cfg, rigged, out_html, log=print):
         log(_t("anim.clips_are_already_retargeted"))
     else:
         _retarget(blender, rigged, out_glb, work, len(spec), log)
-    return _page(out_glb, out_html, name, work, log)
+    return out_glb, name, work
+
+
+def clip_list(out_glb):
+    """The clips made into out_glb, in CLIPS' order: {id, label, group (its key), group_label, loop, weapons}."""
+    done = {c["name"] for c in json.loads(Path(str(out_glb) + ".json").read_text(encoding="utf-8"))}
+    return [dict(id=_key(g, s, c), label=lab, group=g, group_label=_t("anim." + g), loop=lp, weapons=w)
+            for g, s, c, lab, lp, w in CLIPS if _key(g, s, c) in done]
 
 
 def _retarget(blender, rigged, out_glb, work, n, log):
@@ -170,9 +184,8 @@ def _retarget(blender, rigged, out_glb, work, n, log):
 def _page(out_glb, out_html, name, work, log):
     import fbxanim as FA
     from glbfix import set_metallic
-    done = {c["name"] for c in json.loads(Path(str(out_glb) + ".json").read_text(encoding="utf-8"))}
-    clips = [dict(id=_key(g, s, c), label=lab, group=g, loop=lp, weapons=w)
-             for g, s, c, lab, lp, w in CLIPS if _key(g, s, c) in done]
+    clips = [dict(c, group=c["group_label"]) for c in clip_list(out_glb)]
+    done = {c["id"] for c in clips}
     weapons = []   # the goblin presets of the Mixamo tab for the models and their sizes; placed by the hand (fit)
     for wid, preset in (("sword", FA.WEAPON_SETS[_t("anim.goblin_sword_and_shield")][0]), ("shield", dict(FA.WEAPON_SETS[_t("anim.goblin_sword_and_shield")][1], bone="LeftForeArm")),
                         ("greatsword", FA.WEAPON_SETS[_t("anim.goblin_two_handed_sword")][0])):

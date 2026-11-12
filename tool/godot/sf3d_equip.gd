@@ -1292,7 +1292,8 @@ class Grip extends SkeletonModifier3D:
 		var throwing := "throw" in clip   # (thrown from one hand: the other one is not brought to the haft)
 		# idle, walking, running: a two-hander carried in one hand, its point down and a little forward (the clips hold the
 		# hand as for a one-hander: reached for by the other hand, the holding arm was wrung across the body)
-		var resting := ["idle", "walk", "run"].any(func(w): return w in clip)
+		# (the gallery's two-handed clips hold the sword in both hands: not carried)
+		var resting := not "twohand" in clip and ["idle", "walk", "run"].any(func(w): return w in clip)
 		for side in _two:   # the other hands onto their hafts first: their fingers close then
 			if resting:
 				_carry(sk, _two[side])

@@ -771,6 +771,23 @@ def wardrobe(cfg, rigged: Path) -> dict:
     proj.mkdir(parents=True, exist_ok=True)
     model = _animated_model(cfg, rigged, proj)
     files = {"character.glb": model, **{f"wear_{p.name}": p for p in pieces}}
+    note = ""
+    try:   # the animation gallery's clips (anim_gallery.CLIPS), in its groups: sf3d_wardrobe.gd's blocks
+        import anim_gallery as AG
+        g_glb = AG.clips_glb(cfg, rigged, log=lambda *a: None)[0]
+        clips = AG.clip_list(g_glb)
+        blocks = {}
+        for c in clips:
+            blocks.setdefault(c["group"], {"key": c["group"], "label": c["group_label"], "clips": []})["clips"].append(
+                {k: c[k] for k in ("id", "label", "loop", "weapons")})
+        (proj / "gallery.json").write_text(json.dumps({"blocks": list(blocks.values())}, ensure_ascii=False, indent=1),
+                                           encoding="utf-8")
+        files["gallery.glb"] = g_glb
+        note = _t("lm.gallery_clips", len(clips), len(blocks))
+    except Exception as e:   # (a skeleton the gallery's clips do not go onto: the fitting room opens with its own clips)
+        (proj / "gallery.json").unlink(missing_ok=True)
+        (proj / "gallery.glb").unlink(missing_ok=True)
+        note = _t("lm.no_gallery_clips", str(e)[-300:])
     for p in pieces:   # what of the body each one hides: SF3DEquip.wear() reads it beside the piece
         if p.with_suffix(".mask.json").exists():
             files[f"wear_{p.name[:-4]}.mask.json"] = p.with_suffix(".mask.json")
@@ -821,7 +838,7 @@ pieces = Array[PackedScene]([{", ".join(f'ExtResource("{i + 3}")' for i in range
         raise RuntimeError(_t("lm.godot_did_not_import_the_models") + (r.stdout + r.stderr)[-600:])
     gui = Path(godot).with_name(Path(godot).name.replace("_console", ""))   # the window build, without a console
     subprocess.Popen([str(gui if gui.exists() else godot), "--path", str(proj)], cwd=str(proj))
-    return {"ok": True, "log": _t("lm.the_fitting_room_is_open_in_godot", len(names), model.name, proj)}
+    return {"ok": True, "log": _t("lm.the_fitting_room_is_open_in_godot", len(names), model.name, proj) + note}
 
 
 def godot_scene(glb: Path) -> Path | None:

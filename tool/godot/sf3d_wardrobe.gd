@@ -3,7 +3,11 @@
 ## piece put on through SF3DEquip, its clips to play, the pieces on and off, and a camera that orbits the character
 ## (left drag), pans (right drag) and zooms (wheel).
 ##
-## A picture, then quit: godot --path <project> -- --shot=out.png [--anim=walk] [--at=0.5] [--yaw=30] [--zoom=2] [--off=item,item]
+## The clips in blocks: the character's own (the first) and the animation gallery's groups (tool/anim_gallery.py: its
+## gallery.glb retargeted onto this character, gallery.json its blocks), each block an AnimationLibrary of its key;
+## picking a block that has weapons in its clips puts on a piece of that kind (a two-hander, a sword, a shield).
+##
+## A picture, then quit: godot --path <project> -- --shot=out.png [--anim=walk | --anim=two_handed_sword/twohand_idle_loop] [--at=0.5] [--yaw=30] [--zoom=2] [--off=item,item]
 ## [--pitch=-0.5] [--rise=0.3] (the look down, the point looked at raised by that share of the height)
 ## [--focus=RightHand] (the point looked at: that bone, where the clip has it when the picture is taken)
 extends Node3D
@@ -23,6 +27,9 @@ var _target := Vector3.ZERO
 var _worn := {}   # piece name -> its meshes
 var _repeat := true
 var _list := ItemList.new()
+var _block := OptionButton.new()
+var _blocks := []   # [{key, label, weapons: [kinds], clips: [[the clip's name in the player, its label]]}]
+var _boxes := {}   # piece -> its tick
 var _args := {}   # --key=value after «--»
 var _h := 1.0     # the character's height
 const THROW_AT := 0.56   # where in a throwing clip the spear leaves the hand (blender_humanoid_anim.SPEAR_THROW's release)
@@ -50,21 +57,31 @@ func _ready() -> void:
 	if players.size() > 0:
 		_player = players[0]
 		_player.animation_finished.connect(func(n): if _repeat: _player.play(n))
+	_gallery()
 	_stage(box)
 	_ui()
 	_place_camera()
 	var args := _args
-	var clips := _clips()
-	var first: int = clips.find(args.get("anim", ""))
-	if first < 0:   # the idle clip first, if there is one
+	var want := String(args.get("anim", ""))
+	var at := [0, -1]   # the block and the clip played first: --anim's, else the first idle one of the own clips
+	for b in _blocks.size():
+		var clips: Array = _blocks[b]["clips"]
 		for i in clips.size():
-			if "idle" in String(clips[i]).to_lower():
-				first = i
+			var n := String(clips[i][0])
+			if want != "" and (n == want or n.get_file() == want):
+				at = [b, i]
 				break
-	first = maxi(first, 0)
-	if clips.size() > 0:
-		_list.select(first)
-		_play(clips[first])
+			if want == "" and b == 0 and at[1] < 0 and "idle" in n.to_lower():
+				at = [b, i]
+		if want != "" and at[1] >= 0:
+			break
+	if not _blocks.is_empty():
+		_block.select(at[0])
+		_show_block(at[0], at[0] > 0)   # (a gallery clip asked for: its block's weapons on, as when it is picked)
+		var clip := maxi(at[1], 0)
+		if _list.item_count > clip:
+			_list.select(clip)
+			_play(_list.get_item_metadata(clip))
 	if args.has("shot"):
 		_yaw = deg_to_rad(float(args.get("yaw", "0")))
 		_dist /= float(args.get("zoom", "1"))
@@ -283,6 +300,97 @@ func _clips() -> Array:
 	return Array(_player.get_animation_list()) if _player else []
 
 
+# the gallery's clips: from its GLB (the same skeleton, imported the same way) into the character's player, a library a
+# block; a track kept when its bone is in the character's skeleton, its path made the character's own
+func _gallery() -> void:
+	if _player == null:
+		return
+	_blocks = [{"key": "", "label": "{{js:gd.own_clips}}", "weapons": [], "clips": _clips().map(func(c): return [c, c])}]
+	if not FileAccess.file_exists("res://gallery.json") or not ResourceLoader.exists("res://gallery.glb"):
+		return
+	var d = JSON.parse_string(FileAccess.get_file_as_string("res://gallery.json"))
+	var scene = load("res://gallery.glb")
+	var sk := Equip.skeleton_of(_model)
+	if not (d is Dictionary) or not (scene is PackedScene) or sk == null:
+		return
+	var inst: Node = scene.instantiate()
+	var found := inst.find_children("*", "AnimationPlayer", true, false)
+	if found.is_empty():
+		inst.free()
+		return
+	var src: AnimationPlayer = found[0]
+	var sk_path := String(_player.get_node(_player.root_node).get_path_to(sk))
+	for b in d.get("blocks", []):
+		var lib := AnimationLibrary.new()
+		var clips := []
+		var kinds := []
+		for c in b["clips"]:
+			var id := String(c["id"])
+			if not src.has_animation(id):   # (Godot's import takes a «_loop» off a clip's name, looping it)
+				for cut in ["_loop", "-loop", "loop"]:
+					if id.ends_with(cut) and src.has_animation(id.trim_suffix(cut)):
+						id = id.trim_suffix(cut)
+						break
+			if not src.has_animation(id):
+				continue
+			var a: Animation = src.get_animation(id).duplicate(true)
+			for t in range(a.get_track_count() - 1, -1, -1):
+				var bone := a.track_get_path(t).get_concatenated_subnames()
+				if bone == "" or sk.find_bone(bone) < 0:
+					a.remove_track(t)
+				else:
+					a.track_set_path(t, NodePath(sk_path + ":" + bone))
+			a.loop_mode = Animation.LOOP_LINEAR if c.get("loop", false) else Animation.LOOP_NONE
+			lib.add_animation(id, a)
+			clips.append([String(b["key"]) + "/" + id, String(c.get("label", id))])
+			for w in c.get("weapons", []):
+				if not w in kinds:
+					kinds.append(w)
+		if not clips.is_empty():
+			_player.add_animation_library(String(b["key"]), lib)
+			_blocks.append({"key": b["key"], "label": b.get("label", b["key"]), "weapons": kinds, "clips": clips})
+	inst.free()
+
+
+# a block's clips into the list; picked by hand, its weapons put on
+func _show_block(b: int, arm := true) -> void:
+	_list.clear()
+	for c in _blocks[b]["clips"]:
+		var i := _list.add_item(String(c[1]))
+		_list.set_item_metadata(i, c[0])
+		_list.set_item_tooltip(i, String(c[0]))
+	if arm:
+		for w in _blocks[b]["weapons"]:
+			_arm(String(w))
+
+
+# a piece of a gallery weapon kind ticked (its hands' other pieces unticked by the tick): by its name, else by its grip
+func _arm(kind: String) -> void:
+	var pick := ""
+	for name in _boxes:
+		var n := String(name).to_lower()
+		var named := n.begins_with("shield") if kind == "shield" else (kind in n and not (kind == "sword" and "greatsword" in n))
+		if named:
+			pick = name
+			break
+	if pick == "" and kind != "shield":
+		for name in _boxes:
+			var n := String(name).to_lower()
+			if "spear" in n or "bow" in n or "shield" in n:
+				continue
+			var two := false
+			var held := false
+			for mi in _worn[name]:
+				if is_instance_valid(mi) and mi.has_meta("sf3d_hold"):
+					held = true
+					two = two or String(mi.get_meta("sf3d_two", "")) != ""
+			if held and two == (kind == "greatsword"):
+				pick = name
+				break
+	if pick != "" and not _boxes[pick].button_pressed:
+		_boxes[pick].button_pressed = true
+
+
 func _play(clip: String) -> void:
 	if _player:
 		_player.play(clip)
@@ -343,10 +451,17 @@ func _ui() -> void:
 	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(box)
 	box.add_child(_label("{{js:gd.animations}}"))
+	for b in _blocks:   # (the gallery's groups: each checked on its own)
+		_block.add_item(String(b["label"]))
+	_block.item_selected.connect(func(b):
+		_show_block(b)
+		if _list.item_count > 0:
+			_list.select(0)
+			_play(_list.get_item_metadata(0)))
+	if _blocks.size() > 1:
+		box.add_child(_block)
 	_list.custom_minimum_size = Vector2(230, 240)
-	for c in _clips():
-		_list.add_item(c)
-	_list.item_selected.connect(func(i): _play(_list.get_item_text(i)))
+	_list.item_selected.connect(func(i): _play(_list.get_item_metadata(i)))
 	box.add_child(_list)
 	var rep := CheckBox.new()
 	rep.text = "{{js:gd.loop}}"
@@ -362,7 +477,7 @@ func _ui() -> void:
 	speed.value_changed.connect(func(v): if _player: _player.speed_scale = v)
 	box.add_child(speed)
 	box.add_child(_label("{{js:gd.pieces}}"))
-	var boxes := {}   # piece -> its tick
+	var boxes := _boxes
 	for name in _worn:
 		var cb := CheckBox.new()
 		cb.text = name
