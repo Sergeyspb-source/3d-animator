@@ -49,6 +49,12 @@ PIECES = {"bracer": ("forearm", "hand", "forearm", ("Spine", "Hips", "Chest", "U
                        dict(t0=-30, t1=45, sector=200, plates=4, straps=0, rigidity=.4, cap=1.8)),
           "tassets": ("hips", "neck", "hips", ("Arm", "Hand"), "torso", "hips", (-80, 0, -10, 30),
                       dict(t0=-45, t1=10, sector=360, plates=4, straps=1, rigidity=.4, gap=16, splits=4, flare=.3)),
+          # a fauld: lames round the front of the waist under the breastplate (the tassets hang from it); a culet the same
+          # behind, over the small of the back and the seat (the tassets' builder, its middle in front or behind)
+          "fauld": ("hips", "neck", "hips", ("Arm", "Hand"), "torso", "hips", (-40, 10, 0, 40),
+                    dict(t0=-10, t1=16, sector=230, plates=4, straps=0, rigidity=.5, gap=10, splits=0, flare=.1, surface="plates", material="steel")),
+          "culet": ("hips", "neck", "hips", ("Arm", "Hand"), "torso", "hips", (-50, 10, 0, 40),
+                    dict(t0=-22, t1=16, sector=190, plates=4, straps=0, rigidity=.5, gap=10, splits=0, flare=.15, surface="plates", material="steel")),
           "trousers": ("upleg", "foot", "upleg", ("Arm", "Hand"), "upleg", "legs", (-10, 30, 30, 100),
                        dict(t0=8, t1=92, straps=1, rigidity=.1, gap=3, thickness=5, relief=.6, surface="plain", material="cloth",
                             loose=.3, folds=.3, cuffs=False, buckle=True)),
@@ -61,6 +67,10 @@ PIECES = {"bracer": ("forearm", "hand", "forearm", ("Spine", "Hips", "Chest", "U
           "elbow": ("arm", "forearm", "forearm", (), "elbow", "joint", (0, 0, 0, 0),
                     dict(elbow="elbow_winged_plate", limb_gap=8, wing=100)),
           "footwear": ("leg", "foot", "foot", (), "foot", "joint", (0, 0, 0, 0), dict(footwear="foot_ankle_boot", foot_gap=6)),
+          # a gorget: lames round the neck from the collar up, a bevor over the chin if wanted (armour_gen_editor gorget)
+          "gorget": ("spine2", "head", "neck", (), "torso", "neck", (0, 0, 0, 0),
+                     dict(material="steel", trim="steel", gap=6, gorget_lames=4, gorget_low=40, gorget_high=60, bevor=False, bevor_high=100,
+                          straps=0, rigidity=1, surface="plain")),
           # a codpiece: a cup over the groin on a belt, rigid on the hips (built in the editor: armour_gen_editor codpiece)
           "codpiece": ("hips", "spine", "hips", (), "hips", "groin", (0, 0, 0, 0),
                        dict(codpiece="cod_plate", material="steel", trim="steel", cod_size=100, cod_proj=100, cod_top=0, cod_belt=False, straps=0, rigidity=1,
@@ -142,7 +152,7 @@ T_LABELS = {"limb": ("ag.from", "ag.to", "ag.from_info"), "torso": ("ag.bottom",
             "head": ("ag.from", "ag.to", "ag.from_info"), "joint": ("ag.from", "ag.to", "ag.from_info"),
             "glove": ("ag.from", "ag.to", "ag.from_info"), "cloth": ("ag.from", "ag.to", "ag.from_info"),
             "held": ("ag.from", "ag.to", "ag.from_info"), "cloak": ("ag.from", "ag.to", "ag.from_info"),
-            "groin": ("ag.from", "ag.to", "ag.from_info")}
+            "groin": ("ag.from", "ag.to", "ag.from_info"), "neck": ("ag.from", "ag.to", "ag.from_info")}
 # (linear colour, roughness, metallic): metallic kept moderate, a game scene without reflections shows a full metal black
 PRESETS = {"iron": ((.34, .34, .35), .55, .55), "steel": ((.56, .58, .61), .35, .65),
            "bronze": ((.55, .36, .17), .42, .6), "leather": ((.30, .17, .09), .72, 0.0), "cloth": ((.25, .27, .3), .9, 0.0),

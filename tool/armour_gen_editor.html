@@ -320,7 +320,7 @@ async function loadCharacter() {
 // in «Armour» are known by their body part («torso»: a breastplate). A piece made under others already worn: those
 // were fitted without it - «Rebuild by layers» makes them again over it.
 const LAYER = { undercloth: .5, trousers: 1, footwear: 1.5, foot: 1.5, brayette: 2, bracer: 3, rerebrace: 3, greave: 3, cuisse: 3,
-  forearm: 3, upperarm: 3, arm: 3, leg: 3, upleg: 3, tassets: 3, hips: 3, glove: 3.2, hand: 3.2, codpiece: 2.5, elbow: 3.5, poleyn: 3.5, knee: 3.5, cuirass: 4, torso: 4,
+  forearm: 3, upperarm: 3, arm: 3, leg: 3, upleg: 3, tassets: 3, hips: 3, glove: 3.2, hand: 3.2, codpiece: 2.5, fauld: 2.8, culet: 2.8, elbow: 3.5, gorget: 4.5, poleyn: 3.5, knee: 3.5, cuirass: 4, torso: 4,
   pauldron: 5, shoulder: 5, helmet: 5, head: 5, tabard: 6, skirt: 6, cloak: 7 };
 const CLOTH_KINDS = ['cloak', 'skirt', 'tabard'];   // over the new piece: not a wall to keep it under (the cloth is made again over it)
 let UNDER_T = 0;   // the piece being built: its thickness as a share of a profile's size (kept so far inside a wall over it)
@@ -2435,6 +2435,65 @@ function codpiece(p) {
   }
   return [{ side: 'C', acc, R: wx }];
 }
+// a gorget: lames round the neck, each a band a little wider than the one above it (they overlap downwards), from the
+// collar - lying on the shoulders and the chest, or on a breastplate worn under it - up the neck; each as far out as
+// what is under it there (rays from the neck's axis) and a gap. With a bevor: a plate over the chin and the mouth in
+// front, from the gorget's top up. The lower lames go with the chest, the upper with the neck, the bevor with the neck
+function gorget(p) {
+  if (!joint('neck') || !joint('head')) return [];
+  const H = HEIGHT, N = joint('neck'), Hd = joint('head'), u = Hd.clone().sub(N).normalize(), nl = N.distanceTo(Hd);
+  const front = FRONT.clone().addScaledVector(u, -FRONT.dot(u)).normalize(), side = new V3().crossVectors(u, front).normalize();
+  const n = Math.max(2, Math.round(p.gorget_lames ?? 4)), lo = -(p.gorget_low ?? 40) / 100 * nl, hi = (p.gorget_high ?? 60) / 100 * nl;
+  const gap = (p.gap ?? 6) / 100 * .05 * H, th = MM(1.6), NA = 48, dirOf = (a) => front.clone().multiplyScalar(Math.cos(a)).addScaledVector(side, Math.sin(a));
+  const rNeck = (() => { const rs = [0, 1, 2, 3].map((k) => { const h = cast(N.clone().addScaledVector(u, .5 * nl), dirOf(k * Math.PI / 2), .3 * H); return h ? h.distance : .05 * H; }); return rs.reduce((a, b) => a + b) / 4; })();
+  const radius = (h, a) => { const h1 = cast(N.clone().addScaledVector(u, h), dirOf(a), .4 * H); return Math.min(h1 ? h1.distance : rNeck, 2.2 * rNeck); };
+  // a ring's radii round the neck at the height h: what is under it, widened over its neighbours (never in to a spike
+  // of it: a collarbone, a shoulder's edge) and smoothed round (a plate, not the skin's every bump)
+  const profCache = new Map();
+  const prof = (h) => {
+    const key = h.toFixed(5); if (profCache.has(key)) return profCache.get(key);
+    const raw = Array.from({ length: NA }, (_, j) => radius(h, j / NA * TAU)), at = (j) => raw[(j % NA + NA) % NA];
+    let r = raw.map((_, j) => Math.max(at(j - 2), at(j - 1), at(j), at(j + 1), at(j + 2)));
+    for (let it = 0; it < 4; it++) r = r.map((_, j) => (r[(j + NA - 1) % NA] + 2 * r[j] + r[(j + 1) % NA]) / 4);
+    r = r.map((x, j) => Math.max(x, raw[j]));
+    profCache.set(key, r); return r;
+  };
+  const parts = [], chest = PB.spine2 || PB.spine1 || PB.hips, neckB = PB.neck || chest;
+  const Fr = { C: N.clone(), A: front.clone(), E: u.clone(), S: side.clone() };
+  const loc = (P) => { const d = P.clone().sub(N); return [d.dot(front), d.dot(u), d.dot(side)]; };
+  const step = (hi - lo) / n, over = step * .35;
+  for (let k = 0; k < n; k++) {   // from the top lame (k = 0) down: each over the next one below's top edge
+    const h1 = hi - k * step, h0 = Math.max(lo, h1 - step - over), acc = rigidAcc(k < n / 2 ? neckB : chest), { loft } = itemMesh(acc, Fr);
+    const lift = (n - 1 - k) * th * .6;   // (the upper ones over the lower: out a little more)
+    const top = prof(h1), bot = prof(h0).map((x, j) => Math.max(x, top[j]));   // (a lame: never in going down)
+    const ring = (h, extra) => { const rr = h <= h0 + 1e-6 ? bot : top; return Array.from({ length: NA }, (_, j) => loc(N.clone().addScaledVector(u, h).addScaledVector(dirOf(j / NA * TAU), rr[j] + gap + extra))); };
+    const b0 = ring(h0, lift), b1 = ring(h1, lift), t0 = ring(h0, lift + th), t1 = ring(h1, lift + th);
+    loft([b0, t0, t1, b1, b0], PLATE, 'plate', false, false);
+    if (p.trim) loft([h1 - MM(2), h1].map((h) => ring(h, lift + th * 1.6)), TRIM, 'trim', true, true);   // a rolled top edge
+    parts.push({ side: 'C', acc, R: rNeck });
+  }
+  if (p.bevor) {   // over the chin and the mouth in front, half way round, from the gorget's top up
+    const acc = rigidAcc(neckB), { loft } = itemMesh(acc, Fr), up = (p.bevor_high ?? 100) / 100 * 1.15 * nl, NB = 25, half = THREE.MathUtils.degToRad(80);
+    const rowAt = (h, extra) => Array.from({ length: NB }, (_, j) => {
+      const a = -half + 2 * half * j / (NB - 1), pr = prof(h), x = ((a / TAU * NA) % NA + NA) % NA, i0 = Math.floor(x), k = x - i0;
+      const r = pr[i0] * (1 - k) + pr[(i0 + 1) % NA] * k + gap * 1.5 + extra;
+      return loc(N.clone().addScaledVector(u, h).addScaledVector(dirOf(a), r));
+    });
+    const hs = Array.from({ length: 9 }, (_, i) => hi - step * .4 + (up - (hi - step * .4)) * i / 8), inner = hs.map((h) => rowAt(h, n * th)), outer = hs.map((h) => rowAt(h, n * th + MM(2)));
+    // (an open sheet: a row of quads between consecutive rows, both faces, and its edge)
+    const vid = (P, uu, vv) => acc.vert(itemMesh(acc, Fr).P(...P), uu, vv);
+    const I = inner.map((r, i) => r.map((P, j) => vid(P, j / (NB - 1), i / 8))), O = outer.map((r, i) => r.map((P, j) => vid(P, j / (NB - 1), i / 8)));
+    for (let i = 0; i < hs.length - 1; i++) for (let j = 0; j < NB - 1; j++) {
+      acc.face([O[i][j], O[i][j + 1], O[i + 1][j + 1], O[i + 1][j]], PLATE, 'plate');
+      acc.face([I[i][j], I[i + 1][j], I[i + 1][j + 1], I[i][j + 1]], PLATE, 'plate');
+    }
+    const edge = [...Array.from({ length: NB }, (_, j) => [0, j]), ...Array.from({ length: hs.length - 2 }, (_, i) => [i + 1, NB - 1]),
+      ...Array.from({ length: NB }, (_, j) => [hs.length - 1, NB - 1 - j]), ...Array.from({ length: hs.length - 2 }, (_, i) => [hs.length - 2 - i, 0])];
+    for (let q = 0; q < edge.length; q++) { const [i0, j0] = edge[q], [i1, j1] = edge[(q + 1) % edge.length]; acc.face([O[i0][j0], I[i0][j0], I[i1][j1], O[i1][j1]], PLATE, 'plate'); }
+    parts.push({ side: 'C', acc, R: rNeck });
+  }
+  return parts;
+}
 // ---- the body in another pose, for a piece that is fitted to it (a cloak lies over arms hanging down): its skin moved
 // by its weights (each bone's turn from its rest), with a ray tree of its own; made once per body
 let downGeo = null, downFor = null, downDm = null, downJ = null;   // downDm: each bone's turn from the rest into the arms-down pose; downJ: the arms' joints there
@@ -3210,6 +3269,7 @@ function buildPiece(kind, sides, p) {
   if (kind === 'sheath') sides.forEach((side, i) => { const w = sheath(side, p, i === 0); if (w) parts.push(...w); });
   if (kind === 'undercloth') parts.push(...undercloth(p));
   if (kind === 'codpiece') parts.push(...codpiece(p));
+  if (kind === 'gorget') parts.push(...gorget(p));
   if (kind === 'cloak') parts.push(...cloak(p));
   if (kind === 'skirt') parts.push(...skirt(p));
   if (kind === 'tabard') parts.push(...tabard(p));
@@ -3418,7 +3478,9 @@ function buildPiece(kind, sides, p) {
     // ring, body: what goes on from it (a garment's skirt hangs on from its bottom, points tie on at its hem)
     parts.push({ side: 'C', acc, R: P.R, ring: (t, a) => base(t, a) + lift, body, thick });
   }
-  if (kind === 'tassets') {
+  if (kind === 'tassets' || kind === 'fauld' || kind === 'culet') {
+    // (a fauld: a short band of lames round the waist under the breastplate, the tassets hang from it; a culet: the same
+    // behind, over the small of the back and the seat - the skirt's builder, its middle in front or behind)
     // a skirt from the waist down, over whatever is worn under it (thigh plates too), under a cuirass worn over it. Of
     // lames (plates, scales, lamellae): rigid, hanging straight, never in to the legs, cut into panels. Of mail or cloth:
     // soft, as a man's mail skirt is cut so the legs move freely: in front a panel hanging loose over the crotch, a
@@ -3432,7 +3494,7 @@ function buildPiece(kind, sides, p) {
       ...(soft ? { outside: tcr + .02 } : {}) });
     P.shell(p.gap, soft ? Math.max(p.relief, .9) : p.relief);   // a soft skirt keeps the body's contour: narrow at the waist, out over the hips
     const acc = new Acc(), base = weigher(fam, PB.hips, p.rigidity);
-    const mid = look(limb, 'C'), D = THREE.MathUtils.degToRad, down01 = (t) => Math.min(1, Math.max(0, (p.t1 - t) / (p.t1 - p.t0)));
+    const mid = look(limb, 'C') + (kind === 'culet' ? Math.PI : 0), D = THREE.MathUtils.degToRad, down01 = (t) => Math.min(1, Math.max(0, (p.t1 - t) / (p.t1 - p.t0)));
     const flare = (t) => p.flare * P.R * down01(t) ** (soft ? 1.4 : 1) * (soft ? .4 : 1);
     // soft: it lies on the body (thin things on it, a cord, a knot, filtered out), below the crotch round both legs
     // across the gap between them (it must not sag into it, it would cut into the legs): at the sides that is down
@@ -4080,8 +4142,8 @@ const SPEC = [
     ['waist', 0, 1, .05, '{{js:ag.waist_in}}', '{{js:ag.waist_in_info}}', '', isP('cuirass')],
     ['ridge', 0, 1, .05, '{{js:ag.ridge}}', '{{js:ag.ridge_info}}', '', isP('cuirass')],
     ['anatomy', 0, 1, .05, '{{js:ag.anatomy}}', '{{js:ag.anatomy_info}}', '', isP('cuirass')],
-    ['splits', 0, 8, 1, '{{js:ag.splits}}', '{{js:ag.splits_info}}', '', isP('tassets')],
-    ['flare', 0, 1.5, .05, '{{js:ag.flare}}', '', '', () => S.piece === 'tassets' || isLimb() || S.piece === 'glove'],
+    ['splits', 0, 8, 1, '{{js:ag.splits}}', '{{js:ag.splits_info}}', '', isP('tassets', 'fauld', 'culet')],
+    ['flare', 0, 1.5, .05, '{{js:ag.flare}}', '', '', () => ['tassets', 'fauld', 'culet'].includes(S.piece) || isLimb() || S.piece === 'glove'],
     ['loose', 0, 1, .05, '{{js:ag.loose}}', '{{js:ag.loose_info}}', '', isP('trousers', 'brayette')],
     ['folds', 0, 1, .05, '{{js:ag.folds}}', '', '', isP('trousers', 'brayette', 'tassets')]]],
   ['{{js:ag.surface}}', ['plate', 'mail', 'quilt', 'backing', 'rivet'], [
@@ -4189,7 +4251,13 @@ SPEC.push(['{{js:ag.codpiece_group}}', ['plate', 'trim', 'strap'], [
   ['cod_size', 60, 160, 5, '{{js:ag.cod_size}}', '', 'pc', isP('codpiece')],
   ['cod_proj', 40, 200, 5, '{{js:ag.cod_proj}}', '{{js:ag.cod_proj_info}}', 'pc', isP('codpiece')],
   ['cod_top', -100, 100, 5, '{{js:ag.cod_top}}', '{{js:ag.cod_top_info}}', 'pc', isP('codpiece')]], isP('codpiece')]);
-for (const gi of [0, 1, 2, 3, 5]) { const was = SPEC[gi][3]; SPEC[gi][3] = () => was() && S.piece !== 'codpiece'; }   // (a codpiece: its own group, the material)
+const GOR_GI = SPEC.length;
+SPEC.push(['{{js:ag.gorget_group}}', ['plate', 'trim'], [
+  ['gorget_lames', 2, 6, 1, '{{js:ag.gorget_lames}}', '', '', isP('gorget')],
+  ['gorget_low', 0, 120, 5, '{{js:ag.gorget_low}}', '{{js:ag.gorget_low_info}}', 'pc', isP('gorget')],
+  ['gorget_high', 10, 120, 5, '{{js:ag.gorget_high}}', '{{js:ag.gorget_high_info}}', 'pc', isP('gorget')],
+  ['bevor_high', 40, 160, 5, '{{js:ag.bevor_high}}', '{{js:ag.bevor_high_info}}', 'pc', () => S.piece === 'gorget' && !!S.p.bevor]], isP('gorget')]);
+for (const gi of [0, 1, 2, 3, 5]) { const was = SPEC[gi][3]; SPEC[gi][3] = () => was() && !['codpiece', 'gorget'].includes(S.piece); }   // (a codpiece, a gorget: their own group, the material)
 const ALL = SPEC.flatMap((g) => g[2]);
 const DEFAULTS = Object.assign({ gap: 8, thickness: 12, relief: .35, step: 5, rim: 6, rivets: 60, rivet_size: 6, strap_width: 35,
   buckle: true, material: 'iron', wear: .35, tint: '#6b4128', cloth: '#56606e', tex: 1024, seed: 1, surface: 'plates', scale_size: 25,
@@ -4197,7 +4265,7 @@ const DEFAULTS = Object.assign({ gap: 8, thickness: 12, relief: .35, step: 5, ri
   two_plates: false, spaulders: 0, sp_start: 30, sp_reach: 45, sp_span: 260, neckline: 8, armhole: 40, point: 0, ridge: 0, cap: 1.6, trim: '', hammer: .5, arm_share: .7, mail_under: false, hem: 15, sleeves: 30, top_cut: 0, bottom_cut: 0, splints: 6, stitch: false,
   closure: 'across', hinges: false, opening: 'none', shoulders: 'straps', yoke: 70, thigh: 'none', knee: 'none', fly: false, wrap: false,
   front_panel: false, hem_band: false, helmet: 'barbute', head_gap: 7, visor_angle: 0, cheek_angle: 0, tail: 100, brim: 100,
-  strap: 0, strap_fwd: 0, elbow: 'elbow_winged_plate', poleyn: 'poleyn_winged_plate', made_slide: 0, made_twist: 0, made_size: 100, codpiece: 'cod_plate', cod_size: 100, cod_proj: 100, cod_top: 0, cod_belt: false, limb_gap: 8, wing: 100, footwear: 'foot_ankle_boot', foot_gap: 6, glove: 'plain_leather', cuff: 14,
+  strap: 0, strap_fwd: 0, elbow: 'elbow_winged_plate', poleyn: 'poleyn_winged_plate', made_slide: 0, made_twist: 0, made_size: 100, codpiece: 'cod_plate', cod_size: 100, cod_proj: 100, cod_top: 0, cod_belt: false, gorget_lames: 4, gorget_low: 40, gorget_high: 60, bevor: false, bevor_high: 100, limb_gap: 8, wing: 100, footwear: 'foot_ankle_boot', foot_gap: 6, glove: 'plain_leather', cuff: 14,
   cloth_style: 'shirt', cloth_quilt: false, quilt_lines: false, pinches: [], paints: [],
   weapon: 'sword', shield: 'round', w_len: 100, w_width: 100, w_guard: 100, w_grip: 100, w_grip_r: 100, w_head: 100, grip_along: 0, grip_out: 0,
   grip_tilt: 15, grip_roll: 0, w_two: 0, arrows: 12, cloak_len: 60, cloak_wrap: 172, cloak_flare: 25, cloak_lift: 5, cloak_nape: 120, cloak_gap: .5, skirt_len: 30, skirt_flare: 30, skirt_lift: 6, skirt_slit: 0, skirt_gap: .5, tabard_len: 50, tabard_belt: 8, tabard_flare: 15, tabard_lift: 2, tabard_gap: 1, s_size: 100, s_curve: 30, s_rim: 100, s_boss: 100, s_along: 0, s_out: 0, s_turn: 0, s_hand: false, s_elbow: true, s_bend: 0, s_ridge: 0,
@@ -4252,6 +4320,7 @@ function buildPanel() {
       `<div id="shRow"><div class="note">{{js:ag.shoulders_over}}</div><div class="row" style="margin:2px 0 6px"><span class="seg" id="shSeg">` +
       ['straps', 'yoke', 'none'].map((m) => `<button data-sh="${m}">${DATA.shoulder_labels[m]}</button>`).join('') + `</span></div></div>` : '') +
     (gi === COD_GI ? `<label class="chk" title="{{js:ag.cod_belt_info}}"><input type="checkbox" id="i_cod_belt"> {{js:ag.cod_belt}}</label>` : '') +
+    (gi === GOR_GI ? `<label class="chk" title="{{js:ag.bevor_info}}"><input type="checkbox" id="i_bevor"> {{js:ag.bevor}}</label>` : '') +
     (gi === HELD_GI ? `<label class="chk" id="r_s_hand"><input type="checkbox" id="i_s_hand"> {{js:ag.s_hand}}</label>` +
       `<label class="chk" id="r_s_elbow"><input type="checkbox" id="i_s_elbow"> {{js:ag.s_elbow}}</label>` +
       `<div id="nodeBox" class="node"><div class="note">{{js:ag.node}}</div>` +
@@ -4304,6 +4373,7 @@ function buildPanel() {
   for (const k of ['cuffs', 'two_plates', 'mail_under', 'stitch', 'hinges', 'fly', 'wrap', 'front_panel', 'hem_band']) $('i_' + k).addEventListener('change', (e) => { S.p[k] = e.target.checked; changed(k); });
   $('i_s_hand').addEventListener('change', (e) => { S.p.s_hand = e.target.checked; if (S.p.s_hand) fistPose(); changed('s_hand'); });
   $('i_cod_belt').addEventListener('change', (e) => { S.p.cod_belt = e.target.checked; changed('cod_belt'); });
+  $('i_bevor').addEventListener('change', (e) => { S.p.bevor = e.target.checked; changed('bevor'); });
   $('i_s_elbow').addEventListener('change', (e) => { S.p.s_elbow = e.target.checked; changed('s_elbow'); });
   $('gizmoSeg').addEventListener('click', (e) => { const g = e.target.closest('[data-g]'); if (g) setGizmo(g.dataset.g); });
   for (const k of [...NODE_FIELDS.map((x) => x[0]), 's_size']) $('n_' + k).addEventListener('input', (e) => {
@@ -4369,7 +4439,7 @@ function syncPanel() {
   }
   for (const k of ['buckle', 'cuffs', 'two_plates', 'mail_under', 'stitch', 'hinges', 'fly', 'wrap', 'front_panel', 'hem_band', 's_hand']) $('i_' + k).checked = !!S.p[k];
   $('r_s_hand').hidden = S.piece !== 'shield';
-  $('i_cod_belt').checked = !!S.p.cod_belt;
+  $('i_cod_belt').checked = !!S.p.cod_belt; $('i_bevor').checked = !!S.p.bevor;
   $('r_s_elbow').hidden = S.piece !== 'shield' || !S.p.s_hand; $('i_s_elbow').checked = S.p.s_elbow !== false;
   $('nodeBox').hidden = S.piece !== 'shield';
   for (const b of $('gizmoSeg').children) b.classList.toggle('on', b.dataset.g === gizmoMode);
@@ -5824,7 +5894,7 @@ const ownKind = (x) => !HELD.includes(x.piece) && !MADE.includes(x.piece) && !!P
 const madeAt = (item) => (DATA.worn.find((w) => w.item === item) || {}).v || 0;   // seconds
 // where on the body a piece is: a lower layer counts for a piece only where they meet (a coif is no reason to make
 // the trousers again, and through them all the armour over them)
-const REGIONS = { trousers: 'hips legs', brayette: 'hips', footwear: 'feet legs', bracer: 'arms', rerebrace: 'arms', elbow: 'arms', poleyn: 'legs', knee: 'legs', codpiece: 'hips',
+const REGIONS = { trousers: 'hips legs', brayette: 'hips', footwear: 'feet legs', bracer: 'arms', rerebrace: 'arms', elbow: 'arms', poleyn: 'legs', knee: 'legs', codpiece: 'hips', fauld: 'torso hips', culet: 'torso hips', gorget: 'torso head',
   glove: 'hands arms', greave: 'legs feet', cuisse: 'legs', tassets: 'hips legs', cuirass: 'torso hips', pauldron: 'torso arms', helmet: 'head',
   tabard: 'torso hips legs', skirt: 'hips legs', cloak: 'torso arms hips legs', torso: 'torso hips', forearm: 'arms', upperarm: 'arms', arm: 'arms',
   leg: 'legs feet', upleg: 'legs', foot: 'feet', hand: 'hands', head: 'head', hips: 'hips legs', shoulder: 'torso arms' };
