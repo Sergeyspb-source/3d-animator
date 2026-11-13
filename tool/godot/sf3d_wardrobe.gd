@@ -81,6 +81,7 @@ func _ready() -> void:
 		var clip := maxi(at[1], 0)
 		if _list.item_count > clip:
 			_list.select(clip)
+			_list.ensure_current_is_visible()
 			_play(_list.get_item_metadata(clip))
 	if args.has("shot"):
 		_yaw = deg_to_rad(float(args.get("yaw", "0")))
@@ -373,7 +374,7 @@ func _arm(kind: String) -> void:
 		if named:
 			pick = name
 			break
-	if pick == "" and kind != "shield":
+	if pick == "" and kind in ["sword", "greatsword"]:
 		for name in _boxes:
 			var n := String(name).to_lower()
 			if "spear" in n or "bow" in n or "shield" in n:

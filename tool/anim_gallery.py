@@ -121,6 +121,40 @@ CLIPS = [
 ]
 PROC = {"twohand": dict(twohand=True, blade="fingers"), "shield": dict(shield=True, blade="fingers")}
 
+# Mixamo packs downloaded into Animations/Mixamo/<pack>/ (FBX, without skin): every clip of a pack into a group;
+# a pack there replaces the procedural clips of its kind (REPLACES). Labels are the files' names, the pack's words off.
+MIXAMO = ROOT.parent / "Animations" / "Mixamo"
+PACKS = {"Great Sword": ("two_handed_sword", GS), "Sword and Shield": ("sword_and_shield", SS),
+         "Axe": ("axe", ["axe"]), "Longbow": ("bow_and_throwing", ["bow"]), "Magic": ("magic", []),
+         "Male unarmed": ("unarmed_male", []), "Female unarmed": ("unarmed_female", []), "Creatures": ("creatures", [])}
+REPLACES = {"Great Sword": "twohand", "Sword and Shield": "shield"}
+_LOOPS = ("idle", "walk", "walking", "run", "running", "strafe", "loop", "breathing")
+_ONCE = ("stop", "turn", "land", "draw", "equip", "disarm", "to ")
+
+
+def _mixamo():
+    """[(group, source, clip, label, loop, weapons, fbx path)] of the packs found"""
+    out = []
+    for pack, (group, weapons) in PACKS.items():
+        folder = MIXAMO / pack
+        for f in sorted(folder.glob("*.fbx")) if folder.is_dir() else []:
+            stem = f.stem
+            if stem.lower().startswith("tripo"):   # a model sent to Mixamo, not a clip
+                continue
+            low = stem.lower()
+            label = re.sub(r"^(great sword|sword and shield|two handed sword|standing|mutant)\s+", "", low).strip() or low
+            loop = any(re.search(rf"\b{w}\b", low) for w in _LOOPS) and not any(w in low for w in _ONCE)
+            out.append((group, "mixamo_" + pack, stem, label, loop, weapons, str(f)))
+    return out
+
+
+def all_clips():
+    """CLIPS with the Mixamo packs' clips (an fbx path last; None for the others), the procedural ones a pack
+    replaces left out"""
+    mx = _mixamo()
+    gone = {REPLACES[p] for p in REPLACES if any(c[1] == "mixamo_" + p for c in mx)}
+    return [(*c, None) for c in CLIPS if c[1] not in gone] + mx
+
 
 def _key(group, source, clip):   # the clip's name in the GLB and the page: unique, ASCII
     return re.sub(r"[^0-9A-Za-z]+", "_", f"{source}_{clip}").strip("_")
@@ -141,8 +175,11 @@ def clips_glb(cfg, rigged, log=print):
     work = Path(cfg["work_dir"]) / "anim_gallery" / name
     work.mkdir(parents=True, exist_ok=True)
     srcs = {k: str(v) for k, v in SRC.items()}
+    clips = all_clips()
     for kind, kw in PROC.items():   # the procedural clips this page needs, on the character's own skeleton
-        want = sorted({c[2] for c in CLIPS if c[1] == kind})
+        want = sorted({c[2] for c in clips if c[1] == kind})
+        if not want:
+            continue
         glb = work / f"proc_{kind}.glb"
         made_by = max(rigged.stat().st_mtime, (ROOT / "blender_humanoid_anim.py").stat().st_mtime)
         if not glb.exists() or glb.stat().st_mtime < made_by:
@@ -150,14 +187,15 @@ def clips_glb(cfg, rigged, log=print):
             HA.animate(blender, rigged, glb, want, **kw)
         srcs[kind] = str(glb)
     spec = {}
-    for group, source, clip, label, loop, weapons in CLIPS:
+    for group, source, clip, label, loop, weapons, fbx in clips:
         k = _key(group, source, clip)
-        spec[k] = {"name": k, "loop": loop, "glb": srcs[source], "action": clip, **({"bones": "ue"} if source in SRC else {})}
+        spec[k] = ({"name": k, "loop": loop, "fbx": fbx} if fbx else
+                   {"name": k, "loop": loop, "glb": srcs[source], "action": clip, **({"bones": "ue"} if source in SRC else {})})
     text = json.dumps(spec, ensure_ascii=False, indent=1)
     out_glb = work / "gallery.glb"
     fresh = (out_glb.exists() and (work / "map.json").exists() and (work / "map.json").read_text(encoding="utf-8") == text
              and out_glb.stat().st_mtime > max([rigged.stat().st_mtime, (ROOT / "blender_retarget_fbx.py").stat().st_mtime]
-                                               + [Path(srcs[k]).stat().st_mtime for k in PROC]))
+                                               + [Path(srcs[k]).stat().st_mtime for k in PROC if k in srcs]))
     (work / "map.json").write_text(text, encoding="utf-8")
     if fresh:   # the same clips on the same character: only the page is rebuilt
         log(_t("anim.clips_are_already_retargeted"))
@@ -170,7 +208,7 @@ def clip_list(out_glb):
     """The clips made into out_glb, in CLIPS' order: {id, label, group (its key), group_label, loop, weapons}."""
     done = {c["name"] for c in json.loads(Path(str(out_glb) + ".json").read_text(encoding="utf-8"))}
     return [dict(id=_key(g, s, c), label=lab, group=g, group_label=_t("anim." + g), loop=lp, weapons=w)
-            for g, s, c, lab, lp, w in CLIPS if _key(g, s, c) in done]
+            for g, s, c, lab, lp, w, _ in all_clips() if _key(g, s, c) in done]
 
 
 def _retarget(blender, rigged, out_glb, work, n, log):
@@ -208,7 +246,7 @@ def _page(out_glb, out_html, name, work, log):
                .replace(_t("anim.animation_viewer"), _t("anim.animations", name)))
     out_html.parent.mkdir(parents=True, exist_ok=True)
     out_html.write_text(page, encoding="utf-8")
-    missing = [c[2] for c in CLIPS if _key(*c[:3]) not in done]
+    missing = [c[2] for c in all_clips() if _key(*c[:3]) not in done]
     log(_t("anim.done_clips", out_html, len(clips)) + (_t("anim.not_retargeted", ', '.join(missing)) if missing else ""))
     return out_html
 

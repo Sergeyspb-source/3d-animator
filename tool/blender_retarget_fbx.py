@@ -3,6 +3,7 @@
     blender -b -P blender_retarget_fbx.py -- character.glb out.glb map.json [mesh=0|1]
 
 map.json: {"<fbx file name without .fbx>": {"name": "Slash", "loop": false}, ...}
+(or {"<key>": {"name": ..., "fbx": path}}: the FBX by its own path)
 A clip may also come from a GLB with many clips: {"<any key>": {"name": ..., "glb": path, "action": clip name in the GLB,
 "bones": "ue"}}; "bones": "ue" reads an Unreal-style skeleton (pelvis, spine_01, upperarm_l, thigh_l ... as in
 Mesh2Motion), without it the GLB uses the character's own names (another SF3D export of the same rig).
@@ -146,12 +147,20 @@ for stem, spec in CLIPS.items():
             af.animation_data.action_slot = act_f.slots[0]
         ue = spec.get("bones") == "ue"
     else:
-        fbx = FBX_DIR / f"{stem}.fbx"
+        fbx = Path(spec["fbx"]) if spec.get("fbx") else FBX_DIR / f"{stem}.fbx"   # (a path of its own: the gallery's packs)
         if not fbx.exists():
             print("RETARGET_MISSING", stem)
             continue
-        af = import_fbx(fbx)
-        act_f = af.animation_data.action
+        try:
+            af = import_fbx(fbx)
+        except StopIteration:   # no skeleton in it
+            print("RETARGET_MISSING", stem)
+            continue
+        act_f = af.animation_data.action if af.animation_data else None
+        if act_f is None:   # a skeleton without a clip (a model sent to Mixamo)
+            bpy.data.objects.remove(af)
+            print("RETARGET_MISSING", stem)
+            continue
         ue = False
 
     def tr(name, ue=ue):   # the character's bone -> the same bone of the source skeleton
