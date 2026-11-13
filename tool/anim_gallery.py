@@ -144,7 +144,8 @@ def clips_glb(cfg, rigged, log=print):
     for kind, kw in PROC.items():   # the procedural clips this page needs, on the character's own skeleton
         want = sorted({c[2] for c in CLIPS if c[1] == kind})
         glb = work / f"proc_{kind}.glb"
-        if not glb.exists() or glb.stat().st_mtime < rigged.stat().st_mtime:
+        made_by = max(rigged.stat().st_mtime, (ROOT / "blender_humanoid_anim.py").stat().st_mtime)
+        if not glb.exists() or glb.stat().st_mtime < made_by:
             log(_t("anim.procedural_clips", kind, ', '.join(want)))
             HA.animate(blender, rigged, glb, want, **kw)
         srcs[kind] = str(glb)

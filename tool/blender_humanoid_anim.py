@@ -669,6 +669,49 @@ def bow_draw(t):
     pb[hn].rotation_quaternion = (REST[hn].inverted() @ (rp.inverted() @ tot_new) @ REST[hn]).to_quaternion()
 
 
+def _torso_points():
+    """The torso's skin (the body's vertices led by the hips, the spine or the neck), at most ~3000 of them, in the
+    armature's rest space by their leading bone: where the body's front is when both hands hold one handle"""
+    import numpy as np
+    meshes = [o for o in bpy.context.scene.objects if o.type == "MESH" and any(m.type == "ARMATURE" for m in o.modifiers)]
+    if not meshes:
+        return {}
+    body = max(meshes, key=lambda o: len(o.data.vertices))
+    lead = {NAME[k] for k in ("hips", "spine", "spine1", "spine2", "neck") if k in NAME}
+    gn = {g.index: g.name for g in body.vertex_groups}
+    to_arm = arm.matrix_world.inverted() @ body.matrix_world
+    by = {}
+    vs = body.data.vertices
+    step = max(1, len(vs) // 12000)
+    for v in (vs[i] for i in range(0, len(vs), step)):
+        if not v.groups:
+            continue
+        g = gn.get(max(v.groups, key=lambda x: x.weight).group)
+        if g in lead:
+            by.setdefault(g, []).append(tuple(to_arm @ v.co) + (1.0,))
+    return {g: np.array(p).T for g, p in by.items()}
+
+
+TORSO = _torso_points() if TWOHAND else {}
+FRONT_GAP = .07 * HEIGHT   # the wrist this far in front of the torso's skin: the forearm's thickness and armour over both
+
+
+def torso_front(at, near=.07):
+    """How far forward of the point `at` the posed torso's skin reaches beside it (within near * height across and up),
+    None when no torso is there (the hands above the head, out to a side)"""
+    import numpy as np
+    pb = arm.pose.bones
+    best = None
+    for g, P in TORSO.items():
+        M = np.array(pb[g].matrix @ bones[g].matrix_local.inverted())
+        Q = (M @ P)[:3].T - np.array(at)
+        ok = (np.abs(Q @ np.array(right)) < near * HEIGHT) & (np.abs(Q @ np.array(up)) < near * HEIGHT)
+        if ok.any():
+            f = float((Q[ok] @ np.array(fwd)).max())
+            best = f if best is None else max(best, f)
+    return best
+
+
 def centre_right_hand(share=.75, pull=0.0, push=0.0):
     """both hands on one handle: the right wrist pulled towards the body's middle (the clip keeps its height and its
     forward reach), so the left arm can reach the handle; a two-bone solve of the right arm, its hand turned as before"""
@@ -691,7 +734,11 @@ def centre_right_hand(share=.75, pull=0.0, push=0.0):
     if (target - shl).length < .5 * reach_l:   # nor so close that the left elbow folds shut (hands over the shoulder)
         dv = (target - shl).normalized() + fwd * .8
         target = shl + dv.normalized() * (.5 * reach_l)
-    target = target + fwd * push   # push: the left palm's place came too close to the left shoulder last time
+    if TORSO:   # the hands in front of the chest, not in it (the clips' guard holds them at the body's middle)
+        f = torso_front(target)
+        if f is not None and f + FRONT_GAP > 0:
+            target = target + fwd * (f + FRONT_GAP)
+    target = target + fwd * push   # push: the left palm's place came too close to the left shoulder (or into the body) last time
     L1 = (B("forearm_R").head_local - B("arm_R").head_local).length
     L2 = (B("hand_R").head_local - B("forearm_R").head_local).length
     d = target - sh
@@ -843,12 +890,16 @@ def key_clip(name, seconds, fn, loop):
                 lp = pb_[NAME["hand_R"]].matrix @ _left_palm_local
                 dl = (lp - pb_[NAME["arm_L"]].head).length
                 over, under = dl - .92 * (_L1 + _L2 + PALM), .55 * (_L1 + _L2) - dl
-                if over <= 0 and under <= 0:
+                f = torso_front(lp) if TORSO else None   # the left palm (lower on the handle, nearer the body) out of it too
+                inside = f + .75 * FRONT_GAP if f is not None else 0.0
+                if over <= 0 and under <= 0 and inside <= 0:
                     break
                 if over > 0:
                     pull += over * 1.1
-                else:
+                elif under > 0:
                     push += under * 1.1
+                if inside > 0:
+                    push += inside * 1.1
         if AIM and name != "death":
             aim_blade(pose_i["blade"])
         if TWOHAND and name != "death":
