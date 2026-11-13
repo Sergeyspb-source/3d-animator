@@ -1192,7 +1192,7 @@ class Grip extends SkeletonModifier3D:
 	# the head, the palm to the haft from its shoulder's side), the wrist where the grip lies in it, the arm's two bones
 	# bent to bring it there (the elbow where the clip has it, else down and out). The clips are made for one hand: when
 	# the other cannot reach the haft, the holding hand comes towards it first (its turn, and the weapon's, kept).
-	func _reach(sk: Skeleton3D, side: String, t: Dictionary) -> void:
+	func _reach(sk: Skeleton3D, side: String, t: Dictionary, follow := false) -> void:
 		var M := _palm(sk, t["from"])
 		var P := _palm(sk, side)
 		if M.is_empty() or P.is_empty():
@@ -1212,6 +1212,11 @@ class Grip extends SkeletonModifier3D:
 			M = _palm(sk, t["from"])
 			g = _grip_for(M, P, t["n"], Sh)
 		var w := smoothstep(0.0, 0.25 * l, 1.3 * l - (g["W"] as Vector3).distance_to(Sh))
+		# follow: a mocap clip (the gallery's, «<block>/<clip>») - only as much as the clip itself brings this hand to the
+		# grip: one that keeps it away (drawing the sword from the back, sheathing it) is followed, not wrung after the
+		# grip behind the back. (The character's own procedural clips are made for one hand: there it is always brought.)
+		if follow:
+			w *= 1.0 - smoothstep(0.6 * l, 1.1 * l, sk.get_bone_global_pose(hand).origin.distance_to(g["W"]))
 		if w <= 0.0:
 			return
 		_arm_to(sk, hand, g["W"], Basis(), w)   # the wrist there, then the hand's turn onto the grip's frame
@@ -1299,7 +1304,7 @@ class Grip extends SkeletonModifier3D:
 			if resting:
 				_carry(sk, _two[side])
 			elif not throwing:
-				_reach(sk, side, _two[side])
+				_reach(sk, side, _two[side], "/" in clip)
 		for side in _held:
 			if int(_held[side]) <= 0:
 				continue

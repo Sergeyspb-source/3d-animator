@@ -86,7 +86,8 @@ func _ready() -> void:
 		_block.select(at[0])
 		if at[0] > 0 and at[1] >= 0:
 			_pending = String(_blocks[at[0]]["clips"][at[1]][0])
-		_show_block(at[0], at[0] > 0)   # (a gallery clip asked for: its block's weapons on, as when it is picked)
+		# (a gallery clip asked for: its block's weapons on, as when it is picked - unless --off says what is off)
+		_show_block(at[0], at[0] > 0 and not _args.has("off"))
 		var clip := maxi(at[1], 0)
 		if at[0] == 0 and _list.item_count > clip:
 			_list.select(clip)
