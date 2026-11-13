@@ -3,9 +3,11 @@
 ## piece put on through SF3DEquip, its clips to play, the pieces on and off, and a camera that orbits the character
 ## (left drag), pans (right drag) and zooms (wheel).
 ##
-## The clips in blocks: the character's own (the first) and the animation gallery's groups (tool/anim_gallery.py: its
-## gallery.glb retargeted onto this character, gallery.json its blocks), each block an AnimationLibrary of its key;
-## picking a block that has weapons in its clips puts on a piece of that kind (a two-hander, a sword, a shield).
+## The clips in blocks: the character's own (the first) and the animation gallery's groups (tool/anim_gallery.py;
+## gallery.json lists them). A gallery block is loaded when it is picked (its GLB of clips, no mesh, read at run time),
+## made first when it is not ready (its cmd: Blender retargets its clips onto this character, a loader meanwhile);
+## each loaded block is an AnimationLibrary of its key. Picking a block that has weapons in its clips puts on a piece of
+## that kind (a two-hander, a sword, a shield, an axe, a bow).
 ##
 ## A picture, then quit: godot --path <project> -- --shot=out.png [--anim=walk | --anim=two_handed_sword/twohand_idle_loop] [--at=0.5] [--yaw=30] [--zoom=2] [--off=item,item]
 ## [--pitch=-0.5] [--rise=0.3] (the look down, the point looked at raised by that share of the height)
@@ -28,7 +30,12 @@ var _worn := {}   # piece name -> its meshes
 var _repeat := true
 var _list := ItemList.new()
 var _block := OptionButton.new()
-var _blocks := []   # [{key, label, weapons: [kinds], clips: [[the clip's name in the player, its label]]}]
+var _blocks := []   # [{key, label, weapons: [kinds], clips: [[the clip's name in the player, its label]], state, ...}]
+# a gallery block's state: "ready" (made, not loaded), "none" (to be made), "building" (its cmd running: pid, t0),
+# "loading", "loaded", "error" (msg)
+var _status := Label.new()
+var _bar := ProgressBar.new()
+var _pending := ""   # the clip to play once its block is loaded
 var _boxes := {}   # piece -> its tick
 var _args := {}   # --key=value after «--»
 var _h := 1.0     # the character's height
@@ -77,13 +84,17 @@ func _ready() -> void:
 			break
 	if not _blocks.is_empty():
 		_block.select(at[0])
+		if at[0] > 0 and at[1] >= 0:
+			_pending = String(_blocks[at[0]]["clips"][at[1]][0])
 		_show_block(at[0], at[0] > 0)   # (a gallery clip asked for: its block's weapons on, as when it is picked)
 		var clip := maxi(at[1], 0)
-		if _list.item_count > clip:
+		if at[0] == 0 and _list.item_count > clip:
 			_list.select(clip)
 			_list.ensure_current_is_visible()
 			_play(_list.get_item_metadata(clip))
 	if args.has("shot"):
+		while at[0] > 0 and not String(_blocks[at[0]]["state"]) in ["loaded", "error"]:   # (the block made and loaded first)
+			await get_tree().create_timer(0.5).timeout
 		_yaw = deg_to_rad(float(args.get("yaw", "0")))
 		_dist /= float(args.get("zoom", "1"))
 		_pitch = float(args.get("pitch", str(_pitch)))
@@ -97,6 +108,7 @@ func _ready() -> void:
 func _process(dt: float) -> void:
 	if _player == null:
 		return
+	_wait_blocks(dt)
 	var clip := String(_player.current_animation)
 	var anim: Animation = _player.get_animation(clip) if clip != "" else null
 	var t := _player.current_animation_position / anim.length if anim and anim.length > 0 else 0.0
@@ -301,68 +313,164 @@ func _clips() -> Array:
 	return Array(_player.get_animation_list()) if _player else []
 
 
-# the gallery's clips: from its GLB (the same skeleton, imported the same way) into the character's player, a library a
-# block; a track kept when its bone is in the character's skeleton, its path made the character's own
+# the gallery's blocks as gallery.json lists them, none loaded yet
 func _gallery() -> void:
 	if _player == null:
 		return
-	_blocks = [{"key": "", "label": "{{js:gd.own_clips}}", "weapons": [], "clips": _clips().map(func(c): return [c, c])}]
-	if not FileAccess.file_exists("res://gallery.json") or not ResourceLoader.exists("res://gallery.glb"):
+	_blocks = [{"key": "", "label": "{{js:gd.own_clips}}", "weapons": [], "clips": _clips().map(func(c): return [c, c]),
+				"state": "loaded"}]
+	if not FileAccess.file_exists("res://gallery.json"):
 		return
 	var d = JSON.parse_string(FileAccess.get_file_as_string("res://gallery.json"))
-	var scene = load("res://gallery.glb")
-	var sk := Equip.skeleton_of(_model)
-	if not (d is Dictionary) or not (scene is PackedScene) or sk == null:
+	if not (d is Dictionary):
 		return
-	var inst: Node = scene.instantiate()
-	var found := inst.find_children("*", "AnimationPlayer", true, false)
-	if found.is_empty():
-		inst.free()
-		return
-	var src: AnimationPlayer = found[0]
-	var sk_path := String(_player.get_node(_player.root_node).get_path_to(sk))
 	for b in d.get("blocks", []):
-		var lib := AnimationLibrary.new()
-		var clips := []
-		var kinds := []
-		for c in b["clips"]:
-			var id := String(c["id"])
-			if not src.has_animation(id):   # (Godot's import takes a «_loop» off a clip's name, looping it)
-				for cut in ["_loop", "-loop", "loop"]:
-					if id.ends_with(cut) and src.has_animation(id.trim_suffix(cut)):
-						id = id.trim_suffix(cut)
-						break
-			if not src.has_animation(id):
-				continue
-			var a: Animation = src.get_animation(id).duplicate(true)
-			for t in range(a.get_track_count() - 1, -1, -1):
-				var bone := a.track_get_path(t).get_concatenated_subnames()
-				if bone == "" or sk.find_bone(bone) < 0:
-					a.remove_track(t)
-				else:
-					a.track_set_path(t, NodePath(sk_path + ":" + bone))
-			a.loop_mode = Animation.LOOP_LINEAR if c.get("loop", false) else Animation.LOOP_NONE
-			lib.add_animation(id, a)
-			clips.append([String(b["key"]) + "/" + id, String(c.get("label", id))])
-			for w in c.get("weapons", []):
-				if not w in kinds:
-					kinds.append(w)
-		if not clips.is_empty():
-			_player.add_animation_library(String(b["key"]), lib)
-			_blocks.append({"key": b["key"], "label": b.get("label", b["key"]), "weapons": kinds, "clips": clips})
-	inst.free()
+		var key := String(b["key"])
+		_blocks.append({"key": key, "label": b.get("label", key), "weapons": b.get("weapons", []), "glb": String(b["glb"]),
+						"cmd": b.get("cmd", []), "state": "ready" if b.get("ready", false) else "none", "json": b["clips"],
+						"clips": b["clips"].map(func(c): return [key + "/" + String(c["id"]), String(c.get("label", c["id"]))])})
 
 
-# a block's clips into the list; picked by hand, its weapons put on
+# a block's clips into the list (picked by hand: its weapons put on); a gallery block not loaded is made / loaded first
 func _show_block(b: int, arm := true) -> void:
 	_list.clear()
+	if arm:
+		for w in _blocks[b]["weapons"]:
+			_arm(String(w))
+	if String(_blocks[b]["state"]) != "loaded":
+		_get_block(b)
+		_loader()
+		return
 	for c in _blocks[b]["clips"]:
 		var i := _list.add_item(String(c[1]))
 		_list.set_item_metadata(i, c[0])
 		_list.set_item_tooltip(i, String(c[0]))
-	if arm:
-		for w in _blocks[b]["weapons"]:
-			_arm(String(w))
+	_loader()
+
+
+# make it (its cmd, in the background; _process waits for its .done) or load it
+func _get_block(b: int) -> void:
+	var blk: Dictionary = _blocks[b]
+	match String(blk["state"]):
+		"ready":
+			_load_block(b)
+		"none", "error":
+			var glb := String(blk["glb"])
+			for f in [glb + ".done", glb + ".error"]:
+				if FileAccess.file_exists(f):
+					DirAccess.remove_absolute(f)
+			var cmd: Array = blk["cmd"]
+			if cmd.is_empty():
+				blk["state"] = "error"
+				blk["msg"] = "no cmd"
+				return
+			blk["pid"] = OS.create_process(String(cmd[0]), PackedStringArray(cmd.slice(1)))
+			blk["t0"] = Time.get_ticks_msec()
+			blk["state"] = "building" if int(blk["pid"]) > 0 else "error"
+			blk["msg"] = "" if int(blk["pid"]) > 0 else String(cmd[0])
+
+
+# its GLB read now (a frame drawn first, so the loader shows): its clips into the character's player as its library;
+# a track kept when its bone is in the character's skeleton, its path made the character's own
+func _load_block(b: int) -> void:
+	var blk: Dictionary = _blocks[b]
+	blk["state"] = "loading"
+	_loader()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var doc := GLTFDocument.new()
+	var st := GLTFState.new()
+	var sk := Equip.skeleton_of(_model)
+	if doc.append_from_file(String(blk["glb"]), st) != OK or sk == null:
+		blk["state"] = "error"
+		blk["msg"] = String(blk["glb"])
+		_loader()
+		return
+	var inst: Node = doc.generate_scene(st)
+	var found := inst.find_children("*", "AnimationPlayer", true, false)
+	var lib := AnimationLibrary.new()
+	var clips := []
+	var sk_path := String(_player.get_node(_player.root_node).get_path_to(sk))
+	var src: AnimationPlayer = found[0] if found.size() > 0 else null
+	for c in blk["json"]:
+		var id := String(c["id"])
+		if src and not src.has_animation(id):   # (Godot's import may take a «_loop» off a clip's name, looping it)
+			for cut in ["_loop", "-loop", "loop"]:
+				if id.ends_with(cut) and src.has_animation(id.trim_suffix(cut)):
+					id = id.trim_suffix(cut)
+					break
+		if src == null or not src.has_animation(id):
+			continue
+		var a: Animation = src.get_animation(id).duplicate(true)
+		for t in range(a.get_track_count() - 1, -1, -1):
+			var bone := a.track_get_path(t).get_concatenated_subnames()
+			if bone == "" or sk.find_bone(bone) < 0:
+				a.remove_track(t)
+			else:
+				a.track_set_path(t, NodePath(sk_path + ":" + bone))
+		a.loop_mode = Animation.LOOP_LINEAR if c.get("loop", false) else Animation.LOOP_NONE
+		lib.add_animation(id, a)
+		clips.append([String(blk["key"]) + "/" + id, String(c.get("label", id))])
+	inst.free()
+	if clips.is_empty():
+		blk["state"] = "error"
+		blk["msg"] = String(blk["glb"])
+		_loader()
+		return
+	if _player.has_animation_library(String(blk["key"])):
+		_player.remove_animation_library(String(blk["key"]))
+	_player.add_animation_library(String(blk["key"]), lib)
+	for c in clips:   # the clip asked for (--anim), by its name before the import's cut
+		if _pending != "" and (String(c[0]) == _pending or _pending == String(c[0]) + "_loop"):
+			_pending = String(c[0])
+	blk["clips"] = clips
+	blk["state"] = "loaded"
+	if _block.selected == b:
+		_show_block(b, false)
+		var at := 0
+		for i in clips.size():
+			if String(clips[i][0]) == _pending:
+				at = i
+		_pending = ""
+		if _list.item_count > at:
+			_list.select(at)
+			_list.ensure_current_is_visible()
+			_play(_list.get_item_metadata(at))
+
+
+# the picked block's state under the blocks' list: a bar and a line while it is made or loaded, the reason if it failed
+func _loader() -> void:
+	var b := _block.selected
+	var st := String(_blocks[b]["state"]) if b >= 0 and b < _blocks.size() else "loaded"
+	_bar.visible = st in ["building", "loading", "ready", "none"]
+	_status.visible = st != "loaded"
+	match st:
+		"building":
+			_status.text = "{{js:gd.block_building}}".format([int((Time.get_ticks_msec() - int(_blocks[b]["t0"])) / 1000)])
+		"error":
+			_status.text = "{{js:gd.block_failed}}" + String(_blocks[b].get("msg", ""))
+		_:
+			_status.text = "{{js:gd.block_loading}}"
+
+
+# the blocks being made: loaded when Blender is done
+var _poll := 0.0
+func _wait_blocks(dt: float) -> void:
+	_poll += dt
+	if _poll < 0.5:
+		return
+	_poll = 0.0
+	for b in _blocks.size():
+		var blk: Dictionary = _blocks[b]
+		if String(blk["state"]) != "building":
+			continue
+		var glb := String(blk["glb"])
+		if FileAccess.file_exists(glb + ".done"):
+			_load_block(b)
+		elif FileAccess.file_exists(glb + ".error") or not OS.is_process_running(int(blk["pid"])):
+			blk["state"] = "error"
+			blk["msg"] = FileAccess.get_file_as_string(glb + ".error").strip_edges().right(300) if FileAccess.file_exists(glb + ".error") else String(blk["cmd"][0])
+	_loader()
 
 
 # a piece of a gallery weapon kind ticked (its hands' other pieces unticked by the tick): by its name, else by its grip
@@ -461,6 +569,15 @@ func _ui() -> void:
 			_play(_list.get_item_metadata(0)))
 	if _blocks.size() > 1:
 		box.add_child(_block)
+		_bar.indeterminate = true
+		_bar.custom_minimum_size = Vector2(230, 8)
+		_bar.show_percentage = false
+		_bar.visible = false
+		box.add_child(_bar)
+		_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_status.custom_minimum_size = Vector2(230, 0)
+		_status.visible = false
+		box.add_child(_status)
 	_list.custom_minimum_size = Vector2(230, 240)
 	_list.item_selected.connect(func(i): _play(_list.get_item_metadata(i)))
 	box.add_child(_list)

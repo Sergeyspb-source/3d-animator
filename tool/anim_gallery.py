@@ -1,7 +1,9 @@
-"""Animation gallery: the Mesh2Motion clips (Animations/Mesh2Motion, CC0) and SF3D's procedural two-handed and shield
-clips on one rigged character, as a single self-contained HTML page (the GLB is inside): open it and pick a clip.
+"""Animation gallery: the Mesh2Motion clips (Animations/Mesh2Motion, CC0), the Mixamo packs (Animations/Mixamo) and
+SF3D's procedural two-handed and shield clips on one rigged character, as a single self-contained HTML page (the GLB
+is inside): open it and pick a clip. The fitting room takes the same clips a block at a time (blocks, build_block).
 
     python anim_gallery.py <rigged.glb> <out.html>
+    python anim_gallery.py block <rigged.glb> <group> [--gallery=<dir>]
 
 Blender copies every clip onto the character's skeleton (blender_retarget_fbx.py, Unreal-style bone names mapped onto
 Mixamo ones); the page is tool/viewer_anim.html with the weapons of the clip in the hands (sword, sword and shield,
@@ -165,43 +167,122 @@ def build(cfg, rigged, out_html, log=print):
     return _page(out_glb, Path(out_html), name, work, log)
 
 
-def clips_glb(cfg, rigged, log=print):
-    """Every clip of CLIPS on this character: (the GLB with them, the character's name, the work folder). Retargeted
-    once; again only when the character, the retargeting or the procedural clips change."""
+def _name(rigged):
+    return re.sub(r"[^\w-]+", "_", re.sub(r"_landmarks_rigged$|_rigged$", "", Path(rigged).stem)).strip("_") or "character"
+
+
+def _work(cfg, name):   # (cfg["gallery_dir"]: another place for the retargeted clips, the tests' shared one)
+    return Path(cfg.get("gallery_dir") or Path(cfg["work_dir"]) / "anim_gallery") / name
+
+
+def _srcs(cfg, rigged, work, clips, log, make=True):
+    """The clips' source GLBs by source: Mesh2Motion's, the procedural ones on this character's skeleton (made now
+    when make and they are older than the character or their script)"""
     import hanim as HA
-    rigged = Path(rigged)
-    blender = cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe"
-    name = re.sub(r"[^\w-]+", "_", re.sub(r"_landmarks_rigged$|_rigged$", "", rigged.stem)).strip("_") or "character"
-    work = Path(cfg["work_dir"]) / "anim_gallery" / name
-    work.mkdir(parents=True, exist_ok=True)
     srcs = {k: str(v) for k, v in SRC.items()}
-    clips = all_clips()
-    for kind, kw in PROC.items():   # the procedural clips this page needs, on the character's own skeleton
+    for kind, kw in PROC.items():
         want = sorted({c[2] for c in clips if c[1] == kind})
         if not want:
             continue
         glb = work / f"proc_{kind}.glb"
-        made_by = max(rigged.stat().st_mtime, (ROOT / "blender_humanoid_anim.py").stat().st_mtime)
-        if not glb.exists() or glb.stat().st_mtime < made_by:
+        made_by = max(Path(rigged).stat().st_mtime, (ROOT / "blender_humanoid_anim.py").stat().st_mtime)
+        if make and (not glb.exists() or glb.stat().st_mtime < made_by):
             log(_t("anim.procedural_clips", kind, ', '.join(want)))
-            HA.animate(blender, rigged, glb, want, **kw)
+            HA.animate(cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe", rigged, glb, want, **kw)
         srcs[kind] = str(glb)
+    return srcs
+
+
+def _spec(clips, srcs):
     spec = {}
     for group, source, clip, label, loop, weapons, fbx in clips:
         k = _key(group, source, clip)
         spec[k] = ({"name": k, "loop": loop, "fbx": fbx} if fbx else
                    {"name": k, "loop": loop, "glb": srcs[source], "action": clip, **({"bones": "ue"} if source in SRC else {})})
-    text = json.dumps(spec, ensure_ascii=False, indent=1)
+    return json.dumps(spec, ensure_ascii=False, indent=1)
+
+
+def _fresh(out_glb, mapf, text, rigged, srcs):   # the same clips on the same character, made after their sources
+    if not (out_glb.exists() and mapf.exists() and mapf.read_text(encoding="utf-8") == text):
+        return False
+    deps = [Path(rigged), ROOT / "blender_retarget_fbx.py"] + [Path(srcs[k]) for k in PROC if k in srcs]
+    return all(d.exists() and out_glb.stat().st_mtime > d.stat().st_mtime for d in deps)
+
+
+def clips_glb(cfg, rigged, log=print):
+    """Every clip on this character in one GLB (the page's): (the GLB, the character's name, the work folder).
+    Retargeted once; again only when the character, the retargeting or the procedural clips change."""
+    rigged = Path(rigged)
+    blender = cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe"
+    name = _name(rigged)
+    work = _work(cfg, name)
+    work.mkdir(parents=True, exist_ok=True)
+    clips = all_clips()
+    srcs = _srcs(cfg, rigged, work, clips, log)
+    text = _spec(clips, srcs)
     out_glb = work / "gallery.glb"
-    fresh = (out_glb.exists() and (work / "map.json").exists() and (work / "map.json").read_text(encoding="utf-8") == text
-             and out_glb.stat().st_mtime > max([rigged.stat().st_mtime, (ROOT / "blender_retarget_fbx.py").stat().st_mtime]
-                                               + [Path(srcs[k]).stat().st_mtime for k in PROC if k in srcs]))
+    fresh = _fresh(out_glb, work / "map.json", text, rigged, srcs)
     (work / "map.json").write_text(text, encoding="utf-8")
     if fresh:   # the same clips on the same character: only the page is rebuilt
         log(_t("anim.clips_are_already_retargeted"))
     else:
-        _retarget(blender, rigged, out_glb, work, len(spec), log)
+        _retarget(blender, rigged, out_glb, work / "map.json", text.count('"name"'), log)
     return out_glb, name, work
+
+
+def _groups(clips):
+    out = {}
+    for c in clips:
+        out.setdefault(c[0], []).append(c)
+    return out
+
+
+def blocks(cfg, rigged):
+    """The gallery's blocks for the fitting room, nothing made here: [{key, label, weapons, clips: [{id, label, loop,
+    weapons}], glb: its block's clips (no mesh), ready: made and fresh, cmd: what makes it (build_block)}].
+    sf3d_wardrobe.gd loads a block when it is picked, running cmd first when it is not ready."""
+    rigged = Path(rigged)
+    work = _work(cfg, _name(rigged))
+    clips = all_clips()
+    srcs = _srcs(cfg, rigged, work, clips, print, make=False)
+    out = []
+    for g, cl in _groups(clips).items():
+        glb = work / "blocks" / f"{g}.glb"
+        ready = (_fresh(glb, glb.with_suffix(".map.json"), _spec(cl, srcs), rigged, srcs)
+                 and Path(str(glb) + ".done").exists())
+        out.append(dict(key=g, label=_t("anim." + g), weapons=sorted({w for c in cl for w in c[5]}),
+                        clips=[dict(id=_key(*c[:3]), label=c[3], loop=c[4], weapons=c[5]) for c in cl],
+                        glb=str(glb), ready=ready,
+                        cmd=[sys.executable, str(ROOT / "anim_gallery.py"), "block", str(rigged), g,
+                             f"--gallery={work.parent}"]))
+    return out
+
+
+def build_block(cfg, rigged, key, log=print):
+    """One block's clips retargeted onto the character, without its mesh: work/blocks/<key>.glb, then <key>.glb.done
+    (or <key>.glb.error with the reason) for the fitting room waiting for it"""
+    rigged = Path(rigged)
+    work = _work(cfg, _name(rigged))
+    glb = work / "blocks" / f"{key}.glb"
+    glb.parent.mkdir(parents=True, exist_ok=True)
+    done, err = Path(str(glb) + ".done"), Path(str(glb) + ".error")
+    done.unlink(missing_ok=True)
+    err.unlink(missing_ok=True)
+    try:
+        cl = [c for c in all_clips() if c[0] == key]
+        if not cl:
+            raise ValueError(key)
+        srcs = _srcs(cfg, rigged, work, cl, log)
+        text = _spec(cl, srcs)
+        mapf = glb.with_suffix(".map.json")
+        if not _fresh(glb, mapf, text, rigged, srcs):
+            mapf.write_text(text, encoding="utf-8")
+            _retarget(cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe", rigged, glb, mapf, len(cl), log, mesh=False)
+        done.write_text("ok", encoding="utf-8")
+    except Exception as e:
+        err.write_text(str(e)[-1500:], encoding="utf-8")
+        raise
+    return glb
 
 
 def clip_list(out_glb):
@@ -211,10 +292,10 @@ def clip_list(out_glb):
             for g, s, c, lab, lp, w, _ in all_clips() if _key(g, s, c) in done]
 
 
-def _retarget(blender, rigged, out_glb, work, n, log):
+def _retarget(blender, rigged, out_glb, mapf, n, log, mesh=True):
     log(_t("anim.blender_is_retargeting_clips_onto", n))
     r = subprocess.run([blender, "-b", "--factory-startup", "-P", str(ROOT / "blender_retarget_fbx.py"), "--", str(rigged),
-                        str(out_glb), str(work / "map.json")], capture_output=True, text=True, encoding="utf-8",
+                        str(out_glb), str(mapf), *([] if mesh else ["mesh=0"])], capture_output=True, text=True, encoding="utf-8",
                        errors="replace", timeout=3600, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     if "RETARGET_GLB" not in r.stdout:
         raise RuntimeError(_t("anim.retargeting_failed") + (r.stdout + r.stderr)[-1500:])
@@ -252,6 +333,16 @@ def _page(out_glb, out_html, name, work, log):
 
 
 if __name__ == "__main__":
+    #   python anim_gallery.py <rigged.glb> <out.html>                       the page
+    #   python anim_gallery.py block <rigged.glb> <group> [--gallery=<dir>]  one block for the fitting room
     sys.path.insert(0, str(ROOT))
     import sf3d_tool as T
-    build(T.load_config(), sys.argv[1], sys.argv[2])
+    cfg = T.load_config()
+    args = [a for a in sys.argv[1:] if not a.startswith("--gallery=")]
+    for a in sys.argv[1:]:
+        if a.startswith("--gallery="):
+            cfg["gallery_dir"] = a.split("=", 1)[1]
+    if args[0] == "block":
+        build_block(cfg, args[1], args[2])
+    else:
+        build(cfg, args[0], args[1])

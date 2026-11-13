@@ -6527,8 +6527,7 @@ async function sendNow(action, extra, wait, statusName) {
   } catch (e) { $('status').textContent = '{{js:ed.could_not_send_to_sf3d}}' + e.message; return null; }
   $('status').textContent = wait;
   const status = DATA.status_dir + '/' + DATA.stem + statusName + '.wear.json';   // (work/status/<model>: not the model's folder)
-  // (the fitting room the first time retargets the gallery's clips onto the character: up to half an hour)
-  for (let k = 0, n = action === 'wardrobe' ? 2400 : 600; k < n; k++) {
+  for (let k = 0; k < 600; k++) {
     await new Promise((r) => setTimeout(r, 1500));
     let js = null;
     try { const r = await fetch(fileUrl(status) + '?t=' + Date.now()); if (r.ok) js = await r.json(); } catch (e) { /* not yet */ }

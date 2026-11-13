@@ -772,21 +772,15 @@ def wardrobe(cfg, rigged: Path) -> dict:
     model = _animated_model(cfg, rigged, proj)
     files = {"character.glb": model, **{f"wear_{p.name}": p for p in pieces}}
     note = ""
-    try:   # the animation gallery's clips (anim_gallery.CLIPS), in its groups: sf3d_wardrobe.gd's blocks
+    for old in ("gallery.glb", "gallery.glb.import"):   # (once imported whole; now a block at a time, outside the project)
+        (proj / old).unlink(missing_ok=True)
+    try:   # the animation gallery's blocks (anim_gallery.blocks): sf3d_wardrobe.gd retargets and loads one when picked
         import anim_gallery as AG
-        g_glb = AG.clips_glb(cfg, rigged, log=lambda *a: None)[0]
-        clips = AG.clip_list(g_glb)
-        blocks = {}
-        for c in clips:
-            blocks.setdefault(c["group"], {"key": c["group"], "label": c["group_label"], "clips": []})["clips"].append(
-                {k: c[k] for k in ("id", "label", "loop", "weapons")})
-        (proj / "gallery.json").write_text(json.dumps({"blocks": list(blocks.values())}, ensure_ascii=False, indent=1),
-                                           encoding="utf-8")
-        files["gallery.glb"] = g_glb
-        note = _t("lm.gallery_clips", len(clips), len(blocks))
-    except Exception as e:   # (a skeleton the gallery's clips do not go onto: the fitting room opens with its own clips)
+        blocks = AG.blocks(cfg, rigged)
+        (proj / "gallery.json").write_text(json.dumps({"blocks": blocks}, ensure_ascii=False, indent=1), encoding="utf-8")
+        note = _t("lm.gallery_clips", sum(len(b["clips"]) for b in blocks), len(blocks), sum(b["ready"] for b in blocks))
+    except Exception as e:   # (no gallery: the fitting room opens with its own clips)
         (proj / "gallery.json").unlink(missing_ok=True)
-        (proj / "gallery.glb").unlink(missing_ok=True)
         note = _t("lm.no_gallery_clips", str(e)[-300:])
     for p in pieces:   # what of the body each one hides: SF3DEquip.wear() reads it beside the piece
         if p.with_suffix(".mask.json").exists():
