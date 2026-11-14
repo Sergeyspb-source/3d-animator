@@ -4246,14 +4246,21 @@ function buildPiece(kind, sides, p) {
       const O = torso.axis(tc + .08), side = new V3(1, 0, 0), fw = FRONT.clone().addScaledVector(torso.u, -FRONT.dot(torso.u)).normalize();
       const Rs = PB0.R, hw = .32 * Rs, N = 25, M = 7, th = p.thickness * Rs * .5, far = 2 * torso.len;
       const ths = lin(D(-8), D(188), N), xs = lin(-hw, hw, M);
+      // each ray: the first skin it meets (not a hand's), then only through the pieces worn on it there (trousers
+      // under it, a hit right past the one before) - not the far side of a thigh the ray went on to past the crotch
+      const wornHit = (y) => bodyGeo.index.array[3 * y.faceIndex] >= SKIN_VERTS;
+      const meet = (o, d) => {
+        const all = castAll(o, d, far).filter((y) => skinOf(y, ['Arm', 'Hand']) <= .5); if (!all.length) return null;
+        let k = 0; while (k + 1 < all.length && wornHit(all[k + 1]) && all[k + 1].distance - all[k].distance < .05 * HEIGHT) k++;
+        return all[k];
+      };
       const grid = ths.map((t2) => {
         const d = fw.clone().multiplyScalar(Math.cos(t2)).addScaledVector(torso.u, -Math.sin(t2));
-        return xs.map((x) => {
-          const o = O.clone().addScaledVector(side, x);
-          let h = cast(o, d, far);
-          if (h) { const lim = 2.2 * h.distance; for (const y of castAll(o, d, lim)) if (skinOf(y, ['Arm', 'Hand']) <= .5) h = y; }
-          return [o, d, (h ? h.distance : Rs) + p.gap * Rs, h ? h.faceIndex : -1];
-        });
+        const row = xs.map((x) => { const o = O.clone().addScaledVector(side, x), h = meet(o, d); return [o, d, (h ? h.distance : Rs) + p.gap * Rs, h ? h.faceIndex : -1]; });
+        // the band's sides no further out than its middle (a side ray slipping past the crotch along an inner thigh)
+        const mid = row[(M - 1) / 2][2];
+        for (const c of row) c[2] = Math.min(c[2], mid + .2 * hw);
+        return row;
       });
       acc.w = weigher(fam, PB.hips, p.rigidity);
       const V = [0, 1].map((sd) => grid.map((row, i) => row.map(([o, d, r, fc], j) => acc.vert(o.clone().addScaledVector(d, r + sd * th), j * 2 * hw / (M - 1) / LOOK.U, i * Rs * .15 / LOOK.U, fc))));
