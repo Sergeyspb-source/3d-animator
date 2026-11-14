@@ -1120,6 +1120,60 @@ static func arrows(meshes: Array, n: int) -> int:
 
 ## A position in a mask (thousandths of a unit), the next thousandth too where a coordinate is near the cells' edge
 ## (Blender's import moves vertices by ~1e-5).
+## A lower piece's part that came out over a higher one hidden while that one is shown: keys, its points (thousandths,
+## its meshes' own axes) as blender_layer_hide.py finds them - the armour editor's rule.
+static func hide_under(lower: Array, upper: Array, keys: Array) -> void:
+	var k := {}
+	for p in keys:
+		k[Vector3i(int(p[0]), int(p[1]), int(p[2]))] = true
+	for mi in lower:
+		if is_instance_valid(mi):
+			var list: Array = mi.get_meta("sf3d_under", [])
+			list.append([upper, k])
+			mi.set_meta("sf3d_under", list)
+	if lower.size() > 0 and is_instance_valid(lower[0]):
+		_hide_pieces(lower[0].get_parent())
+
+
+# the pieces' meshes without their triangles with a corner out over a shown higher piece (the full mesh kept aside)
+static func _hide_pieces(skel: Node) -> void:
+	for node in skel.get_children():
+		if not (node is MeshInstance3D and node.has_meta("sf3d_under")):
+			continue
+		var mi := node as MeshInstance3D
+		if not mi.has_meta("sf3d_full_mesh"):
+			mi.set_meta("sf3d_full_mesh", mi.mesh)
+		var full: Mesh = mi.get_meta("sf3d_full_mesh")
+		var hide := {}
+		for e in mi.get_meta("sf3d_under"):
+			if (e[0] as Array).any(func(u): return is_instance_valid(u) and u.visible):
+				hide.merge(e[1])
+		if hide.is_empty():
+			mi.mesh = full
+			continue
+		var am := ArrayMesh.new()
+		for s in full.get_surface_count():
+			var arrays := full.surface_get_arrays(s)
+			var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+			var idx = arrays[Mesh.ARRAY_INDEX]
+			if idx == null or (idx as PackedInt32Array).is_empty():
+				idx = PackedInt32Array(range(verts.size()))
+			var hid := PackedByteArray()
+			hid.resize(verts.size())
+			for i in verts.size():
+				hid[i] = 1 if _in_mask(hide, verts[i]) else 0
+			var keep := PackedInt32Array()
+			for t in range(0, idx.size(), 3):
+				if not (hid[idx[t]] or hid[idx[t + 1]] or hid[idx[t + 2]]):
+					keep.append(idx[t]); keep.append(idx[t + 1]); keep.append(idx[t + 2])
+			if keep.is_empty():   # (a surface all out: one degenerate triangle keeps the surface, its material's place)
+				keep = PackedInt32Array([idx[0], idx[0], idx[0]])
+			arrays[Mesh.ARRAY_INDEX] = keep
+			am.add_surface_from_arrays(full.surface_get_primitive_type(s), arrays)
+			am.surface_set_material(s, full.surface_get_material(s))
+		mi.mesh = am
+
+
 static func _in_mask(hide: Dictionary, v: Vector3) -> bool:
 	var opts := []
 	for c in [v.x, v.y, v.z]:
@@ -1152,7 +1206,7 @@ static func _hide_body(character: Node) -> void:
 	var skel := skeleton_of(character)
 	if skel == null:
 		return
-	var hide := {}
+	var hide := {}   # (and the pieces' parts out over shown higher ones: _hide_pieces, at the end)
 	for node in skel.get_children():
 		if node is MeshInstance3D and node.has_meta("sf3d_mask") and node.visible:
 			hide.merge(node.get_meta("sf3d_mask"))
@@ -1192,6 +1246,7 @@ static func _hide_body(character: Node) -> void:
 			am.add_surface_from_arrays(full.surface_get_primitive_type(s), arrays, full.surface_get_blend_shape_arrays(s))
 			am.surface_set_material(s, full.surface_get_material(s))
 		mi.mesh = am if taken > 0 else full
+	_hide_pieces(skel)
 
 
 static func _relative(from: Node, node: Node3D) -> Transform3D:   # node's transform in from's space, outside the tree

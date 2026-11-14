@@ -755,6 +755,33 @@ def _animated_model(cfg, rigged: Path, work: Path) -> Path:
     return out
 
 
+def _layer_hide(cfg, pieces, proj: Path) -> None:
+    """under.json beside the fitting room: the lower layers' parts out over the higher ones (blender_layer_hide.py,
+    the editor's rule), hidden by SF3DEquip.hide_under while the higher one is shown. Made again when a piece or a
+    layer changes."""
+    import hashlib
+    lay = [(p, WF.layer_value(p)) for p in pieces]
+    lay = [(p, v) for p, v in lay if v is not None]
+    out = proj / "under.json"
+    if len(lay) < 2:
+        out.write_text("{}", encoding="utf-8")
+        return
+    key = hashlib.sha1(json.dumps([[p.name, p.stat().st_mtime, v] for p, v in lay]
+                                  + [(ROOT / "blender_layer_hide.py").stat().st_mtime]).encode()).hexdigest()
+    if out.exists() and (proj / "under.key").exists() and (proj / "under.key").read_text() == key:
+        return
+    job = proj / "under_job.json"
+    job.write_text(json.dumps({"pieces": [{"item": p.name[:-4], "glb": str(p), "layer": v, "kind": WF.kind_of(p.name[:-4])} for p, v in lay],
+                               "out": str(out)}), encoding="utf-8")
+    r = subprocess.run([cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe", "-b", "--factory-startup", "-P",
+                        str(ROOT / "blender_layer_hide.py"), "--", str(job)], capture_output=True, text=True,
+                       encoding="utf-8", errors="replace", timeout=900, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    if "LAYER_HIDE" in r.stdout:
+        (proj / "under.key").write_text(key)
+    else:   # (the rule is a look: the fitting room opens without it)
+        out.write_text("{}", encoding="utf-8")
+
+
 def wardrobe(cfg, rigged: Path) -> dict:
     """A small Godot project (work_dir/wardrobe/<stem>) with the character, every fitted piece put on through
     SF3DEquip (godot/sf3d_equip.gd) and godot/sf3d_wardrobe.gd: clips to play, pieces on/off, an orbiting camera.
@@ -796,6 +823,7 @@ def wardrobe(cfg, rigged: Path) -> dict:
     # the layers set by hand in the editor (a piece's .fit.json): sf3d_wardrobe.gd gives them to wear()
     layers = {p.name[:-4]: WF.layer_of(p.with_suffix(".fit.json")) for p in pieces}
     (proj / "layers.json").write_text(json.dumps({k: v for k, v in layers.items() if v is not None}), encoding="utf-8")
+    _layer_hide(cfg, pieces, proj)
     fist = fist_hand(rigged)   # the fist remembered in the markup: SF3DEquip.Grip closes a holding hand so
     if fist:
         (proj / "fist.json").write_text(json.dumps(fist), encoding="utf-8")

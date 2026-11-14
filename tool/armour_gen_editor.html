@@ -420,6 +420,55 @@ function hideBody() {
     for (let t = 0; t < full.length; t += 3) if (!(hid[full[t]] && hid[full[t + 1]] && hid[full[t + 2]])) keep.push(full[t], full[t + 1], full[t + 2]);
     o.geometry.setIndex(keep);
   }
+  hideUnder();
+}
+// a lower layer's part that came out over a higher one is not shown (the user's rule, as the game's depth rule but by
+// the shapes at rest): a point of it is out when the line from the bone inside the body to it crosses a piece of a
+// higher layer on the way - a coif pushed out by the ears outside a helmet; under a helmet's rim the line misses it
+const UNDER_BVH = new Map();   // a worn mesh -> its rest triangles in the world, with their BVH
+function restGeo(o) {
+  let g = UNDER_BVH.get(o); if (g) return g;
+  o.updateMatrixWorld(true);
+  const P = o.geometry.attributes.position, pos = new Float32Array(P.count * 3), v = new V3();
+  for (let i = 0; i < P.count; i++) { v.fromBufferAttribute(P, i).applyMatrix4(o.matrixWorld); pos[3 * i] = v.x; pos[3 * i + 1] = v.y; pos[3 * i + 2] = v.z; }
+  g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const full = o.userData.pieceIndex || (o.geometry.index ? o.geometry.index.array.slice() : null);
+  if (full) g.setIndex(new THREE.BufferAttribute(full, 1));
+  g.computeBoundsTree(); UNDER_BVH.set(o, g); return g;
+}
+function hideUnder() {
+  const on = DATA.worn.filter((w) => { const e = WORN.get(w.item); return e && e.on && !HELD.includes(w.piece); });
+  const ray = new THREE.Ray(), v = new V3(), c = new V3(), eps = MM(2);
+  for (const w of on) {
+    // (a helmet's mail is rings with gaps - an aventail: seen through, nothing under it hidden)
+    const solid = (u, o) => !(u.piece === 'helmet' && /_mail$/.test(o.material.name || '')) && !o.material.transparent && !(o.material.alphaTest > 0);
+    const e = WORN.get(w.item), lw = layerOfW(w), ups = on.filter((u) => layerOfW(u) > lw).flatMap((u) => WORN.get(u.item).meshes.filter((o) => solid(u, o)).map(restGeo));
+    for (const o of e.meshes) {
+      if (!o.geometry.index) continue;
+      if (!o.userData.pieceIndex) o.userData.pieceIndex = o.geometry.index.array.slice();
+      const full = o.userData.pieceIndex;
+      if (!ups.length) { o.geometry.setIndex(new THREE.BufferAttribute(full, 1)); continue; }
+      // each bone's rest line (its joint to its child's), from the bind: the pose does not matter
+      const sk = o.skeleton, M = o.matrixWorld.clone().multiply(o.bindMatrixInverse);
+      const at = sk.boneInverses.map((bi) => new V3().setFromMatrixPosition(M.clone().multiply(bi.clone().invert())));
+      const kid = sk.bones.map((b) => sk.bones.findIndex((x) => x.parent === b));
+      const P = o.geometry.attributes.position, SI = o.geometry.attributes.skinIndex, SW = o.geometry.attributes.skinWeight;
+      const out = new Uint8Array(P.count);
+      for (let i = 0; i < P.count; i++) {
+        let bi = SI.getX(i), bw = SW.getX(i);
+        for (const [k, wk] of [[SI.getY(i), SW.getY(i)], [SI.getZ(i), SW.getZ(i)], [SI.getW(i), SW.getW(i)]]) if (wk > bw) { bi = k; bw = wk; }
+        v.fromBufferAttribute(P, i).applyMatrix4(o.matrixWorld);
+        const a = at[bi], b = kid[bi] >= 0 ? at[kid[bi]] : a, ab = b.clone().sub(a), t = ab.lengthSq() > 1e-12 ? Math.max(0, Math.min(1, v.clone().sub(a).dot(ab) / ab.lengthSq())) : 0;
+        c.copy(a).addScaledVector(ab, t);
+        const L = v.distanceTo(c); if (L < eps * 2) continue;
+        ray.origin.copy(c); ray.direction.copy(v).sub(c).normalize();
+        for (const g of ups) { const h = g.boundsTree.raycastFirst(ray, THREE.DoubleSide); if (h && h.distance < L - eps) { out[i] = 1; break; } }
+      }
+      const keep = [];
+      for (let t = 0; t < full.length; t += 3) if (!(out[full[t]] || out[full[t + 1]] || out[full[t + 2]])) keep.push(full[t], full[t + 1], full[t + 2]);
+      o.geometry.setIndex(keep);
+    }
+  }
 }
 const joint = (id) => (PB[id] ? PB[id].getWorldPosition(new V3()) : null);   // at rest: read before any pose
 

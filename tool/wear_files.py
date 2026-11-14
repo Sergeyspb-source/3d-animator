@@ -54,6 +54,23 @@ def path(rigged, item: str, suffix: str, kind=None, make=False) -> Path:
     return f
 
 
+# the layers by a piece's kind (its name's first word): the armour editor's LAYER and SF3DEquip.LAYER, the same
+LAYER = {"undercloth": .5, "trousers": 1, "footwear": 1.5, "brayette": 2, "bracer": 3, "rerebrace": 3, "greave": 3,
+         "cuisse": 3, "tassets": 3, "glove": 3.2, "codpiece": 2.5, "fauld": 2.8, "culet": 2.8, "elbow": 3.5,
+         "gorget": 4.5, "pelerine": 3.9, "rondel": 5.2, "ailette": 5.6, "hauberk": 2.4, "coif": 3.8, "poleyn": 3.5,
+         "cuirass": 4, "pauldron": 5, "helmet": 5, "tabard": 6, "skirt": 6, "cloak": 7}
+
+
+def kind_of(item: str) -> str:
+    return re.sub(r"^proc_", "", item).split("_")[0]
+
+
+def layer_value(glb: Path):
+    """A worn piece's layer: set by hand (its .fit.json), else by its kind; None for one not in the layers (a weapon)."""
+    v = layer_of(glb.with_suffix(".fit.json"))
+    return v if v is not None else LAYER.get(kind_of(glb.stem))
+
+
 def layer_of(fit: Path):
     """A piece's layer set by hand in the editor (its .fit.json «layer»: the higher, the more outside), else None (by
     its kind: the editor's LAYER, SF3DEquip.LAYER)."""

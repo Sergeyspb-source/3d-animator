@@ -59,6 +59,12 @@ func _ready() -> void:
 	for p in pieces:   # (layers.json: the layers set by hand in the editor, by the piece's name)
 		var nm := p.resource_path.get_file().get_basename().trim_prefix("wear_")
 		_worn[nm] = Equip.wear(_model, p, "", float(layers.get(nm, -1.0)) if layers is Dictionary else -1.0)
+	var under = JSON.parse_string(FileAccess.get_file_as_string("res://under.json")) if FileAccess.file_exists("res://under.json") else {}
+	if under is Dictionary:   # (the lower layers' parts out over the higher ones: hidden while those are shown)
+		for lo in under:
+			for up in under[lo]:
+				if _worn.has(lo) and _worn.has(up):
+					Equip.hide_under(_worn[lo], _worn[up], under[lo][up])
 	for n in String(_args.get("off", "")).split(",", false):   # --off=item,item: put on, taken off at once (as unticked)
 		if _worn.has(n):
 			Equip.show(_worn[n], false)
