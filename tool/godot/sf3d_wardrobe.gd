@@ -58,7 +58,7 @@ func _ready() -> void:
 	# (--nokeep: a shield as the clip has it, through a leg or not; with --keepdebug worked out and printed, not applied)
 	Equip.keep_off_body = not _args.has("nokeep") or _args.has("keepdebug")
 	Equip.keep_apply = not _args.has("nokeep")
-	Equip.keep_flex = float(_args.get("keepflex", str(Equip.keep_flex)))   # (--keepflex=0: moved only, the elbow not bent)
+	Equip.keep_flex = float(_args.get("keepflex", str(Equip.keep_flex)))   # (--keepflex=0: the elbow not bent)
 	Equip.keep_debug = _args.has("keepdebug")   # (the correction printed every frame; the shot not seeked: the clip played from its start)
 	var layers = JSON.parse_string(FileAccess.get_file_as_string("res://layers.json")) if FileAccess.file_exists("res://layers.json") else {}
 	for p in pieces:   # (layers.json: the layers set by hand in the editor, by the piece's name)

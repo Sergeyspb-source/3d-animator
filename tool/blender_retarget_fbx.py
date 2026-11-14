@@ -7,9 +7,11 @@ map.json: {"<fbx file name without .fbx>": {"name": "Slash", "loop": false}, ...
 A clip may also come from a GLB with many clips: {"<any key>": {"name": ..., "glb": path, "action": clip name in the GLB,
 "bones": "ue"}}; "bones": "ue" reads an Unreal-style skeleton (pelvis, spine_01, upperarm_l, thigh_l ... as in
 Mesh2Motion), without it the GLB uses the character's own names (another SF3D export of the same rig).
-Each bone of the target gets the same *world-space* rotation change from its rest pose that the FBX bone has, so the
-FBX file may use another bone orientation, scale or axis convention (Mixamo FBX is in centimetres, Y-up, rotated),
-as long as both skeletons share the rest pose. Hips translation is scaled by the ratio of the hips heights.
+Each bone of the target points the way the FBX bone points (two-vector: its direction and roll), so the FBX file may
+use another bone orientation, scale or axis convention (Mixamo FBX is in centimetres, Y-up, rotated) and another rest
+pose of the limbs (a T-pose onto an A-pose). The neck and the collarbones (option delta=Neck,Shoulder: bone name
+endings) and the bones without a driven child (the head) get the FBX bone's *world-space* rotation change from its rest
+instead: their rest shape is the character's anatomy, not a pose. Hips translation is scaled by the ratio of the hips heights.
 A clip with "mirror": true is the mirror image of the FBX (a left strafe becomes a right strafe): every bone takes the reflected motion of its
 left/right partner, reflected across the sagittal plane of the FBX skeleton.
 Exports a GLB with one NLA track per clip. Prints RETARGET_ lines.
@@ -30,6 +32,10 @@ CLIPS = json.loads(mapfile.read_text(encoding="utf-8"))
 FBX_DIR = Path(opt.get("fbx", str(mapfile.parent)))
 FPS = 30
 CLAVICLE_KEEP = float(opt.get("clavicle", "0.3"))   # the share of a Mesh2Motion collarbone's own turn kept
+# bones that take the source's turn from its rest, not its direction: their shape is the character's own. A neck leaning
+# forward 55° at rest aimed as Mixamo's upright one was stretched (the head 3 cm up and 5 cm back), collarbones 10° down
+# at rest aimed as Mixamo's 18° sank the shoulders: in Mixamo's idles the head stood 5 % of the height higher over them
+DELTA = tuple(x for x in opt.get("delta", "Neck,Shoulder").split(",") if x)
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.context.scene.render.fps = FPS
@@ -223,7 +229,7 @@ for stem, spec in CLIPS.items():
                 pf = af.pose.bones[sn]
                 tw = S @ ((Wf @ pf.matrix.to_3x3().normalized()) @ rest_f[sn].inverted()) @ S      # world rotation change of the FBX bone
             kid = dir_child(b)
-            if sn in names_f and kid is not None and src_of(kid.name) in names_f:
+            if sn in names_f and kid is not None and src_of(kid.name) in names_f and not nm.endswith(DELTA):
                 # two-vector retarget: the bone axis follows the FBX bone, and the roll about it follows the FBX roll
                 # corrected by the constant roll offset between the two rigs (their rest rolls differ)
                 bf_ = af.data.bones[sn]

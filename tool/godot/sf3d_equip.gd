@@ -1290,28 +1290,34 @@ class Grip extends SkeletonModifier3D:
 
 	# Things strapped on kept off the legs: a clip made for a small shield takes a big one through a knee. The thing is
 	# about 400 of its points (in the bone leading it); the thighs and shins are capsules (radii measured on the skin,
-	# KEEP_GAP of the height added for the armour on them). Every point in a capsule is pushed out of it, the ways
-	# averaged by how deep each is (a smooth push, not the deepest point's jumps). The correction is carried from frame
-	# to frame and only stepped: still in where the clip has the arm now - a step out (the elbow bent first, about its
-	# hinge, up to keep_flex degrees; the rest by moving the thing out whole: the upper arm turned so the elbow goes
-	# out, the forearm keeping its turn - carried parallel; at most KEEP_MOVE of the height); clear - a step back to
-	# the clip, as long as it stays clear. Solved anew every frame it flickered (its way changed from frame to frame).
-	const KEEP_MOVE := 0.18
+	# KEEP_GAP of the height added for the armour on them); how far it is in: all its points' depths in them. It is
+	# moved only as a body moves, by five ways in the order they are preferred (KEEP_WAYS, a price each): the forearm
+	# turned about itself so the thing's foot goes out from the body and its top in (the clips hold a shield's foot in
+	# front of the legs: swung out it clears them, upright, as one holds a big shield); the arm turned in the shoulder
+	# about the upright (a door), out to the side, forward and up; the elbow bent. Never the foot in, never the elbow
+	# straightened alone (it turned a tower shield edge on, its foot into the knee), nothing that bends the elbow sideways
+	# (moved whole with the forearm kept parallel, the arm looked broken). Each frame every way is tried KEEP_PROBE_DEG
+	# ahead (ahead: with a knee mid-shield nothing gains until its edge is past) and a step goes the ways that gain most
+	# for their price. The correction is carried from frame to frame and only stepped: still in - a step out, taken if
+	# it leaves it less in (or a little more while the way ahead clears it well); clear - a step back to the clip while
+	# it stays clear; a new clip starts from none.
 	const KEEP_GAP := 0.02
-	const KEEP_STEP := 0.012   # of the height: how far it may move out in a frame
-	const KEEP_STEP_DEG := 2.5   # and the elbow bend more
+	const KEEP_STEP_DEG := 2.5   # how far a way may go in a frame
+	const KEEP_PROBE_DEG := 15.0   # how far ahead each way is tried
 	const KEEP_BACK := 0.02   # the share of it given back in a frame once clear (if that stays clear)
 	const KEEP_SLACK := 0.02   # of the height: how clear it must stay for a step back
 	const KEEP_SHOW := 0.3   # the share of the way to the solve the shown arm goes in a frame
-	const KEEP_STRAIGHT := 25.0   # degrees: how far the elbow may be straightened (the arm put out forward; bent up to keep_flex)
-	const KEEP_TURN := 45.0   # degrees: how far the upper arm may turn about itself (the forearm swung out as a door)
+	# [the way, how far it may go (degrees), its price]: the forearm about itself (the foot out), the arm about the
+	# upright (either way), out to the side, forward-up, the elbow bent (as far as keep_flex)
+	const KEEP_WAYS := [["roll", 40.0, 1.0], ["yaw", 40.0, 1.5], ["out", 30.0, 2.0], ["lift", 35.0, 2.5], ["bend", 30.0, 3.0]]
 	var _keep := []   # [{mi, bone: the bone leading it, arm: its upper arm, fore: its forearm, hand, box: [centre, Basis of its ways, half sizes] in that bone's rest frame}]
 	var _caps := []   # [[bone, its child, radius]] - measured once
 	var _keep_h := 1.0   # the skeleton's height
 	var keep_flex := 30.0   # (SF3DEquip.keep_flex, given by wear())
 	var keep_debug := false
 	var keep_apply := true
-	var _keep_q := {}   # an upper arm -> {t: its move now, phi: its elbow's bend now} - carried from frame to frame
+	var _keep_q := {}   # an upper arm -> {x: its correction now (radians: roll, yaw, out, lift, bend - KEEP_WAYS), xs: as shown}
+	var _keep_clip := ""   # (the clip it was solved for: another one starts from none)
 
 	## a thing strapped on (a shield): kept off the body while it is shown
 	func keep_off(mi: MeshInstance3D, on: bool) -> void:
@@ -1372,7 +1378,7 @@ class Grip extends SkeletonModifier3D:
 		var few := PackedVector3Array()   # (about 400 of its points: the shape itself, a curved shield's too)
 		for i in range(0, pts.size(), maxi(1, int(pts.size() / 400))):
 			few.append(pts[i])
-		_keep.append({"mi": mi, "bone": bone, "arm": arm, "fore": fore, "hand": hand, "box": _box_of(pts), "pts": few})
+		_keep.append({"mi": mi, "bone": bone, "arm": arm, "fore": fore, "hand": hand, "box": _box_of(pts), "pts": few, "left": side == "Left"})
 
 	# the box round points: their middle, their main ways (the covariance's, by power steps) and the half sizes on them
 	func _box_of(pts: PackedVector3Array) -> Array:
@@ -1497,6 +1503,21 @@ class Grip extends SkeletonModifier3D:
 			return [Vector3.ZERO, Vector3.ZERO, 0.0]
 		return [push / wsum, at / wsum, total]
 
+	# how far its points are in the capsules, all their depths (the solver's measure: no ways, no weights)
+	func _depth(pts: PackedVector3Array, caps: Array) -> float:
+		var total := 0.0
+		for cp in caps:
+			var A: Vector3 = cp[0]
+			var ab: Vector3 = (cp[1] as Vector3) - A
+			var l2 := maxf(ab.length_squared(), 1e-9)
+			var r: float = cp[2]
+			for p in pts:
+				var t := clampf((p - A).dot(ab) / l2, 0.0, 1.0)
+				var d2 := p.distance_squared_to(A + ab * t)
+				if d2 < r * r:
+					total += r - sqrt(d2)
+		return total
+
 	# the box (its centre C, ways R, half sizes e, as posed) against the capsules (kept for a measure: a curved shield's
 	# box is too thick to push by)
 	func _box_push(C: Vector3, R: Basis, e: Vector3, caps: Array) -> Array:
@@ -1539,9 +1560,29 @@ class Grip extends SkeletonModifier3D:
 			return
 		if _caps.is_empty():
 			_measure_caps(sk)
+		var t0 := Time.get_ticks_usec()
+		_keep_body(sk)
+		if keep_debug:
+			print("KEEPTIME %d" % (Time.get_ticks_usec() - t0))
+
+	func _keep_body(sk: Skeleton3D) -> void:
+		var none := [0.0, 0.0, 0.0, 0.0, 0.0]
+		var clip := _clip()
+		if clip != _keep_clip:   # (another clip: its own correction from none, the shown arm going there smoothly)
+			_keep_clip = clip
+			for a in _keep_q:
+				_keep_q[a]["x"] = none.duplicate()
 		var caps := _caps.map(func(c): return [sk.get_bone_global_pose(c[0]).origin, sk.get_bone_global_pose(c[1]).origin, c[2]])
 		# (a step back only where it stays clear by KEEP_SLACK: at the edge in and out by turns, every frame, it shook)
 		var wide := caps.map(func(c): return [c[0], c[1], float(c[2]) + KEEP_SLACK * _keep_h])
+		var up := (sk.global_transform.basis.inverse() * Vector3.UP).normalized()
+		var fwd := _forward(sk)
+		fwd = fwd - up * fwd.dot(up)
+		fwd = fwd.normalized() if fwd.length() > 1e-6 else up.cross(Vector3.RIGHT).normalized()
+		var lat := up.cross(fwd).normalized()   # (the character's left)
+		var lim := []
+		for w in KEEP_WAYS:
+			lim.append(deg_to_rad(keep_flex if w[0] == "bend" else float(w[1])))
 		for k in _keep:
 			if not is_instance_valid(k["mi"]) or not k["mi"].visible:
 				continue
@@ -1553,101 +1594,110 @@ class Grip extends SkeletonModifier3D:
 			var S := Ga.origin
 			var E := Gf.origin
 			var Wh := sk.get_bone_global_pose(k["hand"]).origin
-			var hinge := (S - E).cross(Wh - E)
+			var fa := (Wh - E).normalized()   # the forearm's own way
+			var hinge := (S - E).cross(Wh - E)   # (turned by +, the elbow opens)
 			hinge = hinge.normalized() if hinge.length() > 1e-6 else Vector3.ZERO
 			var P0 := PackedVector3Array()
+			var foot := Vector3.ZERO   # (its lowest point)
 			for p in k["pts"]:
-				P0.append(G * (p as Vector3))
-			var u := (E - S).normalized()   # the upper arm's own way: turned about it, the forearm swings round it (a door)
-			var turn := func(ph: float, ps: float) -> Quaternion:   # the elbow's bend, then the upper arm's turn
-				var qh := Quaternion(hinge, ph) if hinge != Vector3.ZERO else Quaternion.IDENTITY
-				return Quaternion(u, ps) * qh
-			var moved := func(ph: float, ps: float, tr: Vector3) -> PackedVector3Array:   # its points so turned and moved
-				var qq: Quaternion = turn.call(ph, ps)
+				var q := G * (p as Vector3)
+				P0.append(q)
+				if foot == Vector3.ZERO or q.dot(up) < foot.dot(up):
+					foot = q
+			var outw := lat * (1.0 if k["left"] else -1.0)   # out from the body on its side
+			var shoulder := func(x: Array) -> Quaternion:   # the arm in the shoulder: about the upright, out, forward-up
+				return Quaternion(up, x[1]) * Quaternion(fwd, x[2]) * Quaternion(lat, x[3])
+			var elbow := func(x: Array) -> Quaternion:   # the forearm: about itself, then about the elbow's hinge
+				var qh := Quaternion(hinge, x[4]) if hinge != Vector3.ZERO else Quaternion.IDENTITY
+				return qh * Quaternion(fa, x[0])
+			var Pp := PackedVector3Array()   # (every third point: for the ways tried ahead)
+			for i in range(0, P0.size(), 3):
+				Pp.append(P0[i])
+			var moved := func(x: Array, pts: PackedVector3Array) -> PackedVector3Array:
+				var qa: Quaternion = shoulder.call(x)
+				var qf: Quaternion = elbow.call(x)
 				var out := PackedVector3Array()
-				for p in P0:
-					out.append(E + qq * (p - E) + tr)
+				for p in pts:
+					out.append(S + qa * ((E - S) + qf * (p - E)))
 				return out
-			var onto := func(tr: Vector3) -> Vector3:   # where the elbow can go: round the shoulder
-				return S + (E + tr - S).normalized() * E.distance_to(S) - E
-			# the correction lives on from frame to frame (the arm's, in its own terms: the elbow's bend, the upper
-			# arm's turn about itself, the move): each frame it is checked where the clip has the arm now - still in,
-			# a step further out, taken only if it leaves it less in (else it stays: no circling at a limit); clear, a
-			# step back towards the clip, as long as that stays clear by KEEP_SLACK
-			var st: Dictionary = _keep_q.get(arm, {"t": Vector3.ZERO, "phi": 0.0, "psi": 0.0})
-			var T: Vector3 = st["t"]
-			var phi: float = st["phi"]
-			var psi: float = st["psi"]
+			var depth_at := func(x: Array, cs: Array, pts: PackedVector3Array) -> float:
+				return _depth(moved.call(x, pts), cs)
+			# the ways each goes (+1 / -1; the door both): the foot out, the hand out, forward-up, the elbow closing
+			var sg := func(v: float, d: float) -> float: return d if absf(v) < 1e-6 else signf(v)
+			var dirs := [[sg.call(fa.cross(foot - E).dot(outw), 1.0)], [1.0, -1.0],
+				[sg.call(fwd.cross(Wh - S).dot(outw), 1.0 if k["left"] else -1.0)],
+				[sg.call(lat.cross(Wh - S).dot(fwd + up), -1.0)], [-1.0]]
+			var st: Dictionary = _keep_q.get(arm, {"x": none.duplicate(), "xs": none.duplicate()})
+			var x: Array = (st["x"] as Array).duplicate()
 			if keep_apply:
-				var r := _pts_push(moved.call(phi, psi, T), caps)
-				var push: Vector3 = r[0]
-				var depth: float = r[2]
+				var depth: float = depth_at.call(x, caps, P0)
 				if depth > 0.0:
-					# the push shared: the bend and the turn by least squares (their ways at the touch), the rest moved
-					var rr: Vector3 = (r[1] as Vector3) - E
-					var th := hinge.cross(rr) if hinge != Vector3.ZERO and keep_flex > 0.0 else Vector3.ZERO
-					var tu := u.cross(rr)
-					var lam := 0.05 * rr.length_squared()
-					var a11 := th.dot(th) + lam
-					var a12 := th.dot(tu)
-					var a22 := tu.dot(tu) + lam
-					var b1 := th.dot(push)
-					var b2 := tu.dot(push)
-					var det := a11 * a22 - a12 * a12
-					var dph := (b1 * a22 - b2 * a12) / det if absf(det) > 1e-12 else 0.0
-					var dps := (a11 * b2 - a12 * b1) / det if absf(det) > 1e-12 else 0.0
-					var lim := deg_to_rad(KEEP_STEP_DEG)
-					dph = clampf(clampf(dph, -lim, lim), -deg_to_rad(keep_flex) - phi, deg_to_rad(KEEP_STRAIGHT) - phi)
-					dps = clampf(clampf(dps, -lim, lim), -deg_to_rad(KEEP_TURN) - psi, deg_to_rad(KEEP_TURN) - psi)
-					var rest := push - th * dph - tu * dps
-					var dT := rest * 0.6
-					if dT.length() > KEEP_STEP * _keep_h:
-						dT = dT.normalized() * KEEP_STEP * _keep_h
-					for sc in [1.0, 0.5, 0.25]:   # (a step only if it leaves it less in)
-						var t2: Vector3 = onto.call(T + dT * sc)
-						if t2.length() > KEEP_MOVE * _keep_h:
-							t2 = t2.normalized() * KEEP_MOVE * _keep_h
-						var d2: float = _pts_push(moved.call(phi + dph * sc, psi + dps * sc, t2), caps)[2]
-						if d2 < depth * 0.92:   # (a real gain: not wandering where it cannot get out)
-							phi += dph * sc
-							psi += dps * sc
-							T = t2
-							break
+					var best := 0.0   # (the best gain ahead for its price, and that share in)
+					var ahead := 0.0
+					var score := []
+					var dp: float = depth_at.call(x, caps, Pp)
+					for i in 5:
+						var sc_i := []
+						for d in dirs[i]:
+							# tried a third, two thirds and all the way ahead: a way that is deeper in on the way is no
+							# way out past the leg but through it (its gain only as far as the first third)
+							var path := []
+							var span := 0.0
+							for f in [1.0 / 3.0, 2.0 / 3.0, 1.0]:
+								var xp := x.duplicate()
+								xp[i] = clampf(float(x[i]) + float(d) * deg_to_rad(KEEP_PROBE_DEG) * f, -float(lim[i]), float(lim[i]))
+								span = absf(float(xp[i]) - float(x[i]))
+								path.append(float(depth_at.call(xp, caps, Pp)))
+							if span < deg_to_rad(0.5) or dp <= 0.0:
+								continue
+							var through: bool = maxf(path[0], path[1]) > dp * 1.02
+							var gain: float = (dp - float(path[0] if through else path[2])) / dp
+							var v: float = gain / (float(KEEP_WAYS[i][2]) * rad_to_deg(span / 3.0 if through else span))
+							sc_i.append([v, float(d)])
+							if v > best:
+								best = v
+								ahead = 0.0 if through else gain
+						score.append(sc_i)
+					if best > 0.0:
+						# a step: the ways gaining at least half the best's, each by its share of it
+						var dx := none.duplicate()
+						for i in 5:
+							for c in score[i]:
+								if float(c[0]) >= 0.5 * best:
+									dx[i] = float(dx[i]) + float(c[1]) * deg_to_rad(KEEP_STEP_DEG) * float(c[0]) / best
+						for scale in [1.0, 0.5]:
+							var x2 := []
+							for i in 5:
+								x2.append(clampf(float(x[i]) + float(dx[i]) * scale, -float(lim[i]), float(lim[i])))
+							var d2: float = depth_at.call(x2, caps, P0)
+							# (less in; or, while the way ahead - never deeper on it - clears a good share, hardly more: a knee
+							# mid-shield, nothing gains until the edge is past)
+							if d2 < depth * 0.99 or (ahead >= 0.15 and d2 <= depth * 1.03):
+								x = x2
+								break
 				else:   # clear: a step back, if it stays clear
-					var tb: Vector3 = onto.call(T * (1.0 - KEEP_BACK))
-					if float(_pts_push(moved.call(phi * (1.0 - KEEP_BACK), psi * (1.0 - KEEP_BACK), tb), wide)[2]) <= 0.0:
-						phi *= 1.0 - KEEP_BACK
-						psi *= 1.0 - KEEP_BACK
-						T = tb
+					var xb := x.map(func(v): return float(v) * (1.0 - KEEP_BACK))
+					if float(depth_at.call(xb, wide, P0)) <= 0.0:
+						x = xb
 			else:
-				T = Vector3.ZERO
-				phi = 0.0
-				psi = 0.0
+				x = none.duplicate()
 			# shown: following the solve smoothly (its steps come every few frames: a staircase, seen as a shake)
-			var ts: Vector3 = (st.get("ts", Vector3.ZERO) as Vector3).lerp(T, KEEP_SHOW)
-			var phs: float = lerpf(float(st.get("phs", 0.0)), phi, KEEP_SHOW)
-			var pss: float = lerpf(float(st.get("pss", 0.0)), psi, KEEP_SHOW)
-			_keep_q[arm] = {"t": T, "phi": phi, "psi": psi, "ts": ts, "phs": phs, "pss": pss}
+			var xs := []
+			for i in 5:
+				xs.append(lerpf(float((st["xs"] as Array)[i]), float(x[i]), KEEP_SHOW))
+			_keep_q[arm] = {"x": x, "xs": xs}
 			if keep_debug:
-				print("KEEP %.3f move %.1f phi %.1f psi %.1f" % [_player.current_animation_position if _player else 0.0, T.length() / _keep_h * 1000.0, rad_to_deg(phi), rad_to_deg(psi)])
-			T = onto.call(ts)
-			phi = phs
-			psi = pss
-			if T.length() < 1e-6 and absf(phi) < 1e-5 and absf(psi) < 1e-5:
+				print("KEEP %.3f roll %.1f yaw %.1f out %.1f lift %.1f bend %.1f" % [_player.current_animation_position if _player and _player.current_animation != "" else 0.0, rad_to_deg(x[0]), rad_to_deg(x[1]), rad_to_deg(x[2]), rad_to_deg(x[3]), rad_to_deg(x[4])])
+			if xs.all(func(v): return absf(float(v)) < 1e-5):
 				continue
-			# applied: the upper arm turned so the elbow goes by T, the forearm keeping its turn in the world but for the
-			# elbow's bend (the thing on it moved, and turned only by that)
-			var E2 := E + T
-			var q := Quaternion((E - S).normalized(), (E2 - S).normalized())
+			# applied: the upper arm turned in the shoulder; the forearm with it, about itself and the elbow's hinge
+			var qs: Quaternion = shoulder.call(xs)
 			var par := sk.get_bone_parent(arm)
 			var pa := sk.get_bone_global_pose(par) if par >= 0 else Transform3D()
-			var u2 := (E2 - S).normalized()
-			# (the upper arm turned about itself by psi too: the elbow's crease goes round with the forearm)
-			var Ga2 := Transform3D(Basis(Quaternion(u2, psi)) * Basis(q) * Ga.basis, S)
+			var Ga2 := Transform3D(Basis(qs) * Ga.basis, S)
 			sk.set_bone_pose_rotation(arm, (pa.affine_inverse() * Ga2).basis.get_rotation_quaternion())
-			var qh := Quaternion(q * hinge, phi) if hinge != Vector3.ZERO else Quaternion.IDENTITY
-			var Bf := Basis(Quaternion(u2, psi) * qh) * Gf.basis
-			sk.set_bone_pose_rotation(fore, (Ga2.affine_inverse() * Transform3D(Bf, E2)).basis.get_rotation_quaternion())
+			var Bf := Basis(qs * (elbow.call(xs) as Quaternion)) * Gf.basis
+			sk.set_bone_pose_rotation(fore, (Ga2.affine_inverse() * Transform3D(Bf, S + qs * (E - S))).basis.get_rotation_quaternion())
 		if keep_debug:   # (where the things are now, by the hips, and how far in still: their motion measured outside)
 			var hips := sk.get_bone_global_pose(0)
 			for k in _keep:
@@ -1658,7 +1708,7 @@ class Grip extends SkeletonModifier3D:
 					for p in k["pts"]:
 						Pk.append(Gk * (p as Vector3))
 					var left := _pts_push(Pk, caps)
-					print("THING %.4f %.5f %.5f %.5f in %.5f" % [_player.current_animation_position if _player else 0.0, c.x / _keep_h, c.y / _keep_h, c.z / _keep_h, (left[0] as Vector3).length() / _keep_h])
+					print("THING %.4f %.5f %.5f %.5f in %.5f" % [_player.current_animation_position if _player and _player.current_animation != "" else 0.0, c.x / _keep_h, c.y / _keep_h, c.z / _keep_h, (left[0] as Vector3).length() / _keep_h])
 
 	func _clip() -> String:
 		if _player == null or not is_instance_valid(_player):
