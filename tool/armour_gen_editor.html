@@ -1681,6 +1681,13 @@ function mailCoif(p) {
   };
   const cellMid = (j, i) => P[j][i].o.clone().add(P[j + 1][i].o).add(P[j][i + 1].o).add(P[j + 1][i + 1].o).multiplyScalar(.25);
   const faceCell = Array.from({ length: NT }, (_, j) => Array.from({ length: NV }, (_, i) => faceAt(cellMid(j, i))));
+  // (two face cells touching at a corner only: the one of the other two nearer the opening's middle left out too - the
+  // rim one loop, not two meeting at a point)
+  for (let it = 0; it < 3; it++) for (let j = 0; j < NT; j++) for (let i = 0; i < NV - 1; i++) {
+    const j1 = (j + 1) % NT, a = faceCell[j][i], b = faceCell[j1][i + 1], c = faceCell[j1][i], e = faceCell[j][i + 1];
+    if (a && b && !c && !e) { const C = new V3(E.x, cy, 0), dc = cellMid(j1, i).setZ(0).distanceTo(C), de = cellMid(j, i + 1).setZ(0).distanceTo(C); if (dc < de) faceCell[j1][i] = true; else faceCell[j][i + 1] = true; }
+    if (c && e && !a && !b) { const C = new V3(E.x, cy, 0), da = cellMid(j, i).setZ(0).distanceTo(C), db = cellMid(j1, i + 1).setZ(0).distanceTo(C); if (da < db) faceCell[j][i] = true; else faceCell[j1][i + 1] = true; }
+  }
   const shown = (j, i) => [[j, i], [j - 1, i], [j, i - 1], [j - 1, i - 1]].some(([a, b]) => b >= 0 && b < NV && !faceCell[(a + NT) % NT][b]);
   const inner = (j, i) => [[j, i], [j - 1, i], [j, i - 1], [j - 1, i - 1]].every(([a, b]) => b < 0 || b >= NV || !faceCell[(a + NT) % NT][b]);   // (no face cell round it)
   // it hangs, not stands: mail is a heavy cloth - where the hull bridges a hollow (before the throat from the chin,
@@ -1721,16 +1728,51 @@ function mailCoif(p) {
     for (let j = jF + 1; j <= NT; j++) uvs[j][i][0] = uvs[j - 1][i][0] + P[j][i].o.distanceTo(P[j - 1][i].o) / U;
     for (let j = jF - 1; j >= 0; j--) uvs[j][i][0] = uvs[j + 1][i][0] - P[j][i].o.distanceTo(P[j + 1][i].o) / U;
   }
-  // the opening's rim on the oval: each point of a shown cell and a face cell slid towards its neighbour on the other side
-  // of the oval (along its row, else its line) to where the oval is
-  const isIn = (v) => faceAt(v);
-  for (let j = 0; j <= NT; j++) for (let i = 1; i < NV; i++) {
-    const jj = j % NT; if (inner(jj, i) || !shown(jj, i)) continue;
-    const q = P[j][i].o, me = isIn(q);
-    const nb = [P[(j + NT - 1) % NT][i].o, P[(j + 1) % NT][i].o, P[j][i - 1].o, P[j][i + 1].o].find((w) => isIn(w) !== me); if (!nb) continue;
-    let a = q.clone(), b = nb.clone();
-    for (let k = 0; k < 14; k++) { const m = a.clone().lerp(b, .5); if (isIn(m) === me) a = m; else b = m; }
-    q.copy(a.lerp(b, .5));
+  // the opening's rim: the edges between a face cell and a shown one chained into one loop, its points then spread
+  // evenly along the opening's outline as seen from the front (the oval over the chin's line, its sides on down to the
+  // point under the chin), each keeping its depth - a smooth oval, not the cells' staircase
+  const vk = (j, i) => (j % NT) * (NV + 1) + i, rimEdges = [];
+  for (let j = 0; j < NT; j++) for (let i = 0; i < NV; i++) {
+    if (!faceCell[j][i]) continue;
+    const j1 = j + 1, nb = [[j, i - 1, [j, i], [j1, i]], [j, i + 1, [j, i + 1], [j1, i + 1]], [j - 1, i, [j, i], [j, i + 1]], [j1, i, [j1, i], [j1, i + 1]]];
+    for (const [cj, ci, a, b] of nb) if (ci >= 0 && ci < NV && !faceCell[(cj + NT) % NT][ci]) rimEdges.push([a, b]);
+  }
+  const adj = new Map(), at2 = new Map();
+  for (const [a, b] of rimEdges) { const ka = vk(...a), kb = vk(...b); at2.set(ka, a); at2.set(kb, b); for (const [x, y] of [[ka, kb], [kb, ka]]) { if (!adj.has(x)) adj.set(x, []); adj.get(x).push(y); } }
+  const used = new Set(), loops = [];
+  for (const k0 of adj.keys()) {
+    if (used.has(k0)) continue;
+    const loop = [k0]; used.add(k0); let cur = k0, prev = -1;
+    for (;;) { const nx = adj.get(cur).find((x) => x !== prev && !used.has(x)); if (nx === undefined) break; loop.push(nx); used.add(nx); prev = cur; cur = nx; }
+    loops.push(loop);
+  }
+  const rimLoop = loops.sort((a, b) => b.length - a.length)[0] || [];
+  if (rimLoop.length > 8) {
+    // the outline from the front, from the top: down the wearer's x+ side to the point under the chin, up the other
+    const half = [];
+    for (let k = 0; k <= 40; k++) { const f = k / 40 * Math.PI / 2; half.push([axx * Math.sin(f), cy + ay * Math.cos(f)]); }
+    for (let k = 1; k <= 40; k++) { const y = cy - (cy - vBot) * k / 40; half.push([axx * Math.pow(Math.min(1, (y - vBot) / Math.max(1e-6, .5 * (cy - vBot))), .7), y]); }
+    const line = [...half, ...half.slice(0, -1).reverse().map(([x, y]) => [-x, y])].map(([x, y]) => [E.x + x, y]);
+    const lineS = [0]; for (let k = 1; k < line.length; k++) lineS.push(lineS[k - 1] + Math.hypot(line[k][0] - line[k - 1][0], line[k][1] - line[k - 1][1]));
+    const lineAt = (f) => { const sv = f * lineS[lineS.length - 1]; let k = 1; while (k < line.length - 1 && lineS[k] < sv) k++; const t = (sv - lineS[k - 1]) / Math.max(1e-9, lineS[k] - lineS[k - 1]); return [line[k - 1][0] + (line[k][0] - line[k - 1][0]) * t, line[k - 1][1] + (line[k][1] - line[k - 1][1]) * t]; };
+    const pt = (k) => { const [j, i] = at2.get(k); return P[j][i].o; };
+    let top = 0; rimLoop.forEach((k, n) => { if (pt(k).y > pt(rimLoop[top]).y) top = n; });
+    let ord = [...rimLoop.slice(top), ...rimLoop.slice(0, top)];
+    if (pt(ord[1]).x < pt(ord[ord.length - 1]).x) ord = [ord[0], ...ord.slice(1).reverse()];   // (on to x+ first, as the outline)
+    const ls = [0]; for (let n = 1; n < ord.length; n++) { const a = pt(ord[n - 1]), b = pt(ord[n]); ls.push(ls[n - 1] + Math.hypot(b.x - a.x, b.y - a.y)); }
+    const tot = ls[ls.length - 1] + Math.hypot(pt(ord[0]).x - pt(ord[ord.length - 1]).x, pt(ord[0]).y - pt(ord[ord.length - 1]).y);
+    const to = ord.map((k, n) => lineAt(ls[n] / tot));
+    ord.forEach((k, n) => { const q = pt(k); q.x = to[n][0]; q.y = to[n][1]; });
+    // the two rows of points next to it eased towards their neighbours' middle (across the face): the cells by the rim
+    // not sheared by its points' move (the rings' stripes)
+    const onRim = new Set(rimLoop), near = new Map();
+    for (const k of rimLoop) { const [j, i] = at2.get(k); for (const [dj, di] of [[-1, 0], [1, 0], [0, -1], [0, 1], [-2, 0], [2, 0], [0, -2], [0, 2], [-1, -1], [1, 1], [-1, 1], [1, -1]]) {
+      const jj = (j + dj + NT) % NT, ii = i + di, kk = vk(jj, ii); if (ii > 0 && ii < NV && !onRim.has(kk) && shown(jj, ii)) near.set(kk, [jj, ii]); } }
+    for (let it = 0; it < 4; it++) {
+      const nx = [...near.values()].map(([j, i]) => { const q = P[j][i].o, ns = [P[(j + NT - 1) % NT][i].o, P[(j + 1) % NT][i].o, P[j][i - 1].o, P[j][i + 1].o];
+        return [q, ns.reduce((z, w) => z + w.x, 0) / 4, ns.reduce((z, w) => z + w.y, 0) / 4]; });
+      for (const [q, x, y] of nx) { q.x += (x - q.x) * .5; q.y += (y - q.y) * .5; }
+    }
   }
   for (let i = 0; i <= NV; i++) { P[NT][i].o.copy(P[0][i].o); P[NT][i].n.copy(P[0][i].n); }   // (the seam's two columns one again: each was moved on its own)
   const capY = E.y + .55 * d;
@@ -1744,6 +1786,10 @@ function mailCoif(p) {
     const out = nn.dot(P[j][i].n) > 0;
     acc.face(out ? o : [...o].reverse(), MAIL, 'mail'); acc.face(out ? n : [...n].reverse(), MAIL, 'mail');
     if (i === NV - 1) { const e = [V[j][NV][0], V[j][NV][1], V[j + 1][NV][1], V[j + 1][NV][0]]; acc.face(out ? e : [...e].reverse(), MAIL, 'mail'); }   // (the hem's edge: its thickness closed)
+  }
+  for (const [[ja, ia], [jb, ib]] of rimEdges) {   // the opening's edge: its thickness closed too (not two sheets with a gap)
+    const e = [V[ja][ia][0], V[jb][ib][0], V[jb][ib][1], V[ja][ia][1]];
+    acc.face(e, MAIL, 'mail'); acc.face([...e].reverse(), MAIL, 'mail');
   }
   // the ears under it: the head's skin past the skull's sides hidden (on screen as in the game)
   const skull = (() => { const h2 = [1, -1].map((x) => cast(new V3(HJ.x, E.y, HJ.z), new V3(x, 0, 0), H)); return h2.every(Boolean) ? Math.max(h2[0].distance, h2[1].distance) : .05 * H; })();
