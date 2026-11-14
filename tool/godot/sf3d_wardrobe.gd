@@ -10,7 +10,7 @@
 ## that kind (a two-hander, a sword, a shield, an axe, a bow).
 ##
 ## A picture, then quit: godot --path <project> -- --shot=out.png [--anim=walk | --anim=two_handed_sword/twohand_idle_loop] [--at=0.5] [--yaw=30] [--zoom=2] [--off=item,item]
-## [--pitch=-0.5] [--rise=0.3] (the look down, the point looked at raised by that share of the height)
+## [--nolayers] [--nokeep] [--keepflex=30] [--pitch=-0.5] [--rise=0.3] (the look down, the point looked at raised by that share of the height)
 ## [--focus=RightHand] (the point looked at: that bone, where the clip has it when the picture is taken)
 extends Node3D
 
@@ -55,6 +55,8 @@ func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		var kv := a.trim_prefix("--").split("=", true, 1)
 		_args[kv[0]] = kv[1] if kv.size() > 1 else ""
+	Equip.keep_off_body = not _args.has("nokeep")   # (--nokeep: a shield as the clip has it, through a leg or not)
+	Equip.keep_flex = float(_args.get("keepflex", str(Equip.keep_flex)))   # (--keepflex=0: moved only, the elbow not bent)
 	var layers = JSON.parse_string(FileAccess.get_file_as_string("res://layers.json")) if FileAccess.file_exists("res://layers.json") else {}
 	for p in pieces:   # (layers.json: the layers set by hand in the editor, by the piece's name)
 		var nm := p.resource_path.get_file().get_basename().trim_prefix("wear_")
@@ -717,7 +719,13 @@ func _unhandled_input(e: InputEvent) -> void:
 
 
 func _shoot(path: String, at: float, focus := "") -> void:
-	await get_tree().create_timer(at).timeout
+	# (the clip put at the same moment every time: a little before «at», then played on to it - the modifiers' smoothing
+	# settled - whenever its block came in)
+	if _player and String(_player.current_animation) != "":
+		_player.seek(maxf(at - 0.25, 0.0), true)
+		await get_tree().create_timer(minf(at, 0.25)).timeout
+	else:
+		await get_tree().create_timer(at).timeout
 	if focus != "":   # the camera on a bone as the clip has it now
 		var sk := Equip.skeleton_of(_model)
 		for i in (sk.get_bone_count() if sk else 0):

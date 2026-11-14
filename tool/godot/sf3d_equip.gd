@@ -18,6 +18,8 @@ class_name SF3DEquip
 extends RefCounted
 
 static var layered := true
+static var keep_off_body := true   # a shield strapped on kept out of the body by its arm (Grip.keep_off)
+static var keep_flex := 30.0   # how far its elbow may bend (degrees) to lift it out first, before it is moved
 const DEPTH_STEP := 0.012   # of the height, between two layers worn at most
 const DEPTH_MAX := 0.045   # of the height, the top layer's push (a step of ~0.5 % with nine layers worn)
 # the armour editor's LAYER (armour_gen_editor.html): the pelerine over the mail, under the cuirass and the pauldrons
@@ -104,6 +106,10 @@ static func wear(character: Node, piece: PackedScene, mask := "", layer := -1.0)
 				mi.set_meta("sf3d_layer", layer if layer >= 0.0 else float(LAYER[kind]))
 				_layer(mi, 0.0)
 		_rank_layers(skel)
+	if keep_off_body and kind == "shield":   # (the clips are made for a smaller one: kept off the legs and the body)
+		for mi in out:
+			_grip(skel).keep_flex = keep_flex
+			_grip(skel).keep_off(mi, true)
 	if not cloth.is_empty() and out.size() > 0:   # a cloak: its chains swing
 		out[0].set_meta("sf3d_cloth", _cloth(skel, cloth, home_grid))
 	if out.size() > 0:
@@ -1278,6 +1284,241 @@ class Grip extends SkeletonModifier3D:
 	var _fist_read := false
 	var _player: AnimationPlayer = null   # the character's: a throw is one-handed (the other hand not onto the haft)
 
+	# Things strapped on kept off the legs: a clip made for a small shield takes a big one through a knee. Each frame the
+	# thing's points (as it is posed) are checked against capsules round the thighs and the shins (their radii measured
+	# on the skin, KEEP_GAP of the height added for the armour on them); where they are in, the thing is moved out as a
+	# whole, not turned: the upper arm turned at the shoulder so the elbow goes the way out, the forearm keeping its
+	# turn in the world (a turn at the shoulder alone fanned a tall shield out by 30 degrees). Smoothed over frames, at
+	# most KEEP_MOVE of the height. Its points nearer the shoulder than KEEP_NEAR of the height are left out. First the
+	# elbow is bent (up to SF3DEquip.keep_flex degrees, the forearm turned about the elbow's hinge either way) by as
+	# little as gets it out, and only what that does not clear is moved.
+	const KEEP_MOVE := 0.12
+	const KEEP_NEAR := 0.25
+	const KEEP_GAP := 0.02
+	var _keep := []   # [{mi, bone: the bone leading it, arm: its upper arm, fore: its forearm, pts: its points in that bone's rest frame}]
+	var _caps := []   # [[bone, its child, radius]] - measured once
+	var _keep_h := 1.0   # the skeleton's height
+	var keep_flex := 30.0   # (SF3DEquip.keep_flex, given by wear())
+	var _keep_q := {}   # an upper arm -> [its move now, its forearm]
+
+	## a thing strapped on (a shield): kept off the body while it is shown
+	func keep_off(mi: MeshInstance3D, on: bool) -> void:
+		_keep = _keep.filter(func(k): return is_instance_valid(k["mi"]) and k["mi"] != mi)
+		var sk := mi.get_parent() as Skeleton3D
+		if not on or sk == null or mi.mesh == null or mi.skin == null:
+			return
+		var votes := {}
+		var verts := []
+		var binds := []
+		for s in mi.mesh.get_surface_count():
+			var a := mi.mesh.surface_get_arrays(s)
+			var V: PackedVector3Array = a[Mesh.ARRAY_VERTEX]
+			var Bn = a[Mesh.ARRAY_BONES]
+			var Wt = a[Mesh.ARRAY_WEIGHTS]
+			if Bn == null or Wt == null or V.is_empty():
+				continue
+			var per := int((Bn as PackedInt32Array).size() / V.size())
+			for i in V.size():
+				var best := -1
+				var bw := -1.0
+				for k in per:
+					if Wt[i * per + k] > bw:
+						bw = Wt[i * per + k]
+						best = Bn[i * per + k]
+				votes[best] = int(votes.get(best, 0)) + 1
+				verts.append(V[i])
+				binds.append(best)
+		if votes.is_empty():
+			return
+		var lead: int = votes.keys().reduce(func(x, y): return x if votes[x] >= votes[y] else y)
+		var bname := mi.skin.get_bind_name(lead)
+		var bone := sk.find_bone(bname) if bname != StringName() else mi.skin.get_bind_bone(lead)
+		if bone < 0:
+			return
+		var side := "Left" if "Left" in sk.get_bone_name(bone) else "Right"
+		var arm := -1
+		var b := bone
+		while b >= 0 and arm < 0:   # its upper arm: up the chain from the bone leading it
+			if String(sk.get_bone_name(b)).ends_with(side + "Arm"):
+				arm = b
+			b = sk.get_bone_parent(b)
+		var fore := -1
+		for i in sk.get_bone_count():
+			if sk.get_bone_parent(i) == arm and String(sk.get_bone_name(i)).ends_with(side + "ForeArm"):
+				fore = i
+		if arm < 0 or fore < 0:
+			return
+		var bind := mi.skin.get_bind_pose(lead)
+		var pts := PackedVector3Array()
+		var step := maxi(1, int(verts.size() / 400))
+		for i in range(0, verts.size(), step):
+			pts.append(bind * (verts[i] as Vector3))
+		_keep.append({"mi": mi, "bone": bone, "arm": arm, "fore": fore, "pts": pts})
+
+	# the capsules round the legs', the body's and the head's bones: a bone to its child, the radius the skin's (the
+	# legs' 75th share of their points' distances, the body's 40th: its front is nearer than its sides)
+	func _measure_caps(sk: Skeleton3D) -> void:
+		var pairs := [["LeftUpLeg", "LeftLeg", .75], ["LeftLeg", "LeftFoot", .75], ["RightUpLeg", "RightLeg", .75],
+			["RightLeg", "RightFoot", .75]]
+		var find := func(sfx: String) -> int:
+			for i in sk.get_bone_count():
+				var n := String(sk.get_bone_name(i))
+				if n.ends_with(sfx) and not (sfx == "Spine" and n.ends_with("Spine1")) and not (sfx == "Leg" and n.ends_with("UpLeg")):
+					return i
+			return -1
+		var body: MeshInstance3D = null
+		for c in sk.get_children():
+			if c is MeshInstance3D and not c.has_meta("sf3d_piece") and c.skin and c.mesh and (body == null or c.mesh.get_faces().size() > body.mesh.get_faces().size()):
+				body = c
+		var lo := INF
+		var hi := -INF
+		for i in sk.get_bone_count():
+			lo = minf(lo, sk.get_bone_global_rest(i).origin.y)
+			hi = maxf(hi, sk.get_bone_global_rest(i).origin.y)
+		_keep_h = (hi - lo) * 1.08
+		var gap := KEEP_GAP * _keep_h
+		var dists := {}   # pair index -> distances of the skin's points led by its bone
+		var of_bone := {}
+		for k in pairs.size():
+			var a: int = find.call(pairs[k][0])
+			var b: int = find.call(pairs[k][1])
+			if a >= 0 and b >= 0:
+				of_bone[a] = k
+				dists[k] = []
+				_caps.append([a, b, 0.0, k])
+		if body:
+			var A := body.mesh.surface_get_arrays(0)
+			var V: PackedVector3Array = A[Mesh.ARRAY_VERTEX]
+			var Bn = A[Mesh.ARRAY_BONES]
+			var Wt = A[Mesh.ARRAY_WEIGHTS]
+			if Bn != null and Wt != null and not V.is_empty():
+				var per := int((Bn as PackedInt32Array).size() / V.size())
+				for i in range(0, V.size(), maxi(1, int(V.size() / 20000))):
+					var best := -1
+					var bw := -1.0
+					for k in per:
+						if Wt[i * per + k] > bw:
+							bw = Wt[i * per + k]
+							best = Bn[i * per + k]
+					var bn := body.skin.get_bind_name(best)
+					var bone := sk.find_bone(bn) if bn != StringName() else body.skin.get_bind_bone(best)
+					if not of_bone.has(bone):
+						continue
+					var cap: Array = _caps.filter(func(c): return c[0] == bone)[0]
+					var P := sk.get_bone_global_rest(bone) * (body.skin.get_bind_pose(best) * V[i])
+					var a := sk.get_bone_global_rest(cap[0]).origin
+					var b := sk.get_bone_global_rest(cap[1]).origin
+					var t := clampf((P - a).dot(b - a) / maxf((b - a).length_squared(), 1e-9), 0.0, 1.0)
+					if t > .15 and t < .85:
+						dists[of_bone[bone]].append(P.distance_to(a + (b - a) * t))
+		for c in _caps:
+			var d: Array = dists[c[3]]
+			d.sort()
+			var share: float = pairs[c[3]][2]
+			c[2] = (d[int(share * (d.size() - 1))] if d.size() > 8 else 0.06 * (hi - lo)) + gap
+
+	# a thing's points, moved by T, against the capsules: the deepest point and the way out
+	func _deepest(pts: PackedVector3Array, T: Vector3, caps: Array) -> Array:
+		var best := 0.0
+		var P := Vector3.ZERO
+		var out := Vector3.ZERO
+		for p0 in pts:
+			var p: Vector3 = p0 + T
+			for c in caps:
+				var a: Vector3 = c[0]
+				var ab: Vector3 = c[1] - a
+				var t := clampf((p - a).dot(ab) / maxf(ab.length_squared(), 1e-9), 0.0, 1.0)
+				var qc: Vector3 = a + ab * t
+				var d := p.distance_to(qc)
+				var pen: float = c[2] - d
+				if pen > best:
+					best = pen
+					P = p
+					out = (p - qc) / maxf(d, 1e-6)
+		return [best, P, out]
+
+	func _keep_off_body(sk: Skeleton3D) -> void:
+		if _keep.is_empty():
+			return
+		if _caps.is_empty():
+			_measure_caps(sk)
+		var caps := _caps.map(func(c): return [sk.get_bone_global_pose(c[0]).origin, sk.get_bone_global_pose(c[1]).origin, c[2]])
+		var want := {}   # an upper arm -> [the move wanted, its forearm]
+		for k in _keep:
+			if not is_instance_valid(k["mi"]) or not k["mi"].visible:
+				continue
+			var G := sk.get_bone_global_pose(k["bone"])
+			var S := sk.get_bone_global_pose(k["arm"]).origin
+			var E := sk.get_bone_global_pose(k["fore"]).origin
+			var pts := PackedVector3Array()
+			for p in k["pts"]:
+				var wp: Vector3 = G * (p as Vector3)
+				if wp.distance_to(S) > KEEP_NEAR * _keep_h:   # (its part away from the shoulder)
+					pts.append(wp)
+			# the elbow bent first: the smallest turn about its hinge (either way, a few degrees a step) that clears it
+			var Wr := sk.get_bone_global_pose(k["bone"]).origin
+			var hinge := (S - E).cross(Wr - E)
+			var phi := 0.0
+			if hinge.length() > 1e-6 and keep_flex > 0.0 and float(_deepest(pts, Vector3.ZERO, caps)[0]) > 0.0:
+				hinge = hinge.normalized()
+				var best := float(_deepest(pts, Vector3.ZERO, caps)[0])
+				var a := 3.0
+				while a <= keep_flex + 0.01:
+					for sg in [1.0, -1.0]:
+						var turned := PackedVector3Array()
+						var qa := Quaternion(hinge, deg_to_rad(a * sg))
+						for p in pts:
+							turned.append(E + qa * (p - E))
+						var pen := float(_deepest(turned, Vector3.ZERO, caps)[0])
+						if pen < best - 1e-5:
+							best = pen
+							phi = a * sg
+					if best <= 0.0:
+						break
+					a += 3.0
+				if phi != 0.0:
+					var qf := Quaternion(hinge, deg_to_rad(phi))
+					for i in pts.size():
+						pts[i] = E + qf * (pts[i] - E)
+			var T := Vector3.ZERO
+			for it in 4:   # (out of the deepest point, then again: another may be in still)
+				var r := _deepest(pts, T, caps)
+				if float(r[0]) <= 0.0:
+					break
+				T += (r[2] as Vector3) * (float(r[0]) * 1.1)
+				T = S + (E + T - S).normalized() * E.distance_to(S) - E   # (where the elbow can go: round the shoulder)
+			if T.length() > KEEP_MOVE * _keep_h:
+				T = T.normalized() * KEEP_MOVE * _keep_h
+			want[k["arm"]] = [T, k["fore"], phi, hinge]
+		var arms := _keep_q.duplicate()
+		arms.merge(want)
+		for arm in arms:
+			var was: Array = _keep_q.get(arm, [Vector3.ZERO, -1, 0.0, Vector3.UP])
+			var w: Array = want.get(arm, [Vector3.ZERO, was[1], 0.0, was[3]])
+			var cur: Vector3 = was[0]
+			var tgt: Vector3 = w[0]
+			# (towards a deeper move quickly, back slowly: no frame through the leg, no jerk off it)
+			cur = cur.lerp(tgt, 0.6 if tgt.length() > cur.length() else 0.25)
+			var phi: float = lerpf(float(was[2]), float(w[2]), 0.6 if absf(float(w[2])) > absf(float(was[2])) else 0.25)
+			var hinge: Vector3 = w[3]
+			_keep_q[arm] = [cur, w[1], phi, hinge]
+			var fore: int = w[1]
+			if (cur.length() < 1e-5 and absf(phi) < 0.05) or fore < 0:
+				continue
+			var Ga := sk.get_bone_global_pose(arm)
+			var Gf := sk.get_bone_global_pose(fore)
+			var S := Ga.origin
+			var E := Gf.origin
+			var E2 := S + (E + cur - S).normalized() * E.distance_to(S)
+			var q := Quaternion((E - S).normalized(), (E2 - S).normalized())
+			var par := sk.get_bone_parent(arm)
+			var pa := sk.get_bone_global_pose(par) if par >= 0 else Transform3D()
+			var Ga2 := Transform3D(Basis(q) * Ga.basis, S)
+			sk.set_bone_pose_rotation(arm, (pa.affine_inverse() * Ga2).basis.get_rotation_quaternion())
+			# the forearm keeps its turn in the world (the thing on it moved, not turned), but for the elbow's bend
+			var Bf := Basis(Quaternion(q * hinge, deg_to_rad(phi))) * Gf.basis if absf(phi) > 0.05 else Gf.basis
+			sk.set_bone_pose_rotation(fore, (Ga2.affine_inverse() * Transform3D(Bf, E2)).basis.get_rotation_quaternion())
+
 	func _clip() -> String:
 		if _player == null or not is_instance_valid(_player):
 			var sk := get_skeleton()
@@ -1509,6 +1750,7 @@ class Grip extends SkeletonModifier3D:
 		var sk := get_skeleton()
 		if sk == null:
 			return
+		_keep_off_body(sk)   # (a shield's arm first: the hands' grips after it)
 		for side in _point:   # a spear's head forward first: the other hand reaches the haft where it is then
 			_keep_forward(sk, side, _point[side])
 		var clip := _clip()
