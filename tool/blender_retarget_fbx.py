@@ -29,6 +29,7 @@ opt = dict(a.split("=", 1) for a in argv[3:] if "=" in a)
 CLIPS = json.loads(mapfile.read_text(encoding="utf-8"))
 FBX_DIR = Path(opt.get("fbx", str(mapfile.parent)))
 FPS = 30
+CLAVICLE_KEEP = float(opt.get("clavicle", "0.3"))   # the share of a Mesh2Motion collarbone's own turn kept
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.context.scene.render.fps = FPS
@@ -246,6 +247,12 @@ for stem, spec in CLIPS.items():
             par = b.parent
             rp = tot[par.name] if par else Matrix.Identity(3)
             rc = rp.inverted() @ tot[nm]
+            if ue and nm.endswith("Shoulder"):
+                # Mesh2Motion's collarbones shrug the shoulders up ~3 % of the height in every clip (Mixamo's lower them):
+                # on a broad character the shoulders sink into the neck. Their own turn (against the chest) is kept at
+                # CLAVICLE_KEEP; the arms below keep their directions (each bone follows its own source bone)
+                rc = Quaternion().slerp(rc.to_quaternion(), CLAVICLE_KEEP).to_matrix()
+                tot[nm] = rp @ rc
             m = M[nm]
             pg = gob.pose.bones[nm]
             pg.rotation_quaternion = (m.inverted() @ rc @ m).to_quaternion()
