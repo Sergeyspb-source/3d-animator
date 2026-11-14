@@ -54,6 +54,16 @@ def path(rigged, item: str, suffix: str, kind=None, make=False) -> Path:
     return f
 
 
+def layer_of(fit: Path):
+    """A piece's layer set by hand in the editor (its .fit.json «layer»: the higher, the more outside), else None (by
+    its kind: the editor's LAYER, SF3DEquip.LAYER)."""
+    try:
+        v = json.loads(fit.read_text(encoding="utf-8")).get("layer")
+    except (OSError, ValueError):
+        return None
+    return float(v) if isinstance(v, (int, float)) else None
+
+
 def items_in(char_dir) -> list:
     """Every piece in a character's folders: [(item, its .glb or None, its .fit.json or None)], by name."""
     d, out = Path(char_dir), {}

@@ -55,8 +55,10 @@ func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		var kv := a.trim_prefix("--").split("=", true, 1)
 		_args[kv[0]] = kv[1] if kv.size() > 1 else ""
-	for p in pieces:
-		_worn[p.resource_path.get_file().get_basename().trim_prefix("wear_")] = Equip.wear(_model, p)
+	var layers = JSON.parse_string(FileAccess.get_file_as_string("res://layers.json")) if FileAccess.file_exists("res://layers.json") else {}
+	for p in pieces:   # (layers.json: the layers set by hand in the editor, by the piece's name)
+		var nm := p.resource_path.get_file().get_basename().trim_prefix("wear_")
+		_worn[nm] = Equip.wear(_model, p, "", float(layers.get(nm, -1.0)) if layers is Dictionary else -1.0)
 	for n in String(_args.get("off", "")).split(",", false):   # --off=item,item: put on, taken off at once (as unticked)
 		if _worn.has(n):
 			Equip.show(_worn[n], false)

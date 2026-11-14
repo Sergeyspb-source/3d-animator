@@ -793,6 +793,9 @@ def wardrobe(cfg, rigged: Path) -> dict:
         dst = proj / name
         if srcp.resolve() != dst.resolve() and (not dst.exists() or dst.stat().st_mtime < srcp.stat().st_mtime or dst.stat().st_size != srcp.stat().st_size):
             shutil.copy2(srcp, dst)
+    # the layers set by hand in the editor (a piece's .fit.json): sf3d_wardrobe.gd gives them to wear()
+    layers = {p.name[:-4]: WF.layer_of(p.with_suffix(".fit.json")) for p in pieces}
+    (proj / "layers.json").write_text(json.dumps({k: v for k, v in layers.items() if v is not None}), encoding="utf-8")
     fist = fist_hand(rigged)   # the fist remembered in the markup: SF3DEquip.Grip closes a holding hand so
     if fist:
         (proj / "fist.json").write_text(json.dumps(fist), encoding="utf-8")

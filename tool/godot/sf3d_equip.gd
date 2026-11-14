@@ -37,7 +37,8 @@ static func skeleton_of(node: Node) -> Skeleton3D:
 
 ## Puts the piece on the character: returns its meshes (now children of the character's Skeleton3D).
 ## mask: the body it hides (default: <piece>.mask.json beside the piece's file).
-static func wear(character: Node, piece: PackedScene, mask := "") -> Array[MeshInstance3D]:
+## layer: its layer set by hand (its .fit.json «layer»), else (-1) by its kind (LAYER).
+static func wear(character: Node, piece: PackedScene, mask := "", layer := -1.0) -> Array[MeshInstance3D]:
 	var out: Array[MeshInstance3D] = []
 	var skel := skeleton_of(character)
 	if skel == null or piece == null:
@@ -97,10 +98,10 @@ static func wear(character: Node, piece: PackedScene, mask := "") -> Array[MeshI
 				_grip(skel).point(hold.substr(0, 1), Vector3(float(pt[0]), float(pt[1]), float(pt[2])) / 1000.0, true)
 	inst.free()
 	var kind := piece.resource_path.get_file().get_basename().trim_prefix("wear_").trim_prefix("proc_").get_slice("_", 0)
-	if layered and LAYER.has(kind):   # (a weapon, a shield, a quiver: in a hand or on a strap, not in the layers)
+	if layered and (LAYER.has(kind) or layer >= 0.0):   # (a weapon, a shield, a quiver: in a hand or on a strap, not in the layers)
 		for mi in out:
 			if not mi.has_meta("sf3d_hold"):
-				mi.set_meta("sf3d_layer", float(LAYER[kind]))
+				mi.set_meta("sf3d_layer", layer if layer >= 0.0 else float(LAYER[kind]))
 				_layer(mi, 0.0)
 		_rank_layers(skel)
 	if not cloth.is_empty() and out.size() > 0:   # a cloak: its chains swing

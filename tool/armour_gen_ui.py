@@ -226,10 +226,12 @@ def _kind(glb: Path):
 
 
 def worn(rigged: Path) -> list:
-    """Every piece put on the character so far (made here or fitted in «Armour»): [{item, glb, piece}] — the editor
-    shows them and fits a new piece over the ones ticked (under the ones that go over it: a cuirass over a skirt)."""
+    """Every piece put on the character so far (made here or fitted in «Armour»): [{item, glb, piece, layer}] — the
+    editor shows them and fits a new piece over the ones ticked (under the ones that go over it: a cuirass over a skirt,
+    by their layers)."""
     return [{"item": f.name[:-4], "glb": f.resolve().as_posix(), "v": int(f.stat().st_mtime), "piece": _kind(f),
-             "mask": f.with_suffix(".mask.json").resolve().as_posix() if f.with_suffix(".mask.json").exists() else None}
+             "mask": f.with_suffix(".mask.json").resolve().as_posix() if f.with_suffix(".mask.json").exists() else None,
+             "layer": WF.layer_of(f.with_suffix(".fit.json"))}
             for f in WF.pieces(rigged)]
 
 
@@ -720,10 +722,12 @@ def generate(cfg, req) -> dict:
         WF.path(rigged, item, ".mask.json", piece).unlink(missing_ok=True)
     # the editor's list of pieces: a fit.json and a source next to the result (marked: it is changed here, not there)
     shutil.copy2(work / "piece.glb", WF.path(rigged, item, ".src.glb", piece))
+    layer = WF.layer_of(WF.path(rigged, item, ".fit.json", piece))   # (set by hand: kept when the piece is made again)
     WF.path(rigged, item, ".fit.json", piece).write_text(json.dumps(
         {"item": item, "src": f"{item}.src.glb", "saved": datetime.now().isoformat(timespec="seconds"),
          "procedural": {"piece": piece, "sides": sides, "params": params, "style": req.get("style")},
-         "state": {"part": PIECES[piece][4], "under": [str(x) for x in req.get("under") or []]}}, ensure_ascii=False, indent=1),
+         "state": {"part": PIECES[piece][4], "under": [str(x) for x in req.get("under") or []]},
+         **({"layer": layer} if layer is not None else {})}, ensure_ascii=False, indent=1),
         encoding="utf-8")
     shots = [str(work / f"preview_{v}.png") for v in ("front", "side", "close") if (work / f"preview_{v}.png").exists()]
     msg = _t("ag.done", out.name, info["vertices"], ", ".join(info["bones"]), (datetime.now() - t).seconds)
@@ -894,6 +898,23 @@ def handle(cfg, text):
         except Exception as e:  # noqa: BLE001
             res = {"ok": False, "log": _t("lm.error", e)}
         WF.status(cfg, rigged, "_" + req["action"]).write_text(json.dumps({"id": req.get("id"), **res}, ensure_ascii=False), encoding="utf-8")
+        return res["log"], None
+    if req.get("action") == "layer_save":   # a piece's layer set by hand (null: by its kind again); <stem>_layer_save.wear.json
+        rigged = Path(req["rigged"])
+        try:
+            item = re.sub(r"[^A-Za-z0-9_-]+", "_", str(req.get("item") or ""))
+            f = WF.path(rigged, item, ".fit.json")
+            fit = json.loads(f.read_text(encoding="utf-8"))
+            v = req.get("layer")
+            if isinstance(v, (int, float)):
+                fit["layer"] = round(float(v), 2)
+            else:
+                fit.pop("layer", None)
+            f.write_text(json.dumps(fit, ensure_ascii=False, indent=1), encoding="utf-8")
+            res = {"ok": True, "log": _t("ag.layer_saved", item, fit.get("layer", "—"))}
+        except Exception as e:  # noqa: BLE001
+            res = {"ok": False, "log": _t("lm.error", e)}
+        WF.status(cfg, rigged, "_layer_save").write_text(json.dumps({"id": req.get("id"), **res}, ensure_ascii=False), encoding="utf-8")
         return res["log"], None
     if req.get("action") == "pose_save":   # answered in <stem>_pose_save.wear.json
         rigged = Path(req["rigged"])

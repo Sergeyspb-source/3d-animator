@@ -72,6 +72,8 @@
   .node label { display:flex; align-items:center; gap:3px; font:11.5px var(--mono); color:var(--muted); flex:1; min-width:0; }
   .node input[type=number] { width:100%; padding:2px 4px; }
   .wname { cursor:pointer; }
+  .wlayer { width:58px; margin:0 2px 0 6px; font-size:11px; padding:0 2px; color:#888; }
+  .wlayer.set { color:#a0451f; font-weight:bold; }
   .wname:hover { text-decoration:underline; color:#a0451f; }
   .wdel { margin-left:4px; padding:0 5px; font-size:11px; line-height:16px; opacity:.55; }
   .wdel:hover { opacity:1; color:#b3261e; }
@@ -328,7 +330,11 @@ let UNDER_T = 0;   // the piece being built: its thickness as a share of a profi
 // a weapon or a shield in the hand is only shown with the rest: nothing is fitted over or under it, and a held piece
 // is fitted over nothing
 const HELD = ['weapon', 'shield', 'sheath'], layerOf = (w) => !HELD.includes(w.piece) && !['weapon', 'shield'].includes(S.piece);   // a belt goes over the armour ticked
-const isOuter = (w) => (S.piece === 'helmet' ? ['helmet', 'head'].includes(w.piece)   // a helmet: not over another
+// a piece's layer: set by hand in «Worn» (its number: the higher, the more outside), else by its kind
+const layerOfW = (w) => (w.layer != null ? w.layer : LAYER[w.piece] ?? 0);
+const layerMine = () => { const m = DATA.worn.find((x) => x.item === itemName()); return m && m.layer != null ? m.layer : null; };
+const isOuter = (w) => (w.layer != null || layerMine() != null ? layerOfW(w) > (layerMine() ?? LAYER[S.piece] ?? 99)   // by hand: the numbers say
+  : S.piece === 'helmet' ? ['helmet', 'head'].includes(w.piece)   // a helmet: not over another
   : w.piece === 'elbow' ? ['bracer', 'rerebrace'].includes(S.piece)   // elbows go over the arm's pieces
   : w.piece === 'poleyn' ? ['greave', 'cuisse', 'trousers'].includes(S.piece)   // poleyns over the leg's
     : (LAYER[w.piece] || 0) > (LAYER[S.piece] || 99));
@@ -6491,7 +6497,7 @@ function listWorn() {   // the pieces already on the character, a tick each — 
   const rows = DATA.worn.map((w, i) => [w, i]).filter(([w]) => w.item !== me);
   $('wornRow').hidden = !rows.length;
   $('wornNote').textContent = ['weapon', 'shield'].includes(S.piece) ? '{{js:ag.worn_held}}' : '{{js:ag.worn}}';
-  $('worn').innerHTML = rows.map(([w, i]) => `<label class="chk" style="margin:2px 8px 2px 0" title="${LABEL[w.piece] || ''}"><input type="checkbox" data-w="${i}" ${WORN.get(w.item) && WORN.get(w.item).on ? 'checked' : ''}> <span class="wname" data-open="${i}" title="{{js:ag.worn_open}}">${w.item}</span>${!isHeld() && HELD.includes(w.piece) ? '{{js:ag.worn_shown}}' : ''}<button class="wdel" data-del="${i}" title="{{js:ag.remove_title}}">✕</button></label>`).join('');
+  $('worn').innerHTML = rows.map(([w, i]) => `<label class="chk" style="margin:2px 8px 2px 0" title="${LABEL[w.piece] || ''}"><input type="checkbox" data-w="${i}" ${WORN.get(w.item) && WORN.get(w.item).on ? 'checked' : ''}> <span class="wname" data-open="${i}" title="{{js:ag.worn_open}}">${w.item}</span>${HELD.includes(w.piece) ? '' : `<input type="number" class="wlayer${w.layer != null ? ' set' : ''}" data-layer="${i}" min="0" max="9" step="0.1" value="${layerOfW(w)}" title="{{js:ag.worn_layer_title}}">`}${!isHeld() && HELD.includes(w.piece) ? '{{js:ag.worn_shown}}' : ''}<button class="wdel" data-del="${i}" title="{{js:ag.remove_title}}">✕</button></label>`).join('');
 }
 const b64 = (ta) => { const u = new Uint8Array(ta.buffer, ta.byteOffset, ta.byteLength); let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
 function payload() {   // every part in one mesh: positions (glTF axes), faces (sizes, vertices, material slots), texture
@@ -7438,6 +7444,14 @@ $('worn').addEventListener('click', (e) => {   // its name: opened above, as fro
 });
 $('worn').addEventListener('click', (e) => { const i = e.target.dataset.del; if (i === undefined) return; e.preventDefault(); removePiece((DATA.worn[+i] || {}).item); });
 $('worn').addEventListener('change', (e) => { const i = e.target.dataset.w; if (i !== undefined) wearPiece(DATA.worn[+i], e.target.checked).catch((er) => console.error(er)); });
+$('worn').addEventListener('change', (e) => {   // a piece's layer by hand (its kind's again: null): saved, the piece being made fitted again
+  const i = e.target.dataset.layer; if (i === undefined) return;
+  const w = DATA.worn[+i], v = parseFloat(e.target.value);
+  w.layer = Number.isFinite(v) && v !== LAYER[w.piece] ? Math.max(0, Math.min(9, v)) : null;
+  e.target.classList.toggle('set', w.layer != null);
+  send('layer_save', { item: w.item, layer: w.layer }, '{{js:ag.layer_saving}}', '_layer_save');
+  restPose(); buildBody(); hideBody(); applyPose(); changed('worn');
+});
 try {
   await loadCharacter();
   $('msg').hidden = true;
