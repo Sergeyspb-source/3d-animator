@@ -9,20 +9,22 @@
 ## The character and the piece must come from the same rigged model (the same skeleton, the same rest pose).
 ## What of the body a piece hides (<piece>.mask.json next to its GLB, made with it: tool/body_mask.py) is taken away
 ## while the piece is on and shown: the skin under it (it would poke through in motion), cords and ears sticking out.
-## A worn piece is drawn by its layer (LAYER, the armour editor's order): as if nearer the camera by DEPTH_STEP of the
-## character's height per layer unit, its place on the screen kept. A piece under it that comes out over it in motion
+## A worn piece is drawn by its layer (LAYER, the armour editor's order): as if nearer the camera, its place on the
+## screen kept, by its rank among the layers worn on that skeleton (a step of DEPTH_MAX / their count, at most
+## DEPTH_STEP, of the character's height). A piece under it that comes out over it in motion
 ## by less than that is hidden there, as a surface a little behind another; what is really in front (an arm before
 ## the cuirass) stays seen. SF3DEquip.layered = false before wear() keeps the pieces' own materials.
 class_name SF3DEquip
 extends RefCounted
 
 static var layered := true
-const DEPTH_STEP := 0.006   # of the height, a layer unit: undercloth ~0.3 %, mail ~1.4, a cuirass 2.4, a cloak 4.2
-# the armour editor's LAYER (armour_gen_editor.html); the gorget's collar and the helmet go over the pelerine there too
+const DEPTH_STEP := 0.012   # of the height, between two layers worn at most
+const DEPTH_MAX := 0.045   # of the height, the top layer's push (a step of ~0.5 % with nine layers worn)
+# the armour editor's LAYER (armour_gen_editor.html): the pelerine over the mail, under the cuirass and the pauldrons
 const LAYER := {"undercloth": 0.5, "trousers": 1.0, "footwear": 1.5, "brayette": 2.0, "bracer": 3.0, "rerebrace": 3.0,
 	"greave": 3.0, "cuisse": 3.0, "tassets": 3.0, "glove": 3.2, "codpiece": 2.5, "fauld": 2.8, "culet": 2.8,
-	"elbow": 3.5, "gorget": 5.5, "pelerine": 5.4, "rondel": 5.2, "ailette": 5.6, "hauberk": 2.4, "coif": 3.8,
-	"poleyn": 3.5, "cuirass": 4.0, "pauldron": 5.0, "helmet": 5.6, "tabard": 6.0, "skirt": 6.0, "cloak": 7.0}
+	"elbow": 3.5, "gorget": 4.5, "pelerine": 3.9, "rondel": 5.2, "ailette": 5.6, "hauberk": 2.4, "coif": 3.8,
+	"poleyn": 3.5, "cuirass": 4.0, "pauldron": 5.0, "helmet": 5.0, "tabard": 6.0, "skirt": 6.0, "cloak": 7.0}
 static var _layer_shaders := {}   # cull mode -> Shader
 
 
@@ -96,10 +98,11 @@ static func wear(character: Node, piece: PackedScene, mask := "") -> Array[MeshI
 	inst.free()
 	var kind := piece.resource_path.get_file().get_basename().trim_prefix("wear_").trim_prefix("proc_").get_slice("_", 0)
 	if layered and LAYER.has(kind):   # (a weapon, a shield, a quiver: in a hand or on a strap, not in the layers)
-		var push := _height(skel) * DEPTH_STEP * float(LAYER[kind])
 		for mi in out:
 			if not mi.has_meta("sf3d_hold"):
-				_layer(mi, push)
+				mi.set_meta("sf3d_layer", float(LAYER[kind]))
+				_layer(mi, 0.0)
+		_rank_layers(skel)
 	if not cloth.is_empty() and out.size() > 0:   # a cloak: its chains swing
 		out[0].set_meta("sf3d_cloth", _cloth(skel, cloth, home_grid))
 	if out.size() > 0:
@@ -110,6 +113,25 @@ static func wear(character: Node, piece: PackedScene, mask := "") -> Array[MeshI
 			out[0].set_meta("sf3d_character", character)
 			_hide_body(character)
 	return out
+
+
+# every layered piece on this skeleton pushed by the rank of its layer among the ones worn (taken off: theirs gone)
+static func _rank_layers(skel: Skeleton3D) -> void:
+	var meshes := skel.get_children().filter(func(n): return n is MeshInstance3D and n.has_meta("sf3d_layer"))
+	var values := []
+	for mi in meshes:
+		if not float(mi.get_meta("sf3d_layer")) in values:
+			values.append(float(mi.get_meta("sf3d_layer")))
+	values.sort()
+	var step := _height(skel) * minf(DEPTH_STEP, DEPTH_MAX / maxf(values.size(), 1.0))
+	for mi in meshes:
+		var push := step * (values.find(float(mi.get_meta("sf3d_layer"))) + 1)
+		for s in mi.mesh.get_surface_count():
+			var m := mi.get_surface_override_material(s) as ShaderMaterial
+			if m and m.has_meta("sf3d_push"):
+				m.set_meta("sf3d_push", push)
+				if float(m.get_shader_parameter("sf3d_depth_push")) > 0.0 or bool(m.get_meta("sf3d_on", true)):
+					m.set_shader_parameter("sf3d_depth_push", push)
 
 
 static func _height(skel: Skeleton3D) -> float:   # the skeleton's height at rest
@@ -171,6 +193,7 @@ static func layers(meshes: Array, on: bool) -> void:
 		for s in mi.mesh.get_surface_count():
 			var m := mi.get_surface_override_material(s) as ShaderMaterial
 			if m and m.has_meta("sf3d_push"):
+				m.set_meta("sf3d_on", on)
 				m.set_shader_parameter("sf3d_depth_push", float(m.get_meta("sf3d_push")) if on else 0.0)
 
 

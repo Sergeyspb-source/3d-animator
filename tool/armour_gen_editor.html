@@ -321,7 +321,7 @@ async function loadCharacter() {
 // in «Armour» are known by their body part («torso»: a breastplate). A piece made under others already worn: those
 // were fitted without it - «Rebuild by layers» makes them again over it.
 const LAYER = { undercloth: .5, trousers: 1, footwear: 1.5, foot: 1.5, brayette: 2, bracer: 3, rerebrace: 3, greave: 3, cuisse: 3,
-  forearm: 3, upperarm: 3, arm: 3, leg: 3, upleg: 3, tassets: 3, hips: 3, glove: 3.2, hand: 3.2, codpiece: 2.5, fauld: 2.8, culet: 2.8, elbow: 3.5, gorget: 4.5, pelerine: 5.4, rondel: 5.2, ailette: 5.6, hauberk: 2.4, coif: 3.8, poleyn: 3.5, knee: 3.5, cuirass: 4, torso: 4,
+  forearm: 3, upperarm: 3, arm: 3, leg: 3, upleg: 3, tassets: 3, hips: 3, glove: 3.2, hand: 3.2, codpiece: 2.5, fauld: 2.8, culet: 2.8, elbow: 3.5, gorget: 4.5, pelerine: 3.9, rondel: 5.2, ailette: 5.6, hauberk: 2.4, coif: 3.8, poleyn: 3.5, knee: 3.5, cuirass: 4, torso: 4,
   pauldron: 5, shoulder: 5, helmet: 5, head: 5, tabard: 6, skirt: 6, cloak: 7 };
 const CLOTH_KINDS = ['cloak', 'skirt', 'tabard'];   // over the new piece: not a wall to keep it under (the cloth is made again over it)
 let UNDER_T = 0;   // the piece being built: its thickness as a share of a profile's size (kept so far inside a wall over it)
@@ -329,7 +329,6 @@ let UNDER_T = 0;   // the piece being built: its thickness as a share of a profi
 // is fitted over nothing
 const HELD = ['weapon', 'shield', 'sheath'], layerOf = (w) => !HELD.includes(w.piece) && !['weapon', 'shield'].includes(S.piece);   // a belt goes over the armour ticked
 const isOuter = (w) => (S.piece === 'helmet' ? ['helmet', 'head'].includes(w.piece)   // a helmet: not over another
-  : S.piece === 'pelerine' ? ['gorget', 'helmet', 'head'].includes(w.piece) || (LAYER[w.piece] || 0) > LAYER.pelerine   // over all the armour but what is on the neck and the head (a gorget's collar over it)
   : w.piece === 'elbow' ? ['bracer', 'rerebrace'].includes(S.piece)   // elbows go over the arm's pieces
   : w.piece === 'poleyn' ? ['greave', 'cuisse', 'trousers'].includes(S.piece)   // poleyns over the leg's
     : (LAYER[w.piece] || 0) > (LAYER[S.piece] || 99));
@@ -3534,7 +3533,7 @@ function pelerine(p) {
   const ths = Array.from({ length: NT }, (_, j) => Math.PI + j / NT * TAU);   // from the back's middle round (open there)
   const face = ths.map(() => new Int32Array(NE).fill(-1));
   // the skin (where it starts and ends: the neck's foot, the shoulders, the arms' roots - the body's own) and the
-  // outermost of what is worn on it there (what it lies on: always over the armour - a cuirass, pauldrons, besagews)
+  // outermost of what is worn under it there (a hauberk, a coif's cape); a cuirass, pauldrons, a gorget go over it
   const faceS = ths.map(() => new Int32Array(NE).fill(-1));
   let raw = Array.from({ length: NE }, (_, i) => ths.map((th, j) => { const h = outermost(C, dir(th, elev(i)), .6 * H); if (h) face[j][i] = h.faceIndex; return h ? h.distance : NaN; }));
   let rawS = Array.from({ length: NE }, (_, i) => ths.map((th, j) => { const h = cast(C, dir(th, elev(i)), .6 * H); if (h) faceS[j][i] = h.faceIndex; return h ? h.distance : NaN; }));
