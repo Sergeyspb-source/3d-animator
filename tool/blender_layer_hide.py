@@ -1,5 +1,7 @@
-"""Runs INSIDE Blender (background): which parts of the lower layers come out over the higher ones, for the Godot
-fitting room (the armour editor's hideUnder, the same rule).
+"""Runs INSIDE Blender (background): which parts of the lower layers come out through a helmet, for the Godot fitting
+room (the armour editor's hideUnder, the same rule). Only under a helmet - a closed shell round the head, nothing past
+its edges but the head: hidden elsewhere (a codpiece under the cuisses, a cuirass under a pauldron, a coif under a
+cuirass) the parts opened on what is deeper, seen aslant - holes; the depth rule (SF3DEquip's layers) does the rest.
 
     blender -b -P blender_layer_hide.py -- job.json
 
@@ -73,7 +75,8 @@ own = {p["item"]: solid_tree({**p, "kind": ""}, ms) for p, ms, _ in pieces}   # 
 out = {}
 for p, meshes, arm in pieces:
     cape = lambda x: x["kind"] in ("coif", "pelerine")   # (one mail cape worn at a time: not one under the other)
-    ups = [(q["item"], trees[q["item"]]) for q, _, _ in pieces if q["layer"] > p["layer"] and trees[q["item"]] and not (cape(p) and cape(q))]
+    ups = [(q["item"], trees[q["item"]]) for q, _, _ in pieces
+           if q["kind"] == "helmet" and q["layer"] > p["layer"] and trees[q["item"]] and not (cape(p) and cape(q))]
     if not ups or arm is None:
         continue
     A = arm.matrix_world

@@ -422,8 +422,9 @@ function hideBody() {
   }
   hideUnder();
 }
-// a lower layer's part that came out over a higher one is not shown (the user's rule, as the game's depth rule but by
-// the shapes at rest): a point of it is out when the line from the bone inside the body to it crosses a piece of a
+// a lower layer's part that came out through a helmet is not shown (the user's rule, as the game's depth rule but by
+// the shapes at rest; only under a helmet - a closed shell round the head: hidden elsewhere, a codpiece under the
+// cuisses, a cuirass under a pauldron, the parts opened on what is deeper seen aslant): a point of it is out when the line from the bone inside the body to it crosses a piece of a
 // higher layer on the way - a coif pushed out by the ears outside a helmet; under a helmet's rim the line misses it.
 // Only where that piece is led by the same bone or the next one up or down the chain (they move nearly together: a coif
 // on the neck under a helmet on the head; pieces further apart - a bracer under a pauldron - would leave a hole when
@@ -459,7 +460,7 @@ function hideUnder() {
   for (const w of on) {
     // (a helmet's mail is rings with gaps - an aventail: seen through, nothing under it hidden)
     const solid = (u, o) => !(u.piece === 'helmet' && /_mail$/.test(o.material.name || '')) && !o.material.transparent && !(o.material.alphaTest > 0);
-    const e = WORN.get(w.item), lw = layerOfW(w), ups = on.filter((u) => layerOfW(u) > lw).flatMap((u) => WORN.get(u.item).meshes.filter((o) => solid(u, o)).map(restGeo));
+    const e = WORN.get(w.item), lw = layerOfW(w), ups = on.filter((u) => u.piece === 'helmet' && layerOfW(u) > lw).flatMap((u) => WORN.get(u.item).meshes.filter((o) => solid(u, o)).map(restGeo));
     for (const o of e.meshes) {
       if (!o.geometry.index) continue;
       if (!o.userData.pieceIndex) o.userData.pieceIndex = o.geometry.index.array.slice();
