@@ -1121,7 +1121,8 @@ static func arrows(meshes: Array, n: int) -> int:
 ## A position in a mask (thousandths of a unit), the next thousandth too where a coordinate is near the cells' edge
 ## (Blender's import moves vertices by ~1e-5).
 ## A lower piece's part that came out over a higher one hidden while that one is shown: keys, its points (thousandths,
-## its meshes' own axes) as blender_layer_hide.py finds them - the armour editor's rule.
+## its meshes' own axes) as blender_layer_hide.py finds them - the armour editor's rule; a triangle goes when a corner
+## of it is out.
 static func hide_under(lower: Array, upper: Array, keys: Array) -> void:
 	var k := {}
 	for p in keys:

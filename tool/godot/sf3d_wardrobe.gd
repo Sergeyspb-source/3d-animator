@@ -619,11 +619,12 @@ func _ui() -> void:
 		var cb := CheckBox.new()
 		cb.text = name
 		cb.button_pressed = not (name in String(_args.get("off", "")).split(",", false))
-		# one thing in a hand: ticking a weapon unticks the others held in a hand it takes (a two-hander takes both)
+		# one thing in a hand: ticking a weapon unticks the others held in a hand it takes (a two-hander takes both); one
+		# mail cape: a coif and a pelerine are the same garment's two cuts - ticking one unticks the other
 		cb.toggled.connect(func(on):
 			if on:
 				for other in boxes:
-					if other != name and boxes[other].button_pressed and _hands(other).any(func(h): return h in _hands(name)):
+					if other != name and boxes[other].button_pressed and _takes(other).any(func(h): return h in _takes(name)):
 						boxes[other].button_pressed = false
 			Equip.show(_worn[name], on))
 		boxes[name] = cb
@@ -652,15 +653,25 @@ func _ui() -> void:
 			ar.value_changed.connect(func(v): Equip.arrows(_worn[name], int(v)))
 			box.add_child(ar)
 	box.add_child(_label("{{js:gd.mouse_hint}}"))
-	var taken := []   # (put on together, two in a hand: the first kept, the others unticked)
+	var taken := []   # (put on together, two in a hand or two mail capes: the first kept, the others unticked)
 	for name in boxes:
 		if not boxes[name].button_pressed:
 			continue
-		var hs := _hands(name)
+		var hs := _takes(name)
 		if hs.any(func(h): return h in taken):
 			boxes[name].button_pressed = false
 		else:
 			taken.append_array(hs)
+
+
+const CAPES := ["coif", "pelerine"]   # the mail cape's cuts: one worn at a time (the coif takes the pelerine's place)
+
+
+func _takes(name: String) -> Array:   # what a piece takes that no other may: its hands, the mail cape
+	var out := _hands(name)
+	if String(name).trim_prefix("proc_").get_slice("_", 0) in CAPES:
+		out.append("cape")
+	return out
 
 
 func _hands(name: String) -> Array:   # the hands a piece holds in ("L", "R"): its grip's, and a two-hander's other one
