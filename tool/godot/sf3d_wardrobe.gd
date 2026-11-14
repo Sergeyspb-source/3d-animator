@@ -55,8 +55,11 @@ func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		var kv := a.trim_prefix("--").split("=", true, 1)
 		_args[kv[0]] = kv[1] if kv.size() > 1 else ""
-	Equip.keep_off_body = not _args.has("nokeep")   # (--nokeep: a shield as the clip has it, through a leg or not)
+	# (--nokeep: a shield as the clip has it, through a leg or not; with --keepdebug worked out and printed, not applied)
+	Equip.keep_off_body = not _args.has("nokeep") or _args.has("keepdebug")
+	Equip.keep_apply = not _args.has("nokeep")
 	Equip.keep_flex = float(_args.get("keepflex", str(Equip.keep_flex)))   # (--keepflex=0: moved only, the elbow not bent)
+	Equip.keep_debug = _args.has("keepdebug")   # (the correction printed every frame; the shot not seeked: the clip played from its start)
 	var layers = JSON.parse_string(FileAccess.get_file_as_string("res://layers.json")) if FileAccess.file_exists("res://layers.json") else {}
 	for p in pieces:   # (layers.json: the layers set by hand in the editor, by the piece's name)
 		var nm := p.resource_path.get_file().get_basename().trim_prefix("wear_")
@@ -103,14 +106,15 @@ func _ready() -> void:
 			_list.select(clip)
 			_list.ensure_current_is_visible()
 			_play(_list.get_item_metadata(clip))
-	if args.has("shot"):
-		while at[0] > 0 and not String(_blocks[at[0]]["state"]) in ["loaded", "error"]:   # (the block made and loaded first)
-			await get_tree().create_timer(0.5).timeout
+	if args.has("shot") or args.has("yaw"):   # (the view also for a recording: godot ... --write-movie f.png -- --yaw=..)
 		_yaw = deg_to_rad(float(args.get("yaw", "0")))
 		_dist /= float(args.get("zoom", "1"))
 		_pitch = float(args.get("pitch", str(_pitch)))
 		_target.y += float(args.get("rise", "0")) * box.size.y
 		_place_camera()
+	if args.has("shot"):
+		while at[0] > 0 and not String(_blocks[at[0]]["state"]) in ["loaded", "error"]:   # (the block made and loaded first)
+			await get_tree().create_timer(0.5).timeout
 		_shoot(args["shot"], float(args.get("at", "0.5")), String(args.get("focus", "")))
 
 
@@ -721,7 +725,7 @@ func _unhandled_input(e: InputEvent) -> void:
 func _shoot(path: String, at: float, focus := "") -> void:
 	# (the clip put at the same moment every time: a little before «at», then played on to it - the modifiers' smoothing
 	# settled - whenever its block came in)
-	if _player and String(_player.current_animation) != "":
+	if _player and String(_player.current_animation) != "" and not _args.has("keepdebug"):
 		_player.seek(maxf(at - 0.25, 0.0), true)
 		await get_tree().create_timer(minf(at, 0.25)).timeout
 	else:
