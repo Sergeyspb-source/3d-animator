@@ -1473,6 +1473,8 @@
  "gd.block_building": "Retargeting the block's clips onto the character in Blender… {0} s",
  "gd.block_loading": "Loading the block's clips…",
  "gd.block_failed": "The block failed: ",
+ "gd.layers": "Lower layers don't show through",
+ "gd.layers_title": "A piece of a lower layer is hidden where it comes out over an upper one in motion (by 1–4 cm, by layer: plate over mail, a pauldron over plate, the pelerine over a pauldron). Unticked: every piece is drawn as it is.",
  "gd.loop": "Loop",
  "gd.mouse_hint": "LMB — orbit, RMB — pan, wheel — closer",
  "gd.pieces": "Pieces",

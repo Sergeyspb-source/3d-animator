@@ -9,8 +9,21 @@
 ## The character and the piece must come from the same rigged model (the same skeleton, the same rest pose).
 ## What of the body a piece hides (<piece>.mask.json next to its GLB, made with it: tool/body_mask.py) is taken away
 ## while the piece is on and shown: the skin under it (it would poke through in motion), cords and ears sticking out.
+## A worn piece is drawn by its layer (LAYER, the armour editor's order): as if nearer the camera by DEPTH_STEP of the
+## character's height per layer unit, its place on the screen kept. A piece under it that comes out over it in motion
+## by less than that is hidden there, as a surface a little behind another; what is really in front (an arm before
+## the cuirass) stays seen. SF3DEquip.layered = false before wear() keeps the pieces' own materials.
 class_name SF3DEquip
 extends RefCounted
+
+static var layered := true
+const DEPTH_STEP := 0.006   # of the height, a layer unit: undercloth ~0.3 %, mail ~1.4, a cuirass 2.4, a cloak 4.2
+# the armour editor's LAYER (armour_gen_editor.html); the gorget's collar and the helmet go over the pelerine there too
+const LAYER := {"undercloth": 0.5, "trousers": 1.0, "footwear": 1.5, "brayette": 2.0, "bracer": 3.0, "rerebrace": 3.0,
+	"greave": 3.0, "cuisse": 3.0, "tassets": 3.0, "glove": 3.2, "codpiece": 2.5, "fauld": 2.8, "culet": 2.8,
+	"elbow": 3.5, "gorget": 5.5, "pelerine": 5.4, "rondel": 5.2, "ailette": 5.6, "hauberk": 2.4, "coif": 3.8,
+	"poleyn": 3.5, "cuirass": 4.0, "pauldron": 5.0, "helmet": 5.6, "tabard": 6.0, "skirt": 6.0, "cloak": 7.0}
+static var _layer_shaders := {}   # cull mode -> Shader
 
 
 static func skeleton_of(node: Node) -> Skeleton3D:
@@ -81,6 +94,12 @@ static func wear(character: Node, piece: PackedScene, mask := "") -> Array[MeshI
 				mi.set_meta("sf3d_point_v", Vector3(float(pt[0]), float(pt[1]), float(pt[2])) / 1000.0)
 				_grip(skel).point(hold.substr(0, 1), Vector3(float(pt[0]), float(pt[1]), float(pt[2])) / 1000.0, true)
 	inst.free()
+	var kind := piece.resource_path.get_file().get_basename().trim_prefix("wear_").trim_prefix("proc_").get_slice("_", 0)
+	if layered and LAYER.has(kind):   # (a weapon, a shield, a quiver: in a hand or on a strap, not in the layers)
+		var push := _height(skel) * DEPTH_STEP * float(LAYER[kind])
+		for mi in out:
+			if not mi.has_meta("sf3d_hold"):
+				_layer(mi, push)
 	if not cloth.is_empty() and out.size() > 0:   # a cloak: its chains swing
 		out[0].set_meta("sf3d_cloth", _cloth(skel, cloth, home_grid))
 	if out.size() > 0:
@@ -91,6 +110,125 @@ static func wear(character: Node, piece: PackedScene, mask := "") -> Array[MeshI
 			out[0].set_meta("sf3d_character", character)
 			_hide_body(character)
 	return out
+
+
+static func _height(skel: Skeleton3D) -> float:   # the skeleton's height at rest
+	var lo := INF
+	var hi := -INF
+	for i in skel.get_bone_count():
+		var y := skel.get_bone_global_rest(i).origin.y
+		lo = minf(lo, y)
+		hi = maxf(hi, y)
+	return maxf(hi - lo, 0.01) * 1.08   # (the head's top and the soles past the end joints)
+
+
+# its surfaces drawn by LAYER_SHADER with their materials' looks and the layer's push (a blended, see-through one kept)
+static func _layer(mi: MeshInstance3D, push: float) -> void:
+	if mi.mesh == null:
+		return
+	for s in mi.mesh.get_surface_count():
+		var m := mi.get_active_material(s) as BaseMaterial3D
+		if m == null or m.transparency in [BaseMaterial3D.TRANSPARENCY_ALPHA, BaseMaterial3D.TRANSPARENCY_ALPHA_DEPTH_PRE_PASS]:
+			continue
+		var cull: String = ["cull_back", "cull_front", "cull_disabled"][m.cull_mode]
+		if not _layer_shaders.has(cull):
+			var sh := Shader.new()
+			sh.code = LAYER_SHADER.replace("@CULL@", cull)
+			_layer_shaders[cull] = sh
+		var sm := ShaderMaterial.new()
+		sm.shader = _layer_shaders[cull]
+		var ch := func(c: int) -> Vector4: return Vector4(0.333, 0.333, 0.333, 0) if c == 4 else Vector4(float(c == 0), float(c == 1), float(c == 2), float(c == 3))
+		sm.set_shader_parameter("albedo", m.albedo_color)
+		sm.set_shader_parameter("texture_albedo", m.albedo_texture)
+		sm.set_shader_parameter("use_albedo_texture", m.albedo_texture != null)
+		sm.set_shader_parameter("use_vertex_color", m.vertex_color_use_as_albedo)
+		sm.set_shader_parameter("metallic", m.metallic)
+		sm.set_shader_parameter("roughness", m.roughness)
+		sm.set_shader_parameter("texture_metallic", m.metallic_texture)
+		sm.set_shader_parameter("metallic_channel", ch.call(m.metallic_texture_channel))
+		sm.set_shader_parameter("texture_roughness", m.roughness_texture)
+		sm.set_shader_parameter("roughness_channel", ch.call(m.roughness_texture_channel))
+		sm.set_shader_parameter("use_normal", m.normal_enabled and m.normal_texture != null)
+		sm.set_shader_parameter("texture_normal", m.normal_texture)
+		sm.set_shader_parameter("normal_scale", m.normal_scale)
+		if m.emission_enabled:
+			sm.set_shader_parameter("emission", m.emission)
+			sm.set_shader_parameter("texture_emission", m.emission_texture)
+			sm.set_shader_parameter("emission_energy", m.emission_energy_multiplier)
+		sm.set_shader_parameter("uv1_scale", m.uv1_scale)
+		sm.set_shader_parameter("uv1_offset", m.uv1_offset)
+		sm.set_shader_parameter("alpha_scissor", m.alpha_scissor_threshold if m.transparency == BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR else -1.0)
+		sm.set_shader_parameter("sf3d_depth_push", push)
+		sm.set_meta("sf3d_push", push)
+		mi.set_surface_override_material(s, sm)
+
+
+## The layers' rule on or off for these meshes (a piece's, as wear() returns them): off, each is drawn where it is.
+static func layers(meshes: Array, on: bool) -> void:
+	for mi in meshes:
+		if not is_instance_valid(mi) or mi.mesh == null:
+			continue
+		for s in mi.mesh.get_surface_count():
+			var m := mi.get_surface_override_material(s) as ShaderMaterial
+			if m and m.has_meta("sf3d_push"):
+				m.set_shader_parameter("sf3d_depth_push", float(m.get_meta("sf3d_push")) if on else 0.0)
+
+
+# a worn piece's look (the StandardMaterial3D features the GLB's materials use) with its layer's push (_layer)
+const LAYER_SHADER := """shader_type spatial;
+render_mode blend_mix, depth_draw_opaque, @CULL@, diffuse_burley, specular_schlick_ggx;
+uniform vec4 albedo : source_color = vec4(1.0);
+uniform sampler2D texture_albedo : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform bool use_albedo_texture = false;
+uniform bool use_vertex_color = false;
+uniform float metallic = 0.0;
+uniform float roughness = 1.0;
+uniform sampler2D texture_metallic : hint_default_white, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform vec4 metallic_channel = vec4(0.0, 0.0, 1.0, 0.0);
+uniform sampler2D texture_roughness : hint_default_white, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform vec4 roughness_channel = vec4(0.0, 1.0, 0.0, 0.0);
+uniform sampler2D texture_normal : hint_roughness_normal, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform bool use_normal = false;
+uniform float normal_scale = 1.0;
+uniform vec4 emission : source_color = vec4(0.0, 0.0, 0.0, 1.0);
+uniform sampler2D texture_emission : source_color, hint_default_black, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform float emission_energy = 0.0;
+uniform vec3 uv1_scale = vec3(1.0);
+uniform vec3 uv1_offset = vec3(0.0);
+uniform float alpha_scissor = -1.0;
+uniform float sf3d_depth_push = 0.0;
+
+void vertex() {
+	UV = UV * uv1_scale.xy + uv1_offset.xy;
+	// nearer the camera by the push along its own ray, its place on the screen kept; not in a shadow's pass (the light's
+	// view: a pushed caster would shadow itself)
+	// (POSITION written here is the only one: written on every path)
+	bool shadow_pass = distance(INV_VIEW_MATRIX[3].xyz, MAIN_CAM_INV_VIEW_MATRIX[3].xyz) > 0.0001;
+	vec4 v = MODELVIEW_MATRIX * vec4(VERTEX, 1.0);
+	vec4 c = PROJECTION_MATRIX * v;
+	if (sf3d_depth_push > 0.0 && !shadow_pass) {
+		vec3 d = PROJECTION_MATRIX[3][3] > 0.5 ? vec3(0.0, 0.0, 1.0) : normalize(-v.xyz);
+		vec4 p = PROJECTION_MATRIX * vec4(v.xyz + d * min(sf3d_depth_push, 0.9 * length(v.xyz)), 1.0);
+		c.z = p.z / p.w * c.w;
+	}
+	POSITION = c;
+}
+
+void fragment() {
+	vec4 a = albedo;
+	if (use_albedo_texture) a *= texture(texture_albedo, UV);
+	if (use_vertex_color) a *= COLOR;
+	if (alpha_scissor >= 0.0 && a.a < alpha_scissor) discard;
+	ALBEDO = a.rgb;
+	METALLIC = metallic * dot(texture(texture_metallic, UV), metallic_channel);
+	ROUGHNESS = roughness * dot(texture(texture_roughness, UV), roughness_channel);
+	if (use_normal) {
+		NORMAL_MAP = texture(texture_normal, UV).rgb;
+		NORMAL_MAP_DEPTH = normal_scale;
+	}
+	EMISSION = (emission.rgb + texture(texture_emission, UV).rgb) * emission_energy;
+}
+"""
 
 
 # A cloak's cloth bones («Cloth_<column>_<link>», blender_armour_gen.py) are the piece's own: they are added to the

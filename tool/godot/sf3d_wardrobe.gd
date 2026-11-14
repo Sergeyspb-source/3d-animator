@@ -587,6 +587,16 @@ func _ui() -> void:
 	rep.button_pressed = true
 	rep.toggled.connect(func(on): _repeat = on)
 	box.add_child(rep)
+	var lay := CheckBox.new()   # SF3DEquip's layers: a piece under another hidden where it comes out over it
+	lay.text = "{{js:gd.layers}}"
+	lay.tooltip_text = "{{js:gd.layers_title}}"
+	lay.button_pressed = not _args.has("nolayers")
+	lay.toggled.connect(func(on):
+		for n in _worn:
+			Equip.layers(_worn[n], on))
+	if not lay.button_pressed:
+		lay.toggled.emit(false)
+	box.add_child(lay)
 	box.add_child(_label("{{js:gd.speed}}"))
 	var speed := HSlider.new()
 	speed.min_value = 0.1
