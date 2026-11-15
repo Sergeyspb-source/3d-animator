@@ -251,3 +251,36 @@ def animate(cfg, d: Path, name: str, picks: dict):
     _run(cfg, "blender_creature_retarget.py", [job], "RETARGET_OK")
     made = json.loads(Path(str(out) + ".json").read_text(encoding="utf-8"))
     yield _t("cr.anim_done", out.name, len(made), ", ".join(c["name"] for c in made))
+
+
+def straighten(cfg, d: Path, name: str):
+    """The rest pose straightened (blender_creature_straighten.py: the paws under their shoulders and hips, the pairs
+    level, the body on the middle line) and made the rest; the mouth's marks moved with the head, the jaw made again;
+    the tips' ends set before forgotten (the legs moved). The skeleton before the first change is kept
+    (<name>_auto.unirig.glb). Yields log lines."""
+    d = Path(d)
+    auto = d / f"{name}_auto.glb"
+    if not auto.exists():
+        raise RuntimeError(_t("cr.no_auto", auto.name))
+    keep = d / f"{name}_auto.unirig.glb"
+    if not keep.exists():
+        shutil.copy2(auto, keep)
+    meta = passport(d, name)
+    work = Path(cfg["work_dir"]) / "creature_rebuild"
+    work.mkdir(parents=True, exist_ok=True)
+    job = work / f"{name}_straighten.json"
+    job.write_text(json.dumps({"src": str(auto), "out": str(auto), "names": meta.get("names") or {}}), encoding="utf-8")
+    yield _t("cr.straightening")
+    rep = json.loads(_run(cfg, "blender_creature_straighten.py", [job], "STRAIGHTEN_OK").split(" ", 1)[1])
+    yield _t("cr.straightened", ", ".join(f"{k} {v}°" for k, v in rep["turned"].items()) or "—")
+    # the mouth's marks with the head (Blender world <-> glTF: (x, y, z) -> (x, -z, y))
+    Hm = rep["head"]
+    def move(p):
+        b = [p[0], -p[2], p[1]]
+        q = [sum(Hm[i][k] * b[k] for k in range(3)) + Hm[i][3] for i in range(3)]
+        return [q[0], q[2], -q[1]]
+    mouth = mouth_marks(meta)
+    meta.pop("ends", None)
+    (d / f"{name}_rig.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+    if mouth:
+        yield from mark_jaw(cfg, d, name, {k: move(v) for k, v in mouth.items()})
