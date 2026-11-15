@@ -269,6 +269,9 @@ new GLTFLoader().parse(b64(GLB), '', (gltf) => {
     mixer = new THREE.AnimationMixer(root);
     $('clip').innerHTML = `<option value="">{{js:sv.clip_none}}</option>` + clips.map((c, i) => `<option value="${i}">${esc(c.name)}</option>`).join('');
     $('clipBox').hidden = false;
+    // a clip asked for (its name's end: «walk» -> fox_walk): chosen and played
+    const want = DATA.play && clips.findIndex((c) => c.name.toLowerCase().endsWith(DATA.play));
+    if (want != null && want >= 0) { $('clip').value = String(want); setTimeout(play, 300); }
   }
   $('msg').hidden = true;
   view('front');

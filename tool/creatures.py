@@ -200,3 +200,54 @@ def viewer_page(glb: Path, title: str = "", kind: str = "", badge: str = "", edi
     data = {"title": title or Path(glb).stem, "kind": kind, "badge": badge, **(edit or {})}
     return (page.replace("@@DATA@@", json.dumps(data, ensure_ascii=False).replace("</", "<\\/"))
                 .replace("@@GLB@@", base64.b64encode(Path(glb).read_bytes()).decode("ascii")))
+
+
+# ------------------------------------------------------------------ clips: a quadruped's (Mesh2Motion) on the creature
+M2M = ROOT.parent / "Animations" / "Mesh2Motion" / "glb"
+# the sources of quadrupeds' clips: their GLB and the clips that loop
+CLIP_SOURCES = {"fox": ("fox-animations.glb", {"Idle", "Idle Alert", "Walk", "Run", "Sneak"}),
+                "horse": ("horse-animations.glb", {"Idle", "Walk", "Trot", "Run", "Eating", "Sleep"})}
+
+
+def clip_sources() -> dict:
+    """{key: (GLB path, [its clips])} of the sources there are (their rest pose left out)."""
+    out = {}
+    for k, (f, _) in CLIP_SOURCES.items():
+        p = M2M / f
+        if not p.exists():
+            continue
+        try:
+            import landmarks
+            names = [a.get("name", "") for a in landmarks._glb_json(p).get("animations", [])]
+        except Exception:  # noqa: BLE001
+            continue
+        out[k] = (p, [n for n in names if n and "rest" not in n.lower()])
+    return out
+
+
+def clip_key(source: str, clip: str) -> str:
+    return f"{source}_{clip}".lower().replace(" ", "_")
+
+
+def animate(cfg, d: Path, name: str, picks: dict):
+    """The clips picked ({source: [clip names]}) put on the creature (blender_creature_retarget.py) into
+    <name>_clips.glb, the model with them, named <source>_<clip>. Yields log lines."""
+    d = Path(d)
+    rigged = d / f"{name}_rigged.glb"
+    if not rigged.exists():
+        raise RuntimeError(_t("cr.view_needs_skeleton"))
+    src = clip_sources()
+    clips = [{"source": str(src[k][0]), "action": c, "name": clip_key(k, c), "loop": c in CLIP_SOURCES[k][1]}
+             for k, cs in picks.items() if k in src for c in cs]
+    if not clips:
+        raise RuntimeError(_t("cr.anim_none_picked"))
+    work = Path(cfg["work_dir"]) / "creature_clips"
+    work.mkdir(parents=True, exist_ok=True)
+    out = d / f"{name}_clips.glb"
+    job = work / f"{name}.json"
+    job.write_text(json.dumps({"target": str(rigged), "clips": clips, "out": str(out), "mesh": True,
+                               "close_deg": (passport(d, name).get("jaw") or {}).get("close_deg")}), encoding="utf-8")
+    yield _t("cr.anim_running", len(clips))
+    _run(cfg, "blender_creature_retarget.py", [job], "RETARGET_OK")
+    made = json.loads(Path(str(out) + ".json").read_text(encoding="utf-8"))
+    yield _t("cr.anim_done", out.name, len(made), ", ".join(c["name"] for c in made))

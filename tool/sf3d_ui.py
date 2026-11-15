@@ -1307,6 +1307,31 @@ def creature_request(value, text):
         yield "\n".join(lines), gr.update(), gr.update()
 
 
+def creature_clips_viewer(value):
+    """The viewer on the creature's clips (<name>_clips.glb), its walk playing - or why there is none."""
+    f = _char_files(value) or {}
+    clips = f["dir"] / f"{f['name']}_clips.glb" if f else None
+    if not clips or not clips.exists():
+        return _t("cr.anim_view_none")
+    return landmarks_ui._frame(CR.viewer_page(clips, title=f["name"], kind=_t("cr.kind_creature"), edit={"play": "walk"}))
+
+
+def creature_animate(value, keys, picks):
+    """«Put the clips on the creature»: the picked clips of every source; the log, then the viewer playing them."""
+    f = _char_files(value) or {}
+    lines = []
+    try:
+        if not f.get("rigged"):
+            raise RuntimeError(_t("cr.view_needs_skeleton"))
+        for line in CR.animate(T.load_config(), f["dir"], f["name"], {k: list(p or []) for k, p in zip(keys, picks)}):
+            lines.append(line)
+            yield "\n".join(lines), gr.update()
+        yield "\n".join(lines), creature_clips_viewer(value)
+    except Exception as e:  # noqa: BLE001
+        lines.append(_t("ui.error_2", e))
+        yield "\n".join(lines), gr.update()
+
+
 def _bones_frame(glb, title, kind=""):
     return landmarks_ui._frame(CR.viewer_page(Path(glb), title=title, kind=kind))
 
@@ -2659,6 +2684,15 @@ def build():
                         gr.HTML("<style>.sf3d-hidden{display:none!important}</style>")
                         cr_req = gr.Textbox(elem_id=CR.REQ_ID, elem_classes=["sf3d-hidden"], show_label=False)
                         cr_go = gr.Button("go", elem_id=CR.REQ_GO, elem_classes=["sf3d-hidden"])
+                    with gr.Tab(_t("cr.anim_tab"), id="cr_anim") as cr_tab_anim:
+                        gr.Markdown(_t("cr.anim_intro"))
+                        cr_srcs = CR.clip_sources()
+                        with gr.Row():
+                            cr_picks = [gr.CheckboxGroup(names, value=names, label=_t("cr.anim_src_" + k))
+                                        for k, (_p, names) in cr_srcs.items()]
+                        cr_anim_btn = gr.Button(_t("cr.anim_go"), variant="primary")
+                        cr_anim_log = gr.Textbox(label=_t("face.progress"), lines=4, interactive=False)
+                        cr_anim_view = gr.HTML()
                     with gr.Tab(_t("ui.weight_fixing"), id="cr_rwt"):
                         rwt_ui.mount(T.load_config, accordion=False, char=cr_rig)
 
@@ -2885,6 +2919,15 @@ def build():
         cr_dd.change(lambda v, m, t: (creature_viewer(v), v) if m == cr_label and t in ("", cr_rig_label) else ("", ""),
                      [cr_dd, main_shown, cr_tab], [cr_viewer, cr_opened], show_progress="hidden")
         cr_view_btn.click(lambda v: (creature_viewer(v), v), cr_dd, [cr_viewer, cr_opened])
+
+        # the clips: made, then played in the viewer (also when the tab is entered and the creature has them)
+        def cr_anim_go(v, *ps):   # (a generator itself: Gradio streams only those)
+            yield from creature_animate(v, list(cr_srcs), ps)
+
+        cr_anim_btn.click(cr_anim_go, [cr_dd, *cr_picks], [cr_anim_log, cr_anim_view], concurrency_id="creature_markup",
+                          concurrency_limit=1)
+        cr_tab_anim.select(creature_clips_viewer, cr_dd, cr_anim_view, show_progress="hidden")
+        cr_dd.change(lambda: ("", ""), None, [cr_anim_view, cr_anim_log], show_progress="hidden")
 
         def cr_after(v):   # a skeleton made: the list (its mark), what it has, its files, its viewer
             return (gr.update(choices=_characters(True), value=v), *creature_info(v), *creature_for_tab(v),
