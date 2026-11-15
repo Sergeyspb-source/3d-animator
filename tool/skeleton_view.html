@@ -123,6 +123,7 @@
         <button id="centre" disabled title="{{sv.centre_tip}}">{{sv.centre}}</button>
         <button id="undoAll">{{sv.undo_all}}</button>
         <button id="evenPairs" title="{{sv.even_pairs_tip}}">{{sv.even_pairs}}</button>
+        <button id="mirrorLeg" disabled title="{{sv.mirror_leg_tip}}">{{sv.mirror_leg}}</button>
       </div>
       <div class="row" style="margin-top:6px"><button id="rebuild" class="primary">{{sv.rebuild}}</button></div>
       <div class="status" id="jStatus"></div>
@@ -704,6 +705,7 @@ function pickMark(k) {
   gizmo.attach(helper);
   gizmo.size = .7;
   $('centre').disabled = k[0] === 'm';
+  $('mirrorLeg').disabled = !(k[0] !== 'm' && partnerOf(bones[+k.slice(2)].name));
   $('badge').dataset.mark = markName(k);
   document.querySelectorAll('#mouthPts button').forEach((b) => b.classList.toggle('sel', 'm:' + b.dataset.k === k));
   if (k[0] === 'j') { const b = bones[+k.slice(2)]; bones.forEach((x) => { const I = info.get(x); I.li && I.li.classList.toggle('sel', x === b); }); }
@@ -762,6 +764,27 @@ $('evenPairs').onclick = () => {
   });
   if (mk.sel) { helper.position.copy(markPos(mk.sel)); helper.updateMatrixWorld(); }
   $('jStatus').textContent = n ? '{{js:sv.even_done}}'.replace('{0}', n) : '{{js:sv.even_none}}';
+};
+// the picked joint's whole leg onto its pair, mirrored across the middle plane: every joint and the tip's end (UniRig put
+// a hind leg crooked as a whole: no evening of lengths mends that); then how many of the mirrored joints are in the
+// other leg's body (a ray each way across meets its skin)
+$('mirrorLeg').onclick = () => {
+  if (!mk.sel || mk.sel[0] === 'm') return;
+  let b = bones[+mk.sel.slice(2)];
+  while (info.get(b).parent && partnerOf(info.get(b).parent.name)) b = info.get(b).parent;   // the leg's root
+  const chainOf = (r) => { const out = [r]; let x = r; for (;;) { x = info.get(x).kids.find((k) => mk.pts.has(k) && partnerOf(k.name)); if (!x) break; out.push(x); } return out; };
+  const mirror = (v) => new V3(2 * mk.cx - v.x, v.y, v.z);
+  let n = 0, inside = 0;
+  chainOf(b).forEach((x) => {
+    const pb = bones.find((y) => y.name === partnerOf(x.name));
+    if (!pb || !mk.pts.has(pb)) return;
+    mk.pts.get(pb).copy(mirror(mk.pts.get(x)));
+    if (mk.ends.has(x) && mk.ends.has(pb)) mk.ends.get(pb).copy(mirror(mk.ends.get(x)));
+    n++;
+    const p = mk.pts.get(pb), r = castRest(p, new V3(1, 0, 0), H * .3), l = castRest(p, new V3(-1, 0, 0), H * .3);
+    if (r != null && l != null) inside++;
+  });
+  $('jStatus').textContent = '{{js:sv.mirror_done}}'.replace('{0}', n).replace('{1}', inside).replace('{2}', n);
 };
 $('undoAll').onclick = () => {
   mk.orig.pts.forEach((p, b) => mk.pts.get(b).copy(p));

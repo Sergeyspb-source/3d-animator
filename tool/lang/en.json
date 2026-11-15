@@ -2562,5 +2562,8 @@
  "sv.even_pairs": "Even the pairs' lengths",
  "sv.even_pairs_tip": "A pair's left and right bones get their mean length: each joint moves along its bone, the ones below it with it",
  "sv.even_done": "{0} bones evened. Check the joints and press «Rebuild the skeleton and weights», then «Straighten the rest pose» if need be.",
- "sv.even_none": "The pairs are as long as each other already."
+ "sv.even_none": "The pairs are as long as each other already.",
+ "sv.mirror_leg": "Mirror the leg onto its pair",
+ "sv.mirror_leg_tip": "Pick a joint of the right leg: its whole pair (joints and end) becomes its mirror across the middle line",
+ "sv.mirror_done": "{0} joints mirrored, {1} of {2} inside the other leg's body. Check them and press «Rebuild the skeleton and weights»."
 }
