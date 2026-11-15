@@ -1286,6 +1286,21 @@ def creature_rig(value):
         yield log, (glb or gr.update()), pics
 
 
+def creature_steps(value, what):
+    """A step on the current creature's skeleton (what: "restore"): the log, the model, the jaw's pictures."""
+    f = _char_files(value) or {}
+    lines = []
+    try:
+        if not f.get("rigged"):
+            raise RuntimeError(_t("cr.view_needs_skeleton"))
+        for line in {"restore": CR.restore}[what](T.load_config(), f["dir"], f["name"]):
+            lines.append(line)
+        return "\n".join(lines), str(f["dir"] / f"{f['name']}_rigged.glb"), CR.jaw_pictures(f["dir"], f["name"])
+    except Exception as e:  # noqa: BLE001
+        lines.append(_t("ui.error_2", e))
+        return "\n".join(lines), gr.update(), gr.update()
+
+
 def creature_straighten(value):
     """«Straighten the rest pose» of the current creature: the log, the model, the jaw's pictures."""
     f = _char_files(value) or {}
@@ -2693,6 +2708,7 @@ def build():
                                 cr_rig_btn = gr.Button(_t("ui.make_the_skeleton_3_6_minutes_3_5_gb"), variant="primary")
                                 gr.Markdown(_t("cr.straighten_info"))
                                 cr_straight_btn = gr.Button(_t("cr.straighten"))
+                                cr_restore_btn = gr.Button(_t("cr.restore"), variant="secondary")
                                 cr_log = gr.Textbox(label=_t("face.progress"), lines=6, interactive=False)
                             with gr.Column(scale=1):
                                 cr_jaw_gallery = gr.Gallery(label=_t("ui.jaw_closed_and_open"), columns=4, height=220)
@@ -2956,6 +2972,8 @@ def build():
         cr_after_outs = [cr_dd, cr_md, cr_view, *cr_outs, cr_viewer, cr_opened]
         cr_rig_btn.click(creature_rig, cr_dd, [cr_log, cr_view, cr_jaw_gallery],
                          concurrency_id="unirig", concurrency_limit=1).then(cr_after, cr_dd, cr_after_outs, show_progress="hidden")
+        cr_restore_btn.click(lambda v: creature_steps(v, "restore"), cr_dd, [cr_log, cr_view, cr_jaw_gallery],
+                             concurrency_id="creature_markup", concurrency_limit=1).then(cr_after, cr_dd, cr_after_outs, show_progress="hidden")
         cr_straight_btn.click(creature_straighten, cr_dd, [cr_log, cr_view, cr_jaw_gallery], concurrency_id="creature_markup",
                               concurrency_limit=1).then(cr_after, cr_dd, cr_after_outs, show_progress="hidden")
         cr_go.click(creature_request, [cr_dd, cr_req], [cr_log, cr_view, cr_jaw_gallery], concurrency_id="creature_markup",

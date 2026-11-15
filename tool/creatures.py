@@ -285,3 +285,21 @@ def straighten(cfg, d: Path, name: str, pose: dict | None = None):
     (d / f"{name}_rig.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
     if mouth:
         yield from mark_jaw(cfg, d, name, {k: move(v) for k, v in mouth.items()})
+
+
+def restore(cfg, d: Path, name: str):
+    """The skeleton UniRig made back (<name>_auto.unirig.glb, kept by the first rebuild or straightening): the joints'
+    edits, the evening, the mirroring and the straightened pose undone; the jaw made again from the mouth's marks.
+    Yields log lines."""
+    d = Path(d)
+    keep, auto = d / f"{name}_auto.unirig.glb", d / f"{name}_auto.glb"
+    if not keep.exists():
+        raise RuntimeError(_t("cr.restore_none"))
+    shutil.copy2(keep, auto)
+    meta = passport(d, name)
+    meta.pop("ends", None)
+    (d / f"{name}_rig.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+    yield _t("cr.restored", keep.name)
+    mouth = mouth_marks(meta)
+    if mouth:
+        yield from mark_jaw(cfg, d, name, mouth)
