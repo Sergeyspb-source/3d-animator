@@ -60,12 +60,22 @@
   .kv { display:grid; grid-template-columns:auto 1fr; gap:2px 8px; font-size:12px; }
   .kv span:nth-child(odd) { color:var(--muted); }
   .ramp { height:8px; border-radius:4px; background:linear-gradient(90deg,#1b2a6b,#1f8fd0,#33c46a,#f2d72c,#e5452f); margin:4px 0 2px; }
+  button.primary { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  .pts { display:grid; gap:3px; }
+  .pts button { text-align:left; display:flex; align-items:center; }
+  .pts button.sel { background:color-mix(in srgb,var(--accent) 22%,transparent); }
+  input[type=range] { width:100%; }
+  .status { font:12px var(--mono); color:var(--muted); margin-top:6px; white-space:pre-wrap; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="main">
     <div class="toolbar">
+      <div class="seg" id="modes" hidden>
+        <button data-m="view" class="on">{{sv.mode_view}}</button><button data-m="joints">{{sv.mode_joints}}</button><button data-m="mouth">{{sv.mode_mouth}}</button>
+      </div>
+      <div class="sep" id="modesSep" hidden></div>
       <div class="seg" id="views">
         <button data-v="front">{{sv.front}}</button><button data-v="side">{{sv.side}}</button><button data-v="top">{{sv.top}}</button><button data-v="back">{{sv.back}}</button>
       </div>
@@ -93,6 +103,35 @@
     <div class="box">
       <div class="grp" id="title">{{sv.title}}</div>
       <div id="stats" class="small"></div>
+    </div>
+    <div class="box" id="jawBox" hidden>
+      <div class="grp">{{sv.jaw_live}}</div>
+      <input type="range" id="jawLive" min="0" max="1" step="0.01" value="0">
+      <div class="row small" style="justify-content:space-between"><span>{{sv.as_made}}</span><span>{{sv.closed}}</span></div>
+    </div>
+    <div class="box" id="jointsBox" hidden>
+      <div class="grp">{{sv.mode_joints}}</div>
+      <div class="small">{{sv.joints_hint}}</div>
+      <div class="row" style="margin-top:6px">
+        <label class="chk"><input type="checkbox" id="sym" checked> {{sv.sym}}</label>
+        <label class="chk">{{sv.reweight}} <select id="reweight"><option value="local">{{sv.rw_local}}</option><option value="all">{{sv.rw_all}}</option><option value="none">{{sv.rw_none}}</option></select></label>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <button id="centre" disabled title="{{sv.centre_tip}}">{{sv.centre}}</button>
+        <button id="undoAll">{{sv.undo_all}}</button>
+      </div>
+      <div class="row" style="margin-top:6px"><button id="rebuild" class="primary">{{sv.rebuild}}</button></div>
+      <div class="status" id="jStatus"></div>
+    </div>
+    <div class="box" id="mouthBox" hidden>
+      <div class="grp">{{sv.mode_mouth}}</div>
+      <div class="small">{{sv.mouth_hint}}</div>
+      <div class="pts" id="mouthPts" style="margin-top:6px"></div>
+      <div class="small" id="mouthAngle" style="margin-top:6px"></div>
+      <div style="margin-top:6px">{{sv.close_try}}</div>
+      <input type="range" id="mouthClose" min="0" max="1" step="0.01" value="0">
+      <div class="row" style="margin-top:6px"><button id="rejaw" class="primary">{{sv.rejaw}}</button></div>
+      <div class="status" id="mStatus"></div>
     </div>
     <div class="box">
       <div class="grp">{{sv.chains}}</div>
@@ -234,6 +273,9 @@ new GLTFLoader().parse(b64(GLB), '', (gltf) => {
   $('msg').hidden = true;
   view('front');
   setPaint();
+  const jaw = bones.find((b) => b.name === 'jaw');
+  $('jawBox').hidden = !(jaw && DATA.close_deg);
+  if (EDIT) initEdit();
 }, (err) => { $('msg').textContent = '{{js:sv.load_failed}} ' + (err && err.message || err); });
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -379,14 +421,17 @@ let down = null;
 renderer.domElement.addEventListener('pointerdown', (e) => { down = [e.clientX, e.clientY]; });
 renderer.domElement.addEventListener('pointerup', (e) => {
   if (!down || dragging || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
+  if (mode !== 'view') { const k = nearestMark(e); if (k) pickMark(k); return; }
   const b = nearest(e);
   if (b) pick(b);
 });
 renderer.domElement.addEventListener('pointermove', (e) => {
-  const b = !dragging && nearest(e), tip = $('tip');
-  if (!b) { tip.hidden = true; return; }
+  const tip = $('tip');
+  const k = !dragging && mode !== 'view' && nearestMark(e);
+  const b = !dragging && mode === 'view' && nearest(e);
+  if (!b && !k) { tip.hidden = true; return; }
   const r = stage.getBoundingClientRect();
-  tip.textContent = b.name.replace(/^mixamorig\d*:?/i, '');
+  tip.textContent = k ? markName(k) : b.name.replace(/^mixamorig\d*:?/i, '');
   tip.style.left = (e.clientX - r.left + 12) + 'px';
   tip.style.top = (e.clientY - r.top + 12) + 'px';
   tip.hidden = false;
@@ -394,6 +439,10 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 renderer.domElement.addEventListener('pointerleave', () => { $('tip').hidden = true; });
 
 function pick(b) {
+  if (b && typeof mode !== 'undefined' && mode !== 'view') {   // (the lists in the edit modes: the markup's joint)
+    if (mode === 'joints' && mk.pts.has(b)) pickMark('j:' + bones.indexOf(b));
+    return;
+  }
   selected = b;
   bones.forEach((x) => { const I = info.get(x); I.li && I.li.classList.toggle('sel', x === b); });
   if (!b) {
@@ -437,6 +486,359 @@ function play() {
 }
 $('play').onclick = play;
 
+// ---------------------------------------------------------------- the jaw as made <-> closed (a marked open mouth)
+$('jawLive').oninput = () => {
+  const jb = bones.find((b) => b.name === 'jaw');
+  if (!jb || !DATA.close_deg) return;
+  const pq = jb.parent.getWorldQuaternion(new THREE.Quaternion());
+  const turn = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), THREE.MathUtils.degToRad(DATA.close_deg * +$('jawLive').value));
+  jb.quaternion.copy(pq.clone().invert().multiply(turn).multiply(pq).multiply(rest.get(jb)));   // about the world X through the hinge
+};
+
+// ---------------------------------------------------------------- editing a creature's markup
+// «Joints»: every joint (a bone's head) and every tip's end (where a bone with no child points) moved by its arrows;
+// with «Mirror» a paw's joint takes its pair's along (FL <-> FR, BL <-> BR), a middle one stays on the middle plane.
+// «Mouth»: four points - the hinge, the mouth's corner, the upper and the lower jaw's front: the lower jaw is what is
+// below the line from the gap's middle through the corner to the hinge (blender_creature_finish.py's rule, shown red),
+// tried closed by its slider. Both sent to SF3D (a hidden textbox and button): the skeleton and the weights made again,
+// or only the jaw.
+const EDIT = !!DATA.edit;
+let mode = 'view';
+const V3 = THREE.Vector3;
+const mk = { pts: new Map(), ends: new Map(), orig: null, sel: null, cx: 0 };   // bone -> Vector3; tip bone -> its end
+const MOUTH = ['hinge', 'corner', 'upper', 'lower'];
+const MCOL = { hinge: '#f0902e', corner: '#e8cf2a', upper: '#1fb5d8', lower: '#e0478f' };
+const MNAME = { hinge: '{{js:sv.m_hinge}}', corner: '{{js:sv.m_corner}}', upper: '{{js:sv.m_upper}}', lower: '{{js:sv.m_lower}}' };
+const mouth = {};
+const helper = new THREE.Object3D();
+scene.add(helper);
+const endGeo = new THREE.SphereGeometry(1, 12, 8);
+let rests = [];   // the skin at rest, in the world: [{mesh, pos: Float32Array, index}] - raycast, the mouth's preview
+let preview = null;   // the mouth's preview mesh (painted, closed by the slider)
+const mouthMarks = {};   // point -> sphere
+const mouthLines = new THREE.Group();
+scene.add(mouthLines);
+const PAIRS = [['_FL_', '_FR_'], ['_BL_', '_BR_'], ['Left', 'Right'], ['_L', '_R'], ['.L', '.R']];
+const partnerOf = (n) => { for (const [a, b] of PAIRS) { if (n.includes(a)) return n.replace(a, b); if (n.includes(b)) return n.replace(b, a); } return null; };
+
+function initEdit() {
+  $('modes').hidden = $('modesSep').hidden = false;
+  resetPose();
+  root.updateMatrixWorld(true);
+  // the skin at rest in the world (no bones' work on every ray): copies for the rays and the mouth's preview
+  rests = meshes.filter((m) => m.isSkinnedMesh).map((m) => {
+    const n = m.geometry.attributes.position.count, pos = new Float32Array(n * 3), v = new V3();
+    for (let i = 0; i < n; i++) { m.getVertexPosition(i, v); v.applyMatrix4(m.matrixWorld); pos[i * 3] = v.x; pos[i * 3 + 1] = v.y; pos[i * 3 + 2] = v.z; }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    if (m.geometry.index) g.setIndex(m.geometry.index);
+    g.computeVertexNormals();
+    const ray = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
+    ray.updateMatrixWorld(true);
+    return { mesh: m, pos, ray, geo: g };
+  });
+  bones.forEach((b) => { if (b.name !== 'jaw') mk.pts.set(b, b.getWorldPosition(new V3())); });
+  const rootBone = bones[0];
+  mk.cx = rootBone ? mk.pts.get(rootBone).x : 0;
+  bones.forEach((b) => {   // the tips' ends: as last set, else along the bone into the body
+    const I = info.get(b);
+    if (b.name === 'jaw' || I.kids.some((k) => k.name !== 'jaw')) return;
+    const e = DATA.ends && DATA.ends[b.name];
+    mk.ends.set(b, e ? new V3(...e) : guessEnd(b));
+    const s = new THREE.Mesh(endGeo, new THREE.MeshBasicMaterial({ color: I.color, depthTest: false, transparent: true, opacity: .55, wireframe: true }));
+    s.scale.setScalar(H * .012); s.renderOrder = 10; s.visible = false;
+    overlay.add(s);
+    I.endSphere = s;
+    const c = new THREE.Mesh(segGeo, new THREE.MeshBasicMaterial({ color: I.color, depthTest: false, transparent: true, opacity: .45 }));
+    c.renderOrder = 9; c.visible = false;
+    overlay.add(c);
+    I.endSeg = c;
+  });
+  mk.orig = { pts: new Map([...mk.pts].map(([b, p]) => [b, p.clone()])), ends: new Map([...mk.ends].map(([b, p]) => [b, p.clone()])) };
+  if (DATA.mouth) MOUTH.forEach((k) => { mouth[k] = new V3(...DATA.mouth[k]); });
+  else $('modes').querySelector('[data-m=mouth]').disabled = true;
+  MOUTH.forEach((k) => {
+    const s = new THREE.Mesh(sphereGeo, new THREE.MeshBasicMaterial({ color: MCOL[k], depthTest: false, transparent: true }));
+    s.renderOrder = 12; s.visible = false;
+    scene.add(s);
+    mouthMarks[k] = s;
+  });
+  $('mouthPts').innerHTML = MOUTH.map((k) => `<button data-k="${k}"><span class="sw" style="background:${MCOL[k]}"></span>${MNAME[k]}</button>`).join('');
+  $('mouthPts').querySelectorAll('button').forEach((el) => el.onclick = () => pickMark('m:' + el.dataset.k));
+}
+
+function castRest(p, dir, far = H) {   // the distance along dir to the skin, or null
+  const rc = new THREE.Raycaster(p, dir.clone().normalize(), 0, far);
+  const hits = rc.intersectObjects(rests.map((r) => r.ray), false);
+  return hits.length ? hits[0].distance : null;
+}
+function guessEnd(b) {
+  const I = info.get(b), p = b.getWorldPosition(new V3());
+  const dir = new V3().setFromMatrixColumn(b.matrixWorld, 1).normalize();
+  let len = I.parent ? I.parent.getWorldPosition(new V3()).distanceTo(p) * .6 : H * .05;
+  const hit = castRest(p, dir, len * 2);
+  if (hit != null && hit * .85 < len) len = hit * .85;
+  return p.clone().addScaledVector(dir, Math.max(len, H * .01));
+}
+
+function setMode(m) {
+  if (m === mode) return;
+  mode = m;
+  document.querySelectorAll('#modes button').forEach((b) => b.classList.toggle('on', b.dataset.m === m));
+  pick(null); mk.sel = null; gizmo.detach();
+  resetPose();
+  $('jointsBox').hidden = m !== 'joints';
+  $('mouthBox').hidden = m !== 'mouth';
+  $('jawBox').hidden = !(m === 'view' && bones.some((b) => b.name === 'jaw') && DATA.close_deg);
+  gizmo.setMode(m === 'view' ? 'rotate' : 'translate');
+  gizmo.setSpace(m === 'view' ? 'local' : 'world');
+  gizmo.showX = m !== 'mouth';   // (the mouth's points stay on the middle plane)
+  bones.forEach((b) => { const I = info.get(b); if (I.endSphere) { I.endSphere.visible = I.endSeg.visible = m === 'joints'; } });
+  MOUTH.forEach((k) => { if (mouthMarks[k]) mouthMarks[k].visible = m === 'mouth'; });
+  overlay.visible = m !== 'mouth';
+  mouthLines.visible = m === 'mouth';
+  if (m === 'mouth') {
+    if (!preview) buildPreview();
+    meshes.forEach((x) => { x.visible = false; });
+    preview.visible = true;
+    mouthPaint();
+    const c = mouth.hinge.clone().add(mouth.upper).add(mouth.lower).multiplyScalar(1 / 3), d = mouth.hinge.distanceTo(mouth.upper) * 4;
+    camera.position.set(c.x + d, c.y + d * .1, c.z); controls.target.copy(c); controls.update();
+    document.querySelectorAll('#views button').forEach((b) => b.classList.toggle('on', b.dataset.v === 'side'));
+  } else {
+    meshes.forEach((x) => { x.visible = true; });
+    if (preview) preview.visible = false;
+    setPaint();
+  }
+}
+document.querySelectorAll('#modes button').forEach((b) => b.onclick = () => setMode(b.dataset.m));
+
+// a mark: 'j:<bone index>', 'e:<bone index>' (a tip's end), 'm:<point>'
+function markPos(k) {
+  const [t, v] = [k[0], k.slice(2)];
+  return t === 'm' ? mouth[v] : t === 'e' ? mk.ends.get(bones[+v]) : mk.pts.get(bones[+v]);
+}
+function markName(k) {
+  const [t, v] = [k[0], k.slice(2)];
+  if (t === 'm') return MNAME[v];
+  const n = bones[+v].name.replace(/^mixamorig\d*:?/i, '');
+  return t === 'e' ? n + ' · {{js:sv.end}}' : n;
+}
+function nearestMark(ev, px = 14) {
+  const r = renderer.domElement.getBoundingClientRect(), v = new V3();
+  const keys = mode === 'mouth' ? MOUTH.map((k) => 'm:' + k)
+    : [...[...mk.pts.keys()].map((b) => 'j:' + bones.indexOf(b)), ...[...mk.ends.keys()].map((b) => 'e:' + bones.indexOf(b))];
+  let best = null, bd = px * px;
+  keys.forEach((k) => {
+    v.copy(markPos(k)).project(camera);
+    if (v.z > 1) return;
+    const d = ((v.x + 1) / 2 * r.width - (ev.clientX - r.left)) ** 2 + ((1 - v.y) / 2 * r.height - (ev.clientY - r.top)) ** 2;
+    if (d < bd) { bd = d; best = k; }
+  });
+  return best;
+}
+function pickMark(k) {
+  mk.sel = k;
+  helper.position.copy(markPos(k));
+  helper.updateMatrixWorld();
+  gizmo.attach(helper);
+  gizmo.size = .7;
+  $('centre').disabled = k[0] === 'm';
+  $('badge').dataset.mark = markName(k);
+  document.querySelectorAll('#mouthPts button').forEach((b) => b.classList.toggle('sel', 'm:' + b.dataset.k === k));
+  if (k[0] === 'j') { const b = bones[+k.slice(2)]; bones.forEach((x) => { const I = info.get(x); I.li && I.li.classList.toggle('sel', x === b); }); }
+}
+gizmo.addEventListener('objectChange', () => {
+  if (mode === 'view' || !mk.sel) return;
+  const k = mk.sel, p = markPos(k);
+  if (k[0] === 'm') {
+    p.set(mk.cx, helper.position.y, helper.position.z);
+    mouthPaint();
+    return;
+  }
+  p.copy(helper.position);
+  if ($('sym').checked) {   // its pair mirrored; a middle joint kept on the middle plane
+    const b = bones[+k.slice(2)], pn = partnerOf(b.name), pb = pn && bones.find((x) => x.name === pn);
+    if (pb) {
+      const q = k[0] === 'e' ? mk.ends.get(pb) : mk.pts.get(pb);
+      if (q) q.set(2 * mk.cx - p.x, p.y, p.z);
+    } else if (k[0] === 'j') p.x = mk.cx;
+  }
+});
+$('centre').onclick = () => {   // the joint into the middle of the body round it (across and front to back)
+  if (!mk.sel || mk.sel[0] === 'm') return;
+  const p = markPos(mk.sel), out = p.clone();
+  for (const ax of [new V3(1, 0, 0), new V3(0, 0, 1)]) {
+    const a = castRest(p, ax), b = castRest(p, ax.clone().negate());
+    if (a != null && b != null && a + b < H * .6) out.addScaledVector(ax, (a - b) / 2);
+  }
+  helper.position.copy(out); helper.updateMatrixWorld();
+  gizmo.dispatchEvent({ type: 'objectChange' });
+};
+$('undoAll').onclick = () => {
+  mk.orig.pts.forEach((p, b) => mk.pts.get(b).copy(p));
+  mk.orig.ends.forEach((p, b) => mk.ends.get(b).copy(p));
+  if (mk.sel) { helper.position.copy(markPos(mk.sel)); helper.updateMatrixWorld(); }
+};
+
+// ---- the mouth: which skin goes with the jaw (blender_creature_finish.py's rule on the middle plane) and closed
+function jawRule() {
+  const yz = (p) => [-p.z, p.y];   // glTF -> Blender (y, z): the creature looks along -Y there
+  const Hh = yz(mouth.hinge), C = yz(mouth.corner), L = yz(mouth.lower), U = yz(mouth.upper);
+  const gap = [(U[0] + L[0]) / 2, (U[1] + L[1]) / 2], span = Math.hypot(gap[0] - Hh[0], gap[1] - Hh[1]);
+  const J = DATA.jaw_params || {};
+  const half = J.half_width || .7 * span, fade = J.fade || .3 * span;
+  const floor = Math.min(L[1], Hh[1]) - 2.5 * span;   // (hardly any: the jaw is the skin reached from its front)
+  const pts = [gap, C, Hh].sort((a, b) => a[0] - b[0]);
+  const lineZ = (y) => {
+    if (y <= pts[0][0]) return pts[0][1];
+    for (let i = 1; i < pts.length; i++) if (y <= pts[i][0]) return pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * (y - pts[i - 1][0]) / Math.max(pts[i][0] - pts[i - 1][0], 1e-6);
+    return pts[pts.length - 1][1];
+  };
+  const w = (x, y, z) => {   // glTF point -> the jaw's weight
+    const by = -z, bz = y;
+    if (by > Hh[0] || bz < floor || Math.abs(x - mk.cx) > half || bz > lineZ(by)) return 0;
+    return by > Hh[0] - fade ? (Hh[0] - by) / fade : 1;
+  };
+  // a loose piece's centre: in the jaw's room, all of it with the jaw (below the line) or with the skull
+  w.piece = (x, y, z) => (-z < Hh[0] && Math.abs(x - mk.cx) < half && y > floor ? (y < lineZ(-z) ? 1 : 0) : null);
+  return w;
+}
+function topo(r) {   // the skin's islands, the seams welded, and each welded vertex's neighbours (once per mesh)
+  if (r.topo) return r.topo;
+  const n = r.pos.length / 3, keys = new Map(), rep = new Int32Array(n);
+  for (let i = 0; i < n; i++) {
+    const k = Math.round(r.pos[i * 3] * 1e5) + ',' + Math.round(r.pos[i * 3 + 1] * 1e5) + ',' + Math.round(r.pos[i * 3 + 2] * 1e5);
+    if (!keys.has(k)) keys.set(k, i);
+    rep[i] = keys.get(k);
+  }
+  const adj = new Map(), idx = r.geo.index ? r.geo.index.array : null, nt = idx ? idx.length / 3 : n / 3;
+  const link = (a, b) => { if (!adj.has(a)) adj.set(a, []); adj.get(a).push(b); };
+  for (let t = 0; t < nt; t++) {
+    const a = rep[idx ? idx[t * 3] : t * 3], b = rep[idx ? idx[t * 3 + 1] : t * 3 + 1], c = rep[idx ? idx[t * 3 + 2] : t * 3 + 2];
+    link(a, b); link(a, c); link(b, a); link(b, c); link(c, a); link(c, b);
+  }
+  const comp = new Int32Array(n).fill(-1), sizes = [];
+  for (let i = 0; i < n; i++) {
+    const s0 = rep[i];
+    if (comp[s0] >= 0) continue;
+    const id = sizes.length, st = [s0];
+    comp[s0] = id;
+    while (st.length) { const a = st.pop(); for (const b of adj.get(a) || []) if (comp[b] < 0) { comp[b] = id; st.push(b); } }
+    sizes.push(0);
+  }
+  const of = new Int32Array(n);
+  for (let i = 0; i < n; i++) { of[i] = comp[rep[i]]; sizes[of[i]]++; }
+  r.topo = { rep, adj, of, sizes };
+  return r.topo;
+}
+function jawWeights(r, w) {   // blender_creature_finish.py's: the rule, loose pieces whole by their centre, the skin
+  const T = topo(r), n = r.pos.length / 3, out = new Float32Array(n), P = r.pos;   // reached from the lower front
+  for (let i = 0; i < n; i++) out[i] = w(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]);
+  const cen = new Map();
+  for (let i = 0; i < n; i++) {
+    const c = T.of[i];
+    if (T.sizes[c] > 2000) continue;
+    if (!cen.has(c)) cen.set(c, [0, 0, 0, 0]);
+    const a = cen.get(c); a[0] += P[i * 3]; a[1] += P[i * 3 + 1]; a[2] += P[i * 3 + 2]; a[3]++;
+  }
+  const piece = new Map();
+  cen.forEach((a, c) => piece.set(c, w.piece(a[0] / a[3], a[1] / a[3], a[2] / a[3])));
+  let start = -1, bd = Infinity;
+  const L = mouth.lower;
+  for (let i = 0; i < n; i++) {
+    const c = T.of[i];
+    if (T.sizes[c] <= 2000) { const pw = piece.get(c); if (pw != null) out[i] = pw; continue; }
+    if (out[i] > 0) { const d = (P[i * 3] - mk.cx) ** 2 + (P[i * 3 + 1] - L.y) ** 2 + (P[i * 3 + 2] - L.z) ** 2; if (d < bd) { bd = d; start = i; } }
+  }
+  if (start >= 0) {   // the skin itself: only what is reached from the jaw's front over the skin below the line
+    const reach = new Uint8Array(n), st = [T.rep[start]];
+    reach[T.rep[start]] = 1;
+    while (st.length) { const a = st.pop(); for (const b of T.adj.get(a) || []) if (!reach[b] && out[b] > 0) { reach[b] = 1; st.push(b); } }
+    for (let i = 0; i < n; i++) if (T.sizes[T.of[i]] > 2000 && out[i] > 0 && !reach[T.rep[i]]) out[i] = 0;
+  }
+  return out;
+}
+function buildPreview() {   // every skinned mesh's copy at rest, painted by the jaw's weight
+  preview = new THREE.Group();
+  rests.forEach((r) => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(r.pos.slice(), 3));
+    if (r.geo.index) g.setIndex(r.geo.index);
+    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(r.pos.length), 3));
+    const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: .8 }));
+    m.userData.rest = r.pos;
+    preview.add(m);
+  });
+  scene.add(preview);
+}
+function closeTurn() {   // the turn (radians, about +X through the hinge) taking the lower front onto the upper one
+  const a = (p) => Math.atan2(p.z - mouth.hinge.z, p.y - mouth.hinge.y);
+  let t = a(mouth.upper) - a(mouth.lower);
+  while (t > Math.PI) t -= 2 * Math.PI;
+  while (t < -Math.PI) t += 2 * Math.PI;
+  return t;
+}
+function mouthPaint() {
+  if (!preview) return;
+  const w = jawRule(), t = closeTurn() * +$('mouthClose').value, h = mouth.hinge, c = Math.cos(t), s = Math.sin(t);
+  const red = new THREE.Color('#e5452f'), grey = new THREE.Color('#bdb6aa'), k = new THREE.Color();
+  let n = 0;
+  preview.children.forEach((m, mi) => {
+    const R = m.userData.rest, pos = m.geometry.attributes.position, col = m.geometry.attributes.color, W = jawWeights(rests[mi], w);
+    for (let i = 0; i < pos.count; i++) {
+      const x = R[i * 3], y = R[i * 3 + 1], z = R[i * 3 + 2], wt = W[i];
+      if (wt > 0) n++;
+      // skinned as the jaw would be: turned by the weight's share (about X through the hinge)
+      const dy = y - h.y, dz = z - h.z, ry = h.y + dy * c - dz * s, rz = h.z + dy * s + dz * c;
+      pos.setXYZ(i, x, y + (ry - y) * wt, z + (rz - z) * wt);
+      k.copy(grey).lerp(red, wt);
+      col.setXYZ(i, k.r, k.g, k.b);
+    }
+    pos.needsUpdate = col.needsUpdate = true;
+    m.geometry.computeVertexNormals();
+    m.material.opacity = $('xray').checked ? .55 : 1;
+    m.material.transparent = $('xray').checked;
+  });
+  $('mouthAngle').textContent = '{{js:sv.opening}} ' + Math.abs(THREE.MathUtils.radToDeg(closeTurn())).toFixed(1) + '° · {{js:sv.jaw_verts}} ' + n;
+  // the lines: the mouth line (gap -> corner -> hinge) and the jaw's two sides from the hinge
+  mouthLines.clear();
+  const gap = mouth.upper.clone().add(mouth.lower).multiplyScalar(.5);
+  const line = (a, b, color) => {
+    const g = new THREE.BufferGeometry().setFromPoints([a, b]);
+    const l = new THREE.Line(g, new THREE.LineBasicMaterial({ color, depthTest: false, transparent: true }));
+    l.renderOrder = 11;
+    mouthLines.add(l);
+  };
+  line(gap, mouth.corner, '#ffffff'); line(mouth.corner, mouth.hinge, '#ffffff');
+  line(mouth.hinge, mouth.upper, MCOL.upper); line(mouth.hinge, mouth.lower, MCOL.lower);
+}
+$('mouthClose').oninput = mouthPaint;
+$('xray').addEventListener('change', () => { if (mode === 'mouth') mouthPaint(); });
+
+// ---- sent to SF3D: the skeleton and the weights made again, or only the jaw (the answer: the log under the buttons
+// above, and this markup opened again on the new model)
+function send(req, out) {
+  try {
+    const doc = window.parent.document;
+    const ta = doc.querySelector('#' + DATA.req_target + ' textarea');
+    ta.value = JSON.stringify(req);
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    setTimeout(() => doc.querySelector('#' + DATA.req_go).click(), 400);
+    out.textContent = '{{js:sv.sent}}';
+  } catch (e) { out.textContent = '{{js:sv.send_failed}} ' + e.message; }
+}
+const arr = (v) => [+v.x.toFixed(5), +v.y.toFixed(5), +v.z.toFixed(5)];
+const mouthReq = () => (DATA.mouth ? Object.fromEntries(MOUTH.map((k) => [k, arr(mouth[k])])) : null);
+$('rebuild').onclick = () => send({ action: 'rebuild', reweight: $('reweight').value, mouth: mouthReq(),
+  joints: Object.fromEntries([...mk.pts].map(([b, p]) => [b.name, arr(p)])),
+  // (only the ends moved here or set before: a tip left alone keeps its bone's own way and length)
+  ends: Object.fromEntries([...mk.ends].filter(([b, p]) => (DATA.ends && DATA.ends[b.name]) || p.distanceTo(mk.orig.ends.get(b)) > H * 1e-4).map(([b, p]) => [b.name, arr(p)])) }, $('jStatus'));
+$('rejaw').onclick = () => send({ action: 'jaw', mouth: mouthReq() }, $('mStatus'));
+// (test hooks: work/wear_test/ui/test_creature_markup.mjs moves the marks the way the arrows would)
+window.sv = { mouth, mk, bones, setMode, pickMark, mouthPaint, castRest, H: () => H, moveMark: (k, p) => {
+  pickMark(k); helper.position.set(...p); helper.updateMatrixWorld(); gizmo.dispatchEvent({ type: 'objectChange' }); } };
+
 // ---------------------------------------------------------------- views
 function view(v) {
   const d = H * 1.9, c = center;
@@ -459,18 +861,28 @@ function frame() {
   controls.update();
   if (root) root.updateMatrixWorld(true);
   const showLabels = $('labels').checked, r = renderer.domElement.getBoundingClientRect();
+  const marks = mode === 'joints';
   bones.forEach((b) => {
     const I = info.get(b);
-    b.getWorldPosition(A);
+    if (marks && mk.pts.has(b)) A.copy(mk.pts.get(b)); else b.getWorldPosition(A);
     I.sphere.position.copy(A);
     I.sphere.material.color.copy(b === selected ? WHITE : I.color);
+    I.sphere.visible = !(marks && b.name === 'jaw');
     I.kids.forEach((k, j) => {
-      k.getWorldPosition(B);
+      if (marks && mk.pts.has(k)) B.copy(mk.pts.get(k)); else k.getWorldPosition(B);
+      I.segs[j].visible = !(marks && k.name === 'jaw');
       const s = I.segs[j], len = A.distanceTo(B);
       s.position.copy(A).add(B).multiplyScalar(.5);
       s.quaternion.setFromUnitVectors(UP, B.clone().sub(A).normalize());
       s.scale.set(H * .0035, Math.max(len, 1e-6), H * .0035);
     });
+    if (marks && I.endSphere) {   // a tip's end and the line to it
+      const E = mk.ends.get(b), s = I.endSeg;
+      I.endSphere.position.copy(E);
+      s.position.copy(A).add(E).multiplyScalar(.5);
+      s.quaternion.setFromUnitVectors(UP, E.clone().sub(A).normalize());
+      s.scale.set(H * .0025, Math.max(A.distanceTo(E), 1e-6), H * .0025);
+    }
     const lab = I.label;
     const show = showLabels && !/hand|face/.test(I.group) || b === selected;
     if (show) {
@@ -480,7 +892,8 @@ function frame() {
       lab.style.top = ((1 - v.y) / 2 * r.height) + 'px';
     } else lab.hidden = true;
   });
-  $('badge').textContent = selected ? selected.name.replace(/^mixamorig\d*:?/i, '') : (DATA.badge || '');
+  MOUTH.forEach((k) => { const s = mouthMarks[k]; if (s && mouth[k]) { s.position.copy(mouth[k]); s.scale.setScalar(H * .008); } });
+  $('badge').textContent = mode !== 'view' ? (mk.sel ? markName(mk.sel) : '') : selected ? selected.name.replace(/^mixamorig\d*:?/i, '') : (DATA.badge || '');
   $('badge').hidden = !$('badge').textContent;
   renderer.render(scene, camera);
 }

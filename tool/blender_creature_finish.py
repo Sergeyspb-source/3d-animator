@@ -1,14 +1,17 @@
 """Runs INSIDE Blender (background): finish an auto-rigged creature: readable bone names and a jaw.
 
     blender -b -P blender_creature_finish.py -- rigged.glb out.glb [names=old:new,old:new,...]
-            [jaw_front=y,z] [jaw_corner=y,z] [hinge=y,z] [jaw_parent=head] [preview=path.png]
+            [jaw_front=y,z] [jaw_corner=y,z] [hinge=y,z] [chin=y,z] [jaw_parent=head] [preview=path.png]
+            [angles=0,30] [tags=0,30]
 
 Bone names: given pairs are applied as they are (vertex groups follow).
 Jaw (Blender coordinates, the creature looking along -Y): the mouth line runs from jaw_front (tip of the lower
 jaw, between the lips) to jaw_corner (corner of the mouth) and on to the hinge. Head vertices below that line
-belong to the new bone "jaw" (optional jaw_tip=y,z: the line in front of the lower jaw, under the nose) (child of jaw_parent, pivot at the hinge, pointing to the chin); the weight fades out
+belong to the new bone "jaw" (optional jaw_tip=y,z: the line in front of the lower jaw, under the nose) (child of jaw_parent, pivot at the hinge, pointing to the chin: chin=y,z, else jaw_front); the weight fades out
 over the last centimetres before the hinge so the cheeks stretch instead of tearing. Loose pieces (teeth, fangs)
-go whole to the jaw or stay with the skull by their centre. preview renders the jaw closed and open.
+go whole to the jaw or stay with the skull by their centre. preview renders the jaw at each of angles (degrees about
+the bone's X, + opens), files <preview>_<tag>_<side|front>.png - a closed mouth's at rest and open (0, 30), an open
+one's as it was made and closed (0 and minus its opening, tags 0, c).
 Prints lines starting with CREATURE_.
 """
 import math
@@ -57,7 +60,8 @@ if front and corner and hinge:
     bpy.ops.object.mode_set(mode="EDIT")
     eb = arm.data.edit_bones.new("jaw")
     eb.head = inv @ Vector((0.0, hinge[0], hinge[1]))
-    eb.tail = inv @ Vector((0.0, front[0], front[1]))
+    tip = pair("chin") or front   # (an open mouth: the lower jaw's front, below the mouth line's front in the gap)
+    eb.tail = inv @ Vector((0.0, tip[0], tip[1]))
     eb.parent = arm.data.edit_bones[parent]
     eb.use_deform = True
     bpy.ops.object.mode_set(mode="OBJECT")
@@ -86,33 +90,65 @@ if front and corner and hinge:
         return 1.0
 
     w = [weight(p) for p in P]
-    # loose pieces (teeth) move whole, by their centre
+    # the islands, the seams welded (a model split along its UV seams is one skin): a loose piece (teeth, a tongue, a
+    # fur card) moves whole, by its centre; on the skin itself, with the mouth marked (chin=), the jaw is only what is
+    # reached from the lower jaw's front over the skin below the line - the bottom of a long open jaw low under the
+    # head goes with it, a front paw below it does not (its way up the leg passes behind the hinge)
     bm = bmesh.new()
     bm.from_mesh(me.data)
     bm.verts.ensure_lookup_table()
+    same = {}
+    for i, p in enumerate(P):
+        same.setdefault((round(p.x, 5), round(p.y, 5), round(p.z, 5)), []).append(i)
+    twins = lambda i: same[(round(P[i].x, 5), round(P[i].y, 5), round(P[i].z, 5))]  # noqa: E731
+
+    def near(i):
+        for e in bm.verts[i].link_edges:
+            yield e.other_vert(bm.verts[i]).index
+        yield from twins(i)
+
     seen = set()
     teeth = 0
+    body = []
     for v in bm.verts:
         if v.index in seen:
             continue
-        st, isl = [v], []
+        st, isl = [v.index], []
         seen.add(v.index)
         while st:
             a = st.pop()
-            isl.append(a.index)
-            for e in a.link_edges:
-                b = e.other_vert(a)
-                if b.index not in seen:
-                    seen.add(b.index)
+            isl.append(a)
+            for b in near(a):
+                if b not in seen:
+                    seen.add(b)
                     st.append(b)
         if len(isl) > 2000:
-            continue  # the body itself
+            body += isl   # the skin itself
+            continue
         c = sum((P[i] for i in isl), Vector()) / len(isl)
         if c.y < hinge[0] and abs(c.x - cx) < half_w and c.z > floor:
             ww = 1.0 if c.z < line_z(c.y) else 0.0
             for i in isl:
                 w[i] = ww
             teeth += 1
+    chin = pair("chin")
+    if chin:
+        cands = [i for i in body if w[i] > 0]
+        if cands:
+            start = min(cands, key=lambda i: (P[i].y - chin[0]) ** 2 + (P[i].z - chin[1]) ** 2 + (P[i].x - cx) ** 2)
+            reach, st = {start}, [start]
+            while st:
+                a = st.pop()
+                for b in near(a):
+                    if b not in reach and w[b] > 0:
+                        reach.add(b)
+                        st.append(b)
+            cut = 0
+            for i in body:
+                if w[i] > 0 and i not in reach:
+                    w[i] = 0.0
+                    cut += 1
+            print(f"CREATURE_JAW_REACH kept={len(reach)} cut={cut}")
     bm.free()
     jg = me.vertex_groups.new(name="jaw")
     n = 0
@@ -144,13 +180,15 @@ if front and corner and hinge:
         sc.collection.objects.link(sun)
         cam = bpy.data.objects.new("cam", bpy.data.cameras.new("cam"))
         cam.data.type = "ORTHO"
-        cam.data.ortho_scale = 0.32
+        cam.data.ortho_scale = max(0.32, 2.6 * math.dist(front, hinge))   # (a big creature's head in the picture too)
         sc.collection.objects.link(cam)
         sc.camera = cam
         c = Vector((cx, (front[0] + hinge[0]) / 2, (front[1] + hinge[1]) / 2 + 0.02))
         pb = arm.pose.bones["jaw"]
         pb.rotation_mode = "XYZ"
-        for ang in (0, 30):
+        angles = [float(x) for x in opt.get("angles", "0,30").split(",")]
+        tags = opt.get("tags", ",".join(str(int(a)) for a in angles)).split(",")
+        for ang, tag in zip(angles, tags):
             pb.rotation_euler = (0, 0, 0)
             # open: turn the jaw down around the hinge (axis = the bone's local X)
             pb.rotation_euler.x = math.radians(ang)
@@ -158,7 +196,7 @@ if front and corner and hinge:
             for nm, d in (("side", (-1, 0, 0.1)), ("front", (-0.5, -1, 0.2))):
                 cam.location = c + Vector(d).normalized() * 2
                 cam.rotation_euler = (c - cam.location).to_track_quat("-Z", "Y").to_euler()
-                r.filepath = opt["preview"].replace(".png", f"_{ang}_{nm}.png")
+                r.filepath = opt["preview"].replace(".png", f"_{tag}_{nm}.png")
                 bpy.ops.render.render(write_still=True)
         pb.rotation_euler = (0, 0, 0)
         print("CREATURE_PREVIEW done")

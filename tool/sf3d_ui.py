@@ -1208,24 +1208,6 @@ def _creature_jaw(st, line_mm, hinge_mm, log, last, pics, emit):
     yield emit()
 
 
-def creature_rejaw(state, line_mm, hinge_mm):
-    """'Пересобрать челюсть': the skeleton stays, only the mouth line changes."""
-    log, last, pics, st = [], [None], [[]], [state]
-
-    def emit():
-        return "\n".join(log), last[0], pics[0], st[0]
-
-    if not state:
-        log.append(_t("ui.make_the_creature_s_skeleton_first"))
-        yield emit()
-        return
-    try:
-        yield from _creature_jaw(state, line_mm, hinge_mm, log, last, pics, emit)
-    except Exception as e:  # noqa: BLE001
-        log.append(_t("ui.error_2", e))
-    yield emit()
-
-
 # ------------------------------------------------------------------ the «Creatures» section: the current creature
 def _creature_memo():
     return Path(T.load_config()["work_dir"]) / "current_creature.txt"
@@ -1277,13 +1259,11 @@ def creature_info(value):
 
 
 def creature_for_tab(value):
-    """The current creature's skeleton (the tools that take a path), its jaw's pictures and the jaw's sliders as made."""
+    """The current creature's skeleton (the tools that take a path) and its jaw's pictures."""
     f = _char_files(value) or {}
     if not f:
-        return "", [], 0, 0
-    meta = CR.passport(f["dir"], f["name"])
-    return (str(f["rigged"]) if f.get("rigged") else "", CR.jaw_pictures(f["dir"], f["name"]),
-            meta.get("line_mm", 0), meta.get("hinge_mm", 0))
+        return "", []
+    return str(f["rigged"]) if f.get("rigged") else "", CR.jaw_pictures(f["dir"], f["name"])
 
 
 def creature_add(upload):
@@ -1300,18 +1280,31 @@ def creature_delete(value):
     return gr.update(choices=_characters(True), value=_creature_default()) if _delete_model(value) else gr.update()
 
 
-def creature_rig(value, line_mm, hinge_mm):
+def creature_rig(value):
     """«Create the skeleton» of the «Creatures» section: on the current creature (its log, its model, the jaw)."""
-    for log, glb, pics, _ in creature_run(None, value, line_mm, hinge_mm):
+    for log, glb, pics, _ in creature_run(None, value):
         yield log, (glb or gr.update()), pics
 
 
-def creature_rejaw_current(value, line_mm, hinge_mm):
-    """«Rebuild the jaw»: the current creature's named skeleton and the jaw's first guess are read off its files."""
+def creature_request(value, text):
+    """The markup's request (its hidden textbox): the skeleton moved to the edited joints and skinned again, then its
+    jaw - or only the jaw from the mouth's four points. Yields the log, the model, the jaw's pictures."""
     f = _char_files(value) or {}
-    st = CR.jaw_state(f["dir"], f["name"]) if f else None
-    for log, glb, pics, _ in creature_rejaw(st, line_mm, hinge_mm):
-        yield log, (glb or gr.update()), pics
+    lines = []
+    try:
+        req = json.loads(text or "{}")
+        if not f or not f.get("rigged"):
+            raise RuntimeError(_t("cr.view_needs_skeleton"))
+        cfg = T.load_config()
+        steps = (CR.rebuild(cfg, f["dir"], f["name"], req) if req.get("action") == "rebuild"
+                 else CR.mark_jaw(cfg, f["dir"], f["name"], req.get("mouth") or {}))
+        for line in steps:
+            lines.append(line)
+            yield "\n".join(lines), gr.update(), gr.update()
+        yield "\n".join(lines), str(f["dir"] / f"{f['name']}_rigged.glb"), CR.jaw_pictures(f["dir"], f["name"])
+    except Exception as e:  # noqa: BLE001
+        lines.append(_t("ui.error_2", e))
+        yield "\n".join(lines), gr.update(), gr.update()
 
 
 def _bones_frame(glb, title, kind=""):
@@ -1319,12 +1312,13 @@ def _bones_frame(glb, title, kind=""):
 
 
 def creature_viewer(value):
-    """The skeleton viewer on the current creature (or why not)."""
+    """The skeleton viewer on the current creature, its markup editable (or why not)."""
     f = _char_files(value) or {}
     r = f.get("rigged")
     if not r or not landmarks.has_skin(r):
         return _t("cr.view_needs_skeleton")
-    return _bones_frame(r, f["name"], _t("cr.kind_creature"))
+    return landmarks_ui._frame(CR.viewer_page(Path(r), title=f["name"], kind=_t("cr.kind_creature"),
+                                              edit=CR.viewer_data(f["dir"], f["name"])))
 
 
 def rig_viewer(path):
@@ -2653,18 +2647,18 @@ def build():
                         with gr.Row():
                             with gr.Column(scale=1):
                                 gr.Markdown(_t("cr.rig_intro"))
-                                with gr.Row():
-                                    cr_jaw_line = gr.Slider(-40, 40, value=0, step=1, label=_t("ui.mouth_line_higher_lower_mm"))
-                                    cr_jaw_hinge = gr.Slider(-40, 40, value=0, step=1, label=_t("ui.jaw_hinge_further_nearer_to_the_nose"))
-                                with gr.Row():
-                                    cr_rig_btn = gr.Button(_t("ui.make_the_skeleton_3_6_minutes_3_5_gb"), variant="primary")
-                                    cr_rejaw_btn = gr.Button(_t("ui.rebuild_the_jaw_with_the_new_sliders"))
+                                cr_rig_btn = gr.Button(_t("ui.make_the_skeleton_3_6_minutes_3_5_gb"), variant="primary")
                                 cr_log = gr.Textbox(label=_t("face.progress"), lines=6, interactive=False)
                             with gr.Column(scale=1):
                                 cr_jaw_gallery = gr.Gallery(label=_t("ui.jaw_closed_and_open"), columns=4, height=220)
                         gr.Markdown(_t("cr.view_info"))
                         cr_view_btn = gr.Button(_t("cr.view_reopen"))
                         cr_viewer = gr.HTML()
+                        # the markup's requests (the skeleton and the weights again, the jaw from the mouth's points):
+                        # the page writes here and clicks the button, both kept out of sight
+                        gr.HTML("<style>.sf3d-hidden{display:none!important}</style>")
+                        cr_req = gr.Textbox(elem_id=CR.REQ_ID, elem_classes=["sf3d-hidden"], show_label=False)
+                        cr_go = gr.Button("go", elem_id=CR.REQ_GO, elem_classes=["sf3d-hidden"])
                     with gr.Tab(_t("ui.weight_fixing"), id="cr_rwt"):
                         rwt_ui.mount(T.load_config, accordion=False, char=cr_rig)
 
@@ -2864,7 +2858,7 @@ def build():
 
         # the creatures: the current one, its view, what it has, its files in the section's tabs
         cr_label, cr_rig_label = _t("cr.section"), _t("ui.skeleton")
-        cr_outs = [cr_rig, cr_jaw_gallery, cr_jaw_line, cr_jaw_hinge]
+        cr_outs = [cr_rig, cr_jaw_gallery]
         cr_dd.change(creature_info, cr_dd, [cr_md, cr_view], show_progress="hidden")
         cr_dd.change(creature_remember, cr_dd, None, show_progress="hidden")
         cr_dd.change(creature_for_tab, cr_dd, cr_outs, show_progress="hidden")
@@ -2897,10 +2891,10 @@ def build():
                     creature_viewer(v), v)
 
         cr_after_outs = [cr_dd, cr_md, cr_view, *cr_outs, cr_viewer, cr_opened]
-        cr_rig_btn.click(creature_rig, [cr_dd, cr_jaw_line, cr_jaw_hinge], [cr_log, cr_view, cr_jaw_gallery],
+        cr_rig_btn.click(creature_rig, cr_dd, [cr_log, cr_view, cr_jaw_gallery],
                          concurrency_id="unirig", concurrency_limit=1).then(cr_after, cr_dd, cr_after_outs, show_progress="hidden")
-        cr_rejaw_btn.click(creature_rejaw_current, [cr_dd, cr_jaw_line, cr_jaw_hinge], [cr_log, cr_view, cr_jaw_gallery]) \
-            .then(cr_after, cr_dd, cr_after_outs, show_progress="hidden")
+        cr_go.click(creature_request, [cr_dd, cr_req], [cr_log, cr_view, cr_jaw_gallery], concurrency_id="creature_markup",
+                    concurrency_limit=1).then(cr_after, cr_dd, cr_after_outs, show_progress="hidden")
         split_btn.click(split_run, [rig_upload, rig_asset], [rig_log, char_view])
 
         # equipment

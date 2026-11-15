@@ -534,9 +534,11 @@ def creature_auto(src, dst, blender):
     return names, jaw
 
 
-def creature_finish(src, dst, blender, names, jaw=None, line_mm=0.0, hinge_mm=0.0, preview=None):
+def creature_finish(src, dst, blender, names, jaw=None, line_mm=0.0, hinge_mm=0.0, preview=None, angles=None, tags=None):
     """Rename bones and add the jaw (tool/blender_creature_finish.py). line_mm moves the mouth line up (+) or
-    down (-), hinge_mm moves the hinge back (+) or forward (-). Returns {"jaw_vertices": n, "previews": [...]}."""
+    down (-), hinge_mm moves the hinge back (+) or forward (-); jaw["chin"]: where the jaw bone points (an open mouth's
+    lower front), else the line's front. angles / tags: the previews' jaw turns (degrees, + opens) and their file tags
+    (default 0, 30). Returns {"jaw_vertices": n, "previews": [...]}."""
     args = []
     if names:
         args.append("names=" + ",".join(f"{a}:{b}" for a, b in names.items()))
@@ -546,8 +548,12 @@ def creature_finish(src, dst, blender, names, jaw=None, line_mm=0.0, hinge_mm=0.
         args += [f"jaw_front={pt(jaw['jaw_front'])}", f"jaw_corner={pt(jaw['jaw_corner'], dy / 2)}",
                  f"hinge={pt(jaw['hinge'], dy)}", f"cx={jaw['cx']:.5f}", f"half_width={jaw['half_width']:.5f}",
                  f"floor={jaw['floor']:.5f}", f"fade={jaw['fade']:.5f}", f"jaw_parent={jaw['jaw_parent']}"]
+        if jaw.get("chin"):
+            args.append(f"chin={pt(jaw['chin'])}")
     if preview:
         args.append(f"preview={preview}")
+        if angles:
+            args += ["angles=" + ",".join(f"{a:.2f}" for a in angles), "tags=" + ",".join(tags or [str(int(a)) for a in angles])]
     r = subprocess.run([blender, "-b", "-P", str(ROOT / "blender_creature_finish.py"), "--", str(src), str(dst),
                         *args], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=900,
                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
@@ -556,10 +562,10 @@ def creature_finish(src, dst, blender, names, jaw=None, line_mm=0.0, hinge_mm=0.
         raise RuntimeError(_t("rig.the_jaw_and_names_were_not_written") + (r.stdout + r.stderr)[-300:])
     out = {"jaw_vertices": 0, "previews": []}
     for x in lines:
-        if x.startswith("CREATURE_JAW"):
+        if x.startswith("CREATURE_JAW "):   # (not CREATURE_JAW_REACH)
             out["jaw_vertices"] = int(x.split("vertices=")[1].split()[0])
     if preview:
         base = str(preview)[:-4]
-        out["previews"] = [f"{base}_{a}_{v}.png" for a in (0, 30) for v in ("side", "front")
+        out["previews"] = [f"{base}_{a}_{v}.png" for a in (tags or [str(int(x)) for x in (angles or (0, 30))]) for v in ("side", "front")
                            if Path(f"{base}_{a}_{v}.png").exists()]
     return out
