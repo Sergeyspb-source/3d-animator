@@ -122,6 +122,7 @@
       <div class="row" style="margin-top:6px">
         <button id="centre" disabled title="{{sv.centre_tip}}">{{sv.centre}}</button>
         <button id="undoAll">{{sv.undo_all}}</button>
+        <button id="evenPairs" title="{{sv.even_pairs_tip}}">{{sv.even_pairs}}</button>
       </div>
       <div class="row" style="margin-top:6px"><button id="rebuild" class="primary">{{sv.rebuild}}</button></div>
       <div class="status" id="jStatus"></div>
@@ -733,6 +734,34 @@ $('centre').onclick = () => {   // the joint into the middle of the body round i
   }
   helper.position.copy(out); helper.updateMatrixWorld();
   gizmo.dispatchEvent({ type: 'objectChange' });
+};
+// the pairs' bones as long as each other (their mean): each joint moved along its bone, what is below it with it (the
+// leg's way kept); the left and right chains walked together from their roots (a bone with a pair, its parent without)
+$('evenPairs').onclick = () => {
+  const below = (b, out = []) => { info.get(b).kids.forEach((k) => { if (mk.pts.has(k)) { out.push(k); below(k, out); } }); return out; };
+  const next = (b) => info.get(b).kids.find((k) => mk.pts.has(k));
+  let n = 0;
+  bones.forEach((b) => {
+    const pn = partnerOf(b.name), pb = pn && bones.find((x) => x.name === pn), par = info.get(b).parent;
+    if (!pb || !mk.pts.has(b) || !mk.pts.has(pb) || (par && partnerOf(par.name)) || b.name > pn) return;
+    let a = b, c = pb;
+    while (a && c) {
+      const ka = next(a), kc = next(c);
+      const ta = ka ? mk.pts.get(ka) : mk.ends.get(a), tc = kc ? mk.pts.get(kc) : mk.ends.get(c);
+      if (!ta || !tc) break;
+      const A0 = mk.pts.get(a), C0 = mk.pts.get(c), la = ta.distanceTo(A0), lc = tc.distanceTo(C0), avg = (la + lc) / 2;
+      [[a, ka, ta, A0, la], [c, kc, tc, C0, lc]].forEach(([x, kx, t, X0, l]) => {
+        if (Math.abs(avg - l) < H * 1e-4) return;
+        const d = t.clone().sub(X0).normalize().multiplyScalar(avg - l);
+        t.add(d);   // the next joint (or the tip's end) along the bone ...
+        if (kx) { below(kx).forEach((y) => mk.pts.get(y).add(d)); [kx, ...below(kx)].forEach((y) => { const e = mk.ends.get(y); if (e) e.add(d); }); }
+        n++;   // ... and everything below it with it
+      });
+      a = ka; c = kc;
+    }
+  });
+  if (mk.sel) { helper.position.copy(markPos(mk.sel)); helper.updateMatrixWorld(); }
+  $('jStatus').textContent = n ? '{{js:sv.even_done}}'.replace('{0}', n) : '{{js:sv.even_none}}';
 };
 $('undoAll').onclick = () => {
   mk.orig.pts.forEach((p, b) => mk.pts.get(b).copy(p));

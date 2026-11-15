@@ -2558,5 +2558,9 @@
  "sv.keep_pose_none": "The pose did not change: turn the bones with the rings.",
  "cr.rest_from_pose": "Making the pose set by hand the rest (Blender, about 20 seconds)…",
  "sv.floor": "Floor",
- "sv.floor_tip": "The floor's grid under the feet, the axes and the model's shadow"
+ "sv.floor_tip": "The floor's grid under the feet, the axes and the model's shadow",
+ "sv.even_pairs": "Even the pairs' lengths",
+ "sv.even_pairs_tip": "A pair's left and right bones get their mean length: each joint moves along its bone, the ones below it with it",
+ "sv.even_done": "{0} bones evened. Check the joints and press «Rebuild the skeleton and weights», then «Straighten the rest pose» if need be.",
+ "sv.even_none": "The pairs are as long as each other already."
 }
