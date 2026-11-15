@@ -126,6 +126,39 @@ if not body_done:
     d = pos(hips, True) - pos(hips)
     aim(hips, d - lat * d.dot(lat))
 
+# ---- the paws' bottoms: the lowest point of the skin each leg's last bone leads, as the pose has it now
+lead = {}
+for o in meshes:
+    names = {g.index: g.name for g in o.vertex_groups}
+    lead[o] = [names[max(v.groups, key=lambda g: g.weight).group] if v.groups else None for v in o.data.vertices]
+
+
+def bottoms(tips):
+    dg = bpy.context.evaluated_depsgraph_get()
+    out = {}
+    for o in meshes:
+        ev = o.evaluated_get(dg)
+        m = ev.to_mesh()
+        for v, n in zip(m.vertices, lead[o]):
+            if n in tips:
+                z = (o.matrix_world @ v.co).z
+                out[n] = min(out.get(n, z), z)
+        ev.to_mesh_clear()
+    return out
+
+
+size = max((W @ b.head_local - W @ arm.data.bones[hips].head_local).length for b in arm.data.bones) or 1.0
+tips = {chain(f"leg_{k}_")[-1] for k in ("FL", "FR", "BL", "BR") if chain(f"leg_{k}_")}
+before = bottoms(tips)
+floor0 = min(before.values()) if before else 0.0   # the ground: the lowest paw as the model stands
+
+
+def rot(n, ang):   # bone n (and what is below it) turned about the across line through its head (not counted)
+    h = pos(n)
+    P[n].matrix = W.inverted() @ Matrix.Translation(h) @ Matrix.Rotation(ang, 4, lat) @ Matrix.Translation(-h) @ W @ P[n].matrix
+    bpy.context.view_layer.update()
+
+
 # ---- the legs: each turned at its upper joint (the second bone: the first is the shoulder blade / the hip's own)
 # about the body's forward line so its paw is right under that joint across, then the pair's paws as far forward of
 # their joints as each other (their mean), turned about the across line
@@ -155,6 +188,52 @@ for pair in (("FL", "FR"), ("BL", "BR")):
         a = math.atan2(v.dot(fwd), down) - math.atan2(mean, down)
         turn(j, Matrix.Rotation(-a, 4, lat).to_quaternion(), r)   # (about lat: down -> down + fwd * sin)
 
+# every paw back on the ground (a splayed leg stood straight reaches lower: its paw went under the floor, the others
+# seemed to hang over it): its knee and its upper joint turned about the across line - the paw's joint to the height
+# that puts its bottom on the floor, as far forward as it is - and the paw turned back as it was (flat)
+for k, c in legs.items():
+    if len(c) < 4:
+        continue
+    j1, j2, last = c[1], c[2], c[-1]
+    total = 0.0
+    for it in range(3):   # (the bottom measured again: the paw's own turn moves it a little)
+        drop = floor0 - bottoms({last}).get(last, floor0)
+        if abs(drop) < 1e-3 * size:
+            break
+        J0 = pos(last)
+        zt, ft = J0.z + drop, J0.dot(fwd)
+        for _ in range(12):
+            J = pos(last)
+            e1, e2 = zt - J.z, ft - J.dot(fwd)
+            if math.hypot(e1, e2) < 2e-4 * size:
+                break
+            h = math.radians(1.0)
+            cols = []
+            for jj in (j1, j2):
+                rot(jj, h)
+                Jp = pos(last)
+                rot(jj, -h)
+                cols.append(((Jp.z - J.z) / h, (Jp.dot(fwd) - J.dot(fwd)) / h))
+            (a, cc), (b, d) = cols   # [[a, b], [cc, d]] · [x1, x2] = [e1, e2]
+            det = a * d - b * cc
+            if abs(det) < 1e-9:
+                break
+            x1 = max(-0.17, min(0.17, (e1 * d - b * e2) / det))
+            x2 = max(-0.17, min(0.17, (a * e2 - cc * e1) / det))
+            rot(j1, x1)
+            rot(j2, x2)
+            total += x1 + x2
+            turned[j2] = round(turned.get(j2, 0.0) + abs(math.degrees(x2)), 1)
+        rot(last, -total)   # the paw flat again
+        total = 0.0
+# the ground at zero: the whole lowered (or raised) by the lowest paw's bottom
+after = bottoms(tips)
+lift = -(min(after.values()) if after else floor0)
+if abs(lift) > 1e-5:
+    P[hips].matrix = W.inverted() @ Matrix.Translation((0, 0, lift)) @ W @ P[hips].matrix
+    bpy.context.view_layer.update()
+paws = {k: round((v + lift) * 1000) for k, v in bottoms(tips).items()}
+
 head0 = W @ arm.data.bones["head"].matrix_local if "head" in bones else Matrix.Identity(4)
 head1 = W @ P["head"].matrix if "head" in bones else Matrix.Identity(4)
 bpy.ops.object.mode_set(mode="OBJECT")
@@ -177,4 +256,5 @@ for o in [arm] + meshes:
     o.select_set(True)
 bpy.ops.export_scene.gltf(filepath=job["out"], export_format="GLB", use_selection=True, export_skins=True,
                           export_animations=False)
-print("STRAIGHTEN_OK " + json.dumps({"head": [list(r) for r in (head1 @ head0.inverted())], "turned": turned}))
+print("STRAIGHTEN_OK " + json.dumps({"head": [list(r) for r in (head1 @ head0.inverted())], "turned": turned, "paws_mm": paws,
+                                     "lift_mm": round(lift * 1000)}))

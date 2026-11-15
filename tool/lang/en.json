@@ -2570,5 +2570,6 @@
  "sv.tips": "The paws' last joints above the floor:",
  "cr.restore": "Bring UniRig's skeleton back",
  "cr.restore_none": "The first skeleton is not kept: its copy is made by the first rebuild or straightening.",
- "cr.restored": "UniRig's skeleton back from {0}: the joints' edits, the evening, the mirroring and the straightened pose undone."
+ "cr.restored": "UniRig's skeleton back from {0}: the joints' edits, the evening, the mirroring and the straightened pose undone.",
+ "cr.on_ground": "Paws on the floor (a paw's bottom above it, mm): {0}; the model moved up by {1} mm, the floor at zero."
 }

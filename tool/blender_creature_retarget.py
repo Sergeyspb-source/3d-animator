@@ -141,6 +141,9 @@ for b in tgt.data.bones:
     if b.parent is None:
         walk(b)
 hips_t = TC["body"][0].name if TC.get("body") else order[0].name
+paws_t = {k: TC[k][-1].name for k in ("FL", "FR", "BL", "BR") if k in TC}
+stand_t = {k: (tgt.matrix_world @ tgt.data.bones[n].head_local).z for k, n in paws_t.items()}
+tip_t = {k: (tgt.matrix_world @ tgt.data.bones[n].tail_local).z for k, n in paws_t.items()}   # (the claws: a paw tipped down)
 h_t = (tgt.matrix_world @ tgt.data.bones[hips_t].head_local).z - min((tgt.matrix_world @ b.head_local).z for b in tgt.data.bones)
 # a marked open mouth: the clips' jaw from closed (its closing turn about the world X through the hinge, glTF ->
 # Blender: the world X is the same)
@@ -210,9 +213,15 @@ def source(path):
         bpy.context.view_layer.update()
         rest_s = {pb.name: Ws @ pb.matrix.to_3x3().normalized() for pb in src.pose.bones}
         rest_hips = src.matrix_world @ src.pose.bones[hips_s].head
+    # its paws' joints (each leg's last bone) as it stands: how high a paw is above that is how far off the ground
+    paws_s = {k: SC[k][-1].name for k in ("FL", "FR", "BL", "BR") if k in SC}
+    stand_s = {k: (src.matrix_world @ (src.pose.bones[n].head if idle is not None else src.data.bones[n].head_local)).z
+               for k, n in paws_s.items()}
+    if idle is not None:
         src.animation_data.action = None
     sources[path] = dict(src=src, acts=acts, driver=driver, Y=Matrix.Rotation(yaw, 3, "Z"), hips_s=hips_s,
                          scale=h_t / h_s if h_s > 1e-6 else 1.0, Ws=Ws, rest_s=rest_s, rest_hips=rest_hips,
+                         paws_s=paws_s, stand_s=stand_s,
                          stance="idle" if idle is not None else "bind")
     print("RETARGET_SOURCE", Path(path).name, {k: len(v) for k, v in SC.items()}, "yaw", round(math.degrees(yaw), 1),
           "stance", sources[path]["stance"],
@@ -269,6 +278,16 @@ for clip in job["clips"]:
         d = Vector((first.x, first.y, d.z))   # in place: the hips keep their height's move, not their travel
         pb = tgt.pose.bones[hips_t]
         pb.location = M[hips_t].inverted() @ (Wt.inverted() @ d)
+        # the ground: the creature's lowest paw as far off it as the source's lowest (scaled) - turned the same, legs
+        # of other lengths put a sitting werewolf's hind paws into the floor, a standing one's in the air
+        common = [k for k in paws_t if k in S["paws_s"]]
+        if common:
+            bpy.context.view_layer.update()
+            g_s = min((src.matrix_world @ src.pose.bones[S["paws_s"][k]].head).z - S["stand_s"][k] for k in common)
+            g_t = min(min((tgt.matrix_world @ tgt.pose.bones[paws_t[k]].head).z - stand_t[k],
+                          (tgt.matrix_world @ tgt.pose.bones[paws_t[k]].tail).z - tip_t[k]) for k in common)
+            d.z += g_s * S["scale"] - g_t
+            pb.location = M[hips_t].inverted() @ (Wt.inverted() @ d)
         pb.keyframe_insert("location", frame=fi + 1)
     act.use_frame_range = True
     act.frame_start, act.frame_end = 1, n

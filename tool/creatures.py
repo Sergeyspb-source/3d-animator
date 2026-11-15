@@ -274,6 +274,8 @@ def straighten(cfg, d: Path, name: str, pose: dict | None = None):
     yield _t("cr.rest_from_pose") if pose else _t("cr.straightening")
     rep = json.loads(_run(cfg, "blender_creature_straighten.py", [job], "STRAIGHTEN_OK").split(" ", 1)[1])
     yield _t("cr.straightened", ", ".join(f"{k} {v}°" for k, v in rep["turned"].items()) or "—")
+    if rep.get("paws_mm") is not None:
+        yield _t("cr.on_ground", ", ".join(f"{k.replace('leg_', '')[:2]} {v}" for k, v in rep["paws_mm"].items()), rep.get("lift_mm", 0))
     # the mouth's marks with the head (Blender world <-> glTF: (x, y, z) -> (x, -z, y))
     Hm = rep["head"]
     def move(p):
