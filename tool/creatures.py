@@ -253,7 +253,7 @@ def animate(cfg, d: Path, name: str, picks: dict):
     yield _t("cr.anim_done", out.name, len(made), ", ".join(c["name"] for c in made))
 
 
-def straighten(cfg, d: Path, name: str):
+def straighten(cfg, d: Path, name: str, pose: dict | None = None):
     """The rest pose straightened (blender_creature_straighten.py: the paws under their shoulders and hips, the pairs
     level, the body on the middle line) and made the rest; the mouth's marks moved with the head, the jaw made again;
     the tips' ends set before forgotten (the legs moved). The skeleton before the first change is kept
@@ -269,8 +269,9 @@ def straighten(cfg, d: Path, name: str):
     work = Path(cfg["work_dir"]) / "creature_rebuild"
     work.mkdir(parents=True, exist_ok=True)
     job = work / f"{name}_straighten.json"
-    job.write_text(json.dumps({"src": str(auto), "out": str(auto), "names": meta.get("names") or {}}), encoding="utf-8")
-    yield _t("cr.straightening")
+    job.write_text(json.dumps({"src": str(auto), "out": str(auto), "names": meta.get("names") or {}, "pose": pose or {}}),
+                   encoding="utf-8")
+    yield _t("cr.rest_from_pose") if pose else _t("cr.straightening")
     rep = json.loads(_run(cfg, "blender_creature_straighten.py", [job], "STRAIGHTEN_OK").split(" ", 1)[1])
     yield _t("cr.straightened", ", ".join(f"{k} {v}°" for k, v in rep["turned"].items()) or "—")
     # the mouth's marks with the head (Blender world <-> glTF: (x, y, z) -> (x, -z, y))

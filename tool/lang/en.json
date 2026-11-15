@@ -2552,5 +2552,9 @@
  "cr.straighten": "Straighten the rest pose",
  "cr.straighten_info": "**The rest pose** - the clips are counted from it: a paw splayed in the model is splayed in every frame. «Straighten» puts the paws under the shoulders and hips with no splay, each pair level front to back, the spine and the tail on the middle line; the stance's bends seen from the side stay. The new pose becomes the rest (the skin by its weights), the jaw is made again from the mouth's marks. Then put the clips on again.",
  "cr.straightening": "Straightening the rest pose (Blender, about 20 seconds)…",
- "cr.straightened": "Pose straightened, turned: {0}."
+ "cr.straightened": "Pose straightened, turned: {0}.",
+ "sv.keep_pose": "Keep the pose as the rest",
+ "sv.keep_pose_tip": "The bones turned by the rings become the rest pose: the skin by its weights, the jaw made again from the mouth's marks",
+ "sv.keep_pose_none": "The pose did not change: turn the bones with the rings.",
+ "cr.rest_from_pose": "Making the pose set by hand the rest (Blender, about 20 seconds)…"
 }

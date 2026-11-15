@@ -1312,7 +1312,9 @@ def creature_request(value, text):
         if not f or not f.get("rigged"):
             raise RuntimeError(_t("cr.view_needs_skeleton"))
         cfg = T.load_config()
-        steps = (CR.rebuild(cfg, f["dir"], f["name"], req) if req.get("action") == "rebuild"
+        act = req.get("action")
+        steps = (CR.rebuild(cfg, f["dir"], f["name"], req) if act == "rebuild"
+                 else CR.straighten(cfg, f["dir"], f["name"], req.get("pose") or {}) if act == "rest"
                  else CR.mark_jaw(cfg, f["dir"], f["name"], req.get("mouth") or {}))
         for line in steps:
             lines.append(line)

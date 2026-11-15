@@ -91,6 +91,8 @@
         </select></label>
       <div class="sep"></div>
       <button id="reset" title="{{sv.reset_tip}}">{{sv.reset}}</button>
+      <button id="keepPose" class="primary" hidden title="{{sv.keep_pose_tip}}">{{sv.keep_pose}}</button>
+      <span class="status" id="kStatus" style="margin:0"></span>
     </div>
     <div class="stage" id="stage">
       <div class="labels" id="labelLayer"></div>
@@ -278,7 +280,7 @@ new GLTFLoader().parse(b64(GLB), '', (gltf) => {
   setPaint();
   const jaw = bones.find((b) => b.name === 'jaw');
   $('jawBox').hidden = !(jaw && DATA.close_deg);
-  if (EDIT) initEdit();
+  if (EDIT) { initEdit(); root.updateMatrixWorld(true); bones.forEach((b) => restW.set(b, b.getWorldQuaternion(new THREE.Quaternion()))); }
 }, (err) => { $('msg').textContent = '{{js:sv.load_failed}} ' + (err && err.message || err); });
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -475,6 +477,7 @@ addEventListener('keydown', (e) => { if (e.key === 'Escape') pick(null); });
 
 // ---------------------------------------------------------------- the pose back, the clips
 function resetPose() {
+  if ($('keepPose')) $('keepPose').hidden = true;   // (back to rest: nothing to keep)
   if (action) { action.stop(); action = null; $('play').textContent = '▶'; }
   bones.forEach((b) => b.quaternion.copy(rest.get(b)));
 }
@@ -838,6 +841,25 @@ $('rebuild').onclick = () => send({ action: 'rebuild', reweight: $('reweight').v
   // (only the ends moved here or set before: a tip left alone keeps its bone's own way and length)
   ends: Object.fromEntries([...mk.ends].filter(([b, p]) => (DATA.ends && DATA.ends[b.name]) || p.distanceTo(mk.orig.ends.get(b)) > H * 1e-4).map(([b, p]) => [b.name, arr(p)])) }, $('jStatus'));
 $('rejaw').onclick = () => send({ action: 'jaw', mouth: mouthReq() }, $('mStatus'));
+// «View»: the pose turned by hand (the rings) made the rest - each bone's world turn from its rest (the jaw's own left out:
+// it is made again from the mouth's marks)
+const restW = new Map();
+function poseTurns() {
+  const out = {}, q = new THREE.Quaternion();
+  bones.forEach((b) => {
+    if (b.name === 'jaw' || !restW.has(b)) return;
+    b.getWorldQuaternion(q);
+    const d = q.clone().multiply(restW.get(b).clone().invert());
+    if (2 * Math.acos(Math.min(1, Math.abs(d.w))) > 1e-3) out[b.name] = [d.x, d.y, d.z, d.w].map((x) => +x.toFixed(6));
+  });
+  return out;
+}
+$('keepPose').onclick = () => {
+  const pose = poseTurns();
+  if (!Object.keys(pose).length) { $('kStatus').textContent = '{{js:sv.keep_pose_none}}'; return; }
+  send({ action: 'rest', pose }, $('kStatus'));
+};
+gizmo.addEventListener('objectChange', () => { if (EDIT && mode === 'view') $('keepPose').hidden = false; });
 // (test hooks: work/wear_test/ui/test_creature_markup.mjs moves the marks the way the arrows would)
 window.sv = { mouth, mk, bones, setMode, pickMark, mouthPaint, castRest, H: () => H, moveMark: (k, p) => {
   pickMark(k); helper.position.set(...p); helper.updateMatrixWorld(); gizmo.dispatchEvent({ type: 'objectChange' }); } };

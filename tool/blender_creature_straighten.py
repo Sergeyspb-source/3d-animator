@@ -5,7 +5,8 @@ and that pose made the rest: the skin deformed by its own weights, the skeleton'
     blender -b -P blender_creature_straighten.py -- job.json
 
 job.json: {"src": the creature's skeleton before its jaw (<name>_auto.glb; a jaw there goes back to its parent), "out":
-GLB, "names": {UniRig's name: readable} (the passport's)}.
+GLB, "names": {UniRig's name: readable} (the passport's), "pose": {bone: [x, y, z, w]} (optional: the pose set by hand in
+the skeleton viewer - each bone's turn in the world from its rest, glTF axes - made the rest instead of the straightening)}.
 A model made in a crouch or a stride keeps its bends seen from the side; what goes are the splay and the twist seen from
 above and the front, which clips counted from the rest put into every frame (a splayed hind leg walked splayed).
 Prints STRAIGHTEN_OK {"head": 4x4 world change of the head (the mouth's marks move with it), "turned": {bone: degrees}}.
@@ -16,7 +17,7 @@ import sys
 from pathlib import Path
 
 import bpy
-from mathutils import Matrix, Vector
+from mathutils import Matrix, Quaternion, Vector
 
 job = json.loads(Path(sys.argv[sys.argv.index("--") + 1]).read_text(encoding="utf-8"))
 bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -86,16 +87,44 @@ def aim(n, d_new):
         turn(n, q, h)
 
 
-# ---- the middle line: every bone of the body and the tail without a sideways part (seen from above and the front)
 bpy.context.view_layer.objects.active = arm
 bpy.ops.object.mode_set(mode="POSE")
-for n in body[1:] + chain("tail"):
+if job.get("pose"):   # the pose set by hand: each bone's world turn (glTF -> Blender: (x, y, z) -> (x, -z, y))
+    A = Matrix(((1, 0, 0), (0, 0, -1), (0, 1, 0)))
+    order = []
+
+    def walk(b):
+        order.append(b.name)
+        for c in b.children:
+            walk(c)
+
+    for b in arm.data.bones:
+        if b.parent is None:
+            walk(b)
+    for n in order:
+        q = job["pose"].get(n)
+        if not q:
+            continue
+        D = A @ Quaternion((q[3], q[0], q[1], q[2])).to_matrix() @ A.transposed()
+        rest = (W @ arm.data.bones[n].matrix_local).to_3x3().normalized()
+        head = pos(n)
+        P[n].matrix = W.inverted() @ (Matrix.Translation(head) @ (D @ rest).to_4x4())
+        bpy.context.view_layer.update()
+        ang = round(math.degrees(D.to_quaternion().angle), 1)
+        if ang > 0.2:
+            turned[n] = ang
+    body_done = True
+else:
+    body_done = False
+# ---- the middle line: every bone of the body and the tail without a sideways part (seen from above and the front)
+for n in ([] if body_done else body[1:] + chain("tail")):
     d = pos(n, True) - pos(n)
     aim(n, d - lat * d.dot(lat))
 # the body bones' heads off the middle plane (a spine bent sideways at its first joint): their roots back onto it is
 # what the turns above did along the chain; the hips' own tail too
-d = pos(hips, True) - pos(hips)
-aim(hips, d - lat * d.dot(lat))
+if not body_done:
+    d = pos(hips, True) - pos(hips)
+    aim(hips, d - lat * d.dot(lat))
 
 # ---- the legs: each turned at its upper joint (the second bone: the first is the shoulder blade / the hip's own)
 # about the body's forward line so its paw is right under that joint across, then the pair's paws as far forward of
@@ -103,7 +132,7 @@ aim(hips, d - lat * d.dot(lat))
 legs = {}
 for k in ("FL", "FR", "BL", "BR"):
     c = chain(f"leg_{k}_")
-    if c:
+    if c and not body_done:
         legs[k] = c
 for k, c in legs.items():
     j = c[1] if len(c) >= 3 else c[0]
