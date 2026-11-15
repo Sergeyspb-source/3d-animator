@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="{{raw:lang.code}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{sv.title}}</title>
+<style>
+  /* Embedded in the SF3D app (iframe srcdoc): any skinned model's skeleton - its joints and bones by chains, their
+     names, the skin painted by the bone leading each vertex or by one bone's weight, a joint turned to check the
+     skin, the model's clips. The same look as the markup editor. */
+  :root { --bg:#ece8e1; --panel:#f6f3ee; --stage:#cfc8bc; --fg:#231d17; --muted:#6b6258; --line:#d0c9bd; --accent:#a8451d;
+          --accent-fg:#fff6ec; --ok:#2f7d4f; --ui:"Segoe UI",system-ui,sans-serif; --mono:ui-monospace,Consolas,monospace; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#15110d; --panel:#1e1913; --stage:#0f0c09;
+    --fg:#eadfca; --muted:#a39580; --line:#352d23; --accent:#d9622f; --accent-fg:#1a0e06; --ok:#5fbf86; color-scheme:dark; } }
+  :root[data-theme="dark"] { --bg:#15110d; --panel:#1e1913; --stage:#0f0c09; --fg:#eadfca; --muted:#a39580; --line:#352d23;
+    --accent:#d9622f; --accent-fg:#1a0e06; --ok:#5fbf86; color-scheme:dark; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; }
+  body { background:var(--bg); color:var(--fg); font:13px/1.4 var(--ui); padding:10px; }
+  .wrap { display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:10px; height:100%; min-height:520px; }
+  @media (max-width: 760px) { .wrap { grid-template-columns:minmax(0,1fr); grid-template-rows:auto auto; height:auto; } .stage { min-height:60vh; } }
+  .main { display:flex; flex-direction:column; gap:8px; min-height:0; min-width:0; }
+  .toolbar { display:flex; flex-wrap:wrap; gap:6px; align-items:center; background:var(--panel); border:1px solid var(--line);
+    border-radius:10px; padding:6px 8px; }
+  .seg { display:inline-flex; }
+  .seg button { border-radius:0; margin-left:-1px; } .seg button:first-child { border-radius:7px 0 0 7px; margin-left:0; }
+  .seg button:last-child { border-radius:0 7px 7px 0; }
+  .sep { width:1px; align-self:stretch; background:var(--line); margin:0 2px; }
+  .stage { position:relative; flex:1; background:var(--stage); border:1px solid var(--line); border-radius:10px; overflow:hidden; min-height:320px; }
+  canvas { position:absolute; inset:0; width:100%; height:100%; display:block; touch-action:none; }
+  .labels { position:absolute; inset:0; pointer-events:none; overflow:hidden; }
+  .lbl { position:absolute; font:11px var(--mono); color:#fff; background:rgba(0,0,0,.55); padding:1px 5px; border-radius:4px; white-space:nowrap;
+    transform:translate(8px,-50%); }
+  .badge { position:absolute; left:10px; top:8px; font:12px var(--mono); color:var(--muted); background:color-mix(in srgb,var(--panel) 85%,transparent);
+    padding:3px 8px; border-radius:6px; pointer-events:none; }
+  .tip { position:absolute; font:12px var(--mono); background:var(--panel); color:var(--fg); border:1px solid var(--line); border-radius:6px;
+    padding:2px 7px; pointer-events:none; white-space:nowrap; }
+  .msg { position:absolute; inset:0; display:grid; place-items:center; color:var(--muted); padding:16px; text-align:center; }
+  [hidden] { display:none !important; }
+  .rail { display:flex; flex-direction:column; gap:8px; min-height:0; overflow:auto; }
+  .box { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:9px; min-width:0; }
+  .grp { font:11px var(--mono); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:2px 0 6px; }
+  .row { display:flex; flex-wrap:wrap; gap:5px; align-items:center; }
+  button { font:inherit; color:var(--fg); background:transparent; border:1px solid var(--line); border-radius:7px; padding:5px 8px; cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  button.on { background:var(--accent); color:var(--accent-fg); border-color:var(--accent); }
+  button:disabled { opacity:.45; cursor:default; }
+  select { font:inherit; color:var(--fg); background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:3px 5px; max-width:100%; }
+  label.chk { display:flex; gap:6px; align-items:center; cursor:pointer; }
+  .small { color:var(--muted); font-size:12px; }
+  .warn { color:var(--accent); }
+  .sw { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:5px; vertical-align:-1px; border:1px solid rgba(0,0,0,.35); flex:none; }
+  .legend { display:grid; gap:2px; font-size:12px; }
+  .legend .it { display:flex; justify-content:space-between; gap:6px; cursor:pointer; padding:1px 4px; border-radius:5px; }
+  .legend .it:hover { background:color-mix(in srgb,var(--accent) 12%,transparent); }
+  .legend .n { font:11px var(--mono); color:var(--muted); }
+  .tree { display:grid; gap:1px; max-height:260px; overflow:auto; font:12px var(--mono); }
+  .tree .b { text-align:left; border:0; border-radius:5px; padding:1px 4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .tree .b.sel { background:color-mix(in srgb,var(--accent) 25%,transparent); }
+  .kv { display:grid; grid-template-columns:auto 1fr; gap:2px 8px; font-size:12px; }
+  .kv span:nth-child(odd) { color:var(--muted); }
+  .ramp { height:8px; border-radius:4px; background:linear-gradient(90deg,#1b2a6b,#1f8fd0,#33c46a,#f2d72c,#e5452f); margin:4px 0 2px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="main">
+    <div class="toolbar">
+      <div class="seg" id="views">
+        <button data-v="front">{{sv.front}}</button><button data-v="side">{{sv.side}}</button><button data-v="top">{{sv.top}}</button><button data-v="back">{{sv.back}}</button>
+      </div>
+      <div class="sep"></div>
+      <label class="chk"><input type="checkbox" id="xray" checked> {{sv.xray}}</label>
+      <label class="chk"><input type="checkbox" id="labels"> {{sv.labels}}</label>
+      <div class="sep"></div>
+      <label class="chk">{{sv.paint}}
+        <select id="paint">
+          <option value="model">{{sv.paint_model}}</option>
+          <option value="lead">{{sv.paint_lead}}</option>
+          <option value="weight">{{sv.paint_weight}}</option>
+        </select></label>
+      <div class="sep"></div>
+      <button id="reset" title="{{sv.reset_tip}}">{{sv.reset}}</button>
+    </div>
+    <div class="stage" id="stage">
+      <div class="labels" id="labelLayer"></div>
+      <div class="badge" id="badge"></div>
+      <div class="tip" id="tip" hidden></div>
+      <div class="msg" id="msg">{{sv.loading}}</div>
+    </div>
+  </div>
+  <div class="rail">
+    <div class="box">
+      <div class="grp" id="title">{{sv.title}}</div>
+      <div id="stats" class="small"></div>
+    </div>
+    <div class="box">
+      <div class="grp">{{sv.chains}}</div>
+      <div class="legend" id="legend"></div>
+      <div class="small" style="margin-top:4px">{{sv.chains_hint}}</div>
+    </div>
+    <div class="box">
+      <div class="grp">{{sv.joint}}</div>
+      <div id="selNone" class="small">{{sv.pick_hint}}</div>
+      <div id="selBox" hidden>
+        <div class="kv" id="selKv"></div>
+        <div class="row" style="margin-top:6px">
+          <button id="selParent">{{sv.parent}}</button>
+          <button id="selClear">{{sv.deselect}}</button>
+        </div>
+        <div class="small" style="margin-top:6px">{{sv.turn_hint}}</div>
+        <div id="rampBox" hidden><div class="ramp"></div><div class="row small" style="justify-content:space-between"><span>0</span><span>0.5</span><span>1</span></div></div>
+      </div>
+    </div>
+    <div class="box">
+      <div class="grp">{{sv.bones}}</div>
+      <div class="tree" id="tree"></div>
+    </div>
+    <div class="box" id="clipBox" hidden>
+      <div class="grp">{{sv.clips}}</div>
+      <div class="row"><select id="clip" style="flex:1"></select><button id="play">▶</button></div>
+    </div>
+  </div>
+</div>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+               "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
+
+const DATA = @@DATA@@;
+const GLB = "@@GLB@@";
+const $ = (id) => document.getElementById(id);
+
+// ---------------------------------------------------------------- chains: what a bone is, by its name
+// creature names (blender_creature_auto.py): hips, spine_01.., chest, head, snout, jaw, leg_FL_1.., tail_01..;
+// Mixamo (mixamorig:LeftArm), Godot humanoid (LeftUpperArm), Unreal (upperarm_l); anything else - by the skeleton's
+// own branches (each chain from a fork to a tip its own colour)
+const GROUPS = {
+  FL: ['#2f6fe0', '{{js:sv.g_fl}}'], FR: ['#1fb5d8', '{{js:sv.g_fr}}'], BL: ['#22a352', '{{js:sv.g_bl}}'], BR: ['#93c83a', '{{js:sv.g_br}}'],
+  armL: ['#2f6fe0', '{{js:sv.g_arm_l}}'], armR: ['#22a352', '{{js:sv.g_arm_r}}'], handL: ['#8fb4f2', '{{js:sv.g_hand_l}}'], handR: ['#8ed39f', '{{js:sv.g_hand_r}}'],
+  legL: ['#5a4fd6', '{{js:sv.g_leg_l}}'], legR: ['#169c8f', '{{js:sv.g_leg_r}}'],
+  body: ['#e39b20', '{{js:sv.g_body}}'], neck: ['#f07f2e', '{{js:sv.g_neck}}'], head: ['#d93a2f', '{{js:sv.g_head}}'],
+  jaw: ['#e0478f', '{{js:sv.g_jaw}}'], face: ['#f19bc4', '{{js:sv.g_face}}'], eye: ['#e8cf2a', '{{js:sv.g_eye}}'],
+  tail: ['#9b4fd6', '{{js:sv.g_tail}}'], wing: ['#4fa3d6', '{{js:sv.g_wing}}'], other: ['#8a8f98', '{{js:sv.g_other}}'],
+};
+function groupOf(name) {
+  const n = name.replace(/^mixamorig\d*:?/i, '');
+  let m = /^leg_(FL|FR|BL|BR)/i.exec(n);
+  if (m) return m[1].toUpperCase();
+  if (/tail/i.test(n)) return 'tail';
+  if (/wing/i.test(n)) return 'wing';
+  if (/jaw|chin/i.test(n)) return 'jaw';
+  if (/eye/i.test(n)) return 'eye';
+  if (/lip|tongue|teeth|brow|lid|cheek|mouth/i.test(n)) return 'face';
+  if (/head|snout|skull|muzzle|nose|horn|(^|[._])ear/i.test(n)) return 'head';   // (not «ForeArm»'s «eAr»)
+  if (/neck/i.test(n)) return 'neck';
+  const side = /left|(^|[._])l($|[._])|_l\d*$/i.test(n) ? 'L' : /right|(^|[._])r($|[._])|_r\d*$/i.test(n) ? 'R' : '';
+  if (side && /thumb|index|middle|ring|pinky|finger|metacarpal/i.test(n)) return 'hand' + side;
+  if (side && /arm|shoulder|clavicle|hand|wrist|elbow/i.test(n)) return 'arm' + side;
+  if (side && /leg|thigh|calf|knee|foot|toe|heel|ankle|shin|ball/i.test(n)) return 'leg' + side;
+  if (/hips|pelvis|spine|chest|root|torso|body|waist/i.test(n)) return 'body';
+  return 'other';
+}
+
+// ---------------------------------------------------------------- scene
+const stage = $('stage');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+stage.prepend(renderer.domElement);
+const scene = new THREE.Scene();
+const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+scene.background = new THREE.Color(dark ? 0x0f0c09 : 0xcfc8bc);
+const camera = new THREE.PerspectiveCamera(35, 1, 0.01, 1000);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444034, 1.6));
+const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+sun.position.set(2, 4, 3);
+scene.add(sun);
+const gizmo = new TransformControls(camera, renderer.domElement);
+gizmo.setMode('rotate');
+gizmo.setSpace('local');
+gizmo.addEventListener('dragging-changed', (e) => { controls.enabled = !e.value; dragging = e.value; });
+scene.add(gizmo);
+let dragging = false;
+
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / Math.max(h, 1);
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage);
+
+// ---------------------------------------------------------------- the model
+let root = null, meshes = [], bones = [], H = 1, center = new THREE.Vector3(), mixer = null, clips = [], action = null;
+const info = new Map();   // bone -> {i, group, color, parent, kids, depth, sphere, segs, label, li}
+const rest = new Map();   // bone -> its rest quaternion
+let selected = null;
+
+function b64(b) { const s = atob(b); const u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u.buffer; }
+
+new GLTFLoader().parse(b64(GLB), '', (gltf) => {
+  root = gltf.scene;
+  scene.add(root);
+  root.updateMatrixWorld(true);
+  const box = new THREE.Box3();
+  root.traverse((o) => {
+    if (o.isMesh) { meshes.push(o); box.expandByObject(o); o.userData.mat = o.material; o.frustumCulled = false; }   // (posed, a skinned mesh's rest box would cull it)
+  });
+  if (box.isEmpty()) box.setFromObject(root);
+  H = Math.max(box.max.y - box.min.y, box.max.x - box.min.x, box.max.z - box.min.z, 1e-3);
+  box.getCenter(center);
+  // the bones: every skinned mesh's skeleton, in the order of a walk from the roots (parents first)
+  const seen = new Set();
+  meshes.filter((m) => m.isSkinnedMesh).forEach((m) => m.skeleton.bones.forEach((b) => seen.add(b)));
+  root.traverse((o) => { if (o.isBone) seen.add(o); });
+  const roots = [...seen].filter((b) => !(b.parent && b.parent.isBone && seen.has(b.parent)));
+  const walk = (b, depth) => { bones.push(b); info.set(b, { depth }); b.children.filter((c) => c.isBone && seen.has(c)).forEach((c) => walk(c, depth + 1)); };
+  roots.forEach((r) => walk(r, 0));
+  bones.forEach((b) => rest.set(b, b.quaternion.clone()));
+  build();
+  clips = gltf.animations || [];
+  if (clips.length) {
+    mixer = new THREE.AnimationMixer(root);
+    $('clip').innerHTML = `<option value="">{{js:sv.clip_none}}</option>` + clips.map((c, i) => `<option value="${i}">${esc(c.name)}</option>`).join('');
+    $('clipBox').hidden = false;
+  }
+  $('msg').hidden = true;
+  view('front');
+  setPaint();
+}, (err) => { $('msg').textContent = '{{js:sv.load_failed}} ' + (err && err.message || err); });
+
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+
+// ---------------------------------------------------------------- joints, bones, labels, the lists
+const sphereGeo = new THREE.SphereGeometry(1, 16, 12);
+const segGeo = new THREE.CylinderGeometry(1, 1, 1, 8, 1);
+const overlay = new THREE.Group();
+scene.add(overlay);
+
+function build() {
+  // chains by the names; bones no name tells get their branch's colour (a fork to a tip: one chain)
+  let branch = 0;
+  const branchOf = new Map();
+  bones.forEach((b) => {
+    const p = b.parent && info.has(b.parent) ? b.parent : null;
+    const kids = b.children.filter((c) => info.has(c));
+    const forkAbove = !p || p.children.filter((c) => info.has(c)).length > 1;
+    branchOf.set(b, forkAbove ? branch++ : branchOf.get(p));
+    Object.assign(info.get(b), { i: bones.indexOf(b), parent: p, kids, group: groupOf(b.name) });
+  });
+  const hues = [210, 140, 35, 280, 0, 180, 60, 320, 100, 250];
+  bones.forEach((b) => {
+    const I = info.get(b);
+    I.color = I.group === 'other' ? new THREE.Color().setHSL(hues[branchOf.get(b) % hues.length] / 360, .55, .55)
+      : new THREE.Color(GROUPS[I.group][0]);
+    const small = /hand|face|eye/.test(I.group);
+    const s = new THREE.Mesh(sphereGeo, new THREE.MeshBasicMaterial({ color: I.color, depthTest: false, transparent: true, opacity: .95 }));
+    s.scale.setScalar(H * (small ? .006 : .011));
+    s.renderOrder = 10;
+    overlay.add(s);
+    I.sphere = s;
+    I.segs = I.kids.map(() => {
+      const c = new THREE.Mesh(segGeo, new THREE.MeshBasicMaterial({ color: I.color, depthTest: false, transparent: true, opacity: .7 }));
+      c.renderOrder = 9;
+      overlay.add(c);
+      return c;
+    });
+    const l = document.createElement('div');
+    l.className = 'lbl';
+    l.textContent = b.name.replace(/^mixamorig\d*:?/i, '');
+    l.hidden = true;
+    $('labelLayer').appendChild(l);
+    I.label = l;
+  });
+  // the legend: each chain, how many bones; a click picks its first bone
+  const count = {};
+  bones.forEach((b) => { const g = info.get(b).group; (count[g] = count[g] || []).push(b); });
+  $('legend').innerHTML = Object.keys(GROUPS).filter((g) => count[g]).map((g) =>
+    `<div class="it" data-g="${g}"><span><span class="sw" style="background:${GROUPS[g][0]}"></span>${GROUPS[g][1]}</span><span class="n">${count[g].length}</span></div>`).join('');
+  $('legend').querySelectorAll('.it').forEach((el) => el.onclick = () => pick(count[el.dataset.g][0]));
+  // the tree: indented by depth
+  $('tree').innerHTML = bones.map((b, i) => {
+    const I = info.get(b);
+    return `<button class="b" data-i="${i}" style="padding-left:${4 + Math.min(I.depth, 14) * 10}px"><span class="sw" style="background:#${I.color.getHexString()}"></span>${esc(b.name.replace(/^mixamorig\d*:?/i, ''))}</button>`;
+  }).join('');
+  $('tree').querySelectorAll('.b').forEach((el) => { el.onclick = () => pick(bones[+el.dataset.i]); info.get(bones[+el.dataset.i]).li = el; });
+  stats(count);
+}
+
+function stats(count) {
+  const legs = ['FL', 'FR', 'BL', 'BR'].filter((g) => count[g]);
+  const lines = [];
+  lines.push(`{{js:sv.n_bones}} <b>${bones.length}</b>` + (DATA.kind ? ` · ${esc(DATA.kind)}` : ''));
+  if (legs.length) lines.push(`{{js:sv.n_paws}} ${legs.length} (${legs.map((g) => count[g].length).join(' / ')})`);
+  if (count.tail) lines.push(`{{js:sv.n_tail}} ${count.tail.length}`);
+  lines.push(`{{js:sv.head_jaw}} ${count.head ? '✓' : '—'} / ${count.jaw ? '✓' : '—'}`);
+  // vertices the skin barely holds (their weights sum to less than a half): they stay behind when the bones move
+  let verts = 0, loose = 0;
+  meshes.filter((m) => m.isSkinnedMesh).forEach((m) => {
+    const w = m.geometry.attributes.skinWeight;
+    verts += w.count;
+    for (let i = 0; i < w.count; i++) if (w.getX(i) + w.getY(i) + w.getZ(i) + w.getW(i) < .5) loose++;
+  });
+  lines.push(`{{js:sv.n_verts}} ${verts}` + (loose ? ` · <span class="warn">{{js:sv.n_loose}} ${loose}</span>` : ''));
+  if (!meshes.some((m) => m.isSkinnedMesh)) lines.push(`<span class="warn">{{js:sv.no_skin}}</span>`);
+  $('stats').innerHTML = lines.join('<br>');
+  $('title').textContent = DATA.title || '{{js:sv.title}}';
+}
+
+// ---------------------------------------------------------------- painting the skin
+// model: its own materials; lead: every vertex the colour of the bone leading it (its chain's, a little lighter for
+// every other bone of a chain); weight: the chosen bone's weight, blue (0) to red (1)
+const RAMP = [[0, '#1b2a6b'], [.25, '#1f8fd0'], [.5, '#33c46a'], [.75, '#f2d72c'], [1, '#e5452f']].map(([t, c]) => [t, new THREE.Color(c)]);
+function ramp(t) {
+  for (let k = 1; k < RAMP.length; k++) if (t <= RAMP[k][0]) return RAMP[k - 1][1].clone().lerp(RAMP[k][1], (t - RAMP[k - 1][0]) / (RAMP[k][0] - RAMP[k - 1][0]));
+  return RAMP[RAMP.length - 1][1].clone();
+}
+function setPaint() {
+  const mode = $('paint').value, xray = $('xray').checked;
+  $('rampBox').hidden = mode !== 'weight';
+  meshes.forEach((m) => {
+    if (mode === 'model' || !m.isSkinnedMesh) {
+      const mats = Array.isArray(m.userData.mat) ? m.userData.mat : [m.userData.mat];
+      mats.forEach((x) => { if (!x) return; x.transparent = xray; x.opacity = xray ? .35 : 1; x.depthWrite = !xray; x.needsUpdate = true; });
+      m.material = m.userData.mat;
+      return;
+    }
+    const g = m.geometry, si = g.attributes.skinIndex, sw = g.attributes.skinWeight, n = si.count;
+    const col = new Float32Array(n * 3), c = new THREE.Color();
+    const target = selected && mode === 'weight' ? m.skeleton.bones.indexOf(selected) : -1;
+    for (let i = 0; i < n; i++) {
+      const idx = [si.getX(i), si.getY(i), si.getZ(i), si.getW(i)], w = [sw.getX(i), sw.getY(i), sw.getZ(i), sw.getW(i)];
+      if (mode === 'weight') {
+        let v = 0;
+        for (let k = 0; k < 4; k++) if (idx[k] === target) v += w[k];
+        c.copy(target < 0 ? new THREE.Color('#888') : ramp(Math.min(v, 1)));
+      } else {
+        let k = 0;
+        for (let q = 1; q < 4; q++) if (w[q] > w[k]) k = q;
+        const b = m.skeleton.bones[idx[k]], I = b && info.get(b);
+        if (!I || w[k] <= 0) c.set('#ffffff');
+        else c.copy(I.color).lerp(new THREE.Color('#ffffff'), (I.depth % 2) * .28);
+      }
+      col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    if (!m.userData.paint) m.userData.paint = new THREE.MeshLambertMaterial({ vertexColors: true });
+    const p = m.userData.paint;
+    p.transparent = xray; p.opacity = xray ? .55 : 1; p.depthWrite = !xray; p.needsUpdate = true;
+    m.material = p;
+  });
+}
+$('paint').onchange = setPaint;
+$('xray').onchange = setPaint;
+
+// ---------------------------------------------------------------- picking a joint (the nearest on the screen)
+const ray = new THREE.Vector2();
+function nearest(ev, px = 14) {
+  const r = renderer.domElement.getBoundingClientRect();
+  let best = null, bd = px * px;
+  const v = new THREE.Vector3();
+  bones.forEach((b) => {
+    b.getWorldPosition(v).project(camera);
+    if (v.z > 1) return;
+    const x = (v.x + 1) / 2 * r.width, y = (1 - v.y) / 2 * r.height;
+    const d = (x - (ev.clientX - r.left)) ** 2 + (y - (ev.clientY - r.top)) ** 2;
+    if (d < bd) { bd = d; best = b; }
+  });
+  return best;
+}
+let down = null;
+renderer.domElement.addEventListener('pointerdown', (e) => { down = [e.clientX, e.clientY]; });
+renderer.domElement.addEventListener('pointerup', (e) => {
+  if (!down || dragging || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
+  const b = nearest(e);
+  if (b) pick(b);
+});
+renderer.domElement.addEventListener('pointermove', (e) => {
+  const b = !dragging && nearest(e), tip = $('tip');
+  if (!b) { tip.hidden = true; return; }
+  const r = stage.getBoundingClientRect();
+  tip.textContent = b.name.replace(/^mixamorig\d*:?/i, '');
+  tip.style.left = (e.clientX - r.left + 12) + 'px';
+  tip.style.top = (e.clientY - r.top + 12) + 'px';
+  tip.hidden = false;
+});
+renderer.domElement.addEventListener('pointerleave', () => { $('tip').hidden = true; });
+
+function pick(b) {
+  selected = b;
+  bones.forEach((x) => { const I = info.get(x); I.li && I.li.classList.toggle('sel', x === b); });
+  if (!b) {
+    gizmo.detach();
+    $('selBox').hidden = true; $('selNone').hidden = false;
+    if ($('paint').value === 'weight') setPaint();
+    return;
+  }
+  const I = info.get(b);
+  gizmo.attach(b);
+  gizmo.size = .6;
+  I.li && I.li.scrollIntoView({ block: 'nearest' });
+  const len = I.kids.length ? b.getWorldPosition(new THREE.Vector3()).distanceTo(I.kids[0].getWorldPosition(new THREE.Vector3())) : 0;
+  const strip = (s) => esc(s.replace(/^mixamorig\d*:?/i, ''));
+  $('selKv').innerHTML = `<span>{{js:sv.name}}</span><span><b>${strip(b.name)}</b></span>`
+    + `<span>{{js:sv.chain}}</span><span><span class="sw" style="background:#${I.color.getHexString()}"></span>${GROUPS[I.group][1]}</span>`
+    + `<span>{{js:sv.parent}}</span><span>${I.parent ? strip(I.parent.name) : '—'}</span>`
+    + `<span>{{js:sv.children}}</span><span>${I.kids.length ? I.kids.map((k) => strip(k.name)).join(', ') : '—'}</span>`
+    + `<span>{{js:sv.length}}</span><span>${len ? (len / H * 100).toFixed(1) + ' % ' + '{{js:sv.of_size}}' : '—'}</span>`;
+  $('selBox').hidden = false; $('selNone').hidden = true;
+  $('selParent').disabled = !I.parent;
+  if ($('paint').value === 'weight') setPaint();
+}
+$('selParent').onclick = () => selected && info.get(selected).parent && pick(info.get(selected).parent);
+$('selClear').onclick = () => pick(null);
+addEventListener('keydown', (e) => { if (e.key === 'Escape') pick(null); });
+
+// ---------------------------------------------------------------- the pose back, the clips
+function resetPose() {
+  if (action) { action.stop(); action = null; $('play').textContent = '▶'; }
+  bones.forEach((b) => b.quaternion.copy(rest.get(b)));
+}
+$('reset').onclick = resetPose;
+$('clip').onchange = () => { resetPose(); if ($('clip').value !== '') play(); };
+function play() {
+  if (!mixer || $('clip').value === '') return;
+  if (action) { action.paused = !action.paused; $('play').textContent = action.paused ? '▶' : '⏸'; return; }
+  action = mixer.clipAction(clips[+$('clip').value]);
+  action.reset().play();
+  $('play').textContent = '⏸';
+}
+$('play').onclick = play;
+
+// ---------------------------------------------------------------- views
+function view(v) {
+  const d = H * 1.9, c = center;
+  const at = { front: [0, .15, 1], side: [1, .15, 0], top: [0, 1, .001], back: [0, .15, -1] }[v];
+  camera.position.set(c.x + at[0] * d, c.y + at[1] * d, c.z + at[2] * d);
+  camera.near = H / 500; camera.far = H * 50; camera.updateProjectionMatrix();
+  controls.target.copy(c);
+  controls.update();
+  document.querySelectorAll('#views button').forEach((b) => b.classList.toggle('on', b.dataset.v === v));
+}
+document.querySelectorAll('#views button').forEach((b) => b.onclick = () => view(b.dataset.v));
+
+// ---------------------------------------------------------------- every frame: the overlay follows the bones
+const clock = new THREE.Clock();
+const A = new THREE.Vector3(), B = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0), WHITE = new THREE.Color('#ffffff');
+function frame() {
+  requestAnimationFrame(frame);
+  const dt = clock.getDelta();
+  if (mixer && action && !action.paused) mixer.update(dt);
+  controls.update();
+  if (root) root.updateMatrixWorld(true);
+  const showLabels = $('labels').checked, r = renderer.domElement.getBoundingClientRect();
+  bones.forEach((b) => {
+    const I = info.get(b);
+    b.getWorldPosition(A);
+    I.sphere.position.copy(A);
+    I.sphere.material.color.copy(b === selected ? WHITE : I.color);
+    I.kids.forEach((k, j) => {
+      k.getWorldPosition(B);
+      const s = I.segs[j], len = A.distanceTo(B);
+      s.position.copy(A).add(B).multiplyScalar(.5);
+      s.quaternion.setFromUnitVectors(UP, B.clone().sub(A).normalize());
+      s.scale.set(H * .0035, Math.max(len, 1e-6), H * .0035);
+    });
+    const lab = I.label;
+    const show = showLabels && !/hand|face/.test(I.group) || b === selected;
+    if (show) {
+      const v = A.clone().project(camera);
+      lab.hidden = v.z > 1;
+      lab.style.left = ((v.x + 1) / 2 * r.width) + 'px';
+      lab.style.top = ((1 - v.y) / 2 * r.height) + 'px';
+    } else lab.hidden = true;
+  });
+  $('badge').textContent = selected ? selected.name.replace(/^mixamorig\d*:?/i, '') : (DATA.badge || '');
+  $('badge').hidden = !$('badge').textContent;
+  renderer.render(scene, camera);
+}
+resize();
+frame();
+</script>
+</body>
+</html>

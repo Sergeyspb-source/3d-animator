@@ -19,7 +19,7 @@ It glues several open-source models together (Stable Fast 3D, Hunyuan3D-2, UniRi
 - [What it does](#what-it-does)
 - [How to work with the tools](#how-to-work-with-the-tools) (screenshots)
 - [Requirements](#requirements) · [Hardcoded paths](#hardcoded-paths) · [Installation](#installation) · [Running](#running)
-- [Armour fitting in detail](#armour-fitting-in-detail) · [Animation gallery](#animation-gallery-1)
+- [Creatures](#creatures) · [Armour fitting in detail](#armour-fitting-in-detail) · [Animation gallery](#animation-gallery-1)
 - [Repository layout](#repository-layout) · [Third-party licences](#third-party-licences)
 
 ---
@@ -30,7 +30,8 @@ It glues several open-source models together (Stable Fast 3D, Hunyuan3D-2, UniRi
 |---|---|---|
 | Create → Reference | Style card + reference pictures (single view or front/back/left/right) for a model, built from a text prompt | Codex CLI (ChatGPT) or OpenRouter |
 | Create → Make a model | GLB from 1 picture (~20 s) or from 1–4 views (7–10 min), with pivot, real-world scale, collision proxy, PBR factors, previews and an icon. Categories: item, prop, building, character, vegetation | SF3D / Hunyuan3D-2mv + Hunyuan3D-Paint |
-| Character → Skeleton (automatic UniRig or by hand with landmarks) | Skeleton + skin for humanoids and creatures, Mixamo or Godot bone names, seam welding, body split into regions | UniRig + Blender |
+| Character → Skeleton (automatic UniRig or by hand with landmarks) | Skeleton + skin for humanoids, Mixamo or Godot bone names, seam welding, body split into regions; «Bones and weights» shows any skeleton | UniRig + Blender |
+| Creatures → Skeleton | A creature on four paws (a tail, a muzzle): UniRig's skeleton with readable bone names, turned muzzle forward, a jaw along the mouth line; the skeleton markup viewer (chains, names, skin by bones, weights, a pose check) | UniRig + Blender + three.js |
 | Character → Animations: procedural | 12 procedural clips for any rigged humanoid (idle, walk, run, jump, attacks, cast, block, hit, death…), in a manner of the character's own (heavy, armoured, robed, light, swagger, limping, undead or one chosen by a seed) and with a death of choice (on the back, face down, to a side, to the knees) | Blender |
 | Character → Animations: Mixamo (FBX) | Retarget Mixamo FBX clips (without skin) onto your rig, in-place option, three.js viewer | Blender |
 | Character → Equipment: whole set | Move an outfit from a dressed character onto the base body | Blender + Robust Weight Transfer |
@@ -248,6 +249,16 @@ The piece is put on next to the character like one fitted in «Armour», so the 
 ![A whole procedural set in the Godot fitting room from the front, the side and the back: an armet, a plate breastplate with pauldrons over an arming doublet, a mail skirt, steel arms and legs, hourglass gauntlets, sabatons; a sallet on a fairy](docs/images/procedural_pieces.jpg)
 
 ![The set in the Godot fitting room: walk, overhead strike, block, run](docs/images/procedural_godot.jpg)
+
+### Creatures
+
+Creatures (four paws, a tail, a muzzle) have their own section next to «Character»: no armour and no fitting for them, so their tools are kept apart. The section has its own current creature (the list shows 🐾 for a creature with its skeleton, ○ for a model without a skeleton yet: such models are in both lists until a skeleton is made, and the button decides whose). A creature's files stay in `export/character/<name>/`; its passport `<name>_rig.json` says `"kind": "creature"` (a model added in this section gets it at once), and «Character» no longer lists it.
+
+- **Skeleton**: UniRig places the bones, then they get readable names (`hips`, `spine_01`, `chest`, `head`, `snout`, `leg_FL_1…`, `leg_BR_4`, `tail_01…`), the model is turned muzzle forward and a `jaw` bone appears along the mouth line (two sliders move the line and the hinge; «Rebuild the jaw» changes only the jaw, also after a restart: it reads the creature's files). The bar shows the skeleton by parts: paws and their bones, tail bones, head, jaw.
+- **Skeleton markup** (`tool/skeleton_view.html`, opens under the skeleton's buttons while the tab is shown): joints and bones of any skinned model by chains - the four paws, pelvis and spine, neck, head, jaw, tail; a humanoid's arms, hands, legs, face by their Mixamo, Godot or Unreal names; anything else by the skeleton's own branches. Bone names on the model, a bone tree, views front / side / top / back, a see-through model. The skin painted by the bone leading each vertex (where every bone's area ends) or by the chosen bone's weight (blue 0 to red 1). A click picks a joint; its rings turn the bone to see the skin follow; «Reset the pose». The model's own clips can be played. The counts: bones, paws, tail, head and jaw, vertices almost without weight (they stay behind when the bones move).
+- **Weight fixing**: the same tool as in «Character», on the current creature.
+
+The same viewer is in «Character → Skeleton → Bones and weights (any skeleton)», on the current character.
 
 ### Animation gallery
 

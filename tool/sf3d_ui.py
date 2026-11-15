@@ -24,6 +24,7 @@ import landmarks_ui  # hand-placed landmark skeleton (Mixamo-like)
 import face_parts_ui  # procedural eyes, teeth, tongue
 import armour_gen_ui  # procedural armour from the character's own skin
 import wear_files as WF
+import creatures as CR  # the «Creatures» section: which models are creatures, the skeleton viewer
 import i18n
 from i18n import t as _t
 PORT = 7861
@@ -805,6 +806,7 @@ def _char_counts(f):
 # what a character has, as icons (the list shows plain text: emoji); the legend is under the list's label
 ICON = {"landmark": "🦴", "auto": "🤖", "parts": "🧩", "none": "○", "cut": "👄", "plate": "💬", "retopo": "🕸", "eyes": "👁",
         "clips": "🎙", "worn": "🛡"}
+CR_ICON = {"rig": "🐾"}   # a creature with its skeleton (the «Creatures» section's list)
 
 
 def _face_icons(s):
@@ -832,13 +834,19 @@ def _char_tags(f):
     return " ".join(tags)
 
 
-def _characters():
+def _characters(creatures=False):
     """[(label, "category/name")]: every folder of export/character with a model, and any other export folder with a
-    skeleton or a body in parts."""
+    skeleton or a body in parts - but the creatures (their skeleton's passport says so: the «Creatures» section).
+    creatures=True: the creatures, and the models of export/character with no skeleton yet (either may take them)."""
     ex, out = Path(T.load_config()["export_dir"]), []
     for d in sorted(x for x in ex.glob("*/*") if x.is_dir()):
         f = _char_files(f"{d.parent.name}/{d.name}")
-        if f["rigged"] or f["parts"] or (d.parent.name == "character" and f["source"]):
+        crt = CR.is_creature(d, d.name)
+        if creatures:
+            if d.parent.name != "character" or not (f["rigged"] or f["source"]) or not (crt or not f["rigged"]):
+                continue
+            out.append((f"{d.name}   {CR_ICON['rig'] if crt and f['rigged'] else ICON['none']}", f"character/{d.name}"))
+        elif not crt and (f["rigged"] or f["parts"] or (d.parent.name == "character" and f["source"])):
             nm = d.name if d.parent.name == "character" else f"{d.name} ({d.parent.name})"
             out.append((f"{nm}   {_char_tags(f)}", f"{d.parent.name}/{d.name}"))
     return out
@@ -906,26 +914,36 @@ def char_open_folder(value):
             pass
 
 
-def char_delete(value):
-    """The current character deleted for good (its «Delete» confirmed in the page): its folder under export/ - the
-    models, skeleton, face, pieces and clips made here; the file it was loaded from stays where it was. The list then
-    shows the first other character with a skeleton."""
+def _delete_model(value) -> bool:
+    """A character's or a creature's folder under export/ deleted for good (its «Delete» confirmed in the page): the
+    models, skeleton, face, pieces and clips made here; the file it was loaded from stays where it was."""
     f = _char_files(value)
     root = Path(T.load_config()["export_dir"]).resolve()
     if not f or not f["dir"].is_dir() or f["dir"].resolve().parent.parent != root:   # only a character's own folder
-        return gr.update()
+        return False
     shutil.rmtree(f["dir"])
-    return gr.update(choices=_characters(), value=_char_default())
+    return True
+
+
+def char_delete(value):
+    """The current character deleted; the list then shows the first other character with a skeleton."""
+    return gr.update(choices=_characters(), value=_char_default()) if _delete_model(value) else gr.update()
 
 
 def char_add(upload):
     """A model loaded as a new character: export/character/<name>/<name>.glb."""
+    value = _add_model(upload)
+    return gr.update(choices=_characters(), value=value) if value else gr.update()
+
+
+def _add_model(upload):
+    """A model loaded: export/character/<name>/<name>.glb ("character/<name>", or None)."""
     if not upload:
-        return gr.update()
+        return None
     src = Path(upload if isinstance(upload, str) else upload.name)
     if WF.is_piece_file(src):   # a piece put on a character (its result, its source): not a character
         gr.Warning(_t("ui.char_add_piece", src.name))
-        return gr.update()
+        return None
     stem = re.sub(r"_(landmarks_)?rigged$", "", src.stem)
     root = Path(T.load_config()["export_dir"]) / "character"
     # its folder: one of the file's own name if there is one already (a build of the same file made it), else the
@@ -940,7 +958,7 @@ def char_add(upload):
         if dst.exists():   # another file of the same name: the old one kept beside it
             shutil.copy2(dst, dst.with_name(dst.stem + ".prev.glb"))
         shutil.copy2(src, dst)
-    return gr.update(choices=_characters(), value=f"character/{name}")
+    return f"character/{name}"
 
 
 def char_for_tabs(value):
@@ -1105,10 +1123,6 @@ def _parts_bodies():
     return [str(p) for p in sorted(Path(cfg["export_dir"]).rglob("*_parts.glb"))]
 
 
-RIG_KINDS = {_t("ui.humanoid_two_legs_arms_fingers"): "humanoid",
-             _t("ui.creature_four_paws_a_tail_a_muzzle"): "creature"}
-
-
 def _src_of(upload, asset):
     """(path, name, dst folder) of the model chosen in a tab: an uploaded GLB or a ready model."""
     cfg = T.load_config()
@@ -1212,13 +1226,112 @@ def creature_rejaw(state, line_mm, hinge_mm):
     yield emit()
 
 
-def rig_dispatch(upload, asset, naming_label, tries, kind_label, line_mm, hinge_mm):
-    """The 'Создать скелет' button: humanoid or creature."""
-    if RIG_KINDS.get(kind_label) == "creature":
-        yield from creature_run(upload, asset, line_mm, hinge_mm)
-        return
-    for log, glb in rig_run(upload, asset, naming_label, tries):
-        yield log, glb, [], None
+# ------------------------------------------------------------------ the «Creatures» section: the current creature
+def _creature_memo():
+    return Path(T.load_config()["work_dir"]) / "current_creature.txt"
+
+
+def _creature_default():
+    """The creature chosen last time (kept in work_dir), else the first with a skeleton, else the first model."""
+    crs = _characters(True)
+    try:
+        last = _creature_memo().read_text(encoding="utf-8").strip()
+    except OSError:
+        last = ""
+    if any(v == last for _, v in crs):
+        return last
+    return next((v for _, v in crs if (_char_files(v) or {}).get("rigged")), crs[0][1] if crs else None)
+
+
+def creature_remember(value):
+    if value:
+        try:
+            _creature_memo().write_text(value, encoding="utf-8")
+        except OSError:
+            pass
+
+
+def creature_info(value):
+    """What the creature has - its folder, its files, its skeleton by parts (paws, tail, head, jaw) - and its model
+    for the 3D view (the skeleton's when it has one)."""
+    f = _char_files(value)
+    if not f:
+        return _t("cr.none"), None
+    from datetime import datetime
+    when = lambda p: datetime.fromtimestamp(p.stat().st_mtime).strftime("%d.%m %H:%M")  # noqa: E731
+    lines = [_t("ui.char_folder", f["dir"])]
+    if f["source"] and f["source"] != f.get("rigged"):
+        lines.append(_t("ui.char_file_source", f["source"].name, when(f["source"])))
+    r = f["rigged"]
+    if r:
+        sm = CR.summary(r)
+        paws = sm.get("paws") or {}
+        lines.append(_t("cr.file_rigged", r.name, when(r), sm.get("bones", 0)))
+        lines.append(_t("cr.skeleton_parts", ", ".join(f"{k} {v}" for k, v in sorted(paws.items())) or "—", sm.get("tail", 0),
+                        "✓" if sm.get("head") else "—", "✓" if sm.get("jaw") else "—"))
+        lines.append(_t("ui.char_tools_take", r.name))
+    else:
+        lines.append(_t("cr.no_skeleton"))
+    return ("\n".join("- " + x if i else x for i, x in enumerate(lines)),
+            str(r or f["source"]) if (r or f["source"]) else None)
+
+
+def creature_for_tab(value):
+    """The current creature's skeleton (the tools that take a path), its jaw's pictures and the jaw's sliders as made."""
+    f = _char_files(value) or {}
+    if not f:
+        return "", [], 0, 0
+    meta = CR.passport(f["dir"], f["name"])
+    return (str(f["rigged"]) if f.get("rigged") else "", CR.jaw_pictures(f["dir"], f["name"]),
+            meta.get("line_mm", 0), meta.get("hinge_mm", 0))
+
+
+def creature_add(upload):
+    """A model loaded as a new creature: export/character/<name>/<name>.glb, its passport saying «creature»."""
+    value = _add_model(upload)
+    if not value:
+        return gr.update()
+    f = _char_files(value)
+    CR.mark(f["dir"], f["name"])
+    return gr.update(choices=_characters(True), value=value)
+
+
+def creature_delete(value):
+    return gr.update(choices=_characters(True), value=_creature_default()) if _delete_model(value) else gr.update()
+
+
+def creature_rig(value, line_mm, hinge_mm):
+    """«Create the skeleton» of the «Creatures» section: on the current creature (its log, its model, the jaw)."""
+    for log, glb, pics, _ in creature_run(None, value, line_mm, hinge_mm):
+        yield log, (glb or gr.update()), pics
+
+
+def creature_rejaw_current(value, line_mm, hinge_mm):
+    """«Rebuild the jaw»: the current creature's named skeleton and the jaw's first guess are read off its files."""
+    f = _char_files(value) or {}
+    st = CR.jaw_state(f["dir"], f["name"]) if f else None
+    for log, glb, pics, _ in creature_rejaw(st, line_mm, hinge_mm):
+        yield log, (glb or gr.update()), pics
+
+
+def _bones_frame(glb, title, kind=""):
+    return landmarks_ui._frame(CR.viewer_page(Path(glb), title=title, kind=kind))
+
+
+def creature_viewer(value):
+    """The skeleton viewer on the current creature (or why not)."""
+    f = _char_files(value) or {}
+    r = f.get("rigged")
+    if not r or not landmarks.has_skin(r):
+        return _t("cr.view_needs_skeleton")
+    return _bones_frame(r, f["name"], _t("cr.kind_creature"))
+
+
+def rig_viewer(path):
+    """The skeleton viewer on any model with a skeleton (the «Character» section's: the current character's)."""
+    if not path or not landmarks.is_rig(path):
+        return _t("lm.rig_pose_needs_a_skeleton")
+    return _bones_frame(path, landmarks._stem(Path(path)))
 
 
 def rig_run(upload, asset, naming_label, tries=3):
@@ -2406,33 +2519,25 @@ def build():
                                 rig_upload = gr.File(label=_t("ui.or_load_a_glb"), file_types=[".glb"], type="filepath")
                                 rig_mode = gr.Radio(list(RIG_MODES), value=list(RIG_MODES)[0], label=_t("ui.2_how_to_build_the_skeleton"))
                                 with gr.Column() as rig_auto_box:
-                                    rig_kind = gr.Radio(list(RIG_KINDS), value=list(RIG_KINDS)[0], label=_t("ui.which_skeleton_is_needed"))
-                                    with gr.Group() as rig_human:
-                                        rig_naming = gr.Radio(list(RIG_NAMINGS), value=list(RIG_NAMINGS)[0],
-                                                              label=_t("lm.bone_names"))
-                                        rig_tries = gr.Slider(1, 6, value=3, step=1,
-                                                              label=_t("ui.attempts_to_get_a_skeleton_with"))
-                                    with gr.Group(visible=False) as rig_creature:
-                                        gr.Markdown(_t("ui.the_bones_get_clear_names_hips_spine"))
-                                        with gr.Row():
-                                            jaw_line = gr.Slider(-40, 40, value=0, step=1,
-                                                                 label=_t("ui.mouth_line_higher_lower_mm"))
-                                            jaw_hinge = gr.Slider(-40, 40, value=0, step=1,
-                                                                  label=_t("ui.jaw_hinge_further_nearer_to_the_nose"))
+                                    # (a creature on four paws: its skeleton is made in the «Creatures» section)
+                                    gr.Markdown(_t("cr.char_rig_note"))
+                                    rig_naming = gr.Radio(list(RIG_NAMINGS), value=list(RIG_NAMINGS)[0],
+                                                          label=_t("lm.bone_names"))
+                                    rig_tries = gr.Slider(1, 6, value=3, step=1,
+                                                          label=_t("ui.attempts_to_get_a_skeleton_with"))
                                     rig_btn = gr.Button(_t("ui.make_the_skeleton_3_6_minutes_3_5_gb"), variant="primary")
-                                    with gr.Group(visible=False) as rig_creature_after:
-                                        rejaw_btn = gr.Button(_t("ui.rebuild_the_jaw_with_the_new_sliders"))
-                                    with gr.Accordion(_t("ui.for_humanoids_seams_and_body_parts"), open=False) as rig_extra:
+                                    with gr.Accordion(_t("ui.for_humanoids_seams_and_body_parts"), open=False):
                                         seam_btn = gr.Button(_t("ui.fix_the_seams_between_parts_the"))
                                         split_btn = gr.Button(_t("ui.split_the_body_into_parts_for_armour"))
                                     rig_log = gr.Textbox(label=_t("face.progress"), lines=8, interactive=False)
-                            with gr.Column(scale=1):   # the model itself is in the character's view above the tabs
-                                jaw_gallery = gr.Gallery(label=_t("ui.jaw_closed_and_open"), columns=4, height=220)
-                        creature_state = gr.State(None)
                         with gr.Column(visible=False) as rig_manual_box:
                             lm_data, lm_editor = landmarks_ui.mount(T.load_config, rig_asset, rig_upload, accordion=False)
                         with gr.Accordion(_t("lm.rig_pose_title"), open=False):   # any skeleton: the pose and the fist
                             landmarks_ui.mount_rig_pose(T.load_config, char_rig)
+                        with gr.Accordion(_t("cr.view_any_title"), open=False):   # any skeleton: its bones and weights
+                            gr.Markdown(_t("cr.view_any_info"))
+                            char_bones_btn = gr.Button(_t("cr.view_open"))
+                            char_bones = gr.HTML()
 
                     # ---------------------------------------------------------------- humanoid animation library
                     with gr.Tab(_t("ui.animations_procedural"), id="hanim"):
@@ -2523,6 +2628,45 @@ def build():
                         face_parts_ui.mount(T.load_config, accordion=False, tab=tab_face)
                     with gr.Tab(_t("ui.lipsync"), id="lipsync"):
                         landmarks_ui.mount_lipsync(T.load_config, rig_asset, rig_upload, lm_data, lm_editor, accordion=False)
+
+            # ---------------------------------------------------------------- creatures: four paws, a tail, a muzzle
+            # (no armour, no fitting: their own section, their own current one - kept in work_dir as the character)
+            with gr.Tab(_t("cr.section"), id="g_creature"), gr.Column(elem_classes=["char-wrap"]):
+                with gr.Row(elem_classes=["char-bar"]):
+                    with gr.Column(scale=3):
+                        with gr.Row():
+                            cr_dd = gr.Dropdown(_characters(True), value=_creature_default(), label=_t("cr.current"), scale=4,
+                                                info=_t("cr.legend"))
+                            cr_refresh = gr.Button(_t("ui.refresh"), scale=1)
+                            cr_up = gr.UploadButton(_t("ui.char_add"), file_types=[".glb"], type="filepath", scale=2)
+                            cr_dir = gr.Button(_t("ui.char_open_folder"), scale=1)
+                            cr_del = gr.Button(_t("ui.char_delete"), scale=1, variant="stop")
+                        cr_md = gr.Markdown(creature_info(_creature_default())[0])
+                    with gr.Column(scale=2):
+                        cr_view = gr.Model3D(value=creature_info(_creature_default())[1], label=_t("ui.model"), height=230,
+                                             clear_color=(0.9, 0.9, 0.9, 1))
+                cr_rig = gr.Textbox(visible=False)   # its model with a skeleton, for the tools that take a path
+                cr_tab = gr.State("")   # the label of the section's tab shown (the viewer runs only there)
+                cr_opened = gr.State("")   # the creature the viewer is open on
+                with gr.Tabs(elem_classes=["char-tabs"]) as tabs_cr:
+                    with gr.Tab(_t("ui.skeleton"), id="cr_rig") as cr_tab_rig:
+                        with gr.Row():
+                            with gr.Column(scale=1):
+                                gr.Markdown(_t("cr.rig_intro"))
+                                with gr.Row():
+                                    cr_jaw_line = gr.Slider(-40, 40, value=0, step=1, label=_t("ui.mouth_line_higher_lower_mm"))
+                                    cr_jaw_hinge = gr.Slider(-40, 40, value=0, step=1, label=_t("ui.jaw_hinge_further_nearer_to_the_nose"))
+                                with gr.Row():
+                                    cr_rig_btn = gr.Button(_t("ui.make_the_skeleton_3_6_minutes_3_5_gb"), variant="primary")
+                                    cr_rejaw_btn = gr.Button(_t("ui.rebuild_the_jaw_with_the_new_sliders"))
+                                cr_log = gr.Textbox(label=_t("face.progress"), lines=6, interactive=False)
+                            with gr.Column(scale=1):
+                                cr_jaw_gallery = gr.Gallery(label=_t("ui.jaw_closed_and_open"), columns=4, height=220)
+                        gr.Markdown(_t("cr.view_info"))
+                        cr_view_btn = gr.Button(_t("cr.view_reopen"))
+                        cr_viewer = gr.HTML()
+                    with gr.Tab(_t("ui.weight_fixing"), id="cr_rwt"):
+                        rwt_ui.mount(T.load_config, accordion=False, char=cr_rig)
 
             with gr.Tab(_t("ui.environment"), id="g_env"):
                 with gr.Tabs():
@@ -2711,18 +2855,52 @@ def build():
         # the view, the markup and the build all on it
         rig_upload.upload(char_add, rig_upload, char_dd)
 
-        def on_kind(label):
-            c = RIG_KINDS.get(label) == "creature"
-            return gr.update(visible=not c), gr.update(visible=c), gr.update(visible=not c)
-
-        rig_kind.change(on_kind, rig_kind, [rig_human, rig_creature, rig_extra], show_progress="hidden")
-        rig_btn.click(rig_dispatch, [rig_upload, rig_asset, rig_naming, rig_tries, rig_kind, jaw_line, jaw_hinge],
-                      [rig_log, char_view, jaw_gallery, creature_state])
-        creature_state.change(lambda s: gr.update(visible=bool(s)), creature_state, rig_creature_after,
-                              show_progress="hidden")
-        rejaw_btn.click(creature_rejaw, [creature_state, jaw_line, jaw_hinge],
-                        [rig_log, char_view, jaw_gallery, creature_state])
+        # (UniRig: one skeleton at a time, a character's or a creature's - one GPU job)
+        rig_btn.click(rig_run, [rig_upload, rig_asset, rig_naming, rig_tries], [rig_log, char_view],
+                      concurrency_id="unirig", concurrency_limit=1)
         seam_btn.click(seam_run, [rig_upload, rig_asset], [rig_log, char_view])
+        char_bones_btn.click(rig_viewer, char_rig, char_bones)
+        char_dd.change(lambda: "", None, char_bones, show_progress="hidden")   # another character: open it anew
+
+        # the creatures: the current one, its view, what it has, its files in the section's tabs
+        cr_label, cr_rig_label = _t("cr.section"), _t("ui.skeleton")
+        cr_outs = [cr_rig, cr_jaw_gallery, cr_jaw_line, cr_jaw_hinge]
+        cr_dd.change(creature_info, cr_dd, [cr_md, cr_view], show_progress="hidden")
+        cr_dd.change(creature_remember, cr_dd, None, show_progress="hidden")
+        cr_dd.change(creature_for_tab, cr_dd, cr_outs, show_progress="hidden")
+        ui.load(creature_for_tab, cr_dd, cr_outs, show_progress="hidden")
+        cr_refresh.click(lambda v: gr.update(choices=_characters(True), value=v), cr_dd, cr_dd)
+        cr_up.upload(creature_add, cr_up, cr_dd)
+        cr_dir.click(char_open_folder, cr_dd, None)
+        cr_del.click(creature_delete, cr_dd, cr_dd,   # asked first in the page: «cancel» sends nothing to remove
+                     js="(v) => (v && confirm(%s.replace('{0}', v.split('/').pop()))) ? v : null" % json.dumps(_t("cr.delete_confirm")))
+        # the skeleton viewer (a heavy 3D page): open while the section and its «Skeleton» tab are shown - entering
+        # them, another creature chosen there, a skeleton made; gone when the section is left
+        main_shown = gr.State("")
+
+        def main_select(value, opened, evt: gr.SelectData):
+            here = evt.value == cr_label
+            if not here:
+                return evt.value, "", ""
+            return evt.value, *((creature_viewer(value), value) if value != opened else (gr.update(), opened))
+
+        main_tabs.select(main_select, [cr_dd, cr_opened], [main_shown, cr_viewer, cr_opened], show_progress="hidden")
+        tabs_cr.select(tab_shown, None, cr_tab, show_progress="hidden")
+        cr_tab_rig.select(lambda v, op: (creature_viewer(v), v) if v != op else (gr.update(), op), [cr_dd, cr_opened],
+                          [cr_viewer, cr_opened], show_progress="hidden")
+        cr_dd.change(lambda v, m, t: (creature_viewer(v), v) if m == cr_label and t in ("", cr_rig_label) else ("", ""),
+                     [cr_dd, main_shown, cr_tab], [cr_viewer, cr_opened], show_progress="hidden")
+        cr_view_btn.click(lambda v: (creature_viewer(v), v), cr_dd, [cr_viewer, cr_opened])
+
+        def cr_after(v):   # a skeleton made: the list (its mark), what it has, its files, its viewer
+            return (gr.update(choices=_characters(True), value=v), *creature_info(v), *creature_for_tab(v),
+                    creature_viewer(v), v)
+
+        cr_after_outs = [cr_dd, cr_md, cr_view, *cr_outs, cr_viewer, cr_opened]
+        cr_rig_btn.click(creature_rig, [cr_dd, cr_jaw_line, cr_jaw_hinge], [cr_log, cr_view, cr_jaw_gallery],
+                         concurrency_id="unirig", concurrency_limit=1).then(cr_after, cr_dd, cr_after_outs, show_progress="hidden")
+        cr_rejaw_btn.click(creature_rejaw_current, [cr_dd, cr_jaw_line, cr_jaw_hinge], [cr_log, cr_view, cr_jaw_gallery]) \
+            .then(cr_after, cr_dd, cr_after_outs, show_progress="hidden")
         split_btn.click(split_run, [rig_upload, rig_asset], [rig_log, char_view])
 
         # equipment
