@@ -82,6 +82,7 @@
       <div class="sep"></div>
       <label class="chk"><input type="checkbox" id="xray" checked> {{sv.xray}}</label>
       <label class="chk"><input type="checkbox" id="labels"> {{sv.labels}}</label>
+      <label class="chk"><input type="checkbox" id="floorOn" checked> {{sv.floor}}</label>
       <div class="sep"></div>
       <label class="chk">{{sv.paint}}
         <select id="paint">
@@ -223,6 +224,55 @@ scene.add(new THREE.HemisphereLight(0xffffff, 0x444034, 1.6));
 const sun = new THREE.DirectionalLight(0xffffff, 1.6);
 sun.position.set(2, 4, 3);
 scene.add(sun);
+// ---------------------------------------------------------------- the floor, as a 3D program has it: a grid at the
+// feet (cells a tenth of a metre-ish, every tenth line stronger), the X axis red and the forward axis (glTF +Z) green,
+// the model's shadow on it, a dark graded background; «Floor» hides it
+function makeFloor(scene, renderer, light, casters) {
+  const g = document.createElement('canvas'); g.width = 2; g.height = 256;
+  const cx2 = g.getContext('2d'), grad = cx2.createLinearGradient(0, 0, 0, 256);
+  grad.addColorStop(0, '#4a4d52'); grad.addColorStop(1, '#232427');
+  cx2.fillStyle = grad; cx2.fillRect(0, 0, 2, 256);
+  const bg = new THREE.CanvasTexture(g); bg.colorSpace = THREE.SRGBColorSpace;
+  const floor = new THREE.Group();
+  scene.add(floor);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  light.castShadow = true;
+  light.shadow.mapSize.set(2048, 2048);
+  return {
+    group: floor,
+    on(v) { floor.visible = v; scene.background = v ? bg : null; },
+    place(box) {   // under the model's lowest point, sized to it
+      floor.clear();
+      const H = Math.max(box.max.y - box.min.y, box.max.x - box.min.x, box.max.z - box.min.z, 1e-3);
+      const unit = Math.pow(10, Math.round(Math.log10(H))) / 10, major = unit * 10;
+      const size = Math.max(Math.ceil(H * 6 / major), 2) * major;
+      const c = box.getCenter(new THREE.Vector3()), y = box.min.y;
+      const at = (o) => { o.position.set(Math.round(c.x / major) * major, y, Math.round(c.z / major) * major); return o; };
+      const fine = at(new THREE.GridHelper(size, Math.round(size / unit), 0x55585e, 0x44474c));
+      const big = at(new THREE.GridHelper(size, Math.round(size / major), 0x6a6e75, 0x6a6e75));
+      big.position.y += unit * 1e-3;
+      [fine, big].forEach((x) => { x.material.transparent = true; x.material.opacity = x === big ? .9 : .7; x.material.depthWrite = false; floor.add(x); });
+      const line = (a, b, col) => {
+        const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), new THREE.LineBasicMaterial({ color: col }));
+        l.position.y = y + unit * 2e-3; floor.add(l);
+      };
+      line(new THREE.Vector3(-size / 2, 0, 0), new THREE.Vector3(size / 2, 0, 0), 0xd2404f);   // X
+      line(new THREE.Vector3(0, 0, -size / 2), new THREE.Vector3(0, 0, size / 2), 0x6aa33a);   // forward
+      const shadow = new THREE.Mesh(new THREE.PlaneGeometry(size, size), new THREE.ShadowMaterial({ opacity: .35 }));
+      shadow.rotation.x = -Math.PI / 2; shadow.position.set(c.x, y + unit * 5e-4, c.z); shadow.receiveShadow = true;
+      floor.add(shadow);
+      casters.forEach((m) => { m.castShadow = true; });
+      const s = light.shadow.camera, r = H * 1.2;
+      s.left = -r; s.right = r; s.top = r; s.bottom = -r; s.near = .01; s.far = H * 20;
+      light.target.position.copy(c); scene.add(light.target);
+      light.position.copy(c).add(new THREE.Vector3(H * 1.2, H * 3, H * 1.6));
+      s.updateProjectionMatrix();
+    },
+  };
+}
+const floor = makeFloor(scene, renderer, sun, []);
+$('floorOn').onchange = () => floor.on($('floorOn').checked);
 const gizmo = new TransformControls(camera, renderer.domElement);
 gizmo.setMode('rotate');
 gizmo.setSpace('local');
@@ -257,6 +307,9 @@ new GLTFLoader().parse(b64(GLB), '', (gltf) => {
   if (box.isEmpty()) box.setFromObject(root);
   H = Math.max(box.max.y - box.min.y, box.max.x - box.min.x, box.max.z - box.min.z, 1e-3);
   box.getCenter(center);
+  meshes.forEach((m) => { m.castShadow = true; });
+  floor.place(box);
+  floor.on($('floorOn').checked);
   // the bones: every skinned mesh's skeleton, in the order of a walk from the roots (parents first)
   const seen = new Set();
   meshes.filter((m) => m.isSkinnedMesh).forEach((m) => m.skeleton.bones.forEach((b) => seen.add(b)));

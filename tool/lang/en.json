@@ -2556,5 +2556,7 @@
  "sv.keep_pose": "Keep the pose as the rest",
  "sv.keep_pose_tip": "The bones turned by the rings become the rest pose: the skin by its weights, the jaw made again from the mouth's marks",
  "sv.keep_pose_none": "The pose did not change: turn the bones with the rings.",
- "cr.rest_from_pose": "Making the pose set by hand the rest (Blender, about 20 seconds)…"
+ "cr.rest_from_pose": "Making the pose set by hand the rest (Blender, about 20 seconds)…",
+ "sv.floor": "Floor",
+ "sv.floor_tip": "The floor's grid under the feet, the axes and the model's shadow"
 }

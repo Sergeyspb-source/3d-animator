@@ -263,7 +263,7 @@ Creatures (four paws, a tail, a muzzle) have their own section next to «Charact
 - **Animations**: Mesh2Motion's quadruped clips (CC0) - the fox (idle, alert, walk, run, sneak, jump, bark, bite, howl, sit, fetch, fall, death) and the horse (idle, walk, trot, run, turns, eating, rear, kick, head butt, sleep, lying down, death) - put on the creature by chains (`tool/blender_creature_retarget.py`, ~15 s for 26 clips): the body (hips to the bone before the head) by its share of the length, the head, the muzzle and the jaw, each leg (front / back, left / right) bone by bone when the counts agree, else the first from the first, the paw from the paw and the middle ones by length, the tail. Each bone takes the source bone's turn in the world counted from the source's own stance (its idle's first pose, not its bind pose: from the bind pose a crouching werewolf's front paws went up to level in the walk), so the creature keeps its rest posture; the hips move scaled by the hips' heights, in place; a marked mouth moves from closed. Result `<name>_clips.glb` (clips `fox_walk`, `horse_trot` …), played in the viewer below the button.
 - **Weight fixing**: the same tool as in «Character», on the current creature.
 
-The same viewer is in «Character → Skeleton → Bones and weights (any skeleton)», on the current character.
+The same viewer is in «Character → Skeleton → Bones and weights (any skeleton)», on the current character. It and the landmark markup editor show a floor as a 3D program does - a grid at the feet (tenth-of-a-metre cells, every metre stronger), the X axis red and the forward axis green, the model's shadow, a dark graded background - «Floor» hides it.
 
 ### Animation gallery
 
