@@ -2512,7 +2512,7 @@
  "sv.mode_view": "View",
  "sv.mode_joints": "Joints",
  "sv.mode_mouth": "Mouth",
- "sv.jaw_live": "Mouth",
+ "sv.jaw_live": "Mouth (wider ↔ closed)",
  "sv.as_made": "as made",
  "sv.closed": "closed",
  "sv.joints_hint": "A click picks a joint or a bone's end (a wire ball), the arrows move it. Easiest in the «Front» and «Side» views.",
@@ -2522,8 +2522,8 @@
  "sv.centre_tip": "The joint into the middle of the body round it: across and front to back",
  "sv.undo_all": "Undo all",
  "sv.rebuild": "Rebuild the skeleton and weights",
- "sv.mouth_hint": "Four points on the middle plane: the jaw's hinge (behind the mouth's corner), the mouth's corner, the upper and the lower jaw's front edge - at the front teeth, on the teeth's line (the lower one not at the chin's bottom: the angle between the edges is how far the mouth closes, a point too low takes the jaw into the upper one). The red goes with the jaw.",
- "sv.close_try": "Try the mouth closed:",
+ "sv.mouth_hint": "Four points: the jaw's hinge (behind the mouth's corner), the mouth's corner, the upper and the lower jaw's front edge - at the front teeth, on the teeth's line (the lower one not at the chin's bottom: the angle between the edges is how far the mouth closes). The corner can be moved aside to the mouth's real corner: the jaw is taken out to it (and a little past): the side tusks go in. The red goes with the jaw.",
+ "sv.close_try": "Try: wider ↔ closed:",
  "sv.rejaw": "Rebuild the jaw",
  "sv.m_hinge": "Jaw hinge",
  "sv.m_corner": "Mouth corner",
@@ -2573,5 +2573,6 @@
  "cr.restored": "UniRig's skeleton back from {0}: the joints' edits, the evening, the mirroring and the straightened pose undone.",
  "cr.on_ground": "Paws on the floor (a paw's bottom above it, mm): {0}; the model moved up by {1} mm, the floor at zero.",
  "cr.jaw_there": "The skeleton {0} has a jaw bone already (a face from «Character»): the mouth's marks put no jaw over it.",
- "cr.anim_humanoid": "A humanoid's skeleton: the fox's and the horse's clips do not fit it. Its clips are in «Character» (procedural, Mixamo, the gallery), where this creature is listed too."
+ "cr.anim_humanoid": "A humanoid's skeleton: the fox's and the horse's clips do not fit it. Its clips are in «Character» (procedural, Mixamo, the gallery), where this creature is listed too.",
+ "sv.wider": "wider"
 }

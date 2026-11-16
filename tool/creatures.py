@@ -148,7 +148,7 @@ def mark_jaw(cfg, d: Path, name: str, mouth: dict, rigged: Path | None = None):
             shutil.copy2(dst, auto)
         names = {}
     h, c, up, lo = (mouth[k] for k in ("hinge", "corner", "upper", "lower"))
-    cx = (h[0] + c[0]) / 2
+    cx = h[0]   # (the middle plane: the hinge's; the corner may stand off it, at the mouth's real corner)
     H, C, U, L = _yz(h), _yz(c), _yz(up), _yz(lo)
     gap = [(U[0] + L[0]) / 2, (U[1] + L[1]) / 2]
     # the closing turn: the lower front onto the upper one about the world X through the hinge (glTF: a turn about +X
@@ -159,7 +159,9 @@ def mark_jaw(cfg, d: Path, name: str, mouth: dict, rigged: Path | None = None):
     old = meta.get("jaw") or {}
     span = math.dist(gap, H)
     jaw = {"jaw_front": gap, "jaw_corner": C, "hinge": H, "chin": L, "cx": cx,
-           "half_width": old.get("half_width") or round(0.7 * span, 4),
+           # the jaw's width: out to the mouth's corner (marked off the middle) and a little past it, else as guessed
+           "half_width": round(max(abs(c[0] - h[0]) * 1.3, 0.35 * span), 4) if abs(c[0] - h[0]) > 0.05 * span
+           else (old.get("half_width") or round(0.7 * span, 4)),
            # (no floor to speak of: the jaw is the skin reached from its front - blender_creature_finish.py)
            "floor": round(min(L[1], H[1]) - 2.5 * span, 4),
            "fade": old.get("fade") or round(0.3 * span, 4),

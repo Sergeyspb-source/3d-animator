@@ -127,7 +127,10 @@ if front and corner and hinge:
             continue
         c = sum((P[i] for i in isl), Vector()) / len(isl)
         if c.y < hinge[0] and abs(c.x - cx) < half_w and c.z > floor:
-            ww = 1.0 if c.z < line_z(c.y) else 0.0
+            # (with the jaw when it reaches further below the mouth line than above it: a lower tusk is rooted in the
+            # jaw, its tip up past the line - by its centre it went with the skull)
+            lz = line_z(c.y)
+            ww = 1.0 if (lz - min(P[i].z for i in isl)) > (max(P[i].z for i in isl) - lz) else 0.0
             for i in isl:
                 w[i] = ww
             teeth += 1
