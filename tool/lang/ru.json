@@ -2583,5 +2583,12 @@
  "sv.brush_size": "Размер кисти",
  "sv.brush_info": "Закрашено: с челюстью {0}, без неё {1} вершин.",
  "sv.undo": "Отменить",
- "sv.redo": "Вернуть"
+ "sv.redo": "Вернуть",
+ "gd.creature_clips": "Клипы",
+ "gd.creature_loop": "Повторять",
+ "gd.creature_speed": "Скорость",
+ "gd.creature_mouse": "Левая кнопка — вращать, правая — сдвигать, колесо — приблизить.",
+ "cr.godot_btn": "Открыть в Godot",
+ "cr.godot_title": "Существо: {0}",
+ "cr.godot_open": "Godot открыт: {0} (проект {1})."
 }

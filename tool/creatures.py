@@ -347,3 +347,54 @@ def restore(cfg, d: Path, name: str):
     mouth = mouth_marks(meta)
     if mouth:
         yield from mark_jaw(cfg, d, name, mouth)
+
+
+def godot_view(cfg, d: Path, name: str) -> str:
+    """The creature in Godot (godot/sf3d_creature.gd): a small project work_dir/creature_view/<name> with its clips'
+    model (<name>_clips.glb, else the rigged one), imported headless, then opened. Returns the log line."""
+    import landmarks
+    godot = cfg.get("godot_exe")
+    if not godot or not Path(godot).exists():
+        raise RuntimeError(_t("lm.godot_not_found_set_godot_exe_in_the"))
+    d = Path(d)
+    clips = d / f"{name}_clips.glb"
+    rigged = next((p for p in (clips, d / f"{name}_rigged.glb", d / f"{name}_landmarks_rigged.glb") if p.exists()), None)
+    if rigged is None:
+        raise RuntimeError(_t("cr.view_needs_skeleton"))
+    proj = Path(cfg["work_dir"]) / "creature_view" / landmarks._slug(name)
+    proj.mkdir(parents=True, exist_ok=True)
+    dst = proj / "creature.glb"
+    if not dst.exists() or dst.stat().st_mtime < rigged.stat().st_mtime or dst.stat().st_size != rigged.stat().st_size:
+        shutil.copy2(rigged, dst)
+    (proj / "sf3d_creature.gd").write_text(i18n.fill((ROOT / "godot" / "sf3d_creature.gd").read_text(encoding="utf-8")), encoding="utf-8")
+    (proj / "project.godot").write_text(f"""config_version=5
+
+[application]
+
+config/name="{_t('cr.godot_title', name)}"
+run/main_scene="res://creature.tscn"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=800
+""", encoding="utf-8")
+    (proj / "creature.tscn").write_text("""[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://sf3d_creature.gd" id="1"]
+[ext_resource type="PackedScene" path="res://creature.glb" id="2"]
+
+[node name="Creature" type="Node3D"]
+script = ExtResource("1")
+creature = ExtResource("2")
+""", encoding="utf-8")
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    r = subprocess.run([godot, "--headless", "--path", str(proj), "--import"], capture_output=True, text=True,
+                       encoding="utf-8", errors="replace", timeout=600, creationflags=flags)
+    if not (proj / ".godot" / "imported").exists():
+        raise RuntimeError(_t("lm.godot_did_not_import_the_models") + (r.stdout + r.stderr)[-600:])
+    if cfg.get("_no_window"):   # (tests: the project made and imported, opened by them)
+        return str(proj)
+    gui = Path(godot).with_name(Path(godot).name.replace("_console", ""))   # the window build, without a console
+    subprocess.Popen([str(gui if gui.exists() else godot), "--path", str(proj)], cwd=str(proj))
+    return _t("cr.godot_open", rigged.name, proj)

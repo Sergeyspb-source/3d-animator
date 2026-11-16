@@ -2583,5 +2583,12 @@
  "sv.brush_size": "Brush size",
  "sv.brush_info": "Painted: {0} vertices with the jaw, {1} without.",
  "sv.undo": "Undo",
- "sv.redo": "Redo"
+ "sv.redo": "Redo",
+ "gd.creature_clips": "Clips",
+ "gd.creature_loop": "Loop",
+ "gd.creature_speed": "Speed",
+ "gd.creature_mouse": "Left button turns, right one pans, the wheel zooms.",
+ "cr.godot_btn": "Open in Godot",
+ "cr.godot_title": "Creature: {0}",
+ "cr.godot_open": "Godot opened: {0} (project {1})."
 }

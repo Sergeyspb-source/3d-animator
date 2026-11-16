@@ -2729,7 +2729,9 @@ def build():
                         with gr.Row():
                             cr_picks = [gr.CheckboxGroup(names, value=names, label=_t("cr.anim_src_" + k))
                                         for k, (_p, names) in cr_srcs.items()]
-                        cr_anim_btn = gr.Button(_t("cr.anim_go"), variant="primary")
+                        with gr.Row():
+                            cr_anim_btn = gr.Button(_t("cr.anim_go"), variant="primary")
+                            cr_godot_btn = gr.Button(_t("cr.godot_btn"))
                         cr_anim_log = gr.Textbox(label=_t("face.progress"), lines=4, interactive=False)
                         cr_anim_view = gr.HTML()
                     with gr.Tab(_t("ui.weight_fixing"), id="cr_rwt"):
@@ -2966,6 +2968,15 @@ def build():
         cr_anim_btn.click(cr_anim_go, [cr_dd, *cr_picks], [cr_anim_log, cr_anim_view], concurrency_id="creature_markup",
                           concurrency_limit=1)
         cr_tab_anim.select(creature_clips_viewer, cr_dd, cr_anim_view, show_progress="hidden")
+
+        def cr_godot(v):   # the creature with its clips in Godot (a window of its own)
+            f = _char_files(v) or {}
+            try:
+                return CR.godot_view(T.load_config(), f["dir"], f["name"]) if f else _t("cr.none")
+            except Exception as e:  # noqa: BLE001
+                return _t("ui.error_2", e)
+
+        cr_godot_btn.click(cr_godot, cr_dd, cr_anim_log)
         cr_dd.change(lambda: ("", ""), None, [cr_anim_view, cr_anim_log], show_progress="hidden")
 
         def cr_after(v):   # a skeleton made: the list (its mark), what it has, its files, its viewer
