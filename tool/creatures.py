@@ -108,18 +108,45 @@ def _run(cfg, script, args, ok, timeout=1800):
     return line
 
 
-def mark_jaw(cfg, d: Path, name: str, mouth: dict):
+def bone_names(glb: Path) -> list:
+    import landmarks
+    try:
+        j = landmarks._glb_json(glb)
+    except Exception:  # noqa: BLE001
+        return []
+    return [j["nodes"][i].get("name", "") for sk in j.get("skins", []) for i in sk.get("joints", [])]
+
+
+def is_humanoid(glb: Path) -> bool:
+    """A humanoid's skeleton (Mixamo / Godot names: arms, legs): an anthropomorphic creature rigged in «Character»."""
+    names = bone_names(glb)
+    return any(n.endswith(("LeftArm", "LeftUpperArm")) for n in names) and any(n.endswith(("LeftUpLeg", "LeftUpperLeg")) for n in names)
+
+
+def mark_jaw(cfg, d: Path, name: str, mouth: dict, rigged: Path | None = None):
     """The jaw made again from the mouth's four points (glTF [x, y, z]: hinge, corner, upper and lower front): the mouth
     line runs from the middle of the gap in front through the corner to the hinge, the jaw bone from the hinge to the
     lower front; with the mouth open the lower jaw is below the gap already - nothing is cut through. Its closing turn
     (the lower front onto the upper one) is kept for the viewer's slider and the clips. Yields log lines; writes
-    <name>_rigged.glb, its pictures as made and closed, the passport."""
+    <name>_rigged.glb, its pictures as made and closed, the passport.
+    A skeleton made elsewhere (a humanoid's from «Character»: rigged, no <name>_auto.glb): the jaw goes onto it in place,
+    from its copy without the jaw (<stem>.nojaw.glb, made the first time), under its head bone."""
     import rigging as RG
     d = Path(d)
     meta = passport(d, name)
     auto = d / f"{name}_auto.glb"
+    dst = d / f"{name}_rigged.glb"
+    names = meta.get("names") or {}
     if not auto.exists():
-        raise RuntimeError(_t("cr.no_auto", auto.name))
+        if rigged is None or not Path(rigged).exists():
+            raise RuntimeError(_t("cr.no_auto", auto.name))
+        dst = Path(rigged)
+        auto = dst.with_name(dst.stem + ".nojaw.glb")
+        if not auto.exists():
+            if "jaw" in bone_names(dst):
+                raise RuntimeError(_t("cr.jaw_there", dst.name))
+            shutil.copy2(dst, auto)
+        names = {}
     h, c, up, lo = (mouth[k] for k in ("hinge", "corner", "upper", "lower"))
     cx = (h[0] + c[0]) / 2
     H, C, U, L = _yz(h), _yz(c), _yz(up), _yz(lo)
@@ -135,11 +162,11 @@ def mark_jaw(cfg, d: Path, name: str, mouth: dict):
            "half_width": old.get("half_width") or round(0.7 * span, 4),
            # (no floor to speak of: the jaw is the skin reached from its front - blender_creature_finish.py)
            "floor": round(min(L[1], H[1]) - 2.5 * span, 4),
-           "fade": old.get("fade") or round(0.3 * span, 4), "jaw_parent": old.get("jaw_parent", "head"),
+           "fade": old.get("fade") or round(0.3 * span, 4),
+           "jaw_parent": old.get("jaw_parent") or next((n for n in bone_names(auto) if n.lower().endswith("head")), "head"),
            "method": "marked", "mouth": mouth, "close_deg": round(close, 2), "open_deg": round(abs(close), 2)}
     yield _t("cr.jaw_marked", round(abs(close), 1))
-    dst = d / f"{name}_rigged.glb"
-    res = RG.creature_finish(auto, dst, cfg.get("blender_exe"), meta.get("names") or {}, jaw, preview=str(d / f"{name}_jaw.png"),
+    res = RG.creature_finish(auto, dst, cfg.get("blender_exe"), names, jaw, preview=str(d / f"{name}_jaw.png"),
                              angles=[0.0, -abs(close)], tags=["0", "c"])
     meta["kind"] = "creature"
     meta["jaw"] = jaw

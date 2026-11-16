@@ -846,7 +846,8 @@ def _characters(creatures=False):
             if d.parent.name != "character" or not (f["rigged"] or f["source"]) or not (crt or not f["rigged"]):
                 continue
             out.append((f"{d.name}   {CR_ICON['rig'] if crt and f['rigged'] else ICON['none']}", f"character/{d.name}"))
-        elif not crt and (f["rigged"] or f["parts"] or (d.parent.name == "character" and f["source"])):
+        elif (not crt or (f["rigged"] and CR.is_humanoid(f["rigged"]))) and (f["rigged"] or f["parts"] or (d.parent.name == "character" and f["source"])):
+            # (a creature with a humanoid's skeleton: in both lists - its jaw there, its clips and armour here)
             nm = d.name if d.parent.name == "character" else f"{d.name} ({d.parent.name})"
             out.append((f"{nm}   {_char_tags(f)}", f"{d.parent.name}/{d.name}"))
     return out
@@ -1330,11 +1331,11 @@ def creature_request(value, text):
         act = req.get("action")
         steps = (CR.rebuild(cfg, f["dir"], f["name"], req) if act == "rebuild"
                  else CR.straighten(cfg, f["dir"], f["name"], req.get("pose") or {}) if act == "rest"
-                 else CR.mark_jaw(cfg, f["dir"], f["name"], req.get("mouth") or {}))
+                 else CR.mark_jaw(cfg, f["dir"], f["name"], req.get("mouth") or {}, rigged=f["rigged"]))
         for line in steps:
             lines.append(line)
             yield "\n".join(lines), gr.update(), gr.update()
-        yield "\n".join(lines), str(f["dir"] / f"{f['name']}_rigged.glb"), CR.jaw_pictures(f["dir"], f["name"])
+        yield "\n".join(lines), str(_char_files(value)["rigged"]), CR.jaw_pictures(f["dir"], f["name"])
     except Exception as e:  # noqa: BLE001
         lines.append(_t("ui.error_2", e))
         yield "\n".join(lines), gr.update(), gr.update()
@@ -1356,6 +1357,8 @@ def creature_animate(value, keys, picks):
     try:
         if not f.get("rigged"):
             raise RuntimeError(_t("cr.view_needs_skeleton"))
+        if CR.is_humanoid(f["rigged"]):
+            raise RuntimeError(_t("cr.anim_humanoid"))
         for line in CR.animate(T.load_config(), f["dir"], f["name"], {k: list(p or []) for k, p in zip(keys, picks)}):
             lines.append(line)
             yield "\n".join(lines), gr.update()

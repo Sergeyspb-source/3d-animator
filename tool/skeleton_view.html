@@ -618,7 +618,14 @@ function initEdit() {
   });
   mk.orig = { pts: new Map([...mk.pts].map(([b, p]) => [b, p.clone()])), ends: new Map([...mk.ends].map(([b, p]) => [b, p.clone()])) };
   if (DATA.mouth) MOUTH.forEach((k) => { mouth[k] = new V3(...DATA.mouth[k]); });
-  else $('modes').querySelector('[data-m=mouth]').disabled = true;
+  else {   // nothing marked (a humanoid's skeleton from «Character»): a first guess in front of the head bone, to be moved
+    const hb = bones.find((b) => /head$/i.test(b.name)), nb = bones.find((b) => /neck$/i.test(b.name));
+    if (hb) {
+      const h = mk.pts.get(hb), L = nb ? Math.max(h.distanceTo(mk.pts.get(nb)) * 1.6, H * .05) : H * .08, at = (f, u) => new V3(mk.cx, h.y + u * L, h.z + f * L);
+      Object.assign(mouth, { hinge: at(.15, -.15), corner: at(.45, -.3), upper: at(.85, -.25), lower: at(.8, -.55) });
+      DATA.mouth = Object.fromEntries(MOUTH.map((k) => [k, mouth[k].toArray()]));
+    } else $('modes').querySelector('[data-m=mouth]').disabled = true;
+  }
   MOUTH.forEach((k) => {
     const s = new THREE.Mesh(sphereGeo, new THREE.MeshBasicMaterial({ color: MCOL[k], depthTest: false, transparent: true }));
     s.renderOrder = 12; s.visible = false;
@@ -664,8 +671,11 @@ function setMode(m) {
     meshes.forEach((x) => { x.visible = false; });
     preview.visible = true;
     mouthPaint();
-    const c = mouth.hinge.clone().add(mouth.upper).add(mouth.lower).multiplyScalar(1 / 3), d = mouth.hinge.distanceTo(mouth.upper) * 4;
+    // (the head from the side, outside it: a head is small on a tall humanoid - the camera went into it)
+    const c = mouth.hinge.clone().add(mouth.upper).add(mouth.lower).multiplyScalar(1 / 3), d = Math.max(mouth.hinge.distanceTo(mouth.upper) * 6, H * .35);
     camera.position.set(c.x + d, c.y + d * .1, c.z); controls.target.copy(c); controls.update();
+    // (what is between the camera and the head cut away - a T-posed humanoid's arm stood in front of it)
+    camera.near = Math.max(d - Math.max(mouth.hinge.distanceTo(mouth.upper) * 2.5, H * .06), H / 500); camera.updateProjectionMatrix();
     document.querySelectorAll('#views button').forEach((b) => b.classList.toggle('on', b.dataset.v === 'side'));
   } else {
     meshes.forEach((x) => { x.visible = true; });
@@ -1038,7 +1048,8 @@ function frame() {
       lab.style.top = ((1 - v.y) / 2 * r.height) + 'px';
     } else lab.hidden = true;
   });
-  MOUTH.forEach((k) => { const s = mouthMarks[k]; if (s && mouth[k]) { s.position.copy(mouth[k]); s.scale.setScalar(H * .008); } });
+  const ms = mouth.hinge && mouth.upper ? Math.min(Math.max(mouth.hinge.distanceTo(mouth.upper) * .07, H * .002), H * .008) : H * .008;
+  MOUTH.forEach((k) => { const s = mouthMarks[k]; if (s && mouth[k]) { s.position.copy(mouth[k]); s.scale.setScalar(ms); } });
   $('badge').textContent = mode !== 'view' ? (mk.sel ? markName(mk.sel) : '') : selected ? selected.name.replace(/^mixamorig\d*:?/i, '') : (DATA.badge || '');
   $('badge').hidden = !$('badge').textContent;
   renderer.render(scene, camera);

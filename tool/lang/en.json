@@ -2571,5 +2571,7 @@
  "cr.restore": "Bring UniRig's skeleton back",
  "cr.restore_none": "The first skeleton is not kept: its copy is made by the first rebuild or straightening.",
  "cr.restored": "UniRig's skeleton back from {0}: the joints' edits, the evening, the mirroring and the straightened pose undone.",
- "cr.on_ground": "Paws on the floor (a paw's bottom above it, mm): {0}; the model moved up by {1} mm, the floor at zero."
+ "cr.on_ground": "Paws on the floor (a paw's bottom above it, mm): {0}; the model moved up by {1} mm, the floor at zero.",
+ "cr.jaw_there": "The skeleton {0} has a jaw bone already (a face from «Character»): the mouth's marks put no jaw over it.",
+ "cr.anim_humanoid": "A humanoid's skeleton: the fox's and the horse's clips do not fit it. Its clips are in «Character» (procedural, Mixamo, the gallery), where this creature is listed too."
 }
