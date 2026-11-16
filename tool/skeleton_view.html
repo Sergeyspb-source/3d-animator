@@ -175,6 +175,7 @@
       <label class="small" style="display:block">{{sv.eye_veins}}<input type="range" id="eyeVeins" min="0" max="1" step="0.05"></label>
       <label class="small" style="display:block">{{sv.eye_glow}}<input type="range" id="eyeGlow" min="0" max="1" step="0.05"></label>
       <label class="small" style="display:block">{{sv.eye_size}}<input type="range" id="eyeSize" min="0.6" max="1.6" step="0.02"></label>
+      <label class="small" style="display:block" title="{{sv.eye_forward_tip}}">{{sv.eye_forward}}<input type="range" id="eyeForward" min="0" max="1" step="0.05"></label>
       <div class="row" style="margin-top:6px"><button id="eyesGo" class="primary">{{sv.eyes_go}}</button><button id="eyesOff">{{sv.eyes_off}}</button></div>
       <div class="status" id="eStatus"></div>
     </div>
@@ -1322,41 +1323,65 @@ function inPoly(poly, x, y) {
 function eyeSolve(P) {   // blender_creature_eyes.py's frame, cut and ball for one eye's four points
   const c0 = P.reduce((a, p) => a.add(p), new V3()).multiplyScalar(0.25);
   const u = P[2].clone().sub(P[0]), w = P[1].clone().sub(P[3]);
-  const span = Math.max(u.length(), w.length());
-  // the mesh most of the skin round the eye is on (Blender's «face»)
-  let face = null, best = -1, mid = new V3(), cnt = 0;
+  const span = Math.max(u.length(), w.length(), H * 1e-3);
+  // the skin round the eye only (rays through the whole model on every move were slow, and one that missed the face
+  // found a shoulder: the ball went there): its triangles within reach, the mesh most of them are on (Blender's «face»)
+  const R2 = (2.5 * span) ** 2, near = new Map();
   skinRests().forEach((r) => {
-    let k = 0;
-    for (let i = 0; i < r.pos.length; i += 3) {
-      const dx = r.pos[i] - c0.x, dy = r.pos[i + 1] - c0.y, dz = r.pos[i + 2] - c0.z, d2 = dx * dx + dy * dy + dz * dz;
-      if (d2 < (1.5 * span) ** 2) k++;
-      if (d2 < (3 * span) ** 2) { mid.x += r.pos[i]; mid.y += r.pos[i + 1]; mid.z += r.pos[i + 2]; cnt++; }
+    const s = skinOf(r), C = s.cen, out = [];
+    for (let t = 0; t < C.length; t += 3) {
+      const dx = C[t] - c0.x, dy = C[t + 1] - c0.y, dz = C[t + 2] - c0.z;
+      if (dx * dx + dy * dy + dz * dz < R2) out.push(t);
     }
-    if (k > best) { best = k; face = r; }
+    if (out.length) near.set(r, out);
   });
-  let n = u.clone().cross(w);
-  if (n.lengthSq() < 1e-16) n.set(0, 0, 1);
-  n.normalize();
-  if (cnt) { mid.multiplyScalar(1 / cnt); if (n.dot(c0.clone().sub(mid)) < 0) n.negate(); }
+  let face = null;
+  near.forEach((ts, r) => { if (!face || ts.length > near.get(face).length) face = r; });
+  if (!face) return { ok: false };
+  const s = skinOf(face), I = s.idx, Pp = face.pos, ts = near.get(face);
+  const loc = new Float32Array(ts.length * 9), mid = new V3();
+  const A = new V3(), B = new V3(), Cc = new V3(), nsum = new V3(), fn = new V3();
+  ts.forEach((t, k) => { for (let c = 0; c < 3; c++) for (let a = 0; a < 3; a++) loc[k * 9 + c * 3 + a] = Pp[I[t + c] * 3 + a];
+    mid.x += s.cen[t]; mid.y += s.cen[t + 1]; mid.z += s.cen[t + 2]; });
+  mid.multiplyScalar(1 / ts.length);   // (the head round the eye: mostly behind its skin)
+  // the gaze: the skin's own way round the eye (its triangles' normals, by area, each turned outward), not the four
+  // points' plane - one point dragged off swung that one sideways
+  const out0 = c0.clone().sub(mid);
+  ts.forEach((t, k) => {
+    A.fromArray(loc, k * 9); B.fromArray(loc, k * 9 + 3); Cc.fromArray(loc, k * 9 + 6);
+    const cen = A.clone().add(B).add(Cc).multiplyScalar(1 / 3);
+    if (cen.distanceToSquared(c0) > (0.8 * span) ** 2) return;
+    fn.copy(B).sub(A).cross(Cc.clone().sub(A));
+    nsum.addScaledVector(fn, fn.dot(out0) < 0 ? -1 : 1);
+  });
+  let n = nsum.lengthSq() > 0 ? nsum.normalize() : (out0.lengthSq() > 0 ? out0.clone().normalize() : new V3(0, 0, 1));
+  const fw = +$('eyeForward').value;   // (toward the creature's forward: the pupils not out to the sides)
+  if (fw > 0) n = n.clone().multiplyScalar(1 - fw).add(new V3(0, 0, fw)).normalize();
   const flat = new V3(n.x, 0, n.z);
   if (flat.length() > 0.2) n = flat.normalize();
-  let ex = u.clone().addScaledVector(n, -u.dot(n)).normalize(), ey = n.clone().cross(ex);
+  let ex = u.clone().addScaledVector(n, -u.dot(n));
+  if (ex.lengthSq() < 1e-12) ex = new V3(0, 1, 0).cross(n);
+  ex.normalize();
+  let ey = n.clone().cross(ex);
   if (ey.dot(w) < 0) { ex.negate(); ey = n.clone().cross(ex); }
   const q2 = (p) => [p.clone().sub(c0).dot(ex), p.clone().sub(c0).dot(ey)], dn = (p) => p.clone().sub(c0).dot(n);
   const curve = catmull(P, 12), poly = curve.map(q2);
   const xs = poly.map((p) => p[0]), ys = poly.map((p) => p[1]);
-  const width = Math.max(...xs) - Math.min(...xs), height = Math.max(...ys) - Math.min(...ys);
+  const width = Math.max(...xs) - Math.min(...xs) || span, height = Math.max(...ys) - Math.min(...ys) || span;
   const centre0 = c0.clone().addScaledVector(ex, xs.reduce((a, b) => a + b) / xs.length).addScaledVector(ey, ys.reduce((a, b) => a + b) / ys.length);
-  const far = 3 * Math.max(width, height);
-  const hit = castSkin(centre0.clone().addScaledVector(n, far), n.clone().negate(), 2 * far);
-  const dFront = hit ? dn(hit.point) : 0;
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(loc, 3));
+  const lm = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })), rc = new THREE.Raycaster();
+  const far = 3 * Math.max(width, height), back = n.clone().negate();
+  const cast = (p) => { rc.set(p.clone().addScaledVector(n, far), back); rc.far = 2 * far; const h = rc.intersectObject(lm, false)[0]; return h ? h.point : null; };
+  const hf = cast(centre0);
+  let dFront = hf ? dn(hf) : 0;
+  if (Math.abs(dFront) > span) dFront = 0;
   const rim = [];
-  curve.forEach((p) => { const h = castSkin(p.clone().addScaledVector(n, far), n.clone().negate(), 2 * far);
-    if (h && Math.abs(dn(h.point) - dFront) < Math.max(width, height)) rim.push(h.point); });
+  curve.forEach((p) => { const h = cast(p); if (h && Math.abs(dn(h) - dFront) < Math.max(width, height)) rim.push(h); });
   const dLids = rim.length ? rim.reduce((a, p) => a + dn(p), 0) / rim.length : dFront;
   const r = 0.42 * Math.max(width, height) * +$('eyeSize').value;
   const centre = centre0.clone().addScaledVector(n, Math.max(dFront, dLids) - 0.02 * width - r);
-  return { face, c0, ex, ey, n, poly, q2, dn, dFront, width, height, centre, r, rim, ok: rim.length >= curve.length * 0.6 };
+  return { face, c0, ex, ey, n, poly, q2, dn, dFront, width, height, centre, centre0, r, rim, ok: rim.length >= curve.length * 0.6 };
 }
 function eyeBuild() {   // the cut skin, the balls and their sockets as the eyes are marked now
   eyeView.clear();
@@ -1372,7 +1397,7 @@ function eyeBuild() {   // the cut skin, the balls and their sockets as the eyes
     if (!cut.has(S.face)) cut.set(S.face, new Set());
     const out = cut.get(S.face);
     for (let t = 0; t < C.length; t += 3) {
-      const dx = C[t] - S.centre.x, dy = C[t + 1] - S.centre.y, dz = C[t + 2] - S.centre.z;
+      const dx = C[t] - S.centre0.x, dy = C[t + 1] - S.centre0.y, dz = C[t + 2] - S.centre0.z;
       if (dx * dx + dy * dy + dz * dz > lim) continue;
       const p = new V3(C[t], C[t + 1], C[t + 2]), d = S.dn(p);
       if (d < S.dFront - 0.6 * S.width || d > S.dFront + S.width) continue;
@@ -1457,16 +1482,18 @@ $('eyeSmaller').onclick = () => eyeScale(0.9);
 $('eyeLarger').onclick = () => eyeScale(1.1);
 ['eyeSclera', 'eyeIris', 'eyePupil', 'eyeSlit', 'eyeIrisSize', 'eyePupilSize', 'eyeFibres', 'eyeVeins', 'eyeGlow'].forEach((id) => { $(id).oninput = lookRead; });
 $('eyeSize').oninput = eyeLater;
+$('eyeForward').oninput = eyeLater;
 $('eyePresets').innerHTML = Object.entries(EYE_PRESETS).map(([k, [nm]]) => `<button data-p="${k}">${nm}</button>`).join('');
 $('eyePresets').querySelectorAll('button').forEach((el) => el.onclick = () => { look = { ...EYE_DEF, ...EYE_PRESETS[el.dataset.p][1] }; lookUi(); eyeTexture(); eyeBuild(); });
 function eyesInit() {
   if (DATA.eyes) for (const s of ['L', 'R']) if (DATA.eyes[s]) eyes[s] = DATA.eyes[s].map((p) => new V3(...p));
   $('eyeMirror').checked = !DATA.eyes || DATA.eyes.mirror !== false;
   $('eyeSize').value = (DATA.eyes && DATA.eyes.size) || 1;
+  $('eyeForward').value = DATA.eyes && DATA.eyes.forward != null ? DATA.eyes.forward : 0.5;
   lookUi(); eyeTexture(); eyeMarksUi();
 }
 const eyesReq = () => ({ ...Object.fromEntries(['L', 'R'].filter((s) => eyes[s]).map((s) => [s, eyes[s].map(arr)])),
-  look, size: +$('eyeSize').value, mirror: $('eyeMirror').checked });
+  look, size: +$('eyeSize').value, forward: +$('eyeForward').value, mirror: $('eyeMirror').checked });
 $('eyesGo').onclick = () => {
   if (!eyes.L && !eyes.R) { $('eStatus').textContent = '{{js:sv.eyes_click}}'; return; }
   send({ action: 'eyes', eyes: eyesReq() }, $('eStatus'));
@@ -1525,7 +1552,8 @@ $('keepPose').onclick = () => {
 gizmo.addEventListener('objectChange', () => { if (EDIT && mode === 'view') $('keepPose').hidden = false; });
 // (test hooks: work/wear_test/ui/test_creature_markup.mjs moves the marks the way the arrows would)
 window.sv = { mouth, mk, bones, setMode, pickMark, mouthPaint, castRest, H: () => H,
-  eyes, eyeSolve, eyesReq, placeEye: (p, n) => placeEye(new THREE.Vector3(...p), new THREE.Vector3(...n).normalize()),
+  look: (c, d) => { camera.position.set(c.x, c.y + d * .05, c.z + d); camera.near = d / 50; camera.updateProjectionMatrix(); controls.target.copy(c); controls.update(); },
+  eyes, eyeSolve, eyeBuild, eyesReq, placeEye: (p, n) => placeEye(new THREE.Vector3(...p), new THREE.Vector3(...n).normalize()),
   eyeCut: () => { let n = 0; skinRests().forEach((r) => { const s = skinIdx.get(r.mesh); if (s) n += (s.idx.length - r.mesh.geometry.drawRange.count) / 3; }); return n; },
   preset: (k) => $('eyePresets').querySelector(`[data-p=${k}]`).click(),
   brushAt: (p, b) => { brush = b; strokeStart(); paintAround(new THREE.Vector3(...p)); strokeEnd(); brush = ''; },

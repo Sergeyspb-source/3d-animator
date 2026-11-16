@@ -6,7 +6,7 @@ job.json: {"src": the rigged creature (its eyes not cut yet), "out": GLB, "eyes"
 eye's outline as marked in the skeleton viewer (glTF: inner corner, top, outer corner, bottom), "look": the eyeball's
 picture (eye_tex.py: sclera, iris, pupil_color, iris_size, pupil, slit, veins, fibres) and "glow" (0..1: the eye shines
 by itself), "size" (the ball's radius against the opening, default 1), "depth" (how far behind, in the opening's widths,
-default 0), "level" (the gaze kept level, default true), "head_bone" (the bone when no skin near the eye says), "preview": png (optional)}.
+default 0), "level" (the gaze kept level, default true), "forward" (0..1: the gaze turned from the skin's way toward the creature's forward), "head_bone" (the bone when no skin near the eye says), "preview": png (optional)}.
 
 Unlike a character's eye (blender_eye_insert.py: the face looks along -Y, the cut is seen from the front) a creature's
 eye looks wherever its outline faces - forward on a wolf, out to the side on a horse: each eye has its own frame, the
@@ -70,24 +70,32 @@ def inside(poly, x, y):
     return c
 
 
-def frame(pts, skin_pts):
-    """the eye's frame: centre, ex (across the eye), ey (up it), n (its gaze, away from the head)"""
+def frame(pts, tris, span):
+    """the eye's frame: centre, ex (across the eye), ey (up it), n (its gaze, away from the head). The gaze is the
+    skin's own way round the eye (its triangles' normals within 0.8 of the outline's span, by area, each turned
+    outward), not the four points' plane: one point dragged off swung that one sideways and the ball went to a
+    shoulder; level at rest (the werewolf's outline, under a heavy brow, faced 43 deg down)"""
     c0 = sum(pts, Vector()) / len(pts)
     u, w = pts[2] - pts[0], pts[1] - pts[3]
-    n = u.cross(w)
-    if n.length < 1e-12:
-        n = Vector((0, -1, 0))
-    n.normalize()
-    span = max(u.length, w.length)
-    near = [p for p in skin_pts if (p - c0).length < 3 * span]
-    if near:
-        mid = sum(near, Vector()) / len(near)   # the head round the eye: mostly behind its skin
-        if n.dot(c0 - mid) < 0:
-            n = -n
+    mid = sum((sum(tr, Vector()) / 3 for tr in tris), Vector()) / max(len(tris), 1)   # the head round the eye
+    out0 = c0 - mid
+    n = Vector()
+    for a, b, c in tris:
+        if ((a + b + c) / 3 - c0).length > 0.8 * span:
+            continue
+        f = (b - a).cross(c - a)
+        n += -f if f.dot(out0) < 0 else f
+    n = n.normalized() if n.length > 0 else (out0.normalized() if out0.length > 0 else Vector((0, -1, 0)))
+    fw = float(job.get("forward", 0.0))   # toward the creature's forward (Blender -Y): the pupils not out to the sides
+    if fw > 0:
+        n = (n * (1 - fw) + Vector((0, -fw, 0))).normalized()
     flat = Vector((n.x, n.y, 0.0))
-    if job.get("level", True) and flat.length > 0.2:   # at rest the gaze level, out where the opening faces (the
-        n = flat.normalized()                          # werewolf's outline, under a heavy brow, faced 43 deg down)
-    ex = (u - n * u.dot(n)).normalized()
+    if job.get("level", True) and flat.length > 0.2:
+        n = flat.normalized()
+    ex = u - n * u.dot(n)
+    if ex.length < 1e-12:
+        ex = Vector((0, 0, 1)).cross(n)
+    ex.normalize()
     ey = n.cross(ex)
     if ey.dot(w) < 0:   # (the ball's picture upright: ex turned so that ey = n x ex points up the eye)
         ex = -ex
@@ -149,14 +157,20 @@ def ball_mesh(name, r):
 
 
 def lead_bone(o, idx):
-    """the bone that leads these vertices' skin (their weights summed)"""
+    """the bone the eye goes with: of the head and the bones below it (not the jaw), the one leading these vertices'
+    skin (their weights summed), else the head itself. Never a bone outside the head: the test nurgl's skin round its
+    eyes was weighted more to the shoulders than to the head, and an eye on a shoulder bone left the face when moved"""
+    head = arm.data.bones.get(job.get("head_bone") or "") or next((b for b in arm.data.bones if b.name.lower().endswith("head")), None)
+    if head is None:
+        return None
+    ok = {head.name} | {b.name for b in head.children_recursive if "jaw" not in b.name.lower()}
     tot = {}
     for i in idx:
         for g in o.data.vertices[i].groups:
             nm = o.vertex_groups[g.group].name
-            tot[nm] = tot.get(nm, 0.0) + g.weight
-    best = max(tot, key=tot.get) if tot else None
-    return best if best in arm.data.bones else None
+            if nm in ok:
+                tot[nm] = tot.get(nm, 0.0) + g.weight
+    return max(tot, key=tot.get) if tot else head.name
 
 
 def attach(o, bone):
@@ -175,26 +189,39 @@ size, depth = float(job.get("size", 1.0)), float(job.get("depth", 0.0))
 balls = []
 for side, marks in job["eyes"].items():
     pts = [bl(p) for p in marks]
-    allw = [(o, [o.matrix_world @ v.co for v in o.data.vertices]) for o in meshes]
     c0 = sum(pts, Vector()) / 4
-    span = max((pts[2] - pts[0]).length, (pts[1] - pts[3]).length)
-    face, fw_pts = max(allw, key=lambda ow: sum(1 for p in ow[1] if (p - c0).length < span * 1.5))
-    c0, ex, ey, n = frame(pts, fw_pts)
+    span = max((pts[2] - pts[0]).length, (pts[1] - pts[3]).length, 1e-4)
+    # the skin round the eye only: its triangles within reach, on the mesh that has most of them (Blender's «face»)
+    best = None
+    for o in meshes:
+        o.data.calc_loop_triangles()
+        wv = [o.matrix_world @ v.co for v in o.data.vertices]
+        loc = [tuple(wv[i] for i in lt.vertices) for lt in o.data.loop_triangles]
+        loc = [tr for tr in loc if ((tr[0] + tr[1] + tr[2]) / 3 - c0).length < 2.5 * span]
+        if loc and (best is None or len(loc) > len(best[1])):
+            best = (o, loc)
+    if best is None:
+        print(f"EYES_FAIL {side}: no skin near the eye", flush=True)
+        sys.exit(1)
+    face, tris = best
+    c0, ex, ey, n = frame(pts, tris, span)
     q2 = lambda p: ((p - c0).dot(ex), (p - c0).dot(ey))  # noqa: E731
     dn = lambda p: (p - c0).dot(n)  # noqa: E731
     curve = catmull(pts, 12)
     poly = [q2(p) for p in curve]
     xs, ys = [p[0] for p in poly], [p[1] for p in poly]
-    width, height = max(xs) - min(xs), max(ys) - min(ys)
+    width, height = (max(xs) - min(xs)) or span, (max(ys) - min(ys)) or span
     mid2 = (sum(xs) / len(xs), sum(ys) / len(ys))
     centre0 = c0 + ex * mid2[0] + ey * mid2[1]
-    # the skin along the gaze: in front of the eye's middle and on its outline
+    # the skin along the gaze (the near triangles only): in front of the eye's middle and on its outline
     fw = face.matrix_world
-    face.data.calc_loop_triangles()
-    bvh = BVHTree.FromPolygons(fw_pts, [tuple(t.vertices) for t in face.data.loop_triangles])
+    fw_pts = [p for tr in tris for p in tr]
+    bvh = BVHTree.FromPolygons(fw_pts, [(3 * k, 3 * k + 1, 3 * k + 2) for k in range(len(tris))])
     far = 3 * max(width, height)
     hit = bvh.ray_cast(centre0 + n * far, -n, 2 * far)
     d_front = dn(hit[0]) if hit[0] is not None else 0.0
+    if abs(d_front) > span:
+        d_front = 0.0
     rim = []
     for p in curve:
         h = bvh.ray_cast(p + n * far, -n, 2 * far)
@@ -206,7 +233,8 @@ for side, marks in job["eyes"].items():
     d_lids = sum(dn(p) for p in rim) / len(rim)
     # the cut: edges crossing the outline split there, the faces inside it near its plane deleted
     ins = lambda p: inside(poly, *q2(p))  # noqa: E731
-    near_plane = lambda p: d_front - 0.6 * width < dn(p) < d_front + 1.0 * width  # noqa: E731
+    reach = 2 * max(width, height)   # (and near the eye: the head's far side, an arm, never cut)
+    near_plane = lambda p: d_front - 0.6 * width < dn(p) < d_front + 1.0 * width and (p - centre0).length < reach  # noqa: E731
     bm = bmesh.new(); bm.from_mesh(face.data)
     cuts = set()
     for e in list(bm.edges):
@@ -285,7 +313,7 @@ for side, marks in job["eyes"].items():
     sm.materials.append(mat_sock)
     attach(sock, bone)
     balls.append((side, centre, r, n))
-    report["eyes"][side] = {"radius_mm": round(r * 1000, 1), "opening_mm": [round(width * 1000, 1), round(height * 1000, 1)],
+    report["eyes"][side] = {"radius": round(r, 5), "opening": [round(width, 5), round(height, 5)],   # (the model's units)
                             "deleted_faces": len(kill), "bone": bone, "mesh": face.name,
                             "gaze": [round(n.x, 3), round(n.z, 3), round(-n.y, 3)]}   # (glTF)
 arm.data.pose_position = "POSE"

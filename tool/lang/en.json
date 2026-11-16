@@ -2634,5 +2634,7 @@
  "cr.eyes_off_done": "Eyes taken out: the model has its own painted eyes again.",
  "cr.eyes_front": "Eyes: front",
  "cr.eyes_gaze": "Eye: along its gaze",
- "cr.jaw_eyes_gallery": "Jaw and eyes"
+ "cr.jaw_eyes_gallery": "Jaw and eyes",
+ "sv.eye_forward": "Gaze forward",
+ "sv.eye_forward_tip": "0 - the eye looks where the skin round it faces (out to the side, as a horse's), 1 - straight ahead"
 }

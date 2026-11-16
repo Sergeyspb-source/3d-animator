@@ -394,7 +394,7 @@ def set_eyes(cfg, d: Path, name: str, eyes: dict, rigged: Path | None = None):
     work.mkdir(parents=True, exist_ok=True)
     job = work / f"{name}_eyes.json"
     job.write_text(json.dumps({"src": str(base), "out": str(rigged), "eyes": sides, "look": look,
-                               "size": float(eyes.get("size", 1.0)), "head_bone": jaw.get("jaw_parent") or "head",
+                               "size": float(eyes.get("size", 1.0)), "forward": float(eyes.get("forward", 0.5)), "head_bone": jaw.get("jaw_parent") or "head",
                                "preview": str(d / f"{name}_eyes.png")}), encoding="utf-8")
     yield _t("cr.eyes_running")
     try:
@@ -402,10 +402,11 @@ def set_eyes(cfg, d: Path, name: str, eyes: dict, rigged: Path | None = None):
     except RuntimeError as e:
         shutil.copy2(base, rigged)   # (a failed cut: the model without eyes, not half made)
         raise RuntimeError(_t("cr.eyes_failed", str(e)[-400:])) from e
-    meta["eyes"] = {**sides, "look": look, "size": float(eyes.get("size", 1.0)), "mirror": bool(eyes.get("mirror", True))}
+    meta["eyes"] = {**sides, "look": look, "size": float(eyes.get("size", 1.0)), "forward": float(eyes.get("forward", 0.5)),
+                    "mirror": bool(eyes.get("mirror", True))}
     meta["kind"] = "creature"
     (d / f"{name}_rig.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
-    yield _t("cr.eyes_done", ", ".join(f"{s} {v['radius_mm']} mm · {v['bone']}" for s, v in rep["eyes"].items()))
+    yield _t("cr.eyes_done", ", ".join(f"{s} r {v['radius']:.3g} · {v['bone']}" for s, v in rep["eyes"].items()))
 
 
 def eyes_off(cfg, d: Path, name: str, rigged: Path | None = None):
