@@ -2574,5 +2574,12 @@
  "cr.on_ground": "Paws on the floor (a paw's bottom above it, mm): {0}; the model moved up by {1} mm, the floor at zero.",
  "cr.jaw_there": "The skeleton {0} has a jaw bone already (a face from «Character»): the mouth's marks put no jaw over it.",
  "cr.anim_humanoid": "A humanoid's skeleton: the fox's and the horse's clips do not fit it. Its clips are in «Character» (procedural, Mixamo, the gallery), where this creature is listed too.",
- "sv.wider": "wider"
+ "sv.wider": "wider",
+ "sv.brush": "Brush (what the rule left out - tusks, a beard - or took too much):",
+ "sv.brush_jaw": "jaw",
+ "sv.brush_plus_tip": "The painted skin goes with the jaw",
+ "sv.brush_minus_tip": "The painted skin stays with the head",
+ "sv.brush_clear": "Clear",
+ "sv.brush_size": "Brush size",
+ "sv.brush_info": "Painted: {0} vertices with the jaw, {1} without."
 }

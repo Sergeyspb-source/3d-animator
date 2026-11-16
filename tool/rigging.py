@@ -550,6 +550,8 @@ def creature_finish(src, dst, blender, names, jaw=None, line_mm=0.0, hinge_mm=0.
                  f"floor={jaw['floor']:.5f}", f"fade={jaw['fade']:.5f}", f"jaw_parent={jaw['jaw_parent']}"]
         if jaw.get("chin"):
             args.append(f"chin={pt(jaw['chin'])}")
+        if jaw.get("paint_file"):
+            args.append(f"paint={jaw['paint_file']}")
     if preview:
         args.append(f"preview={preview}")
         if angles:

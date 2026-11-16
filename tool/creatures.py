@@ -167,10 +167,20 @@ def mark_jaw(cfg, d: Path, name: str, mouth: dict, rigged: Path | None = None):
            "fade": old.get("fade") or round(0.3 * span, 4),
            "jaw_parent": old.get("jaw_parent") or next((n for n in bone_names(auto) if n.lower().endswith("head")), "head"),
            "method": "marked", "mouth": mouth, "close_deg": round(close, 2), "open_deg": round(abs(close), 2)}
+    paint = mouth.get("paint") if "paint" in mouth else (old.get("mouth") or {}).get("paint")   # (a request without one: kept)
+    if paint is not None:
+        mouth = {**mouth, "paint": paint}
+        jaw["mouth"] = mouth
+    if paint and (paint.get("plus") or paint.get("minus")):   # (painted by hand: a file for Blender, kept with the marks)
+        pf = Path(cfg["work_dir"]) / "creature_rebuild" / f"{name}_paint.json"
+        pf.parent.mkdir(parents=True, exist_ok=True)
+        pf.write_text(json.dumps(paint), encoding="utf-8")
+        jaw["paint_file"] = str(pf)
     yield _t("cr.jaw_marked", round(abs(close), 1))
     res = RG.creature_finish(auto, dst, cfg.get("blender_exe"), names, jaw, preview=str(d / f"{name}_jaw.png"),
                              angles=[0.0, -abs(close)], tags=["0", "c"])
     meta["kind"] = "creature"
+    jaw.pop("paint_file", None)
     meta["jaw"] = jaw
     (d / f"{name}_rig.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
     yield _t("cr.jaw_done", dst.name, res["jaw_vertices"])
@@ -315,7 +325,10 @@ def straighten(cfg, d: Path, name: str, pose: dict | None = None):
     meta.pop("ends", None)
     (d / f"{name}_rig.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
     if mouth:
-        yield from mark_jaw(cfg, d, name, {k: move(v) for k, v in mouth.items()})
+        moved = {k: move(v) for k, v in mouth.items() if k != "paint"}
+        if mouth.get("paint"):
+            moved["paint"] = {k: [move(p) for p in v] for k, v in mouth["paint"].items()}
+        yield from mark_jaw(cfg, d, name, moved)
 
 
 def restore(cfg, d: Path, name: str):

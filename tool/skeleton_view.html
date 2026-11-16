@@ -136,6 +136,14 @@
       <div style="margin-top:6px">{{sv.close_try}}</div>
       <input type="range" id="mouthClose" min="-0.8" max="1" step="0.01" value="0">
       <div class="row small" style="justify-content:space-between"><span>{{sv.wider}}</span><span>{{sv.as_made}}</span><span>{{sv.closed}}</span></div>
+      <div style="margin-top:8px">{{sv.brush}}</div>
+      <div class="row">
+        <button id="brushPlus" title="{{sv.brush_plus_tip}}">+ {{sv.brush_jaw}}</button>
+        <button id="brushMinus" title="{{sv.brush_minus_tip}}">− {{sv.brush_jaw}}</button>
+        <button id="brushClear">{{sv.brush_clear}}</button>
+      </div>
+      <label class="small" style="display:block;margin-top:4px">{{sv.brush_size}}<input type="range" id="brushSize" min="0.03" max="0.5" step="0.01" value="0.12"></label>
+      <div class="small" id="brushInfo"></div>
       <div class="row" style="margin-top:6px"><button id="rejaw" class="primary">{{sv.rejaw}}</button></div>
       <div class="status" id="mStatus"></div>
     </div>
@@ -482,7 +490,7 @@ let down = null;
 renderer.domElement.addEventListener('pointerdown', (e) => { down = [e.clientX, e.clientY]; });
 renderer.domElement.addEventListener('pointerup', (e) => {
   if (!down || dragging || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
-  if (mode !== 'view') { const k = nearestMark(e); if (k) pickMark(k); return; }
+  if (mode !== 'view') { if (mode === 'mouth' && brush) return; const k = nearestMark(e); if (k) pickMark(k); return; }
   const b = nearest(e);
   if (b) pick(b);
 });
@@ -637,6 +645,81 @@ function initEdit() {
   $('mouthPts').querySelectorAll('button').forEach((el) => el.onclick = () => pickMark('m:' + el.dataset.k));
 }
 
+// ---- the jaw's brush: painted skin with the jaw (+) or not (-) whatever the rule (an orc's lower tusks are its skin,
+// their tips up past the mouth line); per rest mesh, by vertex; sent as points, kept with the marks
+let brush = '';
+const paint = [];   // per rest mesh: {plus: Set, minus: Set}
+function paintKeys(r) {   // (a vertex's position -> the vertices there: a seam's twins painted together)
+  if (r.keys) return r.keys;
+  r.keys = new Map();
+  for (let i = 0; i < r.pos.length / 3; i++) {
+    const k = Math.round(r.pos[i * 3] * 1e5) + ',' + Math.round(r.pos[i * 3 + 1] * 1e5) + ',' + Math.round(r.pos[i * 3 + 2] * 1e5);
+    if (!r.keys.has(k)) r.keys.set(k, []);
+    r.keys.get(k).push(i);
+  }
+  return r.keys;
+}
+function paintLoad() {   // the points kept with the marks onto this model's vertices
+  rests.forEach((r, mi) => { paint[mi] = { plus: new Set(), minus: new Set() }; });
+  const pp = DATA.mouth && DATA.mouth.paint;
+  if (!pp) return;
+  // (by distance on a grid, not by the rounded key: a point kept to 5 places fell at times in the next key)
+  const eps = H * 2e-5, cell = (v) => Math.floor(v / (eps * 4));
+  rests.forEach((r, mi) => {
+    const grid = new Map(), P = r.pos;
+    for (let i = 0; i < P.length / 3; i++) {
+      const k = cell(P[i * 3]) + ',' + cell(P[i * 3 + 1]) + ',' + cell(P[i * 3 + 2]);
+      if (!grid.has(k)) grid.set(k, []);
+      grid.get(k).push(i);
+    }
+    for (const key of ['plus', 'minus']) (pp[key] || []).forEach((q) => {
+      const c = q.map(cell);
+      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++)
+        (grid.get((c[0] + dx) + ',' + (c[1] + dy) + ',' + (c[2] + dz)) || []).forEach((i) => {
+          if (Math.hypot(P[i * 3] - q[0], P[i * 3 + 1] - q[1], P[i * 3 + 2] - q[2]) <= eps) paint[mi][key].add(i);
+        });
+    });
+  });
+}
+function paintInfo() {
+  const n = (k) => paint.reduce((a, p) => a + (p ? p[k].size : 0), 0);
+  $('brushInfo').textContent = '{{js:sv.brush_info}}'.replace('{0}', n('plus')).replace('{1}', n('minus'));
+}
+function setBrush(b) {
+  brush = brush === b ? '' : b;
+  $('brushPlus').classList.toggle('on', brush === '+');
+  $('brushMinus').classList.toggle('on', brush === '-');
+  controls.enabled = !brush;
+  if (brush) gizmo.detach();
+}
+$('brushPlus').onclick = () => setBrush('+');
+$('brushMinus').onclick = () => setBrush('-');
+$('brushClear').onclick = () => { paint.forEach((p) => { p.plus.clear(); p.minus.clear(); }); paintInfo(); mouthPaint(); };
+let painting = false, paintQueued = false;
+function paintAt(ev) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  const ndc = new THREE.Vector2((ev.clientX - rect.left) / rect.width * 2 - 1, -(ev.clientY - rect.top) / rect.height * 2 + 1);
+  const rc = new THREE.Raycaster();
+  rc.setFromCamera(ndc, camera);
+  const hit = rc.intersectObjects(rests.map((r) => r.ray), false)[0];
+  if (hit) paintAround(hit.point);
+}
+function paintAround(p) {
+  const rad = mouth.hinge.distanceTo(mouth.upper) * +$('brushSize').value, r2 = rad * rad;
+  rests.forEach((r, mi) => {
+    const P = r.pos, S = paint[mi];
+    for (let i = 0; i < P.length / 3; i++) {
+      const dx = P[i * 3] - p.x, dy = P[i * 3 + 1] - p.y, dz = P[i * 3 + 2] - p.z;
+      if (dx * dx + dy * dy + dz * dz > r2) continue;
+      if (brush === '+') { S.plus.add(i); S.minus.delete(i); } else { S.minus.add(i); S.plus.delete(i); }
+    }
+  });
+  if (!paintQueued) { paintQueued = true; requestAnimationFrame(() => { paintQueued = false; mouthPaint(); paintInfo(); }); }
+}
+renderer.domElement.addEventListener('pointerdown', (e) => { if (mode === 'mouth' && brush && e.button === 0) { painting = true; paintAt(e); } });
+renderer.domElement.addEventListener('pointermove', (e) => { if (painting) paintAt(e); });
+addEventListener('pointerup', () => { painting = false; });
+
 function castRest(p, dir, far = H) {   // the distance along dir to the skin, or null
   const rc = new THREE.Raycaster(p, dir.clone().normalize(), 0, far);
   const hits = rc.intersectObjects(rests.map((r) => r.ray), false);
@@ -656,6 +739,7 @@ function setMode(m) {
   mode = m;
   document.querySelectorAll('#modes button').forEach((b) => b.classList.toggle('on', b.dataset.m === m));
   pick(null); mk.sel = null; gizmo.detach();
+  if (typeof brush !== 'undefined' && brush) setBrush(brush);
   resetPose();
   $('jointsBox').hidden = m !== 'joints';
   $('mouthBox').hidden = m !== 'mouth';
@@ -668,7 +752,7 @@ function setMode(m) {
   overlay.visible = m !== 'mouth';
   mouthLines.visible = m === 'mouth';
   if (m === 'mouth') {
-    if (!preview) buildPreview();
+    if (!preview) { buildPreview(); paintLoad(); paintInfo(); }
     meshes.forEach((x) => { x.visible = false; });
     preview.visible = true;
     mouthPaint();
@@ -898,6 +982,8 @@ function jawWeights(r, w) {   // blender_creature_finish.py's: the rule, loose p
     while (st.length) { const a = st.pop(); for (const b of T.adj.get(a) || []) if (!reach[b] && out[b] > 0) { reach[b] = 1; st.push(b); } }
     for (let i = 0; i < n; i++) if (T.sizes[T.of[i]] > 2000 && out[i] > 0 && !reach[T.rep[i]]) out[i] = 0;
   }
+  const S = paint[rests.indexOf(r)];
+  if (S) { S.plus.forEach((i) => { out[i] = 1; }); S.minus.forEach((i) => { out[i] = 0; }); }
   return out;
 }
 function buildPreview() {   // every skinned mesh's copy at rest, painted by the jaw's weight
@@ -970,7 +1056,19 @@ function send(req, out) {
   } catch (e) { out.textContent = '{{js:sv.send_failed}} ' + e.message; }
 }
 const arr = (v) => [+v.x.toFixed(5), +v.y.toFixed(5), +v.z.toFixed(5)];
-const mouthReq = () => (DATA.mouth ? Object.fromEntries(MOUTH.map((k) => [k, arr(mouth[k])])) : null);
+const mouthReq = () => {
+  if (!DATA.mouth) return null;
+  const out = Object.fromEntries(MOUTH.map((k) => [k, arr(mouth[k])]));
+  if (paint.length) {   // (the brush's: their points, a position once)
+    out.paint = { plus: [], minus: [] };
+    rests.forEach((r, mi) => { for (const key of ['plus', 'minus']) {
+      const seen = new Set();
+      paint[mi][key].forEach((i) => { const q = [r.pos[i * 3], r.pos[i * 3 + 1], r.pos[i * 3 + 2]].map((x) => +x.toFixed(6)), k = q.join(',');
+        if (!seen.has(k)) { seen.add(k); out.paint[key].push(q); } });
+    } });
+  } else if (DATA.mouth.paint) out.paint = DATA.mouth.paint;   // (the mouth mode not opened: the kept one as it was)
+  return out;
+};
 $('rebuild').onclick = () => send({ action: 'rebuild', reweight: $('reweight').value, mouth: mouthReq(),
   joints: Object.fromEntries([...mk.pts].map(([b, p]) => [b.name, arr(p)])),
   // (only the ends moved here or set before: a tip left alone keeps its bone's own way and length)
@@ -996,7 +1094,11 @@ $('keepPose').onclick = () => {
 };
 gizmo.addEventListener('objectChange', () => { if (EDIT && mode === 'view') $('keepPose').hidden = false; });
 // (test hooks: work/wear_test/ui/test_creature_markup.mjs moves the marks the way the arrows would)
-window.sv = { mouth, mk, bones, setMode, pickMark, mouthPaint, castRest, H: () => H, moveMark: (k, p) => {
+window.sv = { mouth, mk, bones, setMode, pickMark, mouthPaint, castRest, H: () => H,
+  brushAt: (p, b) => { brush = b; paintAround(new THREE.Vector3(...p)); brush = ''; },
+  near: (p) => { const v = new THREE.Vector3(...p); let best = Infinity, at = null; rests.forEach((r) => { for (let i = 0; i < r.pos.length / 3; i++) {
+    const d = v.distanceTo(new THREE.Vector3(r.pos[i * 3], r.pos[i * 3 + 1], r.pos[i * 3 + 2])); if (d < best) { best = d; at = [r.pos[i * 3], r.pos[i * 3 + 1], r.pos[i * 3 + 2]]; } } });
+    return { nearest: best, at, span: mouth.hinge.distanceTo(mouth.upper) }; }, moveMark: (k, p) => {
   pickMark(k); helper.position.set(...p); helper.updateMatrixWorld(); gizmo.dispatchEvent({ type: 'objectChange' }); } };
 
 // ---------------------------------------------------------------- views

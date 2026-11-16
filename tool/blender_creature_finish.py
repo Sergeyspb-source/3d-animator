@@ -2,7 +2,7 @@
 
     blender -b -P blender_creature_finish.py -- rigged.glb out.glb [names=old:new,old:new,...]
             [jaw_front=y,z] [jaw_corner=y,z] [hinge=y,z] [chin=y,z] [jaw_parent=head] [preview=path.png]
-            [angles=0,30] [tags=0,30]
+            [angles=0,30] [tags=0,30] [paint=path.json: {"plus"/"minus": [[x, y, z] glTF]} - painted by hand]
 
 Bone names: given pairs are applied as they are (vertex groups follow).
 Jaw (Blender coordinates, the creature looking along -Y): the mouth line runs from jaw_front (tip of the lower
@@ -153,6 +153,22 @@ if front and corner and hinge:
                     cut += 1
             print(f"CREATURE_JAW_REACH kept={len(reach)} cut={cut}")
     bm.free()
+    if opt.get("paint"):   # painted by hand in the markup (glTF points): with the jaw (plus) or not (minus), whatever the rule
+        import json as _json
+        from mathutils.kdtree import KDTree
+        pt = _json.loads(open(opt["paint"], encoding="utf-8").read())
+        kd = KDTree(len(P))
+        for i, p_ in enumerate(P):
+            kd.insert(p_, i)
+        kd.balance()
+        eps = 1e-4 * max((max(p_.z for p_ in P) - min(p_.z for p_ in P)), 1e-3)
+        got = 0
+        for key, val in (("plus", 1.0), ("minus", 0.0)):
+            for q in pt.get(key, []):
+                for _, i, _ in kd.find_range(Vector((q[0], -q[2], q[1])), eps):
+                    w[i] = val
+                    got += 1
+        print(f"CREATURE_JAW_PAINT {got}")
     jg = me.vertex_groups.new(name="jaw")
     n = 0
     for v, x in zip(me.data.vertices, w):
