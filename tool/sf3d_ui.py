@@ -1198,6 +1198,7 @@ def _creature_jaw(st, line_mm, hinge_mm, log, last, pics, emit):
     yield emit()
     res = RG.creature_finish(st["auto"], dst, cfg.get("blender_exe"), st["names"], st["jaw"], line_mm, hinge_mm,
                              preview=str(folder / f"{name}_jaw.png"))
+    CR._noeyes(dst).unlink(missing_ok=True)   # (a new skeleton: the eyes made before it are of the old model)
     log.append(_t("ui.done_vertices_in_the_jaw_look_at_the", name, dst.name, res['jaw_vertices']))
     labels = {"0_side": _t("ui.closed_side"), "0_front": _t("ui.closed_front"), "30_side": _t("ui.open_side"),
               "30_front": _t("ui.open_front")}
@@ -1331,6 +1332,8 @@ def creature_request(value, text):
         act = req.get("action")
         steps = (CR.rebuild(cfg, f["dir"], f["name"], req) if act == "rebuild"
                  else CR.straighten(cfg, f["dir"], f["name"], req.get("pose") or {}) if act == "rest"
+                 else CR.set_eyes(cfg, f["dir"], f["name"], req.get("eyes") or {}, rigged=f["rigged"]) if act == "eyes"
+                 else CR.eyes_off(cfg, f["dir"], f["name"], rigged=f["rigged"]) if act == "eyes_off"
                  else CR.mark_jaw(cfg, f["dir"], f["name"], req.get("mouth") or {}, rigged=f["rigged"]))
         for line in steps:
             lines.append(line)
@@ -2714,7 +2717,7 @@ def build():
                                 cr_restore_btn = gr.Button(_t("cr.restore"), variant="secondary")
                                 cr_log = gr.Textbox(label=_t("face.progress"), lines=6, interactive=False)
                             with gr.Column(scale=1):
-                                cr_jaw_gallery = gr.Gallery(label=_t("ui.jaw_closed_and_open"), columns=4, height=220)
+                                cr_jaw_gallery = gr.Gallery(label=_t("cr.jaw_eyes_gallery"), columns=4, height=220)
                         gr.Markdown(_t("cr.view_info"))
                         cr_view_btn = gr.Button(_t("cr.view_reopen"))
                         cr_viewer = gr.HTML()

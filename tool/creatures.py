@@ -53,7 +53,8 @@ def jaw_pictures(d: Path, name: str) -> list:
     else:
         labels = {"0_side": _t("ui.closed_side"), "0_front": _t("ui.closed_front"), "30_side": _t("ui.open_side"),
                   "30_front": _t("ui.open_front")}
-    return [(str(Path(d) / f"{name}_jaw_{k}.png"), v) for k, v in labels.items() if (Path(d) / f"{name}_jaw_{k}.png").exists()]
+    jaw = [(str(Path(d) / f"{name}_jaw_{k}.png"), v) for k, v in labels.items() if (Path(d) / f"{name}_jaw_{k}.png").exists()]
+    return jaw + list(zip(eye_pictures(d, name), (_t("cr.eyes_front"), _t("cr.eyes_gaze"))))   # (and the eyes')
 
 
 # ------------------------------------------------------------------ the markup: the mouth's points, the joints moved
@@ -90,7 +91,7 @@ def viewer_data(d: Path, name: str) -> dict:
     return {"edit": True, "mouth": mouth_marks(meta), "ends": meta.get("ends") or {}, "close_deg": jaw.get("close_deg"),
             # (the jaw's limits as the first guess measured them on the snout: the viewer's red preview the same)
             "jaw_params": {k: jaw[k] for k in ("half_width", "fade", "floor") if k in jaw},
-            "req_target": REQ_ID, "req_go": REQ_GO}
+            "eyes": meta.get("eyes"), "req_target": REQ_ID, "req_go": REQ_GO}
 
 
 REQ_ID = "sf3d_creature_req"   # the hidden textbox the viewer writes its request into
@@ -143,9 +144,10 @@ def mark_jaw(cfg, d: Path, name: str, mouth: dict, rigged: Path | None = None):
         dst = Path(rigged)
         auto = dst.with_name(dst.stem + ".nojaw.glb")
         if not auto.exists():
-            if "jaw" in bone_names(dst):
+            base = _noeyes(dst) if _noeyes(dst).exists() else dst   # (without the creature's eyes: they go back after)
+            if "jaw" in bone_names(base):
                 raise RuntimeError(_t("cr.jaw_there", dst.name))
-            shutil.copy2(dst, auto)
+            shutil.copy2(base, auto)
         names = {}
     h, c, up, lo = (mouth[k] for k in ("hinge", "corner", "upper", "lower"))
     cx = h[0]   # (the middle plane: the hinge's; the corner may stand off it, at the mouth's real corner)
@@ -184,6 +186,9 @@ def mark_jaw(cfg, d: Path, name: str, mouth: dict, rigged: Path | None = None):
     meta["jaw"] = jaw
     (d / f"{name}_rig.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
     yield _t("cr.jaw_done", dst.name, res["jaw_vertices"])
+    if meta.get("eyes"):   # the model is new: its eyes cut and put in again
+        _noeyes(dst).unlink(missing_ok=True)
+        yield from set_eyes(cfg, d, name, meta["eyes"], rigged=dst)
 
 
 def rebuild(cfg, d: Path, name: str, req: dict):
@@ -323,7 +328,14 @@ def straighten(cfg, d: Path, name: str, pose: dict | None = None):
         return [q[0], q[2], -q[1]]
     mouth = mouth_marks(meta)
     meta.pop("ends", None)
+    if meta.get("eyes"):
+        meta["eyes"] = {**meta["eyes"], **{s: [move(p) for p in meta["eyes"][s]] for s in ("L", "R") if meta["eyes"].get(s)}}
     (d / f"{name}_rig.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+    if not mouth and meta.get("eyes"):   # (no jaw to make again: the eyes on the straightened model)
+        rigged = d / f"{name}_rigged.glb"
+        shutil.copy2(auto, rigged)
+        _noeyes(rigged).unlink(missing_ok=True)
+        yield from set_eyes(cfg, d, name, meta["eyes"], rigged=rigged)
     if mouth:
         moved = {k: move(v) for k, v in mouth.items() if k != "paint"}
         if mouth.get("paint"):
@@ -347,6 +359,73 @@ def restore(cfg, d: Path, name: str):
     mouth = mouth_marks(meta)
     if mouth:
         yield from mark_jaw(cfg, d, name, mouth)
+
+
+# ---------------------------------------------------------------- the eyes
+# A creature's painted eyes cut out and eyeballs put in (blender_creature_eyes.py), coloured as asked: the white, the
+# iris, the pupil (eye_tex.py; the viewer draws the same live). The model before its eyes is kept beside it
+# (<stem>.noeyes.glb): every change of the eyes starts from it, a new jaw or a straightened rest makes the model anew
+# and puts them back. The passport keeps them: "eyes": {"L": [4 points], "R": [4 points], "look": {...}, "size": k}.
+EYE_LOOK = {"sclera": [0.93, 0.91, 0.87], "iris": [0.85, 0.62, 0.12], "pupil_color": [0.015, 0.012, 0.012],
+            "iris_size": 40, "pupil": 0.42, "slit": "round", "veins": 0.2, "fibres": 1.0, "glow": 0.0}
+
+
+def _noeyes(rigged: Path) -> Path:
+    return Path(rigged).with_name(Path(rigged).stem + ".noeyes.glb")
+
+
+def set_eyes(cfg, d: Path, name: str, eyes: dict, rigged: Path | None = None):
+    """The eyes cut and put in from their marks (eyes: L, R - glTF outlines: inner corner, top, outer corner, bottom;
+    look, size). Yields log lines; writes the model and the passport."""
+    d = Path(d)
+    rigged = Path(rigged) if rigged else d / f"{name}_rigged.glb"
+    if not rigged.exists():
+        raise RuntimeError(_t("cr.view_needs_skeleton"))
+    sides = {s: eyes[s] for s in ("L", "R") if eyes.get(s) and len(eyes[s]) == 4}
+    if not sides:
+        raise RuntimeError(_t("cr.eyes_none"))
+    base = _noeyes(rigged)
+    if not base.exists():
+        shutil.copy2(rigged, base)
+    meta = passport(d, name)
+    look = {**EYE_LOOK, **(eyes.get("look") or {})}
+    jaw = meta.get("jaw") or {}
+    work = Path(cfg["work_dir"]) / "creature_rebuild"
+    work.mkdir(parents=True, exist_ok=True)
+    job = work / f"{name}_eyes.json"
+    job.write_text(json.dumps({"src": str(base), "out": str(rigged), "eyes": sides, "look": look,
+                               "size": float(eyes.get("size", 1.0)), "head_bone": jaw.get("jaw_parent") or "head",
+                               "preview": str(d / f"{name}_eyes.png")}), encoding="utf-8")
+    yield _t("cr.eyes_running")
+    try:
+        rep = json.loads(_run(cfg, "blender_creature_eyes.py", [job], "EYES_OK").split(" ", 1)[1])
+    except RuntimeError as e:
+        shutil.copy2(base, rigged)   # (a failed cut: the model without eyes, not half made)
+        raise RuntimeError(_t("cr.eyes_failed", str(e)[-400:])) from e
+    meta["eyes"] = {**sides, "look": look, "size": float(eyes.get("size", 1.0)), "mirror": bool(eyes.get("mirror", True))}
+    meta["kind"] = "creature"
+    (d / f"{name}_rig.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+    yield _t("cr.eyes_done", ", ".join(f"{s} {v['radius_mm']} mm · {v['bone']}" for s, v in rep["eyes"].items()))
+
+
+def eyes_off(cfg, d: Path, name: str, rigged: Path | None = None):
+    """The creature's own painted eyes back (the model before its eyes), the marks forgotten. Yields log lines."""
+    d = Path(d)
+    rigged = Path(rigged) if rigged else d / f"{name}_rigged.glb"
+    base = _noeyes(rigged)
+    meta = passport(d, name)
+    if base.exists():
+        shutil.copy2(base, rigged)
+        base.unlink()
+    meta.pop("eyes", None)
+    (d / f"{name}_rig.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+    (d / f"{name}_eyes_front.png").unlink(missing_ok=True)
+    (d / f"{name}_eyes_eye.png").unlink(missing_ok=True)
+    yield _t("cr.eyes_off_done")
+
+
+def eye_pictures(d: Path, name: str) -> list:
+    return [str(p) for p in (Path(d) / f"{name}_eyes_front.png", Path(d) / f"{name}_eyes_eye.png") if p.exists()]
 
 
 def godot_view(cfg, d: Path, name: str) -> str:

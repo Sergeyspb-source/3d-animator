@@ -65,6 +65,9 @@
   .pts button { text-align:left; display:flex; align-items:center; }
   .pts button.sel { background:color-mix(in srgb,var(--accent) 22%,transparent); }
   input[type=range] { width:100%; }
+  .eyecols { display:grid; grid-template-columns:repeat(3,1fr); gap:4px; font-size:12px; }
+  .eyecols label { display:flex; flex-direction:column; gap:2px; }
+  .eyecols input[type=color] { width:100%; height:26px; padding:0; border:1px solid var(--line, #444); background:none; }
   .status { font:12px var(--mono); color:var(--muted); margin-top:6px; white-space:pre-wrap; }
 </style>
 </head>
@@ -73,7 +76,7 @@
   <div class="main">
     <div class="toolbar">
       <div class="seg" id="modes" hidden>
-        <button data-m="view" class="on">{{sv.mode_view}}</button><button data-m="joints">{{sv.mode_joints}}</button><button data-m="mouth">{{sv.mode_mouth}}</button>
+        <button data-m="view" class="on">{{sv.mode_view}}</button><button data-m="joints">{{sv.mode_joints}}</button><button data-m="mouth">{{sv.mode_mouth}}</button><button data-m="eyes">{{sv.mode_eyes}}</button>
       </div>
       <div class="sep" id="modesSep" hidden></div>
       <div class="seg" id="views">
@@ -148,6 +151,32 @@
       <div class="small" id="brushInfo"></div>
       <div class="row" style="margin-top:6px"><button id="rejaw" class="primary">{{sv.rejaw}}</button></div>
       <div class="status" id="mStatus"></div>
+    </div>
+    <div class="box" id="eyesBox" hidden>
+      <div class="grp">{{sv.mode_eyes}}</div>
+      <div class="small">{{sv.eyes_hint}}</div>
+      <div class="pts" id="eyePts" style="margin-top:6px"></div>
+      <div class="row" style="margin-top:6px">
+        <label class="chk"><input type="checkbox" id="eyeMirror" checked> {{sv.eyes_mirror}}</label>
+        <button id="eyeSmaller" title="{{sv.eyes_cut_tip}}">{{sv.eyes_cut}} −</button><button id="eyeLarger" title="{{sv.eyes_cut_tip}}">{{sv.eyes_cut}} +</button>
+      </div>
+      <div style="margin-top:8px">{{sv.eye_presets}}</div>
+      <div class="row" id="eyePresets"></div>
+      <div class="eyecols" style="margin-top:6px">
+        <label>{{sv.eye_sclera}}<input type="color" id="eyeSclera"></label>
+        <label>{{sv.eye_iris}}<input type="color" id="eyeIris"></label>
+        <label>{{sv.eye_pupil}}<input type="color" id="eyePupil"></label>
+      </div>
+      <label class="small" style="display:block;margin-top:4px">{{sv.eye_pupil_shape}}
+        <select id="eyeSlit"><option value="round">{{sv.pupil_round}}</option><option value="slit">{{sv.pupil_slit}}</option><option value="hslit">{{sv.pupil_hslit}}</option></select></label>
+      <label class="small" style="display:block;margin-top:4px">{{sv.eye_iris_size}}<input type="range" id="eyeIrisSize" min="15" max="85" step="1"></label>
+      <label class="small" style="display:block">{{sv.eye_pupil_size}}<input type="range" id="eyePupilSize" min="0" max="0.95" step="0.01"></label>
+      <label class="small" style="display:block">{{sv.eye_pattern}}<input type="range" id="eyeFibres" min="0" max="1" step="0.05"></label>
+      <label class="small" style="display:block">{{sv.eye_veins}}<input type="range" id="eyeVeins" min="0" max="1" step="0.05"></label>
+      <label class="small" style="display:block">{{sv.eye_glow}}<input type="range" id="eyeGlow" min="0" max="1" step="0.05"></label>
+      <label class="small" style="display:block">{{sv.eye_size}}<input type="range" id="eyeSize" min="0.6" max="1.6" step="0.02"></label>
+      <div class="row" style="margin-top:6px"><button id="eyesGo" class="primary">{{sv.eyes_go}}</button><button id="eyesOff">{{sv.eyes_off}}</button></div>
+      <div class="status" id="eStatus"></div>
     </div>
     <div class="box">
       <div class="grp">{{sv.chains}}</div>
@@ -492,6 +521,15 @@ let down = null;
 renderer.domElement.addEventListener('pointerdown', (e) => { down = [e.clientX, e.clientY]; });
 renderer.domElement.addEventListener('pointerup', (e) => {
   if (!down || dragging || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
+  if (mode === 'eyes') {   // a mark picked, else an eye put where the skin was clicked
+    const k = nearestMark(e);
+    if (k) { pickMark(k); return; }
+    const rect = renderer.domElement.getBoundingClientRect(), rc = new THREE.Raycaster();
+    rc.setFromCamera(new THREE.Vector2((e.clientX - rect.left) / rect.width * 2 - 1, -(e.clientY - rect.top) / rect.height * 2 + 1), camera);
+    const hit = rc.intersectObjects(skinRests().map((r) => r.ray), false)[0];
+    if (hit) placeEye(hit.point.clone(), hit.face.normal.clone().transformDirection(hit.object.matrixWorld).normalize());
+    return;
+  }
   if (mode !== 'view') { if (mode === 'mouth' && brush) return; const k = nearestMark(e); if (k) pickMark(k); return; }
   const b = nearest(e);
   if (b) pick(b);
@@ -645,6 +683,10 @@ function initEdit() {
   });
   $('mouthPts').innerHTML = MOUTH.map((k) => `<button data-k="${k}"><span class="sw" style="background:${MCOL[k]}"></span>${MNAME[k]}</button>`).join('');
   $('mouthPts').querySelectorAll('button').forEach((el) => el.onclick = () => pickMark('m:' + el.dataset.k));
+  eyesInit();
+  let was = null;   // (the mode the page was left in: a request reopens it on the new model)
+  try { was = sessionStorage.getItem('sv_mode'); } catch (e) { /* none */ }
+  if (was && was !== 'view' && !$('modes').querySelector(`[data-m=${was}]`).disabled) setTimeout(() => setMode(was), 0);
 }
 
 // ---- the jaw's brush: painted skin with the jaw (+) or not (-) whatever the rule (an orc's lower tusks are its skin,
@@ -741,12 +783,16 @@ function strokeNote(mi, i) { if (stroke && !stroke.has(mi + ':' + i)) stroke.set
 function strokeEnd() { if (stroke && stroke.size) { undoStack.push({ t: 'paint', ch: stroke }); redoStack.length = 0; } stroke = null; histUi(); }
 function snapMarks() {   // every point of the markup as it is now
   return { pts: new Map([...mk.pts].map(([b, p]) => [b, p.clone()])), ends: new Map([...mk.ends].map(([b, p]) => [b, p.clone()])),
-           mouth: Object.fromEntries(Object.entries(mouth).map(([k, v]) => [k, v.clone()])) };
+           mouth: Object.fromEntries(Object.entries(mouth).map(([k, v]) => [k, v.clone()])),
+           eyes: { L: eyes.L && eyes.L.map((p) => p.clone()), R: eyes.R && eyes.R.map((p) => p.clone()) } };
 }
 function putMarks(sn) {
   sn.pts.forEach((p, b) => mk.pts.get(b).copy(p));
   sn.ends.forEach((p, b) => mk.ends.get(b).copy(p));
   Object.entries(sn.mouth).forEach(([k, v]) => mouth[k].copy(v));
+  if (sn.eyes) { ['L', 'R'].forEach((s) => { eyes[s] = sn.eyes[s] && sn.eyes[s].map((p) => p.clone()); }); eyeMarksUi();
+    if (mk.sel && mk.sel[0] === 'y' && !eyes[mk.sel[2]]) { mk.sel = null; gizmo.detach(); }
+    if (mode === 'eyes') { ['L', 'R'].forEach((s) => eyeMarks[s].forEach((x) => { x.visible = !!eyes[s]; })); eyeBuild(); } }
   if (mk.sel) { helper.position.copy(markPos(mk.sel)); helper.updateMatrixWorld(); }
   if (mode === 'mouth') mouthPaint();
 }
@@ -807,14 +853,20 @@ function setMode(m) {
   $('jointsBox').hidden = m !== 'joints';
   if (typeof histUi === 'function') histUi();
   $('mouthBox').hidden = m !== 'mouth';
+  $('eyesBox').hidden = m !== 'eyes';
+  if (m !== 'eyes' && eyeXray != null) { $('xray').checked = eyeXray; eyeXray = null; }   // (see-through as before the eyes)
+  try { sessionStorage.setItem('sv_mode', m); } catch (e) { /* (a private window: the mode not kept) */ }
   $('jawBox').hidden = !(m === 'view' && bones.some((b) => b.name === 'jaw') && DATA.close_deg);
   gizmo.setMode(m === 'view' ? 'rotate' : 'translate');
   gizmo.setSpace(m === 'view' ? 'local' : 'world');
   gizmo.showX = true;
   bones.forEach((b) => { const I = info.get(b); if (I.endSphere) { I.endSphere.visible = I.endSeg.visible = m === 'joints'; } });
   MOUTH.forEach((k) => { if (mouthMarks[k]) mouthMarks[k].visible = m === 'mouth'; });
-  overlay.visible = m !== 'mouth';
+  overlay.visible = m !== 'mouth' && m !== 'eyes';
   mouthLines.visible = m === 'mouth';
+  ['L', 'R'].forEach((s) => eyeMarks[s].forEach((x, i) => { x.visible = m === 'eyes' && !!eyes[s]; }));
+  meshes.forEach((x) => { if (isEyePart(x)) x.visible = m !== 'eyes'; });   // (the eyes made before: the live ones instead)
+  eyeBuild();
   if (m === 'mouth') {
     if (!preview) { buildPreview(); paintLoad(); paintInfo(); }
     meshes.forEach((x) => { x.visible = false; });
@@ -826,28 +878,50 @@ function setMode(m) {
     // (what is between the camera and the head cut away - a T-posed humanoid's arm stood in front of it)
     camera.near = Math.max(d - Math.max(mouth.hinge.distanceTo(mouth.upper) * 2.5, H * .06), H / 500); camera.updateProjectionMatrix();
     document.querySelectorAll('#views button').forEach((b) => b.classList.toggle('on', b.dataset.v === 'side'));
+  } else if (m === 'eyes') {
+    if (preview) preview.visible = false;
+    meshes.forEach((x) => { x.visible = !isEyePart(x); });
+    // the skin as it is (not see-through: the eyes are judged by it), its own colours
+    eyeXray = $('xray').checked;
+    if (eyeXray || $('paint').value !== 'model') { $('xray').checked = false; $('paint').value = 'model'; setPaint(); }
+    // the face from the front, a little to the side; with no eye yet the muzzle (the mouth's marks) or the head bone.
+    // Kept outside the head: the head bone sits far back on a wolf, the camera went into the fur
+    const hb = bones.find((b) => /head$/i.test(b.name)), e0 = eyes.L || eyes.R;
+    const front = DATA.mouth ? mouth.upper.clone().lerp(mouth.hinge, .5) : null;
+    const c = e0 ? e0.reduce((a, p) => a.add(p), new V3()).multiplyScalar(0.25) : front || (hb ? mk.pts.get(hb).clone() : center.clone());
+    const span = e0 ? Math.max(e0[0].distanceTo(e0[2]), H * .01) : H * .03;
+    const dir = new V3(e0 && c.x < mk.cx ? -0.35 : 0.35, 0.12, 1).normalize();
+    const out = castSkin(c.clone().addScaledVector(dir, H), dir.clone().negate(), H);   // the skin in front of the target
+    const skin = out ? H - out.distance : 0;
+    const d = Math.max(skin + Math.max(span * 8, H * .15), H * .2);
+    camera.position.copy(c).addScaledVector(dir, d); controls.target.copy(c); controls.update();
+    camera.near = Math.max(d - skin - Math.max(span * 3, H * .05), H / 500); camera.updateProjectionMatrix();
+    document.querySelectorAll('#views button').forEach((b) => b.classList.remove('on'));
   } else {
     meshes.forEach((x) => { x.visible = true; });
     if (preview) preview.visible = false;
     setPaint();
   }
 }
+let eyeXray = null;
 document.querySelectorAll('#modes button').forEach((b) => b.onclick = () => setMode(b.dataset.m));
 
 // a mark: 'j:<bone index>', 'e:<bone index>' (a tip's end), 'm:<point>'
 function markPos(k) {
   const [t, v] = [k[0], k.slice(2)];
-  return t === 'm' ? mouth[v] : t === 'e' ? mk.ends.get(bones[+v]) : mk.pts.get(bones[+v]);
+  return t === 'm' ? mouth[v] : t === 'y' ? eyes[v[0]][+v[1]] : t === 'e' ? mk.ends.get(bones[+v]) : mk.pts.get(bones[+v]);
 }
 function markName(k) {
   const [t, v] = [k[0], k.slice(2)];
   if (t === 'm') return MNAME[v];
+  if (t === 'y') return SIDE[v[0]] + ' · ' + ENAME[EYEPTS[+v[1]]];
   const n = bones[+v].name.replace(/^mixamorig\d*:?/i, '');
   return t === 'e' ? n + ' · {{js:sv.end}}' : n;
 }
 function nearestMark(ev, px = 14) {
   const r = renderer.domElement.getBoundingClientRect(), v = new V3();
   const keys = mode === 'mouth' ? MOUTH.map((k) => 'm:' + k)
+    : mode === 'eyes' ? ['L', 'R'].filter((s) => eyes[s]).flatMap((s) => [0, 1, 2, 3].map((i) => 'y:' + s + i))
     : [...[...mk.pts.keys()].map((b) => 'j:' + bones.indexOf(b)), ...[...mk.ends.keys()].map((b) => 'e:' + bones.indexOf(b))];
   let best = null, bd = px * px;
   keys.forEach((k) => {
@@ -864,8 +938,9 @@ function pickMark(k) {
   helper.updateMatrixWorld();
   gizmo.attach(helper);
   gizmo.size = .7;
-  $('centre').disabled = k[0] === 'm';
-  $('mirrorLeg').disabled = !(k[0] !== 'm' && partnerOf(bones[+k.slice(2)].name));
+  $('centre').disabled = k[0] === 'm' || k[0] === 'y';
+  $('mirrorLeg').disabled = !(k[0] !== 'm' && k[0] !== 'y' && partnerOf(bones[+k.slice(2)].name));
+  document.querySelectorAll('#eyePts button').forEach((b) => b.classList.toggle('sel', b.dataset.k === k));
   $('badge').dataset.mark = markName(k);
   document.querySelectorAll('#mouthPts button').forEach((b) => b.classList.toggle('sel', 'm:' + b.dataset.k === k));
   if (k[0] === 'j') { const b = bones[+k.slice(2)]; bones.forEach((x) => { const I = info.get(x); I.li && I.li.classList.toggle('sel', x === b); }); }
@@ -876,6 +951,12 @@ gizmo.addEventListener('objectChange', () => {
   if (k[0] === 'm') {
     p.set(k === 'm:corner' ? helper.position.x : mk.cx, helper.position.y, helper.position.z);   // (the corner: across too)
     mouthPaint();
+    return;
+  }
+  if (k[0] === 'y') {   // an eye's point; with «mirrored» the other eye's same point across the middle
+    p.copy(helper.position);
+    if ($('eyeMirror').checked) eyeMirror(k[2]);
+    eyeLater();
     return;
   }
   p.copy(helper.position);
@@ -1112,6 +1193,286 @@ function mouthPaint() {
 $('mouthClose').oninput = mouthPaint;
 $('xray').addEventListener('change', () => { if (mode === 'mouth') mouthPaint(); });
 
+// ---- the eyes: each eye's outline (four points on the skin: by the nose, the top, the outer corner, the bottom) cut
+// out and an eyeball put behind (blender_creature_eyes.py, its rule here for the live view: the eye's own frame - the
+// outline's plane, its gaze away from the head and level -, the faces inside the outline near its plane gone, the
+// ball's front just behind the lids' middle); the ball's picture drawn as eye_tex.py draws it
+const EYEPTS = ['inner', 'top', 'outer', 'bottom'];
+const ECOL = { inner: '#1fb5d8', top: '#e8cf2a', outer: '#e5452f', bottom: '#9b59d0' };
+const ENAME = { inner: '{{js:sv.e_inner}}', top: '{{js:sv.e_top}}', outer: '{{js:sv.e_outer}}', bottom: '{{js:sv.e_bottom}}' };
+const SIDE = { L: '{{js:sv.eye_l}}', R: '{{js:sv.eye_r}}' };
+const eyes = { L: null, R: null };   // side -> [V3 x4] (glTF world, rest)
+const eyeMarks = { L: [], R: [] };
+const eyeView = new THREE.Group();   // the balls and the sockets
+scene.add(eyeView);
+const isEyePart = (m) => /^Eye(Socket)?_/.test(m.name) || /^Eye(Socket)?_/.test((m.parent && m.parent.name) || '');
+const EYE_DEF = { sclera: [0.93, 0.91, 0.87], iris: [0.85, 0.62, 0.12], pupil_color: [0.015, 0.012, 0.012], iris_size: 40, pupil: 0.42,
+  slit: 'round', veins: 0.2, fibres: 1, glow: 0 };
+const EYE_PRESETS = {
+  natural: ['{{js:sv.ep_natural}}', { sclera: [0.93, 0.91, 0.87], iris: [0.42, 0.3, 0.16], pupil_color: [0.015, 0.012, 0.012], iris_size: 34, pupil: 0.42, slit: 'round', veins: 0.3, fibres: 1, glow: 0 }],
+  beast: ['{{js:sv.ep_beast}}', { sclera: [0.85, 0.7, 0.2], iris: [0.95, 0.72, 0.1], pupil_color: [0.01, 0.01, 0.01], iris_size: 70, pupil: 0.5, slit: 'slit', veins: 0, fibres: 1, glow: 0 }],
+  red_white: ['{{js:sv.ep_red_white}}', { sclera: [0.75, 0.04, 0.03], iris: [0.6, 0.02, 0.02], pupil_color: [1, 1, 1], iris_size: 34, pupil: 0.45, slit: 'round', veins: 0, fibres: 0.3, glow: 0.2 }],
+  all_red: ['{{js:sv.ep_all_red}}', { sclera: [0.85, 0.05, 0.03], iris: [0.85, 0.05, 0.03], pupil_color: [0.85, 0.05, 0.03], iris_size: 40, pupil: 0.4, slit: 'round', veins: 0, fibres: 0, glow: 0.6 }],
+  all_white: ['{{js:sv.ep_all_white}}', { sclera: [0.95, 0.95, 0.93], iris: [0.95, 0.95, 0.93], pupil_color: [0.95, 0.95, 0.93], iris_size: 40, pupil: 0.4, slit: 'round', veins: 0, fibres: 0, glow: 0 }],
+  black: ['{{js:sv.ep_black}}', { sclera: [0.03, 0.03, 0.035], iris: [0.03, 0.03, 0.035], pupil_color: [0.01, 0.01, 0.01], iris_size: 40, pupil: 0.4, slit: 'round', veins: 0, fibres: 0, glow: 0 }],
+  ghost: ['{{js:sv.ep_ghost}}', { sclera: [0.05, 0.08, 0.1], iris: [0.3, 0.9, 1.0], pupil_color: [0.85, 1, 1], iris_size: 45, pupil: 0.3, slit: 'round', veins: 0, fibres: 0.4, glow: 1 }],
+};
+let look = { ...EYE_DEF, ...((DATA.eyes && DATA.eyes.look) || {}) };
+const hex = (c) => '#' + c.map((v) => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, '0')).join('');
+const unhex = (h) => [1, 3, 5].map((i) => +(parseInt(h.slice(i, i + 2), 16) / 255).toFixed(3));
+function lookUi() {
+  $('eyeSclera').value = hex(look.sclera); $('eyeIris').value = hex(look.iris); $('eyePupil').value = hex(look.pupil_color);
+  $('eyeSlit').value = look.slit === true ? 'slit' : look.slit || 'round';
+  $('eyeIrisSize').value = look.iris_size; $('eyePupilSize').value = look.pupil; $('eyeFibres').value = look.fibres;
+  $('eyeVeins').value = look.veins; $('eyeGlow').value = look.glow;
+}
+function lookRead() {
+  look = { ...look, sclera: unhex($('eyeSclera').value), iris: unhex($('eyeIris').value), pupil_color: unhex($('eyePupil').value),
+    slit: $('eyeSlit').value, iris_size: +$('eyeIrisSize').value, pupil: +$('eyePupilSize').value, fibres: +$('eyeFibres').value,
+    veins: +$('eyeVeins').value, glow: +$('eyeGlow').value };
+  eyeTexture(); eyeBuild();
+}
+// eye_tex.py's picture: row = the angle from the gaze (row 0 the front pole), column = the azimuth (a quarter turn = up)
+const eyeCanvas = document.createElement('canvas');
+eyeCanvas.width = 512; eyeCanvas.height = 256;
+const eyeTex = new THREE.CanvasTexture(eyeCanvas);
+eyeTex.colorSpace = THREE.SRGBColorSpace; eyeTex.wrapS = THREE.RepeatWrapping;
+function eyeTexture() {
+  const w = eyeCanvas.width, h = eyeCanvas.height, E = look, img = new ImageData(w, h), D = img.data;
+  const iris = E.iris, dark = E.iris_dark || iris.map((v) => v * 0.35), scl = E.sclera, pc = E.pupil_color;
+  const ir = THREE.MathUtils.degToRad(E.iris_size), fibres = E.fibres, pupil = E.pupil, slit = E.slit === true ? 'slit' : E.slit;
+  let seed = 7;
+  const rnd = (a, b) => { seed = (seed * 16807) % 2147483647; return a + (b - a) * (seed / 2147483647); };
+  const veins = [];
+  for (let k = 0; k < Math.floor(24 * E.veins); k++) veins.push([rnd(0, 2 * Math.PI), rnd(0.02, 0.08), rnd(3, 9), rnd(0, 6), rnd(0.3, 0.8)]);
+  const sI = Math.sin(ir), k3 = 0.3 * fibres + (1 - fibres);
+  for (let j = 0; j < h; j++) {
+    const TH = (j + 0.5) / h * Math.PI, r = TH / ir, back = Math.min(1, Math.max(0, (TH - ir) / Math.max(Math.PI - ir, 1e-6)));
+    for (let i = 0; i < w; i++) {
+      const PH = (i + 0.5) / w * 2 * Math.PI;
+      let o = scl.map((v, c) => v * (1 - 0.18 * back) + (c === 0 ? 0.06 * back : 0));
+      for (const [ph0, amp, fr, sh, s] of veins) {
+        const path = ph0 + amp * Math.sin(TH * fr + sh);
+        const d = Math.abs(((PH - path + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI) * Math.sin(TH);
+        const m = Math.exp(-((d / 0.004) ** 2)) * Math.min(1, Math.max(0, (TH - ir * 1.3) / 0.6)) * s;
+        if (m > 1e-3) o = o.map((v, c) => v * (1 - m) + [0.62, 0.12, 0.12][c] * m);
+      }
+      const fib = 0.5 + 0.5 * Math.sin(PH * 90 + 3 * Math.sin(PH * 7)) * Math.sin(PH * 41 + r * 6);
+      let col = dark.map((dv, c) => (dv + (iris[c] - dv) * (0.55 + 0.45 * fib) * (1.1 - 0.5 * r)) * Math.min(1.25, Math.max(0.6, 1.25 - 0.35 * r)));
+      const limb = Math.min(1, Math.max(0, (r - 0.86) / 0.14));
+      col = col.map((v) => v * (1 - 0.75 * limb));
+      if (fibres < 1) col = col.map((v, c) => iris[c] * (1 - fibres) + v * fibres);
+      if (r < 1) o = col;
+      else if (r < 1.08) { const tt = (r - 1) / 0.08; o = o.map((v, c) => col[c] * (1 - tt) * k3 + v * (1 - k3 + k3 * tt)); }
+      const x = Math.sin(TH) * Math.cos(PH), y = Math.sin(TH) * Math.sin(PH);
+      const pup = TH < Math.PI / 2 && (slit === 'slit' ? (Math.abs(x) / (sI * pupil * 0.35)) ** 2 + (Math.abs(y) / (sI * 0.95)) ** 2 < 1
+        : slit === 'hslit' ? (Math.abs(y) / (sI * pupil * 0.35)) ** 2 + (Math.abs(x) / (sI * 0.95)) ** 2 < 1 : r < pupil);
+      if (pup) o = pc;
+      const q = (j * w + i) * 4;
+      D[q] = Math.min(255, o[0] * 255); D[q + 1] = Math.min(255, o[1] * 255); D[q + 2] = Math.min(255, o[2] * 255); D[q + 3] = 255;
+    }
+  }
+  eyeCanvas.getContext('2d').putImageData(img, 0, 0);
+  eyeTex.needsUpdate = true;
+}
+const eyeMat = new THREE.MeshStandardMaterial({ map: eyeTex, roughness: 0.15, metalness: 0 });
+const sockMat = new THREE.MeshStandardMaterial({ color: '#0d0505', roughness: 0.9, side: THREE.BackSide });
+// the skin the eyes are cut from: each skinned mesh's own triangles, some left out while the eyes mode shows them
+const skinIdx = new Map();   // mesh -> {orig index array, centres Float32Array}
+function skinOf(r) {
+  if (skinIdx.has(r.mesh)) return skinIdx.get(r.mesh);
+  const g = r.mesh.geometry, n = r.pos.length / 3;
+  const idx = g.index ? g.index.array.slice() : Uint32Array.from({ length: n }, (_, i) => i);
+  if (!g.index) g.setIndex(new THREE.BufferAttribute(idx.slice(), 1));
+  // (the rays' copy and the mouth's preview shared this index: they keep their own, whole)
+  if (r.geo.index === g.index || !r.geo.index) r.geo.setIndex(new THREE.BufferAttribute(idx.slice(), 1));
+  const cen = new Float32Array(idx.length);
+  for (let t = 0; t < idx.length; t += 3) for (let c = 0; c < 3; c++)
+    cen[t + c] = (r.pos[idx[t] * 3 + c] + r.pos[idx[t + 1] * 3 + c] + r.pos[idx[t + 2] * 3 + c]) / 3;
+  const s = { idx, cen };
+  skinIdx.set(r.mesh, s);
+  return s;
+}
+const skinRests = () => rests.filter((r) => !isEyePart(r.mesh));
+function castSkin(p, dir, far) {   // the skin (not the old eyes) along a ray: the hit, or null
+  const rc = new THREE.Raycaster(p, dir.clone().normalize(), 0, far);
+  return rc.intersectObjects(skinRests().map((r) => r.ray), false)[0] || null;
+}
+function catmull(P, n = 12) {
+  const out = [], k = P.length;
+  for (let i = 0; i < k; i++) {
+    const p0 = P[(i - 1 + k) % k], p1 = P[i], p2 = P[(i + 1) % k], p3 = P[(i + 2) % k];
+    for (let s = 0; s < n; s++) {
+      const t = s / n, t2 = t * t, t3 = t2 * t;
+      out.push(new V3().addScaledVector(p1, 2).addScaledVector(p2.clone().sub(p0), t)
+        .addScaledVector(p0.clone().multiplyScalar(2).sub(p1.clone().multiplyScalar(5)).add(p2.clone().multiplyScalar(4)).sub(p3), t2)
+        .addScaledVector(p1.clone().multiplyScalar(3).sub(p0).sub(p2.clone().multiplyScalar(3)).add(p3), t3).multiplyScalar(0.5));
+    }
+  }
+  return out;
+}
+function inPoly(poly, x, y) {
+  let c = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi + 1e-12) + xi) c = !c;
+  }
+  return c;
+}
+function eyeSolve(P) {   // blender_creature_eyes.py's frame, cut and ball for one eye's four points
+  const c0 = P.reduce((a, p) => a.add(p), new V3()).multiplyScalar(0.25);
+  const u = P[2].clone().sub(P[0]), w = P[1].clone().sub(P[3]);
+  const span = Math.max(u.length(), w.length());
+  // the mesh most of the skin round the eye is on (Blender's «face»)
+  let face = null, best = -1, mid = new V3(), cnt = 0;
+  skinRests().forEach((r) => {
+    let k = 0;
+    for (let i = 0; i < r.pos.length; i += 3) {
+      const dx = r.pos[i] - c0.x, dy = r.pos[i + 1] - c0.y, dz = r.pos[i + 2] - c0.z, d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 < (1.5 * span) ** 2) k++;
+      if (d2 < (3 * span) ** 2) { mid.x += r.pos[i]; mid.y += r.pos[i + 1]; mid.z += r.pos[i + 2]; cnt++; }
+    }
+    if (k > best) { best = k; face = r; }
+  });
+  let n = u.clone().cross(w);
+  if (n.lengthSq() < 1e-16) n.set(0, 0, 1);
+  n.normalize();
+  if (cnt) { mid.multiplyScalar(1 / cnt); if (n.dot(c0.clone().sub(mid)) < 0) n.negate(); }
+  const flat = new V3(n.x, 0, n.z);
+  if (flat.length() > 0.2) n = flat.normalize();
+  let ex = u.clone().addScaledVector(n, -u.dot(n)).normalize(), ey = n.clone().cross(ex);
+  if (ey.dot(w) < 0) { ex.negate(); ey = n.clone().cross(ex); }
+  const q2 = (p) => [p.clone().sub(c0).dot(ex), p.clone().sub(c0).dot(ey)], dn = (p) => p.clone().sub(c0).dot(n);
+  const curve = catmull(P, 12), poly = curve.map(q2);
+  const xs = poly.map((p) => p[0]), ys = poly.map((p) => p[1]);
+  const width = Math.max(...xs) - Math.min(...xs), height = Math.max(...ys) - Math.min(...ys);
+  const centre0 = c0.clone().addScaledVector(ex, xs.reduce((a, b) => a + b) / xs.length).addScaledVector(ey, ys.reduce((a, b) => a + b) / ys.length);
+  const far = 3 * Math.max(width, height);
+  const hit = castSkin(centre0.clone().addScaledVector(n, far), n.clone().negate(), 2 * far);
+  const dFront = hit ? dn(hit.point) : 0;
+  const rim = [];
+  curve.forEach((p) => { const h = castSkin(p.clone().addScaledVector(n, far), n.clone().negate(), 2 * far);
+    if (h && Math.abs(dn(h.point) - dFront) < Math.max(width, height)) rim.push(h.point); });
+  const dLids = rim.length ? rim.reduce((a, p) => a + dn(p), 0) / rim.length : dFront;
+  const r = 0.42 * Math.max(width, height) * +$('eyeSize').value;
+  const centre = centre0.clone().addScaledVector(n, Math.max(dFront, dLids) - 0.02 * width - r);
+  return { face, c0, ex, ey, n, poly, q2, dn, dFront, width, height, centre, r, rim, ok: rim.length >= curve.length * 0.6 };
+}
+function eyeBuild() {   // the cut skin, the balls and their sockets as the eyes are marked now
+  eyeView.clear();
+  skinRests().forEach((r) => { const s = skinOf(r); r.mesh.geometry.index.array.set(s.idx); r.mesh.geometry.setDrawRange(0, s.idx.length); r.mesh.geometry.index.needsUpdate = true; });
+  if (mode !== 'eyes') return;
+  const cut = new Map();   // mesh -> Set of triangle starts to leave out
+  let bad = 0;
+  for (const side of ['L', 'R']) {
+    if (!eyes[side]) continue;
+    const S = eyeSolve(eyes[side]);
+    if (!S.ok || !S.face) { bad++; continue; }
+    const s = skinOf(S.face), C = s.cen, lim = (2 * Math.max(S.width, S.height)) ** 2;
+    if (!cut.has(S.face)) cut.set(S.face, new Set());
+    const out = cut.get(S.face);
+    for (let t = 0; t < C.length; t += 3) {
+      const dx = C[t] - S.centre.x, dy = C[t + 1] - S.centre.y, dz = C[t + 2] - S.centre.z;
+      if (dx * dx + dy * dy + dz * dz > lim) continue;
+      const p = new V3(C[t], C[t + 1], C[t + 2]), d = S.dn(p);
+      if (d < S.dFront - 0.6 * S.width || d > S.dFront + S.width) continue;
+      const [x, y] = S.q2(p);
+      if (inPoly(S.poly, x, y)) out.add(t);
+    }
+    const g = new THREE.SphereGeometry(S.r, 48, 24), uv = g.attributes.uv, pos = g.attributes.position;
+    for (let i = 0; i < uv.count; i++) {   // (three's sphere: its poles on Y as Blender's ball; eye_tex.py's mapping)
+      uv.setXY(i, 0.5 - uv.getX(i), 1 - uv.getY(i));
+      const v = new V3().fromBufferAttribute(pos, i), th = Math.acos(Math.min(1, Math.max(-1, -v.y / S.r)));
+      if (th < THREE.MathUtils.degToRad(38)) pos.setY(i, v.y - S.r * 0.08 * Math.cos(th / THREE.MathUtils.degToRad(38) * Math.PI / 2) ** 2);
+    }
+    g.computeVertexNormals();
+    const ball = new THREE.Mesh(g, eyeMat);
+    ball.matrix.makeBasis(S.ex, S.n.clone().negate(), S.ey).setPosition(S.centre);
+    ball.matrixAutoUpdate = false;
+    eyeView.add(ball);
+    const sock = new THREE.Mesh(new THREE.SphereGeometry(S.r * 1.12, 24, 16), sockMat);
+    sock.position.copy(S.centre);
+    eyeView.add(sock);
+  }
+  cut.forEach((out, r) => {
+    const s = skinOf(r), keep = [];
+    for (let t = 0; t < s.idx.length; t += 3) if (!out.has(t)) keep.push(s.idx[t], s.idx[t + 1], s.idx[t + 2]);
+    r.mesh.geometry.index.array.set(keep); r.mesh.geometry.setDrawRange(0, keep.length); r.mesh.geometry.index.needsUpdate = true;
+  });
+  eyeMat.emissive.set(look.glow > 0 ? '#ffffff' : '#000000'); eyeMat.emissiveMap = look.glow > 0 ? eyeTex : null;
+  eyeMat.emissiveIntensity = look.glow * 1.2; eyeMat.needsUpdate = true;
+  $('eStatus').textContent = !eyes.L && !eyes.R ? '{{js:sv.eyes_click}}' : bad ? '{{js:sv.eyes_off_skin}}' : '';
+}
+let eyeQueued = false;
+const eyeLater = () => { if (!eyeQueued) { eyeQueued = true; requestAnimationFrame(() => { eyeQueued = false; eyeBuild(); }); } };
+const mirrorPt = (p) => new V3(2 * mk.cx - p.x, p.y, p.z);
+function eyeMirror(from) {   // the other eye: this one's mirror across the middle plane
+  const to = from === 'L' ? 'R' : 'L';
+  if (!eyes[from]) return;
+  if (!eyes[to]) eyes[to] = eyes[from].map((p) => mirrorPt(p)); else eyes[to].forEach((p, i) => p.copy(mirrorPt(eyes[from][i])));
+}
+function placeEye(p, nrm) {   // a click on the skin: an eye's outline round it (the side by where it is), the other mirrored
+  const side = p.x >= mk.cx ? 'L' : 'R', old = eyes[side] || eyes[side === 'L' ? 'R' : 'L'];
+  const a = old ? old[0].distanceTo(old[2]) / 2 : H * 0.014, b = old ? old[1].distanceTo(old[3]) / 2 : a * 0.55;
+  let ex = new V3(0, 1, 0).cross(nrm);
+  if (ex.lengthSq() < 1e-6) ex.set(1, 0, 0);
+  ex.normalize();
+  if ((p.x - mk.cx) * ex.x < 0) ex.negate();   // (outward: away from the middle)
+  const ey = nrm.clone().cross(ex).normalize();
+  if (ey.y < 0) ey.negate();
+  const pts = [p.clone().addScaledVector(ex, -a), p.clone().addScaledVector(ey, b), p.clone().addScaledVector(ex, a), p.clone().addScaledVector(ey, -b)]
+    .map((q) => { const h = castSkin(q.clone().addScaledVector(nrm, a * 2), nrm.clone().negate(), a * 4); return h ? h.point.clone() : q; });
+  const before = snapMarks();
+  if (eyes[side]) eyes[side].forEach((q, i) => q.copy(pts[i])); else eyes[side] = pts;
+  if ($('eyeMirror').checked) eyeMirror(side);
+  marksDone(before);
+  eyeMarksUi();
+  pickMark('y:' + side + '1');
+  eyeLater();
+}
+function eyeMarksUi() {
+  for (const side of ['L', 'R']) {
+    while (eyeMarks[side].length < 4) {
+      const k = EYEPTS[eyeMarks[side].length];
+      const s = new THREE.Mesh(sphereGeo, new THREE.MeshBasicMaterial({ color: ECOL[k], depthTest: false, transparent: true }));
+      s.renderOrder = 12; s.visible = false; scene.add(s);
+      eyeMarks[side].push(s);
+    }
+  }
+  $('eyePts').innerHTML = ['L', 'R'].filter((s) => eyes[s]).map((s) => EYEPTS.map((k, i) =>
+    `<button data-k="y:${s}${i}"><span class="sw" style="background:${ECOL[k]}"></span>${SIDE[s]} · ${ENAME[k]}</button>`).join('')).join('');
+  $('eyePts').querySelectorAll('button').forEach((el) => el.onclick = () => pickMark(el.dataset.k));
+}
+function eyeScale(k) {
+  const before = snapMarks();
+  for (const s of ['L', 'R']) if (eyes[s]) {
+    const c = eyes[s].reduce((a, p) => a.add(p), new V3()).multiplyScalar(0.25);
+    eyes[s].forEach((p) => p.sub(c).multiplyScalar(k).add(c));
+  }
+  marksDone(before);
+  if (mk.sel) { helper.position.copy(markPos(mk.sel)); helper.updateMatrixWorld(); }
+  eyeLater();
+}
+$('eyeSmaller').onclick = () => eyeScale(0.9);
+$('eyeLarger').onclick = () => eyeScale(1.1);
+['eyeSclera', 'eyeIris', 'eyePupil', 'eyeSlit', 'eyeIrisSize', 'eyePupilSize', 'eyeFibres', 'eyeVeins', 'eyeGlow'].forEach((id) => { $(id).oninput = lookRead; });
+$('eyeSize').oninput = eyeLater;
+$('eyePresets').innerHTML = Object.entries(EYE_PRESETS).map(([k, [nm]]) => `<button data-p="${k}">${nm}</button>`).join('');
+$('eyePresets').querySelectorAll('button').forEach((el) => el.onclick = () => { look = { ...EYE_DEF, ...EYE_PRESETS[el.dataset.p][1] }; lookUi(); eyeTexture(); eyeBuild(); });
+function eyesInit() {
+  if (DATA.eyes) for (const s of ['L', 'R']) if (DATA.eyes[s]) eyes[s] = DATA.eyes[s].map((p) => new V3(...p));
+  $('eyeMirror').checked = !DATA.eyes || DATA.eyes.mirror !== false;
+  $('eyeSize').value = (DATA.eyes && DATA.eyes.size) || 1;
+  lookUi(); eyeTexture(); eyeMarksUi();
+}
+const eyesReq = () => ({ ...Object.fromEntries(['L', 'R'].filter((s) => eyes[s]).map((s) => [s, eyes[s].map(arr)])),
+  look, size: +$('eyeSize').value, mirror: $('eyeMirror').checked });
+$('eyesGo').onclick = () => {
+  if (!eyes.L && !eyes.R) { $('eStatus').textContent = '{{js:sv.eyes_click}}'; return; }
+  send({ action: 'eyes', eyes: eyesReq() }, $('eStatus'));
+};
+$('eyesOff').onclick = () => send({ action: 'eyes_off' }, $('eStatus'));
+
 // ---- sent to SF3D: the skeleton and the weights made again, or only the jaw (the answer: the log under the buttons
 // above, and this markup opened again on the new model)
 function send(req, out) {
@@ -1164,6 +1525,9 @@ $('keepPose').onclick = () => {
 gizmo.addEventListener('objectChange', () => { if (EDIT && mode === 'view') $('keepPose').hidden = false; });
 // (test hooks: work/wear_test/ui/test_creature_markup.mjs moves the marks the way the arrows would)
 window.sv = { mouth, mk, bones, setMode, pickMark, mouthPaint, castRest, H: () => H,
+  eyes, eyeSolve, eyesReq, placeEye: (p, n) => placeEye(new THREE.Vector3(...p), new THREE.Vector3(...n).normalize()),
+  eyeCut: () => { let n = 0; skinRests().forEach((r) => { const s = skinIdx.get(r.mesh); if (s) n += (s.idx.length - r.mesh.geometry.drawRange.count) / 3; }); return n; },
+  preset: (k) => $('eyePresets').querySelector(`[data-p=${k}]`).click(),
   brushAt: (p, b) => { brush = b; strokeStart(); paintAround(new THREE.Vector3(...p)); strokeEnd(); brush = ''; },
   camera: () => ({ enabled: controls.enabled, left: controls.mouseButtons.LEFT, right: controls.mouseButtons.RIGHT }),
   near: (p) => { const v = new THREE.Vector3(...p); let best = Infinity, at = null; rests.forEach((r) => { for (let i = 0; i < r.pos.length / 3; i++) {
@@ -1226,6 +1590,9 @@ function frame() {
   });
   const ms = mouth.hinge && mouth.upper ? Math.min(Math.max(mouth.hinge.distanceTo(mouth.upper) * .07, H * .002), H * .008) : H * .008;
   MOUTH.forEach((k) => { const s = mouthMarks[k]; if (s && mouth[k]) { s.position.copy(mouth[k]); s.scale.setScalar(ms); } });
+  if (mode === 'eyes') ['L', 'R'].forEach((s) => { if (!eyes[s]) return;
+    const es = Math.min(Math.max(eyes[s][0].distanceTo(eyes[s][2]) * .06, H * .0015), H * .006);
+    eyeMarks[s].forEach((x, i) => { x.position.copy(eyes[s][i]); x.scale.setScalar(es); x.visible = true; }); });
   $('badge').textContent = mode !== 'view' ? (mk.sel ? markName(mk.sel) : '') : selected ? selected.name.replace(/^mixamorig\d*:?/i, '') : (DATA.badge || '');
   $('badge').hidden = !$('badge').textContent;
   renderer.render(scene, camera);

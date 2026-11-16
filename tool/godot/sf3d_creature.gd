@@ -2,7 +2,7 @@ extends Node3D
 ## The creature's viewer (creatures.godot_view): the model with its clips as the game shows them - a clip list, the
 ## speed, looping, a floor grid at the paws with shadows, an orbiting camera (left button turns, right one pans, the
 ## wheel zooms). For checks: godot --path <proj> -- --anim=<clip> --at=<seconds> --yaw=<deg> --pitch=<rad>
-## --zoom=<k> --shot=<png> (the clip played from its start for «at» seconds, the frame saved, quit).
+## --zoom=<k> --target=<x,y,z> --shot=<png> (the clip played from its start for «at» seconds, the frame saved, quit).
 
 @export var creature: PackedScene
 
@@ -41,6 +41,9 @@ func _ready() -> void:
 	_yaw = deg_to_rad(float(_args.get("yaw", str(rad_to_deg(_yaw)))))
 	_pitch = float(_args.get("pitch", str(_pitch)))
 	_dist /= float(_args.get("zoom", "1"))
+	if _args.has("target"):   # (a check's close look: --target=x,y,z, the world point the camera looks at)
+		var xyz := String(_args["target"]).split(",")
+		_target = Vector3(float(xyz[0]), float(xyz[1]), float(xyz[2]))
 	_place_camera()
 	var want := String(_args.get("anim", "walk"))
 	for i in _list.item_count:   # a clip asked for (its name's end), else the walk, else the first

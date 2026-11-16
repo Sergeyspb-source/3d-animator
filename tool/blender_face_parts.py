@@ -29,6 +29,9 @@ import bpy
 import numpy as np
 from mathutils import Matrix, Vector
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # Blender does not put the script's folder on the path
+import eye_tex as ET  # noqa: E402
+
 job = json.loads(Path(sys.argv[sys.argv.index("--") + 1]).read_text(encoding="utf-8"))
 OUT = Path(job["out_dir"]); OUT.mkdir(parents=True, exist_ok=True)
 rng = random.Random(job.get("seed", 1))
@@ -67,55 +70,8 @@ def material(name, img=None, color=(1, 1, 1), rough=0.5, spec=0.5, sss=0.0):
 
 # ================================================================== eye
 def eye_texture(w=1024, h=512):
-    """Equirect map of a sphere whose pole faces forward: row = angle from the gaze axis, column = azimuth."""
-    iris = np.array(E.get("iris", [0.32, 0.45, 0.22])); dark = np.array(E.get("iris_dark", (iris * 0.35).tolist()))
-    sclera = np.array(E.get("sclera", [0.93, 0.91, 0.87])); veins = float(E.get("veins", 0.35))
-    pupil = float(E.get("pupil", 0.42)); slit = bool(E.get("slit", False))
-    anime = E.get("style") == "anime"
-    theta = (np.arange(h)[:, None] + 0.5) / h * math.pi          # 0 = front pole
-    phi = (np.arange(w)[None, :] + 0.5) / w * 2 * math.pi
-    TH, PH = np.broadcast_arrays(theta, phi)
-    iris_r = math.radians(float(E.get("iris_size", 50 if anime else 32)))   # iris disc seen from the centre
-    r = TH / iris_r                                               # 0 centre .. 1 limbus
-    out = np.empty((h, w, 3))
-    # sclera: slightly pinker toward the back, thin red veins growing from the back
-    back = np.clip((TH - iris_r) / (math.pi - iris_r), 0, 1)
-    out[:] = sclera[None, None] * (1 - 0.18 * back[..., None]) + np.array([0.12, 0.0, 0.0]) * back[..., None] * 0.5
-    vr = np.random.default_rng(job.get("seed", 1))
-    for _ in range(int(24 * veins * (not anime))):
-        ph0, amp, freq = vr.uniform(0, 2 * math.pi), vr.uniform(0.02, 0.08), vr.uniform(3, 9)
-        path = ph0 + amp * np.sin(TH * freq + vr.uniform(0, 6))
-        d = np.abs(((PH - path + math.pi) % (2 * math.pi)) - math.pi) * np.sin(TH)
-        m = np.exp(-(d / 0.004) ** 2) * np.clip((TH - iris_r * 1.3) / 0.6, 0, 1) * vr.uniform(0.3, 0.8)
-        out = out * (1 - m[..., None]) + np.array([0.62, 0.12, 0.12]) * m[..., None]
-    # iris: radial fibres, darker rim (limbal ring), lighter collarette around the pupil
-    fib = 0.5 + 0.5 * np.sin(PH * 90 + 3 * np.sin(PH * 7)) * np.sin(PH * 41 + r * 6)
-    col = dark[None, None] + (iris - dark)[None, None] * (0.55 + 0.45 * fib[..., None]) * (1.1 - 0.5 * r[..., None])
-    col = col * np.clip(1.25 - 0.35 * r, 0.6, 1.25)[..., None]
-    if anime:   # flat colour, dark at the top (the lid's shadow), lighter at the bottom, no fibres
-        up = np.sin(TH) * np.sin(PH)                                  # +1 at the top of the eye (UV v = +Z)
-        flat = dark[None, None] + (iris - dark)[None, None] * (0.75 + 0.25 * fib[..., None] * 0.3)
-        col = flat * np.clip(1.0 - 0.9 * np.clip(up / math.sin(iris_r), 0, 1) ** 1.3 + 0.25 * np.clip(-up / math.sin(iris_r), 0, 1), 0.15, 1.3)[..., None]
-    limbus = np.clip((r - 0.86) / 0.14, 0, 1)
-    col = col * (1 - 0.75 * limbus[..., None])
-    inside = r < 1.0
-    out[inside] = col[inside]
-    edge = (r >= 1.0) & (r < 1.08)                                 # soft blend into the sclera
-    t = ((r - 1.0) / 0.08)[edge][:, None]
-    out[edge] = col[edge] * (1 - t) * 0.3 + out[edge] * (0.7 + 0.3 * t)
-    # pupil (round, or a vertical slit for creatures)
-    if slit:
-        x = np.sin(TH) * np.cos(PH); y = np.sin(TH) * np.sin(PH)
-        pup = (np.abs(x) / (math.sin(iris_r) * pupil * 0.35)) ** 2 + (np.abs(y) / (math.sin(iris_r) * 0.95)) ** 2 < 1
-    else:
-        pup = r < pupil
-    out[pup] = np.array([0.015, 0.012, 0.012])
-    if anime:   # two painted highlights, upper side (they turn with the eye: fine at game distance)
-        x = np.sin(TH) * np.cos(PH); y = np.sin(TH) * np.sin(PH); R = math.sin(iris_r)
-        for cx_, cy_, rr in ((-0.38, 0.38, 0.24), (0.32, -0.32, 0.11)):
-            m = np.clip(1.4 - np.hypot(x / R - cx_, y / R - cy_) / rr, 0, 1) ** 0.6
-            out = out * (1 - m[..., None]) + m[..., None]
-    return np.clip(out, 0, 1)
+    """Equirect map of a sphere whose pole faces forward (eye_tex.py: the creatures' eyes use it too)."""
+    return ET.eye_texture(E, job.get("seed", 1), w, h)
 
 
 def make_eye(name, radius, x):
