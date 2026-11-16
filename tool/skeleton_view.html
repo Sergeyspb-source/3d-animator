@@ -93,6 +93,8 @@
       <div class="sep"></div>
       <button id="reset" title="{{sv.reset_tip}}">{{sv.reset}}</button>
       <button id="keepPose" class="primary" hidden title="{{sv.keep_pose_tip}}">{{sv.keep_pose}}</button>
+      <button id="undo" hidden title="Ctrl+Z">↶ {{sv.undo}}</button>
+      <button id="redo" hidden title="Ctrl+Y, Ctrl+Shift+Z">↷ {{sv.redo}}</button>
       <span class="status" id="kStatus" style="margin:0"></span>
     </div>
     <div class="stage" id="stage">
@@ -689,12 +691,18 @@ function setBrush(b) {
   brush = brush === b ? '' : b;
   $('brushPlus').classList.toggle('on', brush === '+');
   $('brushMinus').classList.toggle('on', brush === '-');
-  controls.enabled = !brush;
+  // (the camera stays free: the left button paints, the right one turns the view, the middle one pans, the wheel zooms)
+  controls.mouseButtons = brush ? { LEFT: null, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE }
+    : { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
   if (brush) gizmo.detach();
 }
 $('brushPlus').onclick = () => setBrush('+');
 $('brushMinus').onclick = () => setBrush('-');
-$('brushClear').onclick = () => { paint.forEach((p) => { p.plus.clear(); p.minus.clear(); }); paintInfo(); mouthPaint(); };
+$('brushClear').onclick = () => {
+  strokeStart();
+  paint.forEach((p, mi) => { [...p.plus, ...p.minus].forEach((i) => strokeNote(mi, i)); p.plus.clear(); p.minus.clear(); });
+  strokeEnd(); paintInfo(); mouthPaint();
+};
 let painting = false, paintQueued = false;
 function paintAt(ev) {
   const rect = renderer.domElement.getBoundingClientRect();
@@ -711,14 +719,69 @@ function paintAround(p) {
     for (let i = 0; i < P.length / 3; i++) {
       const dx = P[i * 3] - p.x, dy = P[i * 3 + 1] - p.y, dz = P[i * 3 + 2] - p.z;
       if (dx * dx + dy * dy + dz * dz > r2) continue;
+      strokeNote(mi, i);
       if (brush === '+') { S.plus.add(i); S.minus.delete(i); } else { S.minus.add(i); S.plus.delete(i); }
     }
   });
   if (!paintQueued) { paintQueued = true; requestAnimationFrame(() => { paintQueued = false; mouthPaint(); paintInfo(); }); }
 }
-renderer.domElement.addEventListener('pointerdown', (e) => { if (mode === 'mouth' && brush && e.button === 0) { painting = true; paintAt(e); } });
+renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
+renderer.domElement.addEventListener('pointerdown', (e) => { if (mode === 'mouth' && brush && e.button === 0) { painting = true; strokeStart(); paintAt(e); } });
 renderer.domElement.addEventListener('pointermove', (e) => { if (painting) paintAt(e); });
-addEventListener('pointerup', () => { painting = false; });
+addEventListener('pointerup', () => { if (painting) strokeEnd(); painting = false; });
+
+// ---- undo / redo in the edit modes: a brush's stroke (each vertex's state before it), a mark or joint moved, «Clear»,
+// «Even», «Mirror» (the markup's points before them)
+const undoStack = [], redoStack = [];
+let stroke = null;
+const pstate = (mi, i) => (paint[mi].plus.has(i) ? '+' : paint[mi].minus.has(i) ? '-' : '');
+function pset(mi, i, v) { paint[mi].plus.delete(i); paint[mi].minus.delete(i); if (v === '+') paint[mi].plus.add(i); else if (v === '-') paint[mi].minus.add(i); }
+function strokeStart() { stroke = new Map(); }
+function strokeNote(mi, i) { if (stroke && !stroke.has(mi + ':' + i)) stroke.set(mi + ':' + i, pstate(mi, i)); }
+function strokeEnd() { if (stroke && stroke.size) { undoStack.push({ t: 'paint', ch: stroke }); redoStack.length = 0; } stroke = null; histUi(); }
+function snapMarks() {   // every point of the markup as it is now
+  return { pts: new Map([...mk.pts].map(([b, p]) => [b, p.clone()])), ends: new Map([...mk.ends].map(([b, p]) => [b, p.clone()])),
+           mouth: Object.fromEntries(Object.entries(mouth).map(([k, v]) => [k, v.clone()])) };
+}
+function putMarks(sn) {
+  sn.pts.forEach((p, b) => mk.pts.get(b).copy(p));
+  sn.ends.forEach((p, b) => mk.ends.get(b).copy(p));
+  Object.entries(sn.mouth).forEach(([k, v]) => mouth[k].copy(v));
+  if (mk.sel) { helper.position.copy(markPos(mk.sel)); helper.updateMatrixWorld(); }
+  if (mode === 'mouth') mouthPaint();
+}
+function marksDone(before) { undoStack.push({ t: 'marks', before, after: snapMarks() }); redoStack.length = 0; histUi(); }
+function histUi() {
+  const on = EDIT && mode !== 'view';
+  $('undo').hidden = $('redo').hidden = !on;
+  $('undo').disabled = !undoStack.length; $('redo').disabled = !redoStack.length;
+}
+function undoRedo(from, to) {
+  const e = from.pop();
+  if (!e) return;
+  if (e.t === 'paint') {
+    const back = new Map();
+    e.ch.forEach((v, k) => { const [mi, i] = k.split(':').map(Number); back.set(k, pstate(mi, i)); pset(mi, i, v); });
+    to.push({ t: 'paint', ch: back });
+    mouthPaint(); paintInfo();
+  } else {
+    putMarks(e.before);
+    to.push({ t: 'marks', before: e.after, after: e.before });
+  }
+  histUi();
+}
+$('undo').onclick = () => undoRedo(undoStack, redoStack);
+$('redo').onclick = () => undoRedo(redoStack, undoStack);
+addEventListener('keydown', (e) => {
+  if (!EDIT || mode === 'view' || !(e.ctrlKey || e.metaKey)) return;
+  const k = e.key.toLowerCase();
+  if (k === 'z' && !e.shiftKey) { e.preventDefault(); undoRedo(undoStack, redoStack); }
+  else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); undoRedo(redoStack, undoStack); }
+});
+// a mark or joint dragged: its markup before the drag
+let dragBefore = null;
+gizmo.addEventListener('mouseDown', () => { if (EDIT && mode !== 'view') dragBefore = snapMarks(); });
+gizmo.addEventListener('mouseUp', () => { if (dragBefore) { marksDone(dragBefore); dragBefore = null; } });
 
 function castRest(p, dir, far = H) {   // the distance along dir to the skin, or null
   const rc = new THREE.Raycaster(p, dir.clone().normalize(), 0, far);
@@ -742,6 +805,7 @@ function setMode(m) {
   if (typeof brush !== 'undefined' && brush) setBrush(brush);
   resetPose();
   $('jointsBox').hidden = m !== 'joints';
+  if (typeof histUi === 'function') histUi();
   $('mouthBox').hidden = m !== 'mouth';
   $('jawBox').hidden = !(m === 'view' && bones.some((b) => b.name === 'jaw') && DATA.close_deg);
   gizmo.setMode(m === 'view' ? 'rotate' : 'translate');
@@ -830,8 +894,10 @@ $('centre').onclick = () => {   // the joint into the middle of the body round i
     const a = castRest(p, ax), b = castRest(p, ax.clone().negate());
     if (a != null && b != null && a + b < H * .6) out.addScaledVector(ax, (a - b) / 2);
   }
+  const before = snapMarks();
   helper.position.copy(out); helper.updateMatrixWorld();
   gizmo.dispatchEvent({ type: 'objectChange' });
+  marksDone(before);
 };
 // the pairs' bones as long as each other (their mean): each joint moved along its bone, what is below it with it (the
 // leg's way kept); the left and right chains walked together from their roots (a bone with a pair, its parent without)
@@ -840,7 +906,8 @@ const legChain = (r) => { const out = [r]; let x = r; for (;;) { x = info.get(x)
 // (by the paw's own joint, the leg's last: the end past it is only guessed)
 const tipOff = (ch) => mk.pts.get(ch[ch.length - 1]).y - mk.floorY;
 const mm = (v) => (v >= 0 ? '+' : '') + Math.round(v * 1000) + ' {{js:sv.mm}}';
-$('evenPairs').onclick = () => {
+$('evenPairs').onclick = () => { const before = snapMarks(); evenPairs(); marksDone(before); };
+function evenPairs() {
   const below = (b, out = []) => { info.get(b).kids.forEach((k) => { if (mk.pts.has(k)) { out.push(k); below(k, out); } }); return out; };
   const next = (b) => info.get(b).kids.find((k) => mk.pts.has(k));
   let n = 0;
@@ -873,11 +940,12 @@ $('evenPairs').onclick = () => {
   if (mk.sel) { helper.position.copy(markPos(mk.sel)); helper.updateMatrixWorld(); }
   const tips = bones.filter((x) => /^leg_..?_1$/i.test(x.name) && mk.pts.has(x)).map((x) => `${x.name.slice(4, 6)} ${mm(tipOff(legChain(x)))}`).join(', ');
   $('jStatus').textContent = (n ? '{{js:sv.even_done}}'.replace('{0}', n).replace('{1}', report.join(', ')) : '{{js:sv.even_none}}') + ' ' + '{{js:sv.tips}}' + ' ' + tips;
-};
+}
 // the picked joint's whole leg onto its pair, mirrored across the middle plane: every joint and the tip's end (UniRig put
 // a hind leg crooked as a whole: no evening of lengths mends that); then how many of the mirrored joints are in the
 // other leg's body (a ray each way across meets its skin)
-$('mirrorLeg').onclick = () => {
+$('mirrorLeg').onclick = () => { const before = snapMarks(); mirrorLeg(); marksDone(before); };
+function mirrorLeg() {
   if (!mk.sel || mk.sel[0] === 'm') return;
   let b = bones[+mk.sel.slice(2)];
   while (info.get(b).parent && partnerOf(info.get(b).parent.name)) b = info.get(b).parent;   // the leg's root
@@ -896,12 +964,13 @@ $('mirrorLeg').onclick = () => {
   const pr = bones.find((y) => y.name === partnerOf(b.name));
   $('jStatus').textContent = '{{js:sv.mirror_done}}'.replace('{0}', n).replace('{1}', inside).replace('{2}', n)
     + ' {{js:sv.tips}} ' + `${b.name.slice(4, 6)} ${mm(tipOff(legChain(b)))}` + (pr ? `, ${pr.name.slice(4, 6)} ${mm(tipOff(legChain(pr)))}` : '');
-};
-$('undoAll').onclick = () => {
+}
+$('undoAll').onclick = () => { const before = snapMarks(); undoAllMarks(); marksDone(before); };
+function undoAllMarks() {
   mk.orig.pts.forEach((p, b) => mk.pts.get(b).copy(p));
   mk.orig.ends.forEach((p, b) => mk.ends.get(b).copy(p));
   if (mk.sel) { helper.position.copy(markPos(mk.sel)); helper.updateMatrixWorld(); }
-};
+}
 
 // ---- the mouth: which skin goes with the jaw (blender_creature_finish.py's rule on the middle plane) and closed
 function jawRule() {
@@ -1095,7 +1164,8 @@ $('keepPose').onclick = () => {
 gizmo.addEventListener('objectChange', () => { if (EDIT && mode === 'view') $('keepPose').hidden = false; });
 // (test hooks: work/wear_test/ui/test_creature_markup.mjs moves the marks the way the arrows would)
 window.sv = { mouth, mk, bones, setMode, pickMark, mouthPaint, castRest, H: () => H,
-  brushAt: (p, b) => { brush = b; paintAround(new THREE.Vector3(...p)); brush = ''; },
+  brushAt: (p, b) => { brush = b; strokeStart(); paintAround(new THREE.Vector3(...p)); strokeEnd(); brush = ''; },
+  camera: () => ({ enabled: controls.enabled, left: controls.mouseButtons.LEFT, right: controls.mouseButtons.RIGHT }),
   near: (p) => { const v = new THREE.Vector3(...p); let best = Infinity, at = null; rests.forEach((r) => { for (let i = 0; i < r.pos.length / 3; i++) {
     const d = v.distanceTo(new THREE.Vector3(r.pos[i * 3], r.pos[i * 3 + 1], r.pos[i * 3 + 2])); if (d < best) { best = d; at = [r.pos[i * 3], r.pos[i * 3 + 1], r.pos[i * 3 + 2]]; } } });
     return { nearest: best, at, span: mouth.hinge.distanceTo(mouth.upper) }; }, moveMark: (k, p) => {

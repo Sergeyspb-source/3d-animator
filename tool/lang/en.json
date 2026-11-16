@@ -2581,5 +2581,7 @@
  "sv.brush_minus_tip": "The painted skin stays with the head",
  "sv.brush_clear": "Clear",
  "sv.brush_size": "Brush size",
- "sv.brush_info": "Painted: {0} vertices with the jaw, {1} without."
+ "sv.brush_info": "Painted: {0} vertices with the jaw, {1} without.",
+ "sv.undo": "Undo",
+ "sv.redo": "Redo"
 }
