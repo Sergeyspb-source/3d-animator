@@ -1418,17 +1418,23 @@ function rimColour(mesh, uvs) {
 // the socket as Blender makes it: from the opening's edge itself (just behind the skin) back round the ball to its
 // back pole - no gap between the edge and the cup, whatever the opening's shape
 function socketGeo(S) {
+  // per edge point: down the cut's wall (along the gaze, from the skin back to the cut's depth: a skin seen at a slant
+  // or under a brow showed a gap between its cut edge and the cup), then round the ball to its back pole
   const R1 = S.r * 1.12, pts = [], idx = [], step = Math.max(1, Math.floor(S.rim.length / 40)), mer = [];
+  const bottom = S.dFront - 0.6 * S.width;
   S.rim.filter((_, i) => i % step === 0).forEach((p) => {
-    const d = p.clone().sub(S.centre), lat = d.clone().addScaledVector(S.n, -d.dot(S.n));
+    const top = p.clone().addScaledVector(S.n, -0.01 * S.width);
+    const q = p.clone().addScaledVector(S.n, Math.min(0, bottom - S.dn(p)));   // (the wall's foot)
+    const d = q.clone().sub(S.centre), lat = d.clone().addScaledVector(S.n, -d.dot(S.n));
     if (lat.lengthSq() < 1e-18) return;
-    const ax = lat.clone().normalize(), th0 = Math.atan2(lat.length(), d.dot(S.n)), rho0 = Math.max(d.length() - 0.04 * S.width, R1 * 0.98);
-    const col = [];
+    const ax = lat.clone().normalize(), th0 = Math.atan2(lat.length(), d.dot(S.n)), rho0 = Math.max(d.length(), R1 * 0.98);
+    const col = [pts.length / 3];
+    pts.push(top.x, top.y, top.z);
     for (let k = 0; k < 9; k++) {
       const t = k / 8, th = th0 + (Math.PI * 0.92 - th0) * t, rho = rho0 + (R1 - rho0) * Math.min(1, t * 2.5);
       col.push(pts.length / 3);
-      const q = S.centre.clone().addScaledVector(S.n, Math.cos(th) * rho).addScaledVector(ax, Math.sin(th) * rho);
-      pts.push(q.x, q.y, q.z);
+      const v = S.centre.clone().addScaledVector(S.n, Math.cos(th) * rho).addScaledVector(ax, Math.sin(th) * rho);
+      pts.push(v.x, v.y, v.z);
     }
     mer.push(col);
   });
@@ -1646,7 +1652,7 @@ $('keepPose').onclick = () => {
 gizmo.addEventListener('objectChange', () => { if (EDIT && mode === 'view') $('keepPose').hidden = false; });
 // (test hooks: work/wear_test/ui/test_creature_markup.mjs moves the marks the way the arrows would)
 window.sv = { mouth, mk, bones, setMode, pickMark, mouthPaint, castRest, H: () => H,
-  look: (c, d) => { camera.position.set(c.x, c.y + d * .05, c.z + d); camera.near = d / 50; camera.updateProjectionMatrix(); controls.target.copy(c); controls.update(); },
+  look: (c, d, dir) => { const w = dir ? new THREE.Vector3(...dir).normalize() : new THREE.Vector3(0, .05, 1); camera.position.set(c.x + w.x * d, c.y + w.y * d, c.z + w.z * d); camera.near = d / 50; camera.updateProjectionMatrix(); controls.target.copy(c); controls.update(); },
   screen: (p) => { const v = new THREE.Vector3(...p).project(camera), r = renderer.domElement.getBoundingClientRect(); return { x: r.left + (v.x + 1) / 2 * r.width, y: r.top + (1 - v.y) / 2 * r.height }; },
   eyes, eyeSolve, eyeBuild, eyesReq, placeEye: (p, n) => placeEye(new THREE.Vector3(...p), new THREE.Vector3(...n).normalize()),
   eyeCut: () => EYE_U.eyeN.value,

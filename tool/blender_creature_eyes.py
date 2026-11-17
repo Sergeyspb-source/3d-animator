@@ -335,15 +335,20 @@ for side, marks in job["eyes"].items():
     bm = bmesh.new()
     R1 = r * 1.12
     mer = []
+    bottom = d_front - 0.6 * width   # (the cut's depth)
     for p in rim[::max(1, len(rim) // 40)]:
-        d = p - centre
+        # down the cut's wall first (along the gaze, from the skin back to the cut's depth: a skin seen at a slant or
+        # under a brow showed a gap between its cut edge and the cup - the user's nurgl), then round the ball
+        top = p - n * (0.01 * width)
+        q = p + n * min(0.0, bottom - dn(p))
+        d = q - centre
         lat = d - n * d.dot(n)
         if lat.length < 1e-9:
             continue
         ax = lat.normalized()
         th0 = math.atan2(lat.length, d.dot(n))
-        rho0 = max(d.length - 0.04 * width, R1 * 0.98)
-        col = []
+        rho0 = max(d.length, R1 * 0.98)
+        col = [bm.verts.new(top)]
         for k in range(9):
             t = k / 8
             th = th0 + (math.pi * 0.92 - th0) * t
