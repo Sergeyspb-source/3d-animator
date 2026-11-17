@@ -2699,5 +2699,6 @@
  "cr.paint_deleted": "Variant «{0}» deleted.",
  "cr.paint_refreshed": "The colouring variants made again: {0}.",
  "gd.creature_variant": "Colouring",
- "gd.creature_base": "Original"
+ "gd.creature_base": "Original",
+ "cr.reclip": "The model changed: putting the same clips on it again (about 15 seconds)…"
 }

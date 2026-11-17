@@ -190,6 +190,8 @@ def mark_jaw(cfg, d: Path, name: str, mouth: dict, rigged: Path | None = None):
     if meta.get("eyes"):   # the model is new: its eyes cut and put in again
         _noeyes(dst).unlink(missing_ok=True)
         yield from set_eyes(cfg, d, name, meta["eyes"], rigged=dst)
+    elif (d / f"{name}_clips.glb").exists():   # (the clips on the new jaw; the variants after them)
+        yield from reclip(cfg, d, name)
     elif paint_variants(d, name):   # (the colouring's variants on the new model)
         yield _t("cr.paint_refreshed", len(paint_refresh(d, name)))
 
@@ -274,6 +276,25 @@ def clip_sources() -> dict:
 
 def clip_key(source: str, clip: str) -> str:
     return f"{source}_{clip}".lower().replace(" ", "_")
+
+
+def reclip(cfg, d: Path, name: str):
+    """The clips made again on the model as it is now (its eyes, its jaw), the same ones as before (<name>_clips.glb's
+    list): the clips' model is the rigged one of its time - eyes put in later were missing from it, in Godot too. Yields
+    log lines; nothing when there are no clips yet."""
+    d = Path(d)
+    made = Path(str(d / f"{name}_clips.glb") + ".json")
+    if not made.exists():
+        return
+    try:
+        had = {c["name"] for c in json.loads(made.read_text(encoding="utf-8"))}
+    except (OSError, ValueError, KeyError, TypeError):
+        return
+    picks = {k: [c for c in cs if clip_key(k, c) in had] for k, (_p, cs) in clip_sources().items()}
+    picks = {k: v for k, v in picks.items() if v}
+    if picks:
+        yield _t("cr.reclip")
+        yield from animate(cfg, d, name, picks)
 
 
 def animate(cfg, d: Path, name: str, picks: dict):
@@ -412,7 +433,9 @@ def set_eyes(cfg, d: Path, name: str, eyes: dict, rigged: Path | None = None):
     meta["kind"] = "creature"
     (d / f"{name}_rig.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
     yield _t("cr.eyes_done", ", ".join(f"{s} r {v['radius']:.3g} · {v['bone']}" for s, v in rep["eyes"].items()))
-    if paint_variants(d, name):   # (the colouring's variants on the new model)
+    if (d / f"{name}_clips.glb").exists():   # (the clips' model again: with the eyes; the variants after it)
+        yield from reclip(cfg, d, name)
+    elif paint_variants(d, name):   # (the colouring's variants on the new model)
         yield _t("cr.paint_refreshed", len(paint_refresh(d, name)))
 
 
@@ -430,7 +453,9 @@ def eyes_off(cfg, d: Path, name: str, rigged: Path | None = None):
     (d / f"{name}_eyes_front.png").unlink(missing_ok=True)
     (d / f"{name}_eyes_eye.png").unlink(missing_ok=True)
     yield _t("cr.eyes_off_done")
-    if paint_variants(d, name):   # (the colouring's variants on the new model)
+    if (d / f"{name}_clips.glb").exists():   # (the clips' model again: with the eyes; the variants after it)
+        yield from reclip(cfg, d, name)
+    elif paint_variants(d, name):   # (the colouring's variants on the new model)
         yield _t("cr.paint_refreshed", len(paint_refresh(d, name)))
 
 
