@@ -2650,6 +2650,8 @@ def build():
                                                            label=_t("hanim.death_kind"), scale=2)
                                 ha_btn = gr.Button(_t("ui.add_the_animations"), variant="primary")
                                 ha_log = gr.Textbox(label=_t("face.progress"), lines=8, interactive=False)
+                                ha_check_btn = gr.Button(_t("cc.button"))
+                                ha_check_md = gr.Markdown()
                             with gr.Column(scale=1):
                                 ha_view = gr.Model3D(label=_t("ui.result_rest_pose"), height=320,
                                                      clear_color=(0.9, 0.9, 0.9, 1))
@@ -2770,7 +2772,9 @@ def build():
                         with gr.Row():
                             cr_anim_btn = gr.Button(_t("cr.anim_go"), variant="primary")
                             cr_godot_btn = gr.Button(_t("cr.godot_btn"))
+                            cr_check_btn = gr.Button(_t("cc.button"))
                         cr_anim_log = gr.Textbox(label=_t("face.progress"), lines=4, interactive=False)
+                        cr_check_md = gr.Markdown()
                         cr_anim_view = gr.HTML()
                     with gr.Tab(_t("cr.paint_tab"), id="cr_paint") as cr_tab_paint:
                         gr.Markdown(_t("cr.paint_intro"))
@@ -3048,7 +3052,22 @@ def build():
                 return _t("ui.error_2", e)
 
         cr_godot_btn.click(cr_godot, cr_dd, cr_anim_log)
-        cr_dd.change(lambda: ("", "", "", ""), None, [cr_anim_view, cr_anim_log, cr_paint_view, cr_paint_log], show_progress="hidden")
+
+        def cr_check(v):   # the creature's clips (<name>_clips.glb) checked: the floor, sliding, the loops' seams
+            import clipcheck
+            f = _char_files(v) or {}
+            glb = f["dir"] / f"{f['name']}_clips.glb" if f else None
+            if glb is None or not glb.exists():
+                yield _t("cr.anim_view_none")
+                return
+            yield _t("cc.running", glb.name)
+            try:
+                cfg = T.load_config()
+                yield clipcheck.check(cfg, glb, Path(cfg["work_dir"]) / "clip_check")[0]
+            except Exception as e:  # noqa: BLE001
+                yield _t("ui.error_2", e)
+        cr_check_btn.click(cr_check, cr_dd, cr_check_md, concurrency_id="creature_markup", concurrency_limit=1)
+        cr_dd.change(lambda: ("", "", "", "", ""), None, [cr_anim_view, cr_anim_log, cr_paint_view, cr_paint_log, cr_check_md], show_progress="hidden")
 
         def cr_after(v):   # a skeleton made: the list (its mark), what it has, its files, its viewer
             return (gr.update(choices=_characters(True), value=v), *creature_info(v), *creature_for_tab(v),
@@ -3115,6 +3134,25 @@ def build():
         ha_asset.change(hanim_pick, [ha_upload, ha_asset], ha_view, show_progress="hidden")
         ha_upload.change(hanim_pick, [ha_upload, ha_asset], ha_view, show_progress="hidden")
         ha_btn.click(hanim_run, [ha_upload, ha_asset, ha_clips, ha_manner, ha_seed, ha_death], [ha_log, ha_gallery, ha_view])
+
+        def ha_check(view, upload, asset):   # the clips just made (else the current character's <name>_anim.glb) checked
+            import clipcheck
+            cfg = T.load_config()
+            glb = Path(view) if isinstance(view, str) and view else None
+            if glb is None:
+                src = Path(upload if isinstance(upload, str) else upload.name) if upload else (_rigged_path(asset) if asset else None)
+                if src:
+                    name = T.slug(src.stem.replace("_rigged", "").replace("_wings", ""))
+                    glb = Path(cfg["export_dir"]) / "character" / name / f"{name}_anim.glb"
+            if glb is None or not glb.exists():
+                yield _t("cc.none")
+                return
+            yield _t("cc.running", glb.name)
+            try:
+                yield clipcheck.check(cfg, glb, Path(cfg["work_dir"]) / "clip_check")[0]
+            except Exception as e:  # noqa: BLE001
+                yield _t("ui.error_2", e)
+        ha_check_btn.click(ha_check, [ha_view, ha_upload, ha_asset], ha_check_md)
 
         # destructibles
         dst_refresh_btn.click(lambda: gr.update(choices=_export_assets()), None, dst_asset)
