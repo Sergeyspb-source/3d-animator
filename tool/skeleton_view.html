@@ -1277,7 +1277,6 @@ function eyeTexture() {
   eyeTex.needsUpdate = true;
 }
 const eyeMat = new THREE.MeshStandardMaterial({ map: eyeTex, roughness: 0.15, metalness: 0 });
-const sockMat = new THREE.MeshStandardMaterial({ color: '#0d0505', roughness: 0.9, side: THREE.BackSide });
 // the skin the eyes are cut from: each skinned mesh's own triangles, some left out while the eyes mode shows them
 const skinIdx = new Map();   // mesh -> {orig index array, centres Float32Array}
 function skinOf(r) {
@@ -1339,7 +1338,8 @@ function eyeSolve(P) {   // blender_creature_eyes.py's frame, cut and ball for o
   near.forEach((ts, r) => { if (!face || ts.length > near.get(face).length) face = r; });
   if (!face) return { ok: false };
   const s = skinOf(face), I = s.idx, Pp = face.pos, ts = near.get(face);
-  const loc = new Float32Array(ts.length * 9), mid = new V3();
+  const loc = new Float32Array(ts.length * 9), mid = new V3(), UVa = face.mesh.geometry.attributes.uv, locUv = new Float32Array(ts.length * 6);
+  if (UVa) ts.forEach((t, k) => { for (let c = 0; c < 3; c++) { locUv[k * 6 + c * 2] = UVa.getX(I[t + c]); locUv[k * 6 + c * 2 + 1] = UVa.getY(I[t + c]); } });
   const A = new V3(), B = new V3(), Cc = new V3(), nsum = new V3(), fn = new V3();
   ts.forEach((t, k) => { for (let c = 0; c < 3; c++) for (let a = 0; a < 3; a++) loc[k * 9 + c * 3 + a] = Pp[I[t + c] * 3 + a];
     mid.x += s.cen[t]; mid.y += s.cen[t + 1]; mid.z += s.cen[t + 2]; });
@@ -1369,21 +1369,84 @@ function eyeSolve(P) {   // blender_creature_eyes.py's frame, cut and ball for o
   const xs = poly.map((p) => p[0]), ys = poly.map((p) => p[1]);
   const width = Math.max(...xs) - Math.min(...xs) || span, height = Math.max(...ys) - Math.min(...ys) || span;
   const centre0 = c0.clone().addScaledVector(ex, xs.reduce((a, b) => a + b) / xs.length).addScaledVector(ey, ys.reduce((a, b) => a + b) / ys.length);
-  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(loc, 3));
+  // the rays' skin: the triangles within 1.3 of the span (the edge lies within ~0.6 of it; rays through all of
+  // 2.5 of it took 65 ms an eye on the nurgl) - blender_creature_eyes.py the same
+  const keep = [];
+  ts.forEach((t, k) => { const dx = s.cen[t] - c0.x, dy = s.cen[t + 1] - c0.y, dz = s.cen[t + 2] - c0.z; if (dx * dx + dy * dy + dz * dz < (1.3 * span) ** 2) keep.push(k); });
+  const rl = new Float32Array(keep.length * 9), ru = new Float32Array(keep.length * 6);
+  keep.forEach((k, j) => { rl.set(loc.subarray(k * 9, k * 9 + 9), j * 9); ru.set(locUv.subarray(k * 6, k * 6 + 6), j * 6); });
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(rl, 3));
+  if (UVa) g.setAttribute('uv', new THREE.BufferAttribute(ru, 2));
   const lm = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })), rc = new THREE.Raycaster();
+  const rimUv = [];
   const far = 3 * Math.max(width, height), back = n.clone().negate();
   const cast = (p) => { rc.set(p.clone().addScaledVector(n, far), back); rc.far = 2 * far; const h = rc.intersectObject(lm, false)[0]; return h ? h.point : null; };
   const hf = cast(centre0);
   let dFront = hf ? dn(hf) : 0;
   if (Math.abs(dFront) > span) dFront = 0;
   const rim = [];
-  curve.forEach((p) => { const h = cast(p); if (h && Math.abs(dn(h) - dFront) < Math.max(width, height)) rim.push(h); });
+  curve.forEach((p) => {
+    rc.set(p.clone().addScaledVector(n, far), back); rc.far = 2 * far;
+    const hh = rc.intersectObject(lm, false)[0];
+    if (hh && Math.abs(dn(hh.point) - dFront) < Math.max(width, height)) { rim.push(hh.point); if (hh.uv) rimUv.push(hh.uv.clone()); }
+  });
   const dLids = rim.length ? rim.reduce((a, p) => a + dn(p), 0) / rim.length : dFront;
   const r = 0.42 * Math.max(width, height) * +$('eyeSize').value;
   const centre = centre0.clone().addScaledVector(n, Math.max(dFront, dLids) - 0.02 * width - r);
-  return { face, c0, ex, ey, n, poly, q2, dn, dFront, width, height, centre, centre0, r, rim, ok: rim.length >= curve.length * 0.6 };
+  return { face, c0, ex, ey, n, poly, q2, dn, dFront, width, height, centre, centre0, r, rim, rimCol: rimColour(face.mesh, rimUv),
+           ok: rim.length >= curve.length * 0.6 };
 }
+// the skin's colour along the opening's edge (its picture at the edge's UVs, the median), a little darker - the socket's:
+// a dark one showed as a hole in the corners the ball does not fill (the user's nurgl)
+function rimColour(mesh, uvs) {
+  const mat = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material, map = mat && mat.map;
+  const out = new THREE.Color();
+  if (!map || !map.image || !uvs.length) return mat && mat.color ? out.copy(mat.color).multiplyScalar(0.7) : out.setRGB(.25, .12, .1);
+  if (!map.userData.px) {
+    const c = document.createElement('canvas'); c.width = c.height = 512;
+    const g = c.getContext('2d'); g.drawImage(map.image, 0, 0, 512, 512);
+    map.userData.px = g.getImageData(0, 0, 512, 512).data;
+  }
+  const px = map.userData.px, ch = [[], [], []];
+  uvs.forEach((uv) => {
+    const u = ((uv.x % 1) + 1) % 1, v = ((uv.y % 1) + 1) % 1, q = (Math.min(511, Math.floor(v * 512)) * 512 + Math.min(511, Math.floor(u * 512))) * 4;
+    for (let j = 0; j < 3; j++) ch[j].push(px[q + j] / 255);
+  });
+  const med = ch.map((a) => a.sort((x, y) => x - y)[a.length >> 1]);
+  return out.setRGB(med[0] * .7, med[1] * .7, med[2] * .7, THREE.SRGBColorSpace);
+}
+// the socket as Blender makes it: from the opening's edge itself (just behind the skin) back round the ball to its
+// back pole - no gap between the edge and the cup, whatever the opening's shape
+function socketGeo(S) {
+  const R1 = S.r * 1.12, pts = [], idx = [], step = Math.max(1, Math.floor(S.rim.length / 40)), mer = [];
+  S.rim.filter((_, i) => i % step === 0).forEach((p) => {
+    const d = p.clone().sub(S.centre), lat = d.clone().addScaledVector(S.n, -d.dot(S.n));
+    if (lat.lengthSq() < 1e-18) return;
+    const ax = lat.clone().normalize(), th0 = Math.atan2(lat.length(), d.dot(S.n)), rho0 = Math.max(d.length() - 0.04 * S.width, R1 * 0.98);
+    const col = [];
+    for (let k = 0; k < 9; k++) {
+      const t = k / 8, th = th0 + (Math.PI * 0.92 - th0) * t, rho = rho0 + (R1 - rho0) * Math.min(1, t * 2.5);
+      col.push(pts.length / 3);
+      const q = S.centre.clone().addScaledVector(S.n, Math.cos(th) * rho).addScaledVector(ax, Math.sin(th) * rho);
+      pts.push(q.x, q.y, q.z);
+    }
+    mer.push(col);
+  });
+  const pole = pts.length / 3, pp = S.centre.clone().addScaledVector(S.n, -R1);
+  pts.push(pp.x, pp.y, pp.z);
+  for (let i = 0; i < mer.length; i++) {
+    const a = mer[i], b = mer[(i + 1) % mer.length];
+    for (let k = 0; k < a.length - 1; k++) idx.push(a[k], b[k], b[k + 1], a[k], b[k + 1], a[k + 1]);
+    idx.push(a[a.length - 1], b[b.length - 1], pole);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3)); g.setIndex(idx); g.computeVertexNormals();
+  return g;
+}
+const sockMats = { L: new THREE.MeshStandardMaterial({ roughness: 0.85, side: THREE.DoubleSide }),
+                   R: new THREE.MeshStandardMaterial({ roughness: 0.85, side: THREE.DoubleSide }) };
 function eyeBuild() {   // the cut skin, the balls and their sockets as the eyes are marked now
+  eyeView.traverse((o) => { if (o.isMesh) o.geometry.dispose(); });
   eyeView.clear();
   skinRests().forEach((r) => { const s = skinOf(r); r.mesh.geometry.index.array.set(s.idx); r.mesh.geometry.setDrawRange(0, s.idx.length); r.mesh.geometry.index.needsUpdate = true; });
   if (mode !== 'eyes') return;
@@ -1415,9 +1478,8 @@ function eyeBuild() {   // the cut skin, the balls and their sockets as the eyes
     ball.matrix.makeBasis(S.ex, S.n.clone().negate(), S.ey).setPosition(S.centre);
     ball.matrixAutoUpdate = false;
     eyeView.add(ball);
-    const sock = new THREE.Mesh(new THREE.SphereGeometry(S.r * 1.12, 24, 16), sockMat);
-    sock.position.copy(S.centre);
-    eyeView.add(sock);
+    sockMats[side].color.copy(S.rimCol);
+    eyeView.add(new THREE.Mesh(socketGeo(S), sockMats[side]));
   }
   cut.forEach((out, r) => {
     const s = skinOf(r), keep = [];
@@ -1438,7 +1500,10 @@ function eyeMirror(from) {   // the other eye: this one's mirror across the midd
 }
 function placeEye(p, nrm) {   // a click on the skin: an eye's outline round it (the side by where it is), the other mirrored
   const side = p.x >= mk.cx ? 'L' : 'R', old = eyes[side] || eyes[side === 'L' ? 'R' : 'L'];
-  const a = old ? old[0].distanceTo(old[2]) / 2 : H * 0.014, b = old ? old[1].distanceTo(old[3]) / 2 : a * 0.55;
+  // (the old eye's size across the gaze: measured straight between points pressed onto a curved skin it grew a little
+  // with every click)
+  const across = (d) => d.clone().addScaledVector(nrm, -d.dot(nrm)).length() / 2;
+  const a = old ? across(old[2].clone().sub(old[0])) : H * 0.014, b = old ? across(old[1].clone().sub(old[3])) : a * 0.55;
   let ex = new V3(0, 1, 0).cross(nrm);
   if (ex.lengthSq() < 1e-6) ex.set(1, 0, 0);
   ex.normalize();

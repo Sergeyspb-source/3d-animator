@@ -180,11 +180,60 @@ def attach(o, bone):
     o.parent = arm; o.matrix_parent_inverse = arm.matrix_world.inverted()
 
 
+_px = {}
+
+
+def base_pixels(mat):
+    """(pixels HxWx3 as stored - sRGB, w, h) of the picture behind a material's base colour, or None"""
+    if mat is None or not mat.use_nodes:
+        return None
+    if mat.name not in _px:
+        _px[mat.name] = None
+        bsdf = next((nd for nd in mat.node_tree.nodes if nd.type == "BSDF_PRINCIPLED"), None)
+        stack = [l.from_node for l in bsdf.inputs["Base Color"].links] if bsdf else []
+        while stack:
+            nd = stack.pop()
+            if nd.type == "TEX_IMAGE" and nd.image and nd.image.size[0]:
+                w, h = nd.image.size
+                a = np.empty(w * h * 4, dtype=np.float32)
+                nd.image.pixels.foreach_get(a)
+                _px[mat.name] = (a.reshape(h, w, 4)[..., :3], w, h)
+                break
+            stack += [l.from_node for i in nd.inputs for l in i.links]
+    return _px[mat.name]
+
+
+def rim_colour(o, tris, lts, hits):
+    """the socket's colour: the skin's along the opening's edge (its picture at the edge's UVs, the median), a little
+    darker - a dark socket showed as a hole in the corners the ball does not fill (the user's nurgl). Linear."""
+    from mathutils.geometry import barycentric_transform
+    uvl = o.data.uv_layers.active
+    cols = []
+    for k, p in hits:
+        lt = lts[k]
+        px = base_pixels(o.data.materials[lt.material_index] if lt.material_index < len(o.data.materials) else None)
+        if px is None or uvl is None:
+            continue
+        a, b, c = tris[k]
+        bc = barycentric_transform(p, a, b, c, Vector((1, 0, 0)), Vector((0, 1, 0)), Vector((0, 0, 1)))
+        uv = sum((uvl.data[li].uv * max(0.0, w) for w, li in zip(bc, lt.loops)), Vector((0, 0)))
+        arr, w_, h_ = px
+        cols.append(arr[int(min(h_ - 1, (uv.y % 1) * h_)), int(min(w_ - 1, (uv.x % 1) * w_))])
+    if not cols:
+        return (0.06, 0.03, 0.025)
+    med = np.median(np.array(cols), axis=0) * 0.7
+    return tuple(float(((v + 0.055) / 1.055) ** 2.4 if v > 0.04045 else v / 12.92) for v in med)
+
+
+def socket_material(col):
+    m = bpy.data.materials.new("eye_socket"); m.use_nodes = True
+    b = next(nd for nd in m.node_tree.nodes if nd.type == "BSDF_PRINCIPLED")
+    b.inputs["Base Color"].default_value = (*col, 1); b.inputs["Roughness"].default_value = 0.85
+    m.diffuse_color = (*col, 1)   # (the preview's Workbench draws this one, not the nodes)
+    return m
+
+
 mat_eye = eye_material()
-mat_sock = bpy.data.materials.new("eye_socket"); mat_sock.use_nodes = True
-sb = next(n for n in mat_sock.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
-sb.inputs["Base Color"].default_value = (0.04, 0.015, 0.015, 1); sb.inputs["Roughness"].default_value = 0.85
-mat_sock.diffuse_color = (0.04, 0.015, 0.015, 1)   # (the preview's Workbench draws this one, not the nodes)
 size, depth = float(job.get("size", 1.0)), float(job.get("depth", 0.0))
 balls = []
 for side, marks in job["eyes"].items():
@@ -196,14 +245,14 @@ for side, marks in job["eyes"].items():
     for o in meshes:
         o.data.calc_loop_triangles()
         wv = [o.matrix_world @ v.co for v in o.data.vertices]
-        loc = [tuple(wv[i] for i in lt.vertices) for lt in o.data.loop_triangles]
-        loc = [tr for tr in loc if ((tr[0] + tr[1] + tr[2]) / 3 - c0).length < 2.5 * span]
+        loc = [(tuple(wv[i] for i in lt.vertices), lt) for lt in o.data.loop_triangles]
+        loc = [(tr, lt) for tr, lt in loc if ((tr[0] + tr[1] + tr[2]) / 3 - c0).length < 2.5 * span]
         if loc and (best is None or len(loc) > len(best[1])):
-            best = (o, loc)
+            best = (o, [tr for tr, _ in loc], [lt for _, lt in loc])
     if best is None:
         print(f"EYES_FAIL {side}: no skin near the eye", flush=True)
         sys.exit(1)
-    face, tris = best
+    face, tris, lts = best
     c0, ex, ey, n = frame(pts, tris, span)
     q2 = lambda p: ((p - c0).dot(ex), (p - c0).dot(ey))  # noqa: E731
     dn = lambda p: (p - c0).dot(n)  # noqa: E731
@@ -215,18 +264,22 @@ for side, marks in job["eyes"].items():
     centre0 = c0 + ex * mid2[0] + ey * mid2[1]
     # the skin along the gaze (the near triangles only): in front of the eye's middle and on its outline
     fw = face.matrix_world
-    fw_pts = [p for tr in tris for p in tr]
-    bvh = BVHTree.FromPolygons(fw_pts, [(3 * k, 3 * k + 1, 3 * k + 2) for k in range(len(tris))])
+    # (the rays' skin: within 1.3 of the span - the edge lies within ~0.6 of it; the viewer the same)
+    near_k = [k for k, tr in enumerate(tris) if ((tr[0] + tr[1] + tr[2]) / 3 - c0).length < 1.3 * span]
+    fw_pts = [p for k in near_k for p in tris[k]]
+    bvh = BVHTree.FromPolygons(fw_pts, [(3 * j, 3 * j + 1, 3 * j + 2) for j in range(len(near_k))])
     far = 3 * max(width, height)
     hit = bvh.ray_cast(centre0 + n * far, -n, 2 * far)
     d_front = dn(hit[0]) if hit[0] is not None else 0.0
     if abs(d_front) > span:
         d_front = 0.0
-    rim = []
+    rim, rim_hits = [], []
     for p in curve:
         h = bvh.ray_cast(p + n * far, -n, 2 * far)
         if h[0] is not None and abs(dn(h[0]) - d_front) < max(width, height):
             rim.append(h[0])
+            rim_hits.append((near_k[h[2]], h[0]))
+    sock_col = rim_colour(face, tris, lts, rim_hits)   # (before the cut: its UVs as they are)
     if len(rim) < len(curve) * 0.6:
         print(f"EYES_FAIL {side}: outline off the skin ({len(rim)}/{len(curve)})", flush=True)
         sys.exit(1)
@@ -310,11 +363,11 @@ for side, marks in job["eyes"].items():
     bm.to_mesh(sm); bm.free()
     for pl in sm.polygons:
         pl.use_smooth = True
-    sm.materials.append(mat_sock)
+    sm.materials.append(socket_material(sock_col))
     attach(sock, bone)
     balls.append((side, centre, r, n))
     report["eyes"][side] = {"radius": round(r, 5), "opening": [round(width, 5), round(height, 5)],   # (the model's units)
-                            "deleted_faces": len(kill), "bone": bone, "mesh": face.name,
+                            "deleted_faces": len(kill), "bone": bone, "mesh": face.name, "socket": [round(v, 3) for v in sock_col],
                             "gaze": [round(n.x, 3), round(n.z, 3), round(-n.y, 3)]}   # (glTF)
 arm.data.pose_position = "POSE"
 bpy.ops.object.select_all(action="DESELECT")
