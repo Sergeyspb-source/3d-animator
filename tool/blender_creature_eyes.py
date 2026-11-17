@@ -237,6 +237,66 @@ def socket_material(col):
     return m
 
 
+def lids(side, c, r, n, ex, ey, rim, width, bone, col_dark):
+    """The eyelids: an upper and a lower shell over the ball (parts of spheres 1.13 and 1.10 of it: the cornea bulges past the ball), the skin's colour at
+    the opening's edge with a darker rim, behind the skin at rest - seen only through the opening as they close. A key
+    eyeBlinkLeft / eyeBlinkRight turns the upper one down about the eye's across line to a quarter up from the lower
+    edge, the lower one up to it (the upper, the bigger, over it). On the head bone with the ball; the game drives the
+    key (the creature viewer in Godot blinks now and then)."""
+    el = lambda p: math.atan2((p - c).dot(ey), (p - c).dot(n))  # noqa: E731  (up from the gaze, about ex)
+    mid = [p for p in rim if abs((p - c).dot(ex)) < 0.3 * width] or rim
+    e_up, e_lo = max(el(p) for p in mid), min(el(p) for p in mid)
+    meet = e_lo + 0.25 * (e_up - e_lo)
+    skin = tuple(min(1.0, v / 0.7) for v in col_dark)   # (the edge's own skin: the socket's was darkened)
+    name = {"L": "Left", "R": "Right"}[side]
+    NA, NE = 25, 9
+    bm = bmesh.new()
+    rows = {}
+    for sh, R, e0, e1 in (("up", 1.13 * r, e_up, e_up + math.radians(105)), ("lo", 1.10 * r, e_lo, e_lo - math.radians(95))):   # (over the cornea: it bulges 8 % past the ball)
+        grid = []
+        for i in range(NA):
+            az = math.radians(-80 + 160 * i / (NA - 1))
+            col = []
+            for j in range(NE):
+                e = e0 + (e1 - e0) * (j / (NE - 1)) ** 1.3
+                d = (n * math.cos(e) + ey * math.sin(e)) * math.cos(az) + ex * math.sin(az)
+                col.append(bm.verts.new(c + d * R))
+            grid.append(col)
+        for i in range(NA - 1):
+            for j in range(NE - 1):
+                f = bm.faces.new((grid[i][j], grid[i + 1][j], grid[i + 1][j + 1], grid[i][j + 1]))
+                f.material_index = 1 if j == 0 else 0
+                f.smooth = True
+        rows[sh] = grid
+    bm.normal_update()
+    for f in bm.faces:   # (outward)
+        if f.normal.dot(f.calc_center_median() - c) < 0:
+            f.normal_flip()
+    bm.verts.index_update()
+    idx = {sh: [v.index for col in g for v in col] for sh, g in rows.items()}
+    me = bpy.data.meshes.new(f"EyeLid_{side}")
+    bm.to_mesh(me)
+    bm.free()
+    ob = bpy.data.objects.new(me.name, me)
+    scene.collection.objects.link(ob)
+    for nm, k in (("eyelid_skin", 1.0), ("eyelid_rim", 0.45)):
+        m = bpy.data.materials.new(f"{nm}_{side}")
+        m.use_nodes = True
+        bs = next(x for x in m.node_tree.nodes if x.type == "BSDF_PRINCIPLED")
+        bs.inputs["Base Color"].default_value = (*(v * k for v in skin), 1.0)
+        bs.inputs["Roughness"].default_value = 0.65
+        m.diffuse_color = (*(v * k for v in skin), 1.0)
+        me.materials.append(m)
+    attach(ob, bone)
+    ob.shape_key_add(name="Basis")
+    kb = ob.shape_key_add(name=f"eyeBlink{name}", from_mix=False)
+    for sh, turn in (("up", -(e_up - meet)), ("lo", (meet + 0.04 * (e_up - e_lo)) - e_lo)):
+        R = Matrix.Rotation(-turn, 3, ex)   # (ey = n x ex: a turn about -ex raises the elevation, n toward ey)
+        for i in idx[sh]:
+            kb.data[i].co = c + R @ (me.vertices[i].co - c)
+    kb.value = 0.0
+
+
 mat_eye = eye_material()
 size, depth = float(job.get("size", 1.0)), float(job.get("depth", 0.0))
 balls = []
@@ -374,6 +434,8 @@ for side, marks in job["eyes"].items():
         pl.use_smooth = True
     sm.materials.append(socket_material(sock_col))
     attach(sock, bone)
+    if job.get("lids", True):
+        lids(side, centre, r, n, ex, ey, rim, width, bone, sock_col)
     balls.append((side, centre, r, n))
     report["eyes"][side] = {"radius": round(r, 5), "opening": [round(width, 5), round(height, 5)],   # (the model's units)
                             "deleted_faces": len(kill), "bone": bone, "mesh": face.name, "socket": [round(v, 3) for v in sock_col],

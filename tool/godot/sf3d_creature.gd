@@ -2,7 +2,7 @@ extends Node3D
 ## The creature's viewer (creatures.godot_view): the model with its clips as the game shows them - a clip list, the
 ## speed, looping, a floor grid at the paws with shadows, an orbiting camera (left button turns, right one pans, the
 ## wheel zooms). For checks: godot --path <proj> -- --anim=<clip> --at=<seconds> --yaw=<deg> --pitch=<rad>
-## --zoom=<k> --target=<x,y,z> --variant=<name> --shot=<png> (the clip played from its start for «at» seconds, the frame saved, quit).
+## --zoom=<k> --target=<x,y,z> --variant=<name> --blink=<0..1> --shot=<png> (the clip played from its start for «at» seconds, the frame saved, quit).
 
 @export var creature: PackedScene
 ## the colouring's variants (creatures.paint_save: the same model, other pictures) and their names
@@ -21,6 +21,9 @@ var _speed: HSlider
 var _loop: CheckBox
 var _args := {}
 var _variant: OptionButton
+var _lids: Array = []   # [mesh, blend shape index] of the eyelids' blink keys (blender_creature_eyes.py)
+var _blink_in := 2.0
+var _blink_t := -1.0
 
 
 func _ready() -> void:
@@ -75,6 +78,15 @@ func _load(scene: PackedScene) -> void:   # the model (the base or a variant) in
 	add_child(_model)
 	var found := _model.find_children("*", "AnimationPlayer", true, false)
 	_player = found[0] if found.size() > 0 else null
+	_lids.clear()
+	for m in _model.find_children("*", "MeshInstance3D", true, false):
+		var mi := m as MeshInstance3D
+		if mi.mesh == null:
+			continue
+		for k in ["eyeBlinkLeft", "eyeBlinkRight"]:
+			var i := mi.find_blend_shape_by_name(k)
+			if i >= 0:
+				_lids.append([mi, i])
 
 
 func _pick_variant(i: int) -> void:   # the same clip at the same time on the variant picked (0 = the base)
@@ -214,6 +226,33 @@ func _play(i: int) -> void:
 		a.loop_mode = Animation.LOOP_LINEAR if _loop.button_pressed else Animation.LOOP_NONE
 	_player.play(n)
 	_player.seek(0.0, true)
+
+
+func _process(delta: float) -> void:   # now and then a blink (2.5 - 5.5 s apart): closing 0.08 s, shut 0.05 s, opening 0.12 s
+	if _lids.is_empty():
+		return
+	if _args.has("blink"):   # (a check: --blink=<0..1>, the lids held there)
+		for l in _lids:
+			(l[0] as MeshInstance3D).set_blend_shape_value(l[1], float(_args["blink"]))
+		return
+	if _blink_t < 0.0:
+		_blink_in -= delta
+		if _blink_in <= 0.0:
+			_blink_t = 0.0
+		return
+	_blink_t += delta
+	var v := 0.0
+	if _blink_t < 0.08:
+		v = _blink_t / 0.08
+	elif _blink_t < 0.13:
+		v = 1.0
+	elif _blink_t < 0.25:
+		v = 1.0 - (_blink_t - 0.13) / 0.12
+	else:
+		_blink_t = -1.0
+		_blink_in = randf_range(2.5, 5.5)
+	for l in _lids:
+		(l[0] as MeshInstance3D).set_blend_shape_value(l[1], v)
 
 
 func _place_camera() -> void:
