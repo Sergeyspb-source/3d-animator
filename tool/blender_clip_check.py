@@ -27,6 +27,7 @@ from mathutils import Vector
 a = sys.argv[sys.argv.index("--") + 1:]
 src, out = a[0], a[1]
 bpy.ops.wm.read_factory_settings(use_empty=True)
+bpy.context.scene.render.fps = 30   # (before the import: the clips' keys land on their own frames, 30 fps)
 bpy.ops.import_scene.gltf(filepath=src)
 sc = bpy.context.scene
 arm = next(o for o in sc.objects if o.type == "ARMATURE")

@@ -2623,7 +2623,7 @@ def build():
                                     rig_log = gr.Textbox(label=_t("face.progress"), lines=8, interactive=False)
                         with gr.Column(visible=False) as rig_manual_box:
                             lm_data, lm_editor = landmarks_ui.mount(T.load_config, rig_asset, rig_upload, accordion=False)
-                        with gr.Accordion(_t("lm.rig_pose_title"), open=False):   # any skeleton: the pose and the fist
+                        with gr.Accordion(_t("lm.rig_pose_title"), open=True):   # any skeleton: the pose and the fist (open: seen at once)
                             landmarks_ui.mount_rig_pose(T.load_config, char_rig)
                         with gr.Accordion(_t("cr.view_any_title"), open=False):   # any skeleton: its bones and weights
                             gr.Markdown(_t("cr.view_any_info"))
@@ -3020,6 +3020,14 @@ def build():
         cr_anim_btn.click(cr_anim_go, [cr_dd, *cr_picks], [cr_anim_log, cr_anim_view], concurrency_id="creature_markup",
                           concurrency_limit=1)
         cr_tab_anim.select(creature_clips_viewer, cr_dd, cr_anim_view, show_progress="hidden")
+
+        def cr_picks_of(v):   # the ticks: the clips the creature has (a transfer again keeps them), else the defaults
+            f = _char_files(v) or {}
+            had = CR.clips_had(f["dir"], f["name"]) if f.get("dir") else None
+            return [gr.update(value=(had.get(k, []) if had is not None else (names if k in CR.CLIP_DEFAULT else [])))
+                    for k, (_p, names) in cr_srcs.items()]
+
+        cr_tab_anim.select(cr_picks_of, cr_dd, cr_picks, show_progress="hidden")
         cr_tab_paint.select(creature_paint_view, cr_dd, cr_paint_view, show_progress="hidden")
         cr_paint_btn.click(creature_paint_view, cr_dd, cr_paint_view)
 

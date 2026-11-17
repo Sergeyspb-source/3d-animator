@@ -8,6 +8,7 @@ bones keep UniRig's names, the passport's "names" rename them - after a markup's
 <name>_rigged.glb (named, with the jaw: what the tools take), <name>_jaw_*.png (the jaw's pictures).
 """
 import base64
+import importlib.util
 import json
 import math
 import os
@@ -265,6 +266,10 @@ CLIP_SOURCES = {"fox": ("fox-animations.glb", {"Idle", "Idle Alert", "Walk", "Ru
                 "snake": ("snake-animations.glb", {"Idle", "Side winding", "Coiled", "Dance"}),
                 "shark": ("shark-animations.glb", {"Idle", "Swim Horizontal", "Swim Vertical", "Dead Floating"})}
 CLIP_DEFAULT = ("fox", "horse")   # (picked at first: the four-legged's; the others by hand, as the creature is)
+# a creature's own clips keyed from key poses (creature_keys/<name>.py, creature_keyer.py in the same Blender session):
+# the nurgle's leap, paw strike and wall climb read off the user's videos (the game project's); on any creature with four
+# legs (leg_FL_.. leg_BR_), hips and jaw, scaled to its size
+KEYED = {"nurgle": ROOT / "creature_keys" / "nurgle.py"}
 
 
 def clip_sources() -> dict:
@@ -280,11 +285,31 @@ def clip_sources() -> dict:
         except Exception:  # noqa: BLE001
             continue
         out[k] = (p, [n for n in names if n and "rest" not in n.lower()])
+    for k, p in KEYED.items():   # (a creature's own clips, keyed from key poses: named as they are)
+        try:
+            spec = importlib.util.spec_from_file_location(f"creature_keys_{k}", str(p))
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            out[k] = (p, [c["name"] for c in mod.CLIPS])
+        except Exception:  # noqa: BLE001
+            continue
     return out
 
 
 def clip_key(source: str, clip: str) -> str:
+    if source in KEYED:
+        return clip
     return f"{source}_{clip}".lower().replace(" ", "_")
+
+
+def clips_had(d: Path, name: str) -> dict | None:
+    """{source: [its clips]} the creature's <name>_clips.glb has (None: no clips made yet) - the picks to show."""
+    made = Path(str(Path(d) / f"{name}_clips.glb") + ".json")
+    try:
+        had = {c["name"] for c in json.loads(made.read_text(encoding="utf-8"))}
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return {k: [c for c in cs if clip_key(k, c) in had] for k, (_p, cs) in clip_sources().items()}
 
 
 def reclip(cfg, d: Path, name: str):
@@ -315,18 +340,22 @@ def animate(cfg, d: Path, name: str, picks: dict):
         raise RuntimeError(_t("cr.view_needs_skeleton"))
     src = clip_sources()
     clips = [{"source": str(src[k][0]), "action": c, "name": clip_key(k, c), "loop": c in CLIP_SOURCES[k][1]}
-             for k, cs in picks.items() if k in src for c in cs]
-    if not clips:
+             for k, cs in picks.items() if k in src and k in CLIP_SOURCES for c in cs]
+    keyed = [{"poses": str(src[k][0]), "clips": list(cs)} for k, cs in picks.items() if k in src and k in KEYED and cs]
+    if not clips and not keyed:
         raise RuntimeError(_t("cr.anim_none_picked"))
     work = Path(cfg["work_dir"]) / "creature_clips"
     work.mkdir(parents=True, exist_ok=True)
     out = d / f"{name}_clips.glb"
     job = work / f"{name}.json"
-    job.write_text(json.dumps({"target": str(rigged), "clips": clips, "out": str(out), "mesh": True,
+    job.write_text(json.dumps({"target": str(rigged), "clips": clips, "keyed": keyed, "out": str(out), "mesh": True,
                                "close_deg": (passport(d, name).get("jaw") or {}).get("close_deg")}), encoding="utf-8")
-    yield _t("cr.anim_running", len(clips))
+    yield _t("cr.anim_running", len(clips) + sum(len(k["clips"]) for k in keyed))
     _run(cfg, "blender_creature_retarget.py", [job], "RETARGET_OK")
     made = json.loads(Path(str(out) + ".json").read_text(encoding="utf-8"))
+    lost = [c for k in keyed for c in k["clips"] if c not in {m["name"] for m in made}]
+    if lost:   # (the creature has not the bones the key poses turn: four legs, hips, jaw ...)
+        yield _t("cr.anim_keyed_skipped", ", ".join(lost))
     yield _t("cr.anim_done", out.name, len(made), ", ".join(c["name"] for c in made))
     if paint_variants(d, name):   # (the colouring's variants on the new model)
         yield _t("cr.paint_refreshed", len(paint_refresh(d, name)))

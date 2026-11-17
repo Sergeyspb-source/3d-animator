@@ -1674,7 +1674,7 @@
  "lm.rig_face_build": "Build the face",
  "lm.rig_face_landmark": "This character's skeleton was built from the markup: its face is marked and built in «By hand from landmarks».",
  "lm.rig_face_mark_hint": "The markup is open: «Fingers and face» tab → «Mark the face». Leave the body's joints: only the face and its joints are used. Then «Build the face». Check the eyes: the blue ball should match the painted eye (move it, «Eye −/+»): found automatically they often sit small and deep, and then the lid covers the eye even at rest.",
- "lm.rig_pose_title": "Pose and fist (any skeleton: auto-rigged or from landmarks)",
+ "lm.rig_pose_title": "Pose: look at and bend the current skeleton, play its clips, the fist (any skeleton: auto-rigged or from landmarks)",
  "lm.saved_wear_fit_json": "Saved: {0}_wear_{1}.fit.json",
  "lm.scene_for_godot_the_model_blinking": "\nScene for Godot: {0} — the model, blinking and the lipsync lines from this folder (say(\"name\")).",
  "lm.seams_found_their_weights_evened_out": "Seams found: {0}, their weights evened out.",
@@ -2541,7 +2541,7 @@
  "sv.rw_all": "anew everywhere",
  "sv.rw_none": "as they were",
  "cr.anim_tab": "Animations",
- "cr.anim_intro": "Mesh2Motion's clips (CC0) - a fox's, a horse's, a dragon's, a bird's, a kaiju's, a spider's, a snake's, a shark's - put on the creature's skeleton by chains: the spine onto the spine, the legs by their place along the body (the front onto the front, the hind onto the hind; a spider's in order; a bird's and a kaiju's legs onto the hind legs), the wings onto the wings, the tail onto the tail, the head, the muzzle and the jaw; a snake's body from the head to the tail. Legs with no pair in the source are left as they are (a dog on a bird's clips keeps its front legs still). Pick the source by the creature's body: the fox and the horse are ticked at first, the others by hand. A bone takes the turn of the source bone at its place in the chain (one by one with as many bones, else the first from the first, the paw from the paw, the middle ones by their share of the length). The creature keeps its rest pose (a crouching werewolf walks crouching), the hips move scaled by the height, in place. A marked mouth moves from closed in the clips. The result: `<name>_clips.glb` (the model with clips `fox_walk`, `horse_trot` …), played below.",
+ "cr.anim_intro": "Mesh2Motion's clips (CC0) - a fox's, a horse's, a dragon's, a bird's, a kaiju's, a spider's, a snake's, a shark's - put on the creature's skeleton by chains: the spine onto the spine, the legs by their place along the body (the front onto the front, the hind onto the hind; a spider's in order; a bird's and a kaiju's legs onto the hind legs), the wings onto the wings, the tail onto the tail, the head, the muzzle and the jaw; a snake's body from the head to the tail. Legs with no pair in the source are left as they are (a dog on a bird's clips keeps its front legs still). Pick the source by the creature's body: the fox and the horse are ticked at first, the others by hand. A bone takes the turn of the source bone at its place in the chain (one by one with as many bones, else the first from the first, the paw from the paw, the middle ones by their share of the length). The creature keeps its rest pose (a crouching werewolf walks crouching), the hips move scaled by the height, in place. A marked mouth moves from closed in the clips. The result: `<name>_clips.glb` (the model with clips `fox_walk`, `horse_trot` …), played below. The «Nurgle» group is the creature's own clips from videos (`nurgle_jump`, `nurgle_paw_strike`, `nurgle_wall_climb`): key poses from `creature_keys/nurgle.py`, the legs placed by two-bone IK, the paws flat on the ground or the wall; for a creature with four legs, hips and jaw, distances scaled by its height. Entering the tab ticks the clips the creature already has — a transfer again keeps them.",
  "cr.anim_src_fox": "Fox (Mesh2Motion, CC0)",
  "cr.anim_src_horse": "Horse (Mesh2Motion, CC0)",
  "cr.anim_go": "Put the clips on the creature",
@@ -2761,5 +2761,7 @@
  "cc.w_seam": "jerks at the loop",
  "cc.legend": "«Into the floor» - how far the skin goes below the floor (the rest's lowest point); «Over the floor» - where the feet stand, usually (the median); «Sliding» - how far a standing foot strays from an even way, in % of the height (in place a standing foot goes back evenly, as on a treadmill; sliding is its jerks and slips); «Loop's seam» - the jump from the last frame to the first, as many times the usual step between frames (about 1 - smooth). Some sliding may be the source's own: compare with it.",
  "ag.qa_edge": "; by its edge {0:.1f}% (skin peeping from under the rim as the joint bends - usually fine)",
- "ag.qa_shots": "The worst frames ({0}) are in «Previews»: the skin come out through the piece's middle marked red."
+ "ag.qa_shots": "The worst frames ({0}) are in «Previews»: the skin come out through the piece's middle marked red.",
+ "cr.anim_src_nurgle": "Nurgle — its own clips from videos (leap, paw strike, wall climb)",
+ "cr.anim_keyed_skipped": "Not made (the creature lacks the bones: four legs leg_FL_…leg_BR_, hips, jaw): {}"
 }

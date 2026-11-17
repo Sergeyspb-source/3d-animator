@@ -481,6 +481,18 @@ for clip in job["clips"]:
 for pb in tgt.pose.bones:
     pb.rotation_quaternion = (1, 0, 0, 0)
     pb.location = (0, 0, 0)
+# a creature's own clips keyed from key poses (creature_keys/<name>.py: the nurgle's leap, paw strike, wall climb)
+for kd in job.get("keyed") or []:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import creature_keyer
+    try:
+        made = creature_keyer.make_clips(tgt, kd["poses"], kd.get("clips") or [], FPS, tmeshes)
+    except (RuntimeError, AssertionError, KeyError) as e:
+        print("RETARGET_KEYED_SKIPPED", Path(kd["poses"]).stem, e, flush=True)
+        continue
+    done += made
+    for c in made:
+        print("RETARGET_CLIP", c["name"], c["frames"], flush=True)
 for S in sources.values():
     bpy.data.objects.remove(S["src"], do_unlink=True)
 bpy.ops.object.select_all(action="DESELECT")
