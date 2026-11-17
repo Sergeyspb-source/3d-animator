@@ -2408,7 +2408,7 @@ function weapon(side, p) {
         loft(rings, PLATE, 'plate');
         if (B.ear) {   // a string bridge where the ear starts: a small block on its belly
           const iB = C.findIndex(([, , u]) => u >= B.ear), [ba, be] = C[iB];
-          box(ba - sg * .006 * H, ba + sg * .006 * H, be - lt * 1.4, be - lt * .4, -lw * .45, lw * .45, TRIM, 'trim');
+          box(ba - sg * .006 * H, ba + sg * .006 * H, be - lt * 1.4, be - lt * .4, -lw * .45, lw * .45, PLATE, 'plate');   // (the bow's own: the fitting room takes the string for its smallest part)
         }
       }
       if (B.riser) {   // a riser: the stiff middle the limbs are bolted to, the grip shaped in it
@@ -2416,7 +2416,7 @@ function weapon(side, p) {
         loft([-r, -r * .5, -.05 * H, .05 * H, r * .5, r].map((a, i) => {
           const sh = i === 0 || i === 5 ? .6 : i === 1 || i === 4 ? .85 : 1, e0 = -.004 * H, w = lw * .9 * sh;
           return [[a, e0 + d * .5 * sh, -w / 2], [a, e0 + d * .5 * sh, w / 2], [a, e0 - d * .5 * sh, w / 2], [a, e0 - d * .5 * sh, -w / 2]];
-        }), TRIM, 'trim');
+        }), LEATHER, 'strap');   // (the grip's: the fitting room takes the bow's smallest part for its string)
         lathe(ROUND(gr * 1.02, gr * 1.06, -.04 * H, .04 * H, 5), LEATHER, 'strap');
       } else {
         lathe(ROUND(gr * 1.02, gr * 1.08, -.05 * H, .05 * H, 5), LEATHER, 'strap');   // the grip, wrapped
