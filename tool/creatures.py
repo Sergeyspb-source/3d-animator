@@ -10,6 +10,7 @@ bones keep UniRig's names, the passport's "names" rename them - after a markup's
 import base64
 import json
 import math
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -189,6 +190,8 @@ def mark_jaw(cfg, d: Path, name: str, mouth: dict, rigged: Path | None = None):
     if meta.get("eyes"):   # the model is new: its eyes cut and put in again
         _noeyes(dst).unlink(missing_ok=True)
         yield from set_eyes(cfg, d, name, meta["eyes"], rigged=dst)
+    elif paint_variants(d, name):   # (the colouring's variants on the new model)
+        yield _t("cr.paint_refreshed", len(paint_refresh(d, name)))
 
 
 def rebuild(cfg, d: Path, name: str, req: dict):
@@ -295,6 +298,8 @@ def animate(cfg, d: Path, name: str, picks: dict):
     _run(cfg, "blender_creature_retarget.py", [job], "RETARGET_OK")
     made = json.loads(Path(str(out) + ".json").read_text(encoding="utf-8"))
     yield _t("cr.anim_done", out.name, len(made), ", ".join(c["name"] for c in made))
+    if paint_variants(d, name):   # (the colouring's variants on the new model)
+        yield _t("cr.paint_refreshed", len(paint_refresh(d, name)))
 
 
 def straighten(cfg, d: Path, name: str, pose: dict | None = None):
@@ -407,6 +412,8 @@ def set_eyes(cfg, d: Path, name: str, eyes: dict, rigged: Path | None = None):
     meta["kind"] = "creature"
     (d / f"{name}_rig.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
     yield _t("cr.eyes_done", ", ".join(f"{s} r {v['radius']:.3g} · {v['bone']}" for s, v in rep["eyes"].items()))
+    if paint_variants(d, name):   # (the colouring's variants on the new model)
+        yield _t("cr.paint_refreshed", len(paint_refresh(d, name)))
 
 
 def eyes_off(cfg, d: Path, name: str, rigged: Path | None = None):
@@ -423,10 +430,178 @@ def eyes_off(cfg, d: Path, name: str, rigged: Path | None = None):
     (d / f"{name}_eyes_front.png").unlink(missing_ok=True)
     (d / f"{name}_eyes_eye.png").unlink(missing_ok=True)
     yield _t("cr.eyes_off_done")
+    if paint_variants(d, name):   # (the colouring's variants on the new model)
+        yield _t("cr.paint_refreshed", len(paint_refresh(d, name)))
 
 
 def eye_pictures(d: Path, name: str) -> list:
     return [str(p) for p in (Path(d) / f"{name}_eyes_front.png", Path(d) / f"{name}_eyes_eye.png") if p.exists()]
+
+
+# ---------------------------------------------------------------- colouring: variants of the creature's skin
+# The «Colouring» tab's page (creature_paint.html) paints the skin live and bakes each base colour picture of a
+# variant itself (the same rule in UV space); the pictures come up through Gradio's upload and are kept in
+# <name>_paint/<variant>/; the variant's model <name>_v_<variant>.glb is the creature's (its clips' model, else the
+# rigged one) with those pictures in place of its own - swapped in the GLB itself, so the clips stay as they are. The
+# base model is never changed. A new model (clips, jaw, eyes) makes every variant's model again.
+PAINT_PAGE = ROOT / "creature_paint.html"
+PAINT_ID = "sf3d_paint_req"   # the colouring page's hidden textbox and button
+PAINT_GO = "sf3d_paint_go"
+_TR = dict(zip("абвгдеёжзийклмнопрстуфхцчшщъыьэюя",
+               "a b v g d e e zh z i y k l m n o p r s t u f h ts ch sh sch _ y _ e yu ya".split()))
+
+
+def paint_slug(title: str) -> str:
+    import re
+    s = "".join(_TR.get(c, c) for c in title.lower())
+    return re.sub(r"[^a-z0-9]+", "_", s).strip("_")[:40] or "variant"
+
+
+def paint_base(d: Path, name: str) -> Path | None:
+    """the model a variant is made from: the clips' (the game's), else the rigged one"""
+    d = Path(d)
+    return next((p for p in (d / f"{name}_clips.glb", d / f"{name}_rigged.glb", d / f"{name}_landmarks_rigged.glb")
+                 if p.exists()), None)
+
+
+def paint_variants(d: Path, name: str) -> dict:
+    return passport(d, name).get("paints") or {}
+
+
+def paint_page(d: Path, name: str, current: str = "") -> str:
+    """the colouring page on the creature's rigged model (its pictures as made: variants never change it)"""
+    d = Path(d)
+    glb = next((p for p in (d / f"{name}_rigged.glb", d / f"{name}_landmarks_rigged.glb") if p.exists()), None)
+    if glb is None:
+        raise RuntimeError(_t("cr.view_needs_skeleton"))
+    page = i18n.fill(PAINT_PAGE.read_text(encoding="utf-8"))
+    data = {"title": name, "variants": paint_variants(d, name), "current": current, "req_target": PAINT_ID,
+            "req_go": PAINT_GO, "upload": "/upload"}
+    return (page.replace("@@DATA@@", json.dumps(data, ensure_ascii=False).replace("</", "<\\/"))
+                .replace("@@GLB@@", base64.b64encode(glb.read_bytes()).decode("ascii")))
+
+
+def glb_swap_images(src: Path, out: Path, images: dict) -> list:
+    """the GLB with some of its pictures replaced ({image or texture name: file}), everything else byte for byte:
+    the binary chunk laid out again view by view (4-byte aligned). Returns the names replaced."""
+    import struct
+    raw = Path(src).read_bytes()
+    magic, ver, _total = struct.unpack_from("<III", raw, 0)
+    if magic != 0x46546C67:
+        raise RuntimeError(f"not a GLB: {src}")
+    off, js, bin_ = 12, None, b""
+    while off < len(raw):
+        ln, kind = struct.unpack_from("<II", raw, off)
+        chunk = raw[off + 8: off + 8 + ln]
+        if kind == 0x4E4F534A:
+            js = json.loads(chunk.decode("utf-8"))
+        elif kind == 0x004E4942:
+            bin_ = chunk
+        off += 8 + ln
+    by_name = {}
+    for i, im in enumerate(js.get("images", [])):
+        if im.get("name"):
+            by_name[im["name"]] = i
+    for tx in js.get("textures", []):
+        if tx.get("name") and tx.get("source") is not None:
+            by_name.setdefault(tx["name"], tx["source"])
+    new_data = {}
+    done = []
+    for nm, f in images.items():
+        i = by_name.get(nm)
+        if i is None or "bufferView" not in js["images"][i]:
+            continue
+        data = Path(f).read_bytes()
+        new_data[js["images"][i]["bufferView"]] = data
+        js["images"][i]["mimeType"] = "image/png" if data[:4] == b"\x89PNG" else "image/jpeg"
+        done.append(nm)
+    out_bin = bytearray()
+    for vi, bv in enumerate(js.get("bufferViews", [])):
+        data = new_data.get(vi)
+        if data is None:
+            s = bv.get("byteOffset", 0)
+            data = bin_[s: s + bv["byteLength"]]
+        while len(out_bin) % 4:
+            out_bin.append(0)
+        bv["byteOffset"] = len(out_bin)
+        bv["byteLength"] = len(data)
+        bv["buffer"] = 0
+        out_bin += data
+    while len(out_bin) % 4:
+        out_bin.append(0)
+    js["buffers"] = [{"byteLength": len(out_bin)}]
+    jb = json.dumps(js, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    jb += b" " * (-len(jb) % 4)
+    body = struct.pack("<II", len(jb), 0x4E4F534A) + jb + struct.pack("<II", len(out_bin), 0x004E4942) + bytes(out_bin)
+    Path(out).write_bytes(struct.pack("<III", 0x46546C67, 2, 12 + len(body)) + body)
+    return done
+
+
+def _variant_files(d: Path, name: str, slug: str) -> dict:
+    v = paint_variants(d, name).get(slug) or {}
+    folder = Path(d) / f"{name}_paint" / slug
+    return {k: str(folder / f) for k, f in (v.get("images") or {}).items() if (folder / f).exists()}
+
+
+def paint_refresh(d: Path, name: str) -> list:
+    """every variant's model made again from the creature's model now (after its clips, jaw or eyes changed)"""
+    base = paint_base(d, name)
+    made = []
+    if base is None:
+        return made
+    for slug in paint_variants(d, name):
+        glb_swap_images(base, Path(d) / f"{name}_v_{slug}.glb", _variant_files(d, name, slug))
+        made.append(slug)
+    return made
+
+
+def paint_save(cfg, d: Path, name: str, req: dict):
+    """A variant kept: its baked pictures (uploaded files) into <name>_paint/<slug>/, its params in the passport,
+    its model <name>_v_<slug>.glb. Yields log lines."""
+    import tempfile
+    d = Path(d)
+    title = (req.get("title") or "").strip()
+    if not title:
+        raise RuntimeError(_t("cr.paint_need_name"))
+    slug = req.get("variant") or paint_slug(title)
+    imgs = req.get("images") or {}
+    if not imgs:
+        raise RuntimeError(_t("cr.paint_no_images"))
+    # (only Gradio's own uploads: the page's paths are taken from nowhere else)
+    up_root = Path(os.environ.get("GRADIO_TEMP_DIR") or Path(tempfile.gettempdir()) / "gradio").resolve()
+    folder = d / f"{name}_paint" / slug
+    folder.mkdir(parents=True, exist_ok=True)
+    files = {}
+    for k, (nm, src) in enumerate(imgs.items()):
+        sp = Path(src).resolve()
+        if up_root not in sp.parents or not sp.exists():
+            raise RuntimeError(_t("cr.paint_bad_upload", src))
+        dst = folder / f"{k:02d}{sp.suffix.lower() or '.png'}"
+        shutil.copy2(sp, dst)
+        files[nm] = dst.name
+    meta = passport(d, name)
+    paints = meta.get("paints") or {}
+    paints[slug] = {"title": title, "params": req.get("params") or {}, "images": files}
+    meta["paints"] = paints
+    (d / f"{name}_rig.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+    base = paint_base(d, name)
+    out = d / f"{name}_v_{slug}.glb"
+    done = glb_swap_images(base, out, {k: str(folder / f) for k, f in files.items()})
+    yield _t("cr.paint_saved", title, out.name, len(done), base.name)
+    if len(done) < len(files):
+        yield _t("cr.paint_missed", ", ".join(sorted(set(files) - set(done))))
+
+
+def paint_delete(d: Path, name: str, slug: str):
+    d = Path(d)
+    meta = passport(d, name)
+    v = (meta.get("paints") or {}).pop(slug, None)
+    (d / f"{name}_rig.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+    (d / f"{name}_v_{slug}.glb").unlink(missing_ok=True)
+    folder = d / f"{name}_paint" / slug
+    if folder.is_dir() and folder.parent == d / f"{name}_paint":
+        shutil.rmtree(folder)
+    yield _t("cr.paint_deleted", (v or {}).get("title", slug))
 
 
 def godot_view(cfg, d: Path, name: str) -> str:
@@ -459,14 +634,28 @@ run/main_scene="res://creature.tscn"
 window/size/viewport_width=1280
 window/size/viewport_height=800
 """, encoding="utf-8")
-    (proj / "creature.tscn").write_text("""[gd_scene load_steps=3 format=3]
+    # the colouring's variants beside it (variant_<slug>.glb), switched in the window
+    vs = {s: v for s, v in paint_variants(d, name).items() if (d / f"{name}_v_{s}.glb").exists()}
+    for old in proj.glob("variant_*.glb"):
+        if old.stem[len("variant_"):] not in vs:
+            old.unlink()
+    for s in vs:
+        src, vd = d / f"{name}_v_{s}.glb", proj / f"variant_{s}.glb"
+        if not vd.exists() or vd.stat().st_mtime < src.stat().st_mtime or vd.stat().st_size != src.stat().st_size:
+            shutil.copy2(src, vd)
+    ext = "".join(f'[ext_resource type="PackedScene" path="res://variant_{s}.glb" id="v{i}"]\n' for i, s in enumerate(vs))
+    arr = ", ".join(f'ExtResource("v{i}")' for i in range(len(vs)))
+    names = ", ".join(json.dumps(v.get("title") or s, ensure_ascii=False) for s, v in vs.items())
+    (proj / "creature.tscn").write_text(f"""[gd_scene load_steps={3 + len(vs)} format=3]
 
 [ext_resource type="Script" path="res://sf3d_creature.gd" id="1"]
 [ext_resource type="PackedScene" path="res://creature.glb" id="2"]
-
+{ext}
 [node name="Creature" type="Node3D"]
 script = ExtResource("1")
 creature = ExtResource("2")
+variants = [{arr}]
+variant_names = PackedStringArray({names})
 """, encoding="utf-8")
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     r = subprocess.run([godot, "--headless", "--path", str(proj), "--import"], capture_output=True, text=True,

@@ -1371,6 +1371,39 @@ def creature_animate(value, keys, picks):
         yield "\n".join(lines), gr.update()
 
 
+def creature_paint_view(value, current=""):
+    """The colouring page on the current creature (or why there is none)."""
+    f = _char_files(value) or {}
+    if not f or not f.get("rigged"):
+        return _t("cr.view_needs_skeleton")
+    try:
+        return landmarks_ui._frame(CR.paint_page(f["dir"], f["name"], current))
+    except Exception as e:  # noqa: BLE001
+        return _t("ui.error_2", e)
+
+
+def creature_paint_request(value, text):
+    """The colouring page's request (its hidden textbox): a variant kept (its baked pictures) or deleted. Yields the
+    log, then the page again (the variant picked)."""
+    f = _char_files(value) or {}
+    lines = []
+    try:
+        req = json.loads(text or "{}")
+        if not f:
+            raise RuntimeError(_t("cr.none"))
+        act = req.get("action")
+        steps = (CR.paint_save(T.load_config(), f["dir"], f["name"], req) if act == "save"
+                 else CR.paint_delete(f["dir"], f["name"], req.get("variant") or ""))
+        for line in steps:
+            lines.append(line)
+            yield "\n".join(lines), gr.update()
+        cur = (req.get("variant") or CR.paint_slug(req.get("title") or "")) if act == "save" else ""
+        yield "\n".join(lines), creature_paint_view(value, cur)
+    except Exception as e:  # noqa: BLE001
+        lines.append(_t("ui.error_2", e))
+        yield "\n".join(lines), gr.update()
+
+
 def _bones_frame(glb, title, kind=""):
     return landmarks_ui._frame(CR.viewer_page(Path(glb), title=title, kind=kind))
 
@@ -2737,6 +2770,13 @@ def build():
                             cr_godot_btn = gr.Button(_t("cr.godot_btn"))
                         cr_anim_log = gr.Textbox(label=_t("face.progress"), lines=4, interactive=False)
                         cr_anim_view = gr.HTML()
+                    with gr.Tab(_t("cr.paint_tab"), id="cr_paint") as cr_tab_paint:
+                        gr.Markdown(_t("cr.paint_intro"))
+                        cr_paint_btn = gr.Button(_t("cr.view_reopen"))
+                        cr_paint_log = gr.Textbox(label=_t("face.progress"), lines=3, interactive=False)
+                        cr_paint_view = gr.HTML()
+                        cr_paint_req = gr.Textbox(elem_id=CR.PAINT_ID, elem_classes=["sf3d-hidden"], show_label=False)
+                        cr_paint_go = gr.Button("go", elem_id=CR.PAINT_GO, elem_classes=["sf3d-hidden"])
                     with gr.Tab(_t("ui.weight_fixing"), id="cr_rwt"):
                         rwt_ui.mount(T.load_config, accordion=False, char=cr_rig)
 
@@ -2971,6 +3011,10 @@ def build():
         cr_anim_btn.click(cr_anim_go, [cr_dd, *cr_picks], [cr_anim_log, cr_anim_view], concurrency_id="creature_markup",
                           concurrency_limit=1)
         cr_tab_anim.select(creature_clips_viewer, cr_dd, cr_anim_view, show_progress="hidden")
+        cr_tab_paint.select(creature_paint_view, cr_dd, cr_paint_view, show_progress="hidden")
+        cr_paint_btn.click(creature_paint_view, cr_dd, cr_paint_view)
+        cr_paint_go.click(creature_paint_request, [cr_dd, cr_paint_req], [cr_paint_log, cr_paint_view],
+                          concurrency_id="creature_markup", concurrency_limit=1)
 
         def cr_godot(v):   # the creature with its clips in Godot (a window of its own)
             f = _char_files(v) or {}
@@ -2980,7 +3024,7 @@ def build():
                 return _t("ui.error_2", e)
 
         cr_godot_btn.click(cr_godot, cr_dd, cr_anim_log)
-        cr_dd.change(lambda: ("", ""), None, [cr_anim_view, cr_anim_log], show_progress="hidden")
+        cr_dd.change(lambda: ("", "", "", ""), None, [cr_anim_view, cr_anim_log, cr_paint_view, cr_paint_log], show_progress="hidden")
 
         def cr_after(v):   # a skeleton made: the list (its mark), what it has, its files, its viewer
             return (gr.update(choices=_characters(True), value=v), *creature_info(v), *creature_for_tab(v),

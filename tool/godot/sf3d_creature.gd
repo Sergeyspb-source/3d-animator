@@ -2,9 +2,12 @@ extends Node3D
 ## The creature's viewer (creatures.godot_view): the model with its clips as the game shows them - a clip list, the
 ## speed, looping, a floor grid at the paws with shadows, an orbiting camera (left button turns, right one pans, the
 ## wheel zooms). For checks: godot --path <proj> -- --anim=<clip> --at=<seconds> --yaw=<deg> --pitch=<rad>
-## --zoom=<k> --target=<x,y,z> --shot=<png> (the clip played from its start for «at» seconds, the frame saved, quit).
+## --zoom=<k> --target=<x,y,z> --variant=<name> --shot=<png> (the clip played from its start for «at» seconds, the frame saved, quit).
 
 @export var creature: PackedScene
+## the colouring's variants (creatures.paint_save: the same model, other pictures) and their names
+@export var variants: Array[PackedScene] = []
+@export var variant_names: PackedStringArray = []
 
 var _model: Node3D
 var _player: AnimationPlayer
@@ -17,16 +20,14 @@ var _list: ItemList
 var _speed: HSlider
 var _loop: CheckBox
 var _args := {}
+var _variant: OptionButton
 
 
 func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		var kv := a.trim_prefix("--").split("=", true, 1)
 		_args[kv[0]] = kv[1] if kv.size() > 1 else ""
-	_model = creature.instantiate()
-	add_child(_model)
-	var found := _model.find_children("*", "AnimationPlayer", true, false)
-	_player = found[0] if found.size() > 0 else null
+	_load(creature)
 	var box := _bounds(_model)
 	var h := maxf(box.size.y, maxf(box.size.x, box.size.z))
 	_target = box.get_center()
@@ -54,11 +55,37 @@ func _ready() -> void:
 	if _player and not _player.is_playing() and _list.item_count:
 		_list.select(0)
 		_play(0)
+	if _args.has("variant") and _variant:   # (a check: --variant=<its name or number, 1 the first>)
+		var want_v := String(_args["variant"])
+		for i in variant_names.size():
+			if variant_names[i] == want_v or str(i + 1) == want_v:
+				_variant.select(i + 1)
+				_pick_variant(i + 1)
 	if _args.has("shot"):
 		await get_tree().create_timer(float(_args.get("at", "0.5"))).timeout
 		await RenderingServer.frame_post_draw
 		get_viewport().get_texture().get_image().save_png(_args["shot"])
 		get_tree().quit()
+
+
+func _load(scene: PackedScene) -> void:   # the model (the base or a variant) in place of the one shown
+	if _model:
+		_model.queue_free()
+	_model = scene.instantiate()
+	add_child(_model)
+	var found := _model.find_children("*", "AnimationPlayer", true, false)
+	_player = found[0] if found.size() > 0 else null
+
+
+func _pick_variant(i: int) -> void:   # the same clip at the same time on the variant picked (0 = the base)
+	var clip: String = _player.current_animation if _player else ""
+	var at: float = _player.current_animation_position if _player and clip != "" else 0.0
+	var speed: float = _player.speed_scale if _player else 1.0
+	_load(creature if i == 0 else variants[i - 1])
+	if _player and clip != "":
+		_player.speed_scale = speed
+		_player.play(clip)
+		_player.seek(at, true)
 
 
 func _bounds(n: Node) -> AABB:   # the meshes' box in the world, at rest
@@ -135,6 +162,16 @@ func _ui() -> void:
 	add_child(panel)
 	var v := VBoxContainer.new()
 	panel.add_child(v)
+	if variants.size() > 0:
+		var vl := Label.new()
+		vl.text = "{{js:gd.creature_variant}}"
+		v.add_child(vl)
+		_variant = OptionButton.new()
+		_variant.add_item("{{js:gd.creature_base}}")
+		for n in variant_names:
+			_variant.add_item(n)
+		_variant.item_selected.connect(_pick_variant)
+		v.add_child(_variant)
 	var t := Label.new()
 	t.text = "{{js:gd.creature_clips}}"
 	v.add_child(t)

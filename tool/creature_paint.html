@@ -1,0 +1,564 @@
+<!doctype html>
+<html lang="{{raw:lang.code}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{cp.title}}</title>
+<style>
+  /* Embedded in the SF3D app (iframe srcdoc): a creature's colouring - its texture's colour zones each its own new
+     colour (the detail kept), the whole tone, patterns laid in the model's 3D space (back, belly, spots, stripes,
+     dirt), all live on the model; a variant baked into its textures (the same rule in a UV-space pass), uploaded to
+     the app and kept as <name>_v_<variant>.glb with every clip. The same look as the skeleton viewer. */
+  :root { --bg:#ece8e1; --panel:#f6f3ee; --stage:#cfc8bc; --fg:#231d17; --muted:#6b6258; --line:#d0c9bd; --accent:#a8451d;
+          --accent-fg:#fff6ec; --ok:#2f7d4f; --ui:"Segoe UI",system-ui,sans-serif; --mono:ui-monospace,Consolas,monospace; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#15110d; --panel:#1e1913; --stage:#0f0c09;
+    --fg:#eadfca; --muted:#a39580; --line:#352d23; --accent:#d9622f; --accent-fg:#1a0e06; --ok:#5fbf86; color-scheme:dark; } }
+  :root[data-theme="dark"] { --bg:#15110d; --panel:#1e1913; --stage:#0f0c09; --fg:#eadfca; --muted:#a39580; --line:#352d23;
+    --accent:#d9622f; --accent-fg:#1a0e06; --ok:#5fbf86; color-scheme:dark; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; }
+  body { background:var(--bg); color:var(--fg); font:13px/1.4 var(--ui); padding:10px; }
+  .wrap { display:grid; grid-template-columns:minmax(0,1fr) 320px; gap:10px; height:100%; min-height:560px; }
+  @media (max-width: 760px) { .wrap { grid-template-columns:minmax(0,1fr); grid-template-rows:auto auto; height:auto; } .stage { min-height:60vh; } }
+  .main { display:flex; flex-direction:column; gap:8px; min-height:0; min-width:0; }
+  .toolbar { display:flex; flex-wrap:wrap; gap:6px; align-items:center; background:var(--panel); border:1px solid var(--line);
+    border-radius:10px; padding:6px 8px; }
+  .seg { display:inline-flex; }
+  .seg button { border-radius:0; margin-left:-1px; } .seg button:first-child { border-radius:7px 0 0 7px; margin-left:0; }
+  .seg button:last-child { border-radius:0 7px 7px 0; }
+  .sep { width:1px; align-self:stretch; background:var(--line); margin:0 2px; }
+  .stage { position:relative; flex:1; background:var(--stage); border:1px solid var(--line); border-radius:10px; overflow:hidden; min-height:320px; }
+  canvas { position:absolute; inset:0; width:100%; height:100%; display:block; touch-action:none; }
+  .msg { position:absolute; inset:0; display:grid; place-items:center; color:var(--muted); padding:16px; text-align:center; }
+  .badge { position:absolute; left:10px; top:8px; font:12px var(--mono); color:var(--muted); background:color-mix(in srgb,var(--panel) 85%,transparent);
+    padding:3px 8px; border-radius:6px; pointer-events:none; }
+  [hidden] { display:none !important; }
+  .rail { display:flex; flex-direction:column; gap:8px; min-height:0; overflow:auto; }
+  .box { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:9px; min-width:0; }
+  .grp { font:11px var(--mono); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:2px 0 6px; }
+  .row { display:flex; flex-wrap:wrap; gap:5px; align-items:center; }
+  button { font:inherit; color:var(--fg); background:transparent; border:1px solid var(--line); border-radius:7px; padding:5px 8px; cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  button.on { background:var(--accent); color:var(--accent-fg); border-color:var(--accent); }
+  button.primary { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:disabled { opacity:.45; cursor:default; }
+  select, input[type=text] { font:inherit; color:var(--fg); background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:3px 5px; max-width:100%; }
+  input[type=range] { width:100%; }
+  input[type=color] { width:38px; height:24px; padding:0; border:1px solid var(--line); border-radius:5px; background:none; cursor:pointer; flex:none; }
+  label.chk { display:flex; gap:6px; align-items:center; cursor:pointer; }
+  .small { color:var(--muted); font-size:12px; }
+  .status { font:12px var(--mono); color:var(--muted); margin-top:6px; white-space:pre-wrap; }
+  .zone { display:grid; grid-template-columns:22px 14px 38px 1fr; gap:6px; align-items:center; margin:3px 0; font-size:12px; }
+  .zone .orig { width:22px; height:22px; border-radius:5px; border:1px solid rgba(0,0,0,.35); }
+  .zone select { width:100%; }
+  .layer { border-top:1px solid var(--line); padding-top:6px; margin-top:6px; }
+  .layer .head { display:flex; align-items:center; gap:6px; justify-content:space-between; }
+  .sl { display:grid; grid-template-columns:86px 1fr; gap:4px; align-items:center; font-size:12px; color:var(--muted); }
+  .vars { display:flex; flex-wrap:wrap; gap:4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="main">
+    <div class="toolbar">
+      <div class="seg" id="views">
+        <button data-v="front">{{sv.front}}</button><button data-v="side">{{sv.side}}</button><button data-v="back">{{sv.back}}</button><button data-v="top">{{sv.top}}</button>
+      </div>
+      <div class="sep"></div>
+      <label class="chk"><input type="checkbox" id="floorOn" checked> {{sv.floor}}</label>
+      <div class="sep"></div>
+      <button id="orig" title="{{cp.orig_tip}}">{{cp.orig}}</button>
+      <select id="clip" hidden></select>
+    </div>
+    <div class="stage" id="stage">
+      <div class="badge" id="badge" hidden></div>
+      <div class="msg" id="msg">{{sv.loading}}</div>
+    </div>
+  </div>
+  <div class="rail">
+    <div class="box">
+      <div class="grp" id="title">{{cp.title}}</div>
+      <div class="small">{{cp.hint}}</div>
+    </div>
+    <div class="box">
+      <div class="grp">{{cp.variants}}</div>
+      <div class="vars" id="vars"></div>
+      <div class="row" style="margin-top:6px">
+        <input type="text" id="vname" placeholder="{{cp.vname_ph}}" style="flex:1">
+      </div>
+      <div class="row" style="margin-top:6px">
+        <button id="save" class="primary">{{cp.save}}</button>
+        <button id="del" disabled>{{cp.delete}}</button>
+        <button id="fresh">{{cp.fresh}}</button>
+      </div>
+      <div class="status" id="status"></div>
+    </div>
+    <div class="box">
+      <div class="grp">{{cp.presets}}</div>
+      <div class="row" id="presets"></div>
+    </div>
+    <div class="box">
+      <div class="grp">{{cp.zones}}</div>
+      <div class="small">{{cp.zones_hint}}</div>
+      <div id="zones" style="margin-top:6px"></div>
+    </div>
+    <div class="box">
+      <div class="grp">{{cp.tone}}</div>
+      <div class="sl"><span>{{cp.hue}}</span><input type="range" id="hue" min="-180" max="180" step="1" value="0"></div>
+      <div class="sl"><span>{{cp.sat}}</span><input type="range" id="sat" min="0" max="2" step="0.02" value="1"></div>
+      <div class="sl"><span>{{cp.val}}</span><input type="range" id="val" min="0.2" max="2" step="0.02" value="1"></div>
+      <div class="sl"><span>{{cp.con}}</span><input type="range" id="con" min="0.3" max="2" step="0.02" value="1"></div>
+    </div>
+    <div class="box">
+      <div class="grp">{{cp.patterns}}</div>
+      <div class="small">{{cp.patterns_hint}}</div>
+      <div id="layers"></div>
+      <div class="row" style="margin-top:8px"><button id="reseed">{{cp.reseed}}</button></div>
+    </div>
+  </div>
+</div>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+               "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const DATA = @@DATA@@;
+const GLB = "@@GLB@@";
+const $ = (id) => document.getElementById(id);
+const V3 = THREE.Vector3;
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+$('title').textContent = DATA.title || '';
+
+// ---------------------------------------------------------------- the rule (GLSL): sRGB in, sRGB out; P the rest
+// position in the world, N its normal. Zones: soft by the colour's distance to each zone's centre; a zone recoloured
+// takes its new colour times the pixel's brightness against the zone's (its detail kept), a little of its own tint;
+// a locked one stays. The tone and the patterns only where the zones are not locked.
+const NZ = 6;
+const RULE = `
+uniform vec3 zC[${NZ}]; uniform vec3 zT[${NZ}]; uniform float zM[${NZ}]; uniform float zN; uniform float zSig;
+uniform float tHue, tSat, tVal, tCon;
+uniform vec4 lBack, lBelly, lSpot, lStripe, lDirt;   // colour, amount
+uniform vec3 pSpot, pStripe, pDirt;                 // size, softness / warp, direction
+uniform vec3 pMin; uniform float pH, pSeed;
+float lum(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+vec3 toS(vec3 l) { return mix(l * 12.92, 1.055 * pow(max(l, vec3(0.)), vec3(1. / 2.4)) - .055, step(.0031308, l)); }
+vec3 toL(vec3 s) { return mix(s / 12.92, pow((max(s, vec3(0.)) + .055) / 1.055, vec3(2.4)), step(.04045, s)); }
+float h3(vec3 p) { p = fract(p * vec3(.1031, .1030, .0973)); p += dot(p, p.yxz + 33.33); return fract((p.x + p.y) * p.z); }
+float vn(vec3 x) { vec3 i = floor(x), f = fract(x); f = f * f * (3. - 2. * f);
+  return mix(mix(mix(h3(i), h3(i + vec3(1, 0, 0)), f.x), mix(h3(i + vec3(0, 1, 0)), h3(i + vec3(1, 1, 0)), f.x), f.y),
+             mix(mix(h3(i + vec3(0, 0, 1)), h3(i + vec3(1, 0, 1)), f.x), mix(h3(i + vec3(0, 1, 1)), h3(i + vec3(1, 1, 1)), f.x), f.y), f.z); }
+float fbm(vec3 x) { float s = 0., a = .5; for (int i = 0; i < 4; i++) { s += a * vn(x); x = x * 2.03 + 17.1; a *= .5; } return s / .9375; }
+vec3 hueRot(vec3 c, float a) { vec3 k = vec3(.57735); float ca = cos(a); return c * ca + cross(k, c) * sin(a) + k * dot(k, c) * (1. - ca); }
+vec3 recol(vec3 c, vec3 C, vec3 T) {
+  float lc = max(lum(C), .03), r = clamp(lum(c) / lc, 0., 3.);
+  return clamp(T * r + ((c - vec3(lum(c))) - (C - vec3(lum(C)))) * .35, 0., 1.);
+}
+vec3 sfPaint(vec3 c, vec3 P, vec3 N) {
+  vec3 p = (P - pMin) / pH;
+  float wsum = 0., wfree = 0.; vec3 acc = vec3(0.), Cm = vec3(0.);
+  for (int k = 0; k < ${NZ}; k++) {
+    if (float(k) >= zN) break;
+    vec3 d = c - zC[k]; float w = exp(-dot(d, d) / (2. * zSig * zSig)) + 1e-5;
+    wsum += w; Cm += w * zC[k];
+    if (zM[k] < 1.5) { wfree += w; acc += w * (zM[k] > .5 ? recol(c, zC[k], zT[k]) : c); }
+  }
+  if (wfree <= 1e-6) return c;
+  float m = wfree / wsum; vec3 o = acc / wfree; Cm /= wsum;
+  float rd = clamp(lum(c) / max(lum(Cm), .03), .45, 1.8);   // the detail a fill keeps
+  o = hueRot(o, radians(tHue)); float l = lum(o); o = mix(vec3(l), o, tSat); o *= tVal; o = (o - .5) * tCon + .5;
+  float up = N.y;
+  o = mix(o, lBack.rgb * rd, lBack.a * smoothstep(0., .8, up));
+  o = mix(o, lBelly.rgb * rd, lBelly.a * smoothstep(0., .8, -up));
+  if (lSpot.a > 0.) {
+    float n = fbm(p * pSpot.x * 9. + pSeed), th = mix(.72, .32, lSpot.a), sf = .01 + pSpot.y * .12;
+    o = mix(o, lSpot.rgb * rd, smoothstep(th - sf, th + sf, n));
+  }
+  if (lStripe.a > 0.) {
+    float w = fbm(p * 3. + pSeed * 1.7) * pStripe.y * 3.;
+    float ax = pStripe.z > .5 ? p.y : p.z;
+    float s = .5 + .5 * sin(6.2832 * (ax * pStripe.x * 12. + w)), th = 1. - lStripe.a * .75;
+    o = mix(o, lStripe.rgb * rd, smoothstep(th - .06, th + .06, s));
+  }
+  if (lDirt.a > 0.) {
+    float n = fbm(p * pDirt.x * 7. + pSeed * 2.3 + 11.) + (.35 - p.y) * .35, th = mix(.78, .38, lDirt.a);
+    o = mix(o, lDirt.rgb * (.55 + .45 * rd), .92 * smoothstep(th - .04, th + .04, n));
+  }
+  return mix(c, clamp(o, 0., 1.), m);
+}`;
+const U = {
+  zC: { value: Array.from({ length: NZ }, () => new V3()) }, zT: { value: Array.from({ length: NZ }, () => new V3()) },
+  zM: { value: new Array(NZ).fill(0) }, zN: { value: 0 }, zSig: { value: 0.12 },
+  tHue: { value: 0 }, tSat: { value: 1 }, tVal: { value: 1 }, tCon: { value: 1 },
+  lBack: { value: new THREE.Vector4() }, lBelly: { value: new THREE.Vector4() }, lSpot: { value: new THREE.Vector4() },
+  lStripe: { value: new THREE.Vector4() }, lDirt: { value: new THREE.Vector4() },
+  pSpot: { value: new V3(1, .3, 0) }, pStripe: { value: new V3(1, .4, 0) }, pDirt: { value: new V3(1, 0, 0) },
+  pMin: { value: new V3() }, pH: { value: 1 }, pSeed: { value: 0 },
+};
+
+// ---------------------------------------------------------------- scene
+const stage = $('stage');
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+stage.prepend(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(35, 1, 0.01, 1000);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444034, 1.5));
+const sun = new THREE.DirectionalLight(0xffffff, 1.7);
+scene.add(sun);
+function makeFloor() {   // (the skeleton viewer's floor: a grid at the feet, the axes, the shadow, a graded background)
+  const g = document.createElement('canvas'); g.width = 2; g.height = 256;
+  const cx2 = g.getContext('2d'), grad = cx2.createLinearGradient(0, 0, 0, 256);
+  grad.addColorStop(0, '#4a4d52'); grad.addColorStop(1, '#232427');
+  cx2.fillStyle = grad; cx2.fillRect(0, 0, 2, 256);
+  const bg = new THREE.CanvasTexture(g); bg.colorSpace = THREE.SRGBColorSpace;
+  const floor = new THREE.Group(); scene.add(floor);
+  renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+  return {
+    on(v) { floor.visible = v; scene.background = v ? bg : new THREE.Color(0xcfc8bc); },
+    place(box) {
+      floor.clear();
+      const H = Math.max(box.max.y - box.min.y, box.max.x - box.min.x, box.max.z - box.min.z, 1e-3);
+      const unit = Math.pow(10, Math.round(Math.log10(H))) / 10, major = unit * 10;
+      const size = Math.max(Math.ceil(H * 6 / major), 2) * major;
+      const c = box.getCenter(new V3()), y = box.min.y;
+      const at = (o) => { o.position.set(Math.round(c.x / major) * major, y, Math.round(c.z / major) * major); return o; };
+      const fine = at(new THREE.GridHelper(size, Math.round(size / unit), 0x55585e, 0x44474c));
+      const big = at(new THREE.GridHelper(size, Math.round(size / major), 0x6a6e75, 0x6a6e75));
+      big.position.y += unit * 1e-3;
+      [fine, big].forEach((x) => { x.material.transparent = true; x.material.opacity = x === big ? .9 : .7; x.material.depthWrite = false; floor.add(x); });
+      const shadow = new THREE.Mesh(new THREE.PlaneGeometry(size, size), new THREE.ShadowMaterial({ opacity: .35 }));
+      shadow.rotation.x = -Math.PI / 2; shadow.position.set(c.x, y + unit * 5e-4, c.z); shadow.receiveShadow = true;
+      floor.add(shadow);
+      const s = sun.shadow.camera, r = H * 1.2;
+      s.left = -r; s.right = r; s.top = r; s.bottom = -r; s.near = .01; s.far = H * 20;
+      sun.target.position.copy(c); scene.add(sun.target);
+      sun.position.copy(c).add(new V3(H * 1.2, H * 3, H * 1.6));
+      s.updateProjectionMatrix();
+    },
+  };
+}
+const floor = makeFloor();
+$('floorOn').onchange = () => floor.on($('floorOn').checked);
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / Math.max(h, 1); camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage);
+
+// ---------------------------------------------------------------- the model, its skin's materials painted
+let root = null, H = 1, center = new V3(), mixer = null, action = null;
+const skins = [];   // {mesh, orig material, painted material, map}
+const isEyePart = (m) => /^Eye(Socket|Lid)?_/.test(m.name) || /^Eye(Socket|Lid)?_/.test((m.parent && m.parent.name) || '');
+function painted(mat, pMat) {
+  const m = mat.clone();
+  m.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, U, { pMat: { value: pMat } });
+    sh.vertexShader = 'uniform mat4 pMat;\nvarying vec3 vPP;\nvarying vec3 vPN;\n' + sh.vertexShader.replace('#include <begin_vertex>',
+      '#include <begin_vertex>\nvPP = (pMat * vec4(position, 1.)).xyz;\nvPN = normalize(mat3(pMat) * normal);');
+    sh.fragmentShader = RULE + '\nvarying vec3 vPP;\nvarying vec3 vPN;\n' + sh.fragmentShader.replace('#include <map_fragment>',
+      '#include <map_fragment>\ndiffuseColor.rgb = toL(sfPaint(toS(diffuseColor.rgb), vPP, normalize(vPN)));');
+  };
+  m.customProgramCacheKey = () => 'sf3d-paint';
+  return m;
+}
+function b64(b) { const s = atob(b); const u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u.buffer; }
+new GLTFLoader().parse(b64(GLB), '', (gltf) => {
+  root = gltf.scene; scene.add(root); root.updateMatrixWorld(true);
+  const box = new THREE.Box3();
+  root.traverse((o) => { if (o.isMesh) { box.expandByObject(o); o.castShadow = true; o.frustumCulled = false; } });
+  H = Math.max(box.max.y - box.min.y, box.max.x - box.min.x, box.max.z - box.min.z, 1e-3);
+  box.getCenter(center);
+  U.pMin.value.copy(box.min); U.pH.value = H;
+  root.traverse((o) => {
+    if (!o.isMesh || isEyePart(o)) return;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    if (Array.isArray(o.material)) return;   // (one material a mesh: glTF splits primitives into meshes)
+    const mat = mats[0];
+    if (!mat || !mat.map) return;
+    const pMat = o.matrixWorld.clone();
+    skins.push({ mesh: o, orig: mat, paint: painted(mat, pMat), map: mat.map, pMat });
+    o.material = skins[skins.length - 1].paint;
+  });
+  floor.place(box); floor.on(true);
+  if (gltf.animations.length) {   // (a clip to see the patterns move with the skin)
+    mixer = new THREE.AnimationMixer(root);
+    const clips = gltf.animations;
+    $('clip').innerHTML = `<option value="">{{js:sv.clip_none}}</option>` + clips.map((c, i) => `<option value="${i}">${esc(c.name)}</option>`).join('');
+    $('clip').hidden = false;
+    $('clip').onchange = () => { if (action) action.stop(); action = $('clip').value === '' ? null : mixer.clipAction(clips[+$('clip').value]); if (action) action.reset().play(); };
+  }
+  view('front');
+  if (!skins.length) { $('msg').textContent = '{{js:cp.no_texture}}'; return; }
+  zonesFind();
+  $('msg').hidden = true;
+  load(DATA.current && DATA.variants && DATA.variants[DATA.current] ? DATA.variants[DATA.current].params : null);
+  varsUi();
+}, (err) => { $('msg').textContent = '{{js:sv.load_failed}} ' + (err && err.message || err); });
+
+// ---------------------------------------------------------------- the colour zones: k-means of the skin's colours
+// (sampled at its vertices' UVs, so a texture's unused corners do not count), darkest first
+let zones = [];   // {c: [r, g, b], share, t: [r, g, b], m: 0 as it is | 1 recoloured | 2 locked}
+function texPixels(map) {
+  if (map.userData.px) return map.userData.px;
+  const img = map.image, c = document.createElement('canvas'); c.width = c.height = 256;
+  const g = c.getContext('2d'); g.drawImage(img, 0, 0, 256, 256);
+  return (map.userData.px = g.getImageData(0, 0, 256, 256).data);
+}
+const lumOf = (c) => 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
+function zonesFind() {
+  const pts = [];
+  skins.forEach((s) => {
+    const uv = s.mesh.geometry.attributes.uv, px = texPixels(s.map);
+    if (!uv) return;
+    const step = Math.max(1, Math.floor(uv.count / 6000));
+    for (let i = 0; i < uv.count; i += step) {
+      const u = ((uv.getX(i) % 1) + 1) % 1, v = ((uv.getY(i) % 1) + 1) % 1;
+      const q = (Math.min(255, Math.floor(v * 256)) * 256 + Math.min(255, Math.floor(u * 256))) * 4;
+      pts.push([px[q] / 255, px[q + 1] / 255, px[q + 2] / 255]);
+    }
+  });
+  const K = Math.min(5, pts.length);
+  // (the first centres: the colours spread by brightness - the same every time for the same model)
+  pts.sort((a, b) => lumOf(a) - lumOf(b));
+  let C = Array.from({ length: K }, (_, k) => pts[Math.floor((k + .5) / K * pts.length)].slice());
+  const lab = new Array(pts.length).fill(0);
+  for (let it = 0; it < 20; it++) {
+    pts.forEach((p, i) => { let b = 0, bd = Infinity; C.forEach((c, k) => { const d = (p[0] - c[0]) ** 2 + (p[1] - c[1]) ** 2 + (p[2] - c[2]) ** 2; if (d < bd) { bd = d; b = k; } }); lab[i] = b; });
+    C = C.map((c, k) => { const m = pts.filter((_, i) => lab[i] === k); return m.length ? [0, 1, 2].map((j) => m.reduce((a, p) => a + p[j], 0) / m.length) : c; });
+  }
+  const share = C.map((_, k) => lab.filter((l) => l === k).length / pts.length);
+  zones = C.map((c, k) => ({ c, share: share[k], t: c.slice(), m: 0 })).filter((z) => z.share > 0.01).sort((a, b) => lumOf(a.c) - lumOf(b.c));
+  // the lightest zone, small and light, left alone at first: claws, teeth, horns (a black werewolf's went black too)
+  const top = zones[zones.length - 1];
+  if (zones.length > 2 && top.share < 0.06 && lumOf(top.c) > 0.4) top.lock0 = true;
+  zones.forEach((z) => { if (z.lock0) z.m = 2; });
+  // the spread between the zones: the soft weights' width
+  let dmin = Infinity;
+  zones.forEach((a, i) => zones.forEach((b, j) => { if (j > i) dmin = Math.min(dmin, Math.hypot(a.c[0] - b.c[0], a.c[1] - b.c[1], a.c[2] - b.c[2])); }));
+  U.zSig.value = Math.min(Math.max((isFinite(dmin) ? dmin : .2) * .45, .05), .2);
+}
+const hex = (c) => '#' + c.map((v) => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, '0')).join('');
+const unhex = (h) => [1, 3, 5].map((i) => +(parseInt(h.slice(i, i + 2), 16) / 255).toFixed(3));
+function zonesUi() {
+  $('zones').innerHTML = zones.map((z, k) => `<div class="zone">
+    <span class="orig" style="background:${hex(z.c)}" title="{{js:cp.zone_orig}} · ${Math.round(z.share * 100)} %"></span><span>→</span>
+    <input type="color" data-k="${k}" value="${hex(z.t)}">
+    <select data-k="${k}"><option value="0">{{js:cp.z_keep}}</option><option value="1">{{js:cp.z_new}}</option><option value="2">{{js:cp.z_lock}}</option></select></div>`).join('');
+  $('zones').querySelectorAll('select').forEach((el) => { el.value = String(zones[+el.dataset.k].m); el.onchange = () => { zones[+el.dataset.k].m = +el.value; apply(); }; });
+  $('zones').querySelectorAll('input[type=color]').forEach((el) => { el.oninput = () => {
+    const z = zones[+el.dataset.k]; z.t = unhex(el.value); if (z.m !== 1) { z.m = 1; el.nextElementSibling.value = '1'; } apply(); }; });
+}
+
+// ---------------------------------------------------------------- the patterns
+const LAYERS = [
+  { k: 'back', name: '{{js:cp.l_back}}', c: [0.1, 0.08, 0.07], extra: [] },
+  { k: 'belly', name: '{{js:cp.l_belly}}', c: [0.85, 0.8, 0.7], extra: [] },
+  { k: 'spot', name: '{{js:cp.l_spot}}', c: [0.12, 0.09, 0.07], extra: [['size', '{{js:cp.size}}', 0.2, 3, 1], ['soft', '{{js:cp.soft}}', 0, 1, 0.3]] },
+  { k: 'stripe', name: '{{js:cp.l_stripe}}', c: [0.1, 0.08, 0.06], extra: [['size', '{{js:cp.freq}}', 0.2, 3, 1], ['warp', '{{js:cp.warp}}', 0, 1, 0.4], ['dir', '{{js:cp.dir}}', 0, 1, 0, 1]] },
+  { k: 'dirt', name: '{{js:cp.l_dirt}}', c: [0.35, 0.03, 0.03], extra: [['size', '{{js:cp.size}}', 0.2, 3, 1]] },
+];
+function layersUi() {
+  $('layers').innerHTML = LAYERS.map((L) => `<div class="layer"><div class="head"><b style="font-weight:600">${L.name}</b>
+      <input type="color" id="${L.k}C" value="${hex(L.c)}"></div>
+    <div class="sl"><span>{{js:cp.amount}}</span><input type="range" id="${L.k}A" min="0" max="1" step="0.02" value="0"></div>
+    ${L.extra.map(([e, n, a, b, v, st]) => `<div class="sl"><span>${n}</span><input type="range" id="${L.k}_${e}" min="${a}" max="${b}" step="${st || 0.02}" value="${v}"></div>`).join('')}</div>`).join('');
+  $('layers').querySelectorAll('input').forEach((el) => { el.oninput = apply; });
+}
+layersUi();
+['hue', 'sat', 'val', 'con'].forEach((id) => { $(id).oninput = apply; });
+$('reseed').onclick = () => { U.pSeed.value = Math.round(Math.random() * 997); apply(); };
+
+// ---------------------------------------------------------------- params <-> the UI and the uniforms
+function params() {
+  const L = Object.fromEntries(LAYERS.map((l) => [l.k, { c: unhex($(l.k + 'C').value), a: +$(l.k + 'A').value,
+    ...Object.fromEntries(l.extra.map(([e]) => [e, +$(l.k + '_' + e).value])) }]));
+  return { zones: zones.map((z) => ({ c: z.c.map((v) => +v.toFixed(4)), t: z.t, m: z.m, share: +z.share.toFixed(3) })), sig: U.zSig.value,
+    tone: { hue: +$('hue').value, sat: +$('sat').value, val: +$('val').value, con: +$('con').value }, layers: L, seed: U.pSeed.value };
+}
+function apply() {
+  U.zN.value = zones.length;
+  zones.forEach((z, k) => { U.zC.value[k].set(...z.c); U.zT.value[k].set(...z.t); U.zM.value[k] = z.m; });
+  U.tHue.value = +$('hue').value; U.tSat.value = +$('sat').value; U.tVal.value = +$('val').value; U.tCon.value = +$('con').value;
+  const v4 = (k) => U['l' + k[0].toUpperCase() + k.slice(1)].value.set(...unhex($(k + 'C').value), +$(k + 'A').value);
+  LAYERS.forEach((l) => v4(l.k));
+  U.pSpot.value.set(+$('spot_size').value, +$('spot_soft').value, 0);
+  U.pStripe.value.set(+$('stripe_size').value, +$('stripe_warp').value, +$('stripe_dir').value);
+  U.pDirt.value.set(+$('dirt_size').value, 0, 0);
+}
+function load(p) {   // a variant's params (else everything as the model has it)
+  if (p && p.zones && p.zones.length) { zones = p.zones.map((z) => ({ c: z.c, t: z.t, m: z.m, share: z.share || 0 })); if (p.sig) U.zSig.value = p.sig; }
+  else zones.forEach((z) => { z.t = z.c.slice(); z.m = z.lock0 ? 2 : 0; });
+  const t = (p && p.tone) || {};
+  $('hue').value = t.hue ?? 0; $('sat').value = t.sat ?? 1; $('val').value = t.val ?? 1; $('con').value = t.con ?? 1;
+  LAYERS.forEach((l) => {
+    const q = (p && p.layers && p.layers[l.k]) || {};
+    $(l.k + 'C').value = hex(q.c || l.c); $(l.k + 'A').value = q.a ?? 0;
+    l.extra.forEach(([e, , , , v]) => { $(l.k + '_' + e).value = q[e] ?? v; });
+  });
+  U.pSeed.value = (p && p.seed) || 0;
+  zonesUi(); apply();
+}
+
+// ---------------------------------------------------------------- presets: a palette laid on the zones by brightness
+// (the darkest free zone takes the dark colour, the lightest the light one; locked zones stay), patterns on top
+const PRESETS = {
+  white: ['{{js:cp.p_white}}', [0.6, 0.58, 0.55], [0.97, 0.96, 0.93]],
+  black: ['{{js:cp.p_black}}', [0.015, 0.015, 0.02], [0.2, 0.18, 0.18]],
+  ash: ['{{js:cp.p_ash}}', [0.2, 0.2, 0.21], [0.66, 0.66, 0.66]],
+  red: ['{{js:cp.p_red}}', [0.3, 0.09, 0.02], [0.95, 0.52, 0.18]],
+  swamp: ['{{js:cp.p_swamp}}', [0.09, 0.13, 0.05], [0.5, 0.6, 0.28]],
+  blood: ['{{js:cp.p_blood}}', [0.22, 0.02, 0.02], [0.75, 0.2, 0.15]],
+  ice: ['{{js:cp.p_ice}}', [0.2, 0.3, 0.45], [0.85, 0.93, 1.0]],
+  albino: ['{{js:cp.p_albino}}', [0.85, 0.72, 0.7], [1.0, 0.96, 0.95]],
+  spotted: ['{{js:cp.p_spotted}}', null, null, { spot: { a: 0.45, c: [0.08, 0.06, 0.05], size: 1.2, soft: 0.25 } }],
+  striped: ['{{js:cp.p_striped}}', null, null, { stripe: { a: 0.45, c: [0.07, 0.05, 0.04], size: 1, warp: 0.5, dir: 0 } }],
+  dirty: ['{{js:cp.p_dirty}}', null, null, { dirt: { a: 0.5, c: [0.3, 0.02, 0.02], size: 1 } }],
+};
+$('presets').innerHTML = `<button data-p="">{{js:cp.p_none}}</button>` + Object.entries(PRESETS).map(([k, [n]]) => `<button data-p="${k}">${n}</button>`).join('');
+$('presets').querySelectorAll('button').forEach((el) => el.onclick = () => preset(el.dataset.p));
+function preset(k) {
+  if (!k) { load(null); return; }
+  const [, dark, light, lay] = PRESETS[k];
+  if (dark) {
+    const free = zones.filter((z) => z.m !== 2);
+    free.forEach((z, i) => { const t = free.length > 1 ? i / (free.length - 1) : .5; z.t = dark.map((d, j) => d + (light[j] - d) * t); z.m = 1; });
+  }
+  // a pattern's colour against the fur as it is now: light marks on a dark coat, dark ones on a light coat
+  const free = zones.filter((z) => z.m !== 2), share = free.reduce((a, z) => a + z.share, 0) || 1;
+  const coat = free.reduce((a, z) => a + lumOf(z.m === 1 ? z.t : z.c) * z.share, 0) / share * +$('val').value;
+  if (lay) Object.entries(lay).forEach(([lk, q]) => {
+    const c = lk === 'dirt' ? q.c : coat < 0.35 ? (q.light || [0.78, 0.68, 0.52]) : q.c;
+    $(lk + 'C').value = hex(c); $(lk + 'A').value = q.a;
+    Object.entries(q).forEach(([e, v]) => { if (e !== 'c' && e !== 'a' && $(lk + '_' + e)) $(lk + '_' + e).value = v; });
+  });
+  zonesUi(); apply();
+}
+
+// ---------------------------------------------------------------- «Original»: held, the model as it is
+const showOrig = (v) => { skins.forEach((s) => { s.mesh.material = v ? s.orig : s.paint; }); $('orig').classList.toggle('on', v); };
+$('orig').onpointerdown = () => showOrig(true);
+['pointerup', 'pointerleave'].forEach((e) => $('orig').addEventListener(e, () => showOrig(false)));
+
+// ---------------------------------------------------------------- the bake: each base colour picture painted in UV
+// space by the same rule (each vertex at its UV, its rest position and normal carried), drawn over the original
+// picture and spread 2 pixels past each island's edge (no seams of the old colour where the picture is filtered)
+const BAKE_VS = `uniform mat4 pMat; uniform vec2 off; varying vec2 vUv; varying vec3 vPP; varying vec3 vPN;
+void main() { vUv = uv; vPP = (pMat * vec4(position, 1.)).xyz; vPN = normalize(mat3(pMat) * normal); gl_Position = vec4(uv * 2. - 1. + off, 0., 1.); }`;
+const BAKE_FS = RULE + `\nuniform sampler2D map; varying vec2 vUv; varying vec3 vPP; varying vec3 vPN;
+void main() { vec3 c = toS(texture2D(map, vUv).rgb); gl_FragColor = vec4(sfPaint(c, vPP, normalize(vPN)), 1.); }`;
+const COPY_FS = `uniform sampler2D map; varying vec2 vUv;
+vec3 toS(vec3 l) { return mix(l * 12.92, 1.055 * pow(max(l, vec3(0.)), vec3(1. / 2.4)) - .055, step(.0031308, l)); }
+void main() { gl_FragColor = vec4(toS(texture2D(map, vUv).rgb), 1.); }`;
+async function bake(map) {
+  const w = map.image.width, h = map.image.height;
+  const rt = new THREE.WebGLRenderTarget(w, h, { depthBuffer: false });
+  const sc = new THREE.Scene(), cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({ uniforms: { map: { value: map } },
+    vertexShader: 'varying vec2 vUv; void main() { vUv = position.xy * .5 + .5; gl_Position = vec4(position.xy, 0., 1.); }', fragmentShader: COPY_FS,
+    depthTest: false, depthWrite: false }));
+  quad.frustumCulled = false; sc.add(quad);
+  const offs = [];
+  for (const r of [2, 1]) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) offs.push([dx * r * 2 / w, dy * r * 2 / h]);
+  offs.push([0, 0]);
+  const parts = [];
+  skins.filter((s) => s.map === map).forEach((s) => {
+    offs.forEach(([ox, oy]) => {
+      const m = new THREE.Mesh(s.mesh.geometry, new THREE.ShaderMaterial({ uniforms: { ...U, map: { value: map }, pMat: { value: s.pMat }, off: { value: new THREE.Vector2(ox, oy) } },
+        vertexShader: BAKE_VS, fragmentShader: BAKE_FS, side: THREE.DoubleSide, depthTest: false, depthWrite: false }));
+      m.frustumCulled = false; m.renderOrder = parts.length + 1; sc.add(m); parts.push(m);
+    });
+  });
+  const auto = renderer.autoClear, sm = renderer.shadowMap.enabled;
+  renderer.shadowMap.enabled = false;
+  renderer.setRenderTarget(rt); renderer.setClearColor(0x000000, 1); renderer.clear(); renderer.render(sc, cam);
+  const buf = new Uint8Array(w * h * 4);
+  renderer.readRenderTargetPixels(rt, 0, 0, w, h, buf);
+  renderer.setRenderTarget(null); renderer.autoClear = auto; renderer.shadowMap.enabled = sm;
+  parts.forEach((m) => m.material.dispose()); quad.material.dispose(); rt.dispose();
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(buf.buffer), w, h), 0, 0);
+  const jpeg = /jpe?g/i.test(map.userData.mimeType || '');
+  return await new Promise((res) => c.toBlob(res, jpeg ? 'image/jpeg' : 'image/png', 0.93)).then((blob) => ({ blob, ext: jpeg ? 'jpg' : 'png' }));
+}
+
+// ---------------------------------------------------------------- variants: saved by SF3D (the hidden textbox and button)
+let current = DATA.current || '';
+function varsUi() {
+  const vs = DATA.variants || {};
+  $('vars').innerHTML = `<button data-v="" class="${current ? '' : 'on'}">{{js:cp.v_base}}</button>` +
+    Object.entries(vs).map(([k, v]) => `<button data-v="${esc(k)}" class="${k === current ? 'on' : ''}">${esc(v.title || k)}</button>`).join('');
+  $('vars').querySelectorAll('button').forEach((el) => el.onclick = () => {
+    current = el.dataset.v;
+    const v = current && vs[current];
+    $('vname').value = v ? (v.title || current) : '';
+    load(v ? v.params : null); varsUi();
+  });
+  $('del').disabled = !current;
+  if (current && vs[current] && !$('vname').value) $('vname').value = vs[current].title || current;
+}
+function send(req) {
+  const doc = window.parent.document;
+  const ta = doc.querySelector('#' + DATA.req_target + ' textarea');
+  ta.value = JSON.stringify(req);
+  ta.dispatchEvent(new Event('input', { bubbles: true }));
+  setTimeout(() => doc.querySelector('#' + DATA.req_go).click(), 400);
+}
+$('fresh').onclick = () => { current = ''; $('vname').value = ''; load(null); varsUi(); };
+$('del').onclick = () => { if (!current) return; send({ action: 'delete', variant: current }); $('status').textContent = '{{js:sv.sent}}'; };
+$('save').onclick = async () => {
+  const title = $('vname').value.trim();
+  if (!title) { $('status').textContent = '{{js:cp.need_name}}'; $('vname').focus(); return; }
+  $('save').disabled = true;
+  try {
+    apply();
+    const maps = [...new Set(skins.map((s) => s.map))], fd = new FormData(), names = [];
+    for (const [i, m] of maps.entries()) {
+      $('status').textContent = '{{js:cp.baking}}'.replace('{0}', i + 1).replace('{1}', maps.length);
+      const { blob, ext } = await bake(m);
+      const nm = m.name || ('texture_' + i);
+      names.push(nm);
+      fd.append('files', blob, `paint_${i}.${ext}`);
+    }
+    $('status').textContent = '{{js:cp.uploading}}';
+    const r = await fetch(DATA.upload || '/upload', { method: 'POST', body: fd });
+    if (!r.ok) throw new Error(r.status + ' ' + (await r.text()).slice(0, 200));
+    const paths = await r.json();
+    send({ action: 'save', title, variant: current && (DATA.variants || {})[current] && (DATA.variants[current].title === title) ? current : '',
+      params: params(), images: Object.fromEntries(names.map((n, i) => [n, paths[i]])) });
+    $('status').textContent = '{{js:sv.sent}}';
+  } catch (e) { $('status').textContent = '{{js:sv.send_failed}} ' + (e && e.message || e); }
+  $('save').disabled = false;
+};
+
+// ---------------------------------------------------------------- views, the frame
+function view(v) {
+  const d = H * 1.9, c = center;
+  const at = { front: [0.35, .2, 1], side: [1, .15, 0], top: [0, 1, .001], back: [-0.35, .2, -1] }[v];
+  camera.position.set(c.x + at[0] * d, c.y + at[1] * d, c.z + at[2] * d);
+  camera.near = H / 500; camera.far = H * 50; camera.updateProjectionMatrix();
+  controls.target.copy(c); controls.update();
+  document.querySelectorAll('#views button').forEach((b) => b.classList.toggle('on', b.dataset.v === v));
+}
+document.querySelectorAll('#views button').forEach((b) => b.onclick = () => view(b.dataset.v));
+const clock = new THREE.Clock();
+(function frame() {
+  requestAnimationFrame(frame);
+  const dt = clock.getDelta();
+  if (mixer && action) mixer.update(dt);
+  controls.update();
+  renderer.render(scene, camera);
+})();
+resize();
+// (test hooks: work/wear_test/ui/test_creature_paint.mjs)
+window.cp = { params, load, preset, zones: () => zones, bake, skins, apply, look: (c, d) => { camera.position.set(c[0] + d * .3, c[1] + d * .1, c[2] + d); controls.target.set(...c); controls.update(); } };
+</script>
+</body>
+</html>
