@@ -1445,28 +1445,61 @@ function socketGeo(S) {
 }
 const sockMats = { L: new THREE.MeshStandardMaterial({ roughness: 0.85, side: THREE.DoubleSide }),
                    R: new THREE.MeshStandardMaterial({ roughness: 0.85, side: THREE.DoubleSide }) };
-function eyeBuild() {   // the cut skin, the balls and their sockets as the eyes are marked now
+// the opening in the live view: the skin's own materials hide what is inside each outline, pixel by pixel, the way
+// Blender cuts it (its edges split right on the curve) - whole triangles left out gave a stepped edge and gaps to the
+// socket (the user's nurgl). Per eye: its frame, the cut's depth band and reach, the outline (48 points) in its plane
+const EYE_U = { eyeN: { value: 0 }, eC0: { value: [new V3(), new V3()] }, eEx: { value: [new V3(), new V3()] }, eEy: { value: [new V3(), new V3()] },
+  eN: { value: [new V3(), new V3()] }, eCtr: { value: [new V3(), new V3()] }, eBand: { value: [new THREE.Vector4(), new THREE.Vector4()] },
+  ePoly: { value: Array.from({ length: 96 }, () => new THREE.Vector2()) } };
+const EYE_FS = `uniform int eyeN; uniform vec3 eC0[2]; uniform vec3 eEx[2]; uniform vec3 eEy[2]; uniform vec3 eN[2]; uniform vec3 eCtr[2];
+uniform vec4 eBand[2]; uniform vec2 ePoly[96]; varying vec3 vRestW;
+bool eyeHole() {
+  for (int k = 0; k < 2; k++) {
+    if (k >= eyeN) break;
+    vec3 q = vRestW - eC0[k];
+    if (distance(vRestW, eCtr[k]) > eBand[k].z) continue;
+    float d = dot(q, eN[k]);
+    if (d < eBand[k].x || d > eBand[k].y) continue;
+    vec2 p = vec2(dot(q, eEx[k]), dot(q, eEy[k]));
+    bool c = false;
+    for (int i = 0, j = 47; i < 48; j = i++) {
+      vec2 a = ePoly[k * 48 + i], b = ePoly[k * 48 + j];
+      if ((a.y > p.y) != (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y + 1e-12) + a.x) c = !c;
+    }
+    if (c) return true;
+  }
+  return false;
+}`;
+function holeMaterial(m) {   // the skin's material, the eyes' openings cut in it (once)
+  if (!m || m.userData.eyeHole) return;
+  m.userData.eyeHole = true;
+  const prev = m.onBeforeCompile;
+  m.onBeforeCompile = (sh, r) => {
+    if (prev) prev(sh, r);
+    Object.assign(sh.uniforms, EYE_U);
+    sh.vertexShader = 'varying vec3 vRestW;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvRestW = (modelMatrix * vec4(position, 1.)).xyz;');
+    sh.fragmentShader = EYE_FS + '\n' + sh.fragmentShader.replace('void main() {', 'void main() {\n  if (eyeHole()) discard;');
+  };
+  const key = m.customProgramCacheKey ? m.customProgramCacheKey.bind(m) : () => '';
+  m.customProgramCacheKey = () => key() + '|eyehole';
+  m.needsUpdate = true;
+}
+function eyeBuild() {   // the openings, the balls and their sockets as the eyes are marked now
   eyeView.traverse((o) => { if (o.isMesh) o.geometry.dispose(); });
   eyeView.clear();
-  skinRests().forEach((r) => { const s = skinOf(r); r.mesh.geometry.index.array.set(s.idx); r.mesh.geometry.setDrawRange(0, s.idx.length); r.mesh.geometry.index.needsUpdate = true; });
+  EYE_U.eyeN.value = 0;
   if (mode !== 'eyes') return;
-  const cut = new Map();   // mesh -> Set of triangle starts to leave out
-  let bad = 0;
+  skinRests().forEach((r) => { const ms = r.mesh.userData.mat || r.mesh.material; (Array.isArray(ms) ? ms : [ms]).forEach(holeMaterial); });
+  let bad = 0, k = 0;
   for (const side of ['L', 'R']) {
     if (!eyes[side]) continue;
     const S = eyeSolve(eyes[side]);
     if (!S.ok || !S.face) { bad++; continue; }
-    const s = skinOf(S.face), C = s.cen, lim = (2 * Math.max(S.width, S.height)) ** 2;
-    if (!cut.has(S.face)) cut.set(S.face, new Set());
-    const out = cut.get(S.face);
-    for (let t = 0; t < C.length; t += 3) {
-      const dx = C[t] - S.centre0.x, dy = C[t + 1] - S.centre0.y, dz = C[t + 2] - S.centre0.z;
-      if (dx * dx + dy * dy + dz * dz > lim) continue;
-      const p = new V3(C[t], C[t + 1], C[t + 2]), d = S.dn(p);
-      if (d < S.dFront - 0.6 * S.width || d > S.dFront + S.width) continue;
-      const [x, y] = S.q2(p);
-      if (inPoly(S.poly, x, y)) out.add(t);
-    }
+    EYE_U.eC0.value[k].copy(S.c0); EYE_U.eEx.value[k].copy(S.ex); EYE_U.eEy.value[k].copy(S.ey); EYE_U.eN.value[k].copy(S.n);
+    EYE_U.eCtr.value[k].copy(S.centre0);
+    EYE_U.eBand.value[k].set(S.dFront - 0.6 * S.width, S.dFront + S.width, 2 * Math.max(S.width, S.height), 0);
+    S.poly.forEach(([x, y], i) => { if (i < 48) EYE_U.ePoly.value[k * 48 + i].set(x, y); });
+    k++;
     const g = new THREE.SphereGeometry(S.r, 48, 24), uv = g.attributes.uv, pos = g.attributes.position;
     for (let i = 0; i < uv.count; i++) {   // (three's sphere: its poles on Y as Blender's ball; eye_tex.py's mapping)
       uv.setXY(i, 0.5 - uv.getX(i), 1 - uv.getY(i));
@@ -1481,11 +1514,7 @@ function eyeBuild() {   // the cut skin, the balls and their sockets as the eyes
     sockMats[side].color.copy(S.rimCol);
     eyeView.add(new THREE.Mesh(socketGeo(S), sockMats[side]));
   }
-  cut.forEach((out, r) => {
-    const s = skinOf(r), keep = [];
-    for (let t = 0; t < s.idx.length; t += 3) if (!out.has(t)) keep.push(s.idx[t], s.idx[t + 1], s.idx[t + 2]);
-    r.mesh.geometry.index.array.set(keep); r.mesh.geometry.setDrawRange(0, keep.length); r.mesh.geometry.index.needsUpdate = true;
-  });
+  EYE_U.eyeN.value = k;
   eyeMat.emissive.set(look.glow > 0 ? '#ffffff' : '#000000'); eyeMat.emissiveMap = look.glow > 0 ? eyeTex : null;
   eyeMat.emissiveIntensity = look.glow * 1.2; eyeMat.needsUpdate = true;
   $('eStatus').textContent = !eyes.L && !eyes.R ? '{{js:sv.eyes_click}}' : bad ? '{{js:sv.eyes_off_skin}}' : '';
@@ -1618,8 +1647,9 @@ gizmo.addEventListener('objectChange', () => { if (EDIT && mode === 'view') $('k
 // (test hooks: work/wear_test/ui/test_creature_markup.mjs moves the marks the way the arrows would)
 window.sv = { mouth, mk, bones, setMode, pickMark, mouthPaint, castRest, H: () => H,
   look: (c, d) => { camera.position.set(c.x, c.y + d * .05, c.z + d); camera.near = d / 50; camera.updateProjectionMatrix(); controls.target.copy(c); controls.update(); },
+  screen: (p) => { const v = new THREE.Vector3(...p).project(camera), r = renderer.domElement.getBoundingClientRect(); return { x: r.left + (v.x + 1) / 2 * r.width, y: r.top + (1 - v.y) / 2 * r.height }; },
   eyes, eyeSolve, eyeBuild, eyesReq, placeEye: (p, n) => placeEye(new THREE.Vector3(...p), new THREE.Vector3(...n).normalize()),
-  eyeCut: () => { let n = 0; skinRests().forEach((r) => { const s = skinIdx.get(r.mesh); if (s) n += (s.idx.length - r.mesh.geometry.drawRange.count) / 3; }); return n; },
+  eyeCut: () => EYE_U.eyeN.value,
   preset: (k) => $('eyePresets').querySelector(`[data-p=${k}]`).click(),
   brushAt: (p, b) => { brush = b; strokeStart(); paintAround(new THREE.Vector3(...p)); strokeEnd(); brush = ''; },
   camera: () => ({ enabled: controls.enabled, left: controls.mouseButtons.LEFT, right: controls.mouseButtons.RIGHT }),
