@@ -2700,5 +2700,15 @@
  "cr.paint_refreshed": "The colouring variants made again: {0}.",
  "gd.creature_variant": "Colouring",
  "gd.creature_base": "Original",
- "cr.reclip": "The model changed: putting the same clips on it again (about 15 seconds)…"
+ "cr.reclip": "The model changed: putting the same clips on it again (about 15 seconds)…",
+ "cp.parts": "Parts (brush)",
+ "cp.parts_hint": "Fangs, claws, horns cannot be told from the skin by colour - mark them by the brush. A part «leave alone» stays as on the model whatever the tone and patterns; a part with «its colour» is recoloured to it (its drawing kept).",
+ "cp.part": "Part",
+ "cp.p_own": "its colour",
+ "cp.brush": "Brush",
+ "cp.brush_tip": "The left button paints the part picked, the right one turns the view, the middle one pans, the wheel zooms",
+ "cp.eraser": "Eraser",
+ "cp.clear_part": "Clear the part",
+ "cp.brush_size": "Brush size",
+ "cp.parts_info": "Vertices marked per part: {0}"
 }

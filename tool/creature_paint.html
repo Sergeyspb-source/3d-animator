@@ -55,6 +55,8 @@
   .layer .head { display:flex; align-items:center; gap:6px; justify-content:space-between; }
   .sl { display:grid; grid-template-columns:86px 1fr; gap:4px; align-items:center; font-size:12px; color:var(--muted); }
   .vars { display:flex; flex-wrap:wrap; gap:4px; }
+  .part { display:grid; grid-template-columns:auto 1fr auto 38px; gap:6px; align-items:center; margin:3px 0; font-size:12px; }
+  .part.sel { background:color-mix(in srgb,var(--accent) 16%,transparent); border-radius:6px; }
 </style>
 </head>
 <body>
@@ -101,6 +103,17 @@
       <div class="grp">{{cp.zones}}</div>
       <div class="small">{{cp.zones_hint}}</div>
       <div id="zones" style="margin-top:6px"></div>
+    </div>
+    <div class="box">
+      <div class="grp">{{cp.parts}}</div>
+      <div class="small">{{cp.parts_hint}}</div>
+      <div id="parts" style="margin-top:6px"></div>
+      <div class="row" style="margin-top:6px">
+        <button id="brushOn" title="{{cp.brush_tip}}">🖌 {{cp.brush}}</button><button id="eraser">{{cp.eraser}}</button>
+        <button id="pUndo" title="Ctrl+Z">↶</button><button id="pRedo" title="Ctrl+Y">↷</button><button id="pClear">{{cp.clear_part}}</button>
+      </div>
+      <div class="sl" style="margin-top:4px"><span>{{cp.brush_size}}</span><input type="range" id="bSize" min="0.003" max="0.08" step="0.001" value="0.015"></div>
+      <div class="small" id="pInfo"></div>
     </div>
     <div class="box">
       <div class="grp">{{cp.tone}}</div>
@@ -188,6 +201,19 @@ vec3 sfPaint(vec3 c, vec3 P, vec3 N) {
     o = mix(o, lDirt.rgb * (.55 + .45 * rd), .92 * smoothstep(th - .04, th + .04, n));
   }
   return mix(c, clamp(o, 0., 1.), m);
+}
+// the parts painted by the brush (fangs, claws, horns): their weights per vertex; a part kept as it is or recoloured
+// to its own colour (its detail kept), over everything above
+uniform vec3 qC[3]; uniform vec3 qT[3]; uniform float qM[3];
+vec3 sfFinal(vec3 c, vec3 P, vec3 N, vec3 w) {
+  vec3 base = sfPaint(c, P, N);
+  vec3 acc = vec3(0.); float ws = 0.;
+  for (int k = 0; k < 3; k++) {
+    float wk = k == 0 ? w.x : (k == 1 ? w.y : w.z);
+    if (wk <= .001 || qM[k] < .5) continue;
+    acc += wk * (qM[k] < 1.5 ? c : recol(c, qC[k], qT[k])); ws += wk;
+  }
+  return ws > 0. ? mix(base, acc / ws, min(1., ws)) : base;
 }`;
 const U = {
   zC: { value: Array.from({ length: NZ }, () => new V3()) }, zT: { value: Array.from({ length: NZ }, () => new V3()) },
@@ -197,6 +223,7 @@ const U = {
   lStripe: { value: new THREE.Vector4() }, lDirt: { value: new THREE.Vector4() },
   pSpot: { value: new V3(1, .3, 0) }, pStripe: { value: new V3(1, .4, 0) }, pDirt: { value: new V3(1, 0, 0) },
   pMin: { value: new V3() }, pH: { value: 1 }, pSeed: { value: 0 },
+  qC: { value: [new V3(), new V3(), new V3()] }, qT: { value: [new V3(), new V3(), new V3()] }, qM: { value: [0, 0, 0] },
 };
 
 // ---------------------------------------------------------------- scene
@@ -261,10 +288,10 @@ function painted(mat, pMat) {
   const m = mat.clone();
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, U, { pMat: { value: pMat } });
-    sh.vertexShader = 'uniform mat4 pMat;\nvarying vec3 vPP;\nvarying vec3 vPN;\n' + sh.vertexShader.replace('#include <begin_vertex>',
-      '#include <begin_vertex>\nvPP = (pMat * vec4(position, 1.)).xyz;\nvPN = normalize(mat3(pMat) * normal);');
-    sh.fragmentShader = RULE + '\nvarying vec3 vPP;\nvarying vec3 vPN;\n' + sh.fragmentShader.replace('#include <map_fragment>',
-      '#include <map_fragment>\ndiffuseColor.rgb = toL(sfPaint(toS(diffuseColor.rgb), vPP, normalize(vPN)));');
+    sh.vertexShader = 'uniform mat4 pMat;\nattribute vec3 sfParts;\nvarying vec3 vPP;\nvarying vec3 vPN;\nvarying vec3 vParts;\n' + sh.vertexShader.replace('#include <begin_vertex>',
+      '#include <begin_vertex>\nvPP = (pMat * vec4(position, 1.)).xyz;\nvPN = normalize(mat3(pMat) * normal);\nvParts = sfParts;');
+    sh.fragmentShader = RULE + '\nvarying vec3 vPP;\nvarying vec3 vPN;\nvarying vec3 vParts;\n' + sh.fragmentShader.replace('#include <map_fragment>',
+      '#include <map_fragment>\ndiffuseColor.rgb = toL(sfFinal(toS(diffuseColor.rgb), vPP, normalize(vPN), vParts));');
   };
   m.customProgramCacheKey = () => 'sf3d-paint';
   return m;
@@ -283,8 +310,11 @@ new GLTFLoader().parse(b64(GLB), '', (gltf) => {
     if (Array.isArray(o.material)) return;   // (one material a mesh: glTF splits primitives into meshes)
     const mat = mats[0];
     if (!mat || !mat.map) return;
-    const pMat = o.matrixWorld.clone();
-    skins.push({ mesh: o, orig: mat, paint: painted(mat, pMat), map: mat.map, pMat });
+    const pMat = o.matrixWorld.clone(), g = o.geometry, n = g.attributes.position.count;
+    if (!g.attributes.sfParts) g.setAttribute('sfParts', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+    const rest = new Float32Array(n * 3), v = new V3();
+    for (let i = 0; i < n; i++) { v.fromBufferAttribute(g.attributes.position, i).applyMatrix4(pMat); rest[i * 3] = v.x; rest[i * 3 + 1] = v.y; rest[i * 3 + 2] = v.z; }
+    skins.push({ mesh: o, orig: mat, paint: painted(mat, pMat), map: mat.map, pMat, rest });
     o.material = skins[skins.length - 1].paint;
   });
   floor.place(box); floor.on(true);
@@ -381,7 +411,8 @@ function params() {
   const L = Object.fromEntries(LAYERS.map((l) => [l.k, { c: unhex($(l.k + 'C').value), a: +$(l.k + 'A').value,
     ...Object.fromEntries(l.extra.map(([e]) => [e, +$(l.k + '_' + e).value])) }]));
   return { zones: zones.map((z) => ({ c: z.c.map((v) => +v.toFixed(4)), t: z.t, m: z.m, share: +z.share.toFixed(3) })), sig: U.zSig.value,
-    tone: { hue: +$('hue').value, sat: +$('sat').value, val: +$('val').value, con: +$('con').value }, layers: L, seed: U.pSeed.value };
+    tone: { hue: +$('hue').value, sat: +$('sat').value, val: +$('val').value, con: +$('con').value }, layers: L, seed: U.pSeed.value,
+    parts: partsSave() };
 }
 function apply() {
   U.zN.value = zones.length;
@@ -392,8 +423,9 @@ function apply() {
   U.pSpot.value.set(+$('spot_size').value, +$('spot_soft').value, 0);
   U.pStripe.value.set(+$('stripe_size').value, +$('stripe_warp').value, +$('stripe_dir').value);
   U.pDirt.value.set(+$('dirt_size').value, 0, 0);
+  parts.forEach((q, k) => { U.qC.value[k].set(...q.c); U.qT.value[k].set(...q.t); U.qM.value[k] = q.m; });
 }
-function load(p) {   // a variant's params (else everything as the model has it)
+function load(p, keepParts) {   // a variant's params (else everything as the model has it; the parts painted kept if asked)
   if (p && p.zones && p.zones.length) { zones = p.zones.map((z) => ({ c: z.c, t: z.t, m: z.m, share: z.share || 0 })); if (p.sig) U.zSig.value = p.sig; }
   else zones.forEach((z) => { z.t = z.c.slice(); z.m = z.lock0 ? 2 : 0; });
   const t = (p && p.tone) || {};
@@ -404,6 +436,7 @@ function load(p) {   // a variant's params (else everything as the model has it)
     l.extra.forEach(([e, , , , v]) => { $(l.k + '_' + e).value = q[e] ?? v; });
   });
   U.pSeed.value = (p && p.seed) || 0;
+  if (!keepParts) partsLoad(p && p.parts);
   zonesUi(); apply();
 }
 
@@ -425,7 +458,7 @@ const PRESETS = {
 $('presets').innerHTML = `<button data-p="">{{js:cp.p_none}}</button>` + Object.entries(PRESETS).map(([k, [n]]) => `<button data-p="${k}">${n}</button>`).join('');
 $('presets').querySelectorAll('button').forEach((el) => el.onclick = () => preset(el.dataset.p));
 function preset(k) {
-  if (!k) { load(null); return; }
+  if (!k) { load(null, true); return; }
   const [, dark, light, lay] = PRESETS[k];
   if (dark) {
     const free = zones.filter((z) => z.m !== 2);
@@ -447,13 +480,138 @@ const showOrig = (v) => { skins.forEach((s) => { s.mesh.material = v ? s.orig : 
 $('orig').onpointerdown = () => showOrig(true);
 ['pointerup', 'pointerleave'].forEach((e) => $('orig').addEventListener(e, () => showOrig(false)));
 
+// ---------------------------------------------------------------- the parts: painted by a brush on the model
+// (fangs, claws, horns - the zones by colour cannot tell them from the skin), each kept as it is or given its colour;
+// per vertex (seam twins together: by position), kept with the variant as the painted vertices' rest positions
+let parts = [0, 1, 2].map(() => ({ m: 1, t: [0.9, 0.85, 0.7], c: [0.5, 0.5, 0.5] }));
+let part = 0, brush = '', painting = false;
+const undoP = [], redoP = [];
+const snapP = () => skins.map((s) => s.mesh.geometry.attributes.sfParts.array.slice());
+const putP = (sn) => { skins.forEach((s, i) => { const a = s.mesh.geometry.attributes.sfParts; a.array.set(sn[i]); a.needsUpdate = true; }); };
+function partsUi() {
+  $('parts').innerHTML = parts.map((q, k) => `<div class="part ${k === part ? 'sel' : ''}" data-k="${k}">
+    <input type="radio" name="part" ${k === part ? 'checked' : ''}><span>{{js:cp.part}} ${k + 1}</span>
+    <select><option value="1">{{js:cp.z_lock}}</option><option value="2">{{js:cp.p_own}}</option></select>
+    <input type="color" value="${hex(q.t)}"></div>`).join('');
+  $('parts').querySelectorAll('.part').forEach((el) => {
+    const k = +el.dataset.k, q = parts[k];
+    el.querySelector('select').value = String(q.m);
+    el.querySelector('input[type=radio]').onchange = () => { part = k; partsUi(); };
+    el.querySelector('select').onchange = (e) => { q.m = +e.target.value; apply(); };
+    el.querySelector('input[type=color]').oninput = (e) => { q.t = unhex(e.target.value); if (q.m !== 2) { q.m = 2; el.querySelector('select').value = '2'; } apply(); };
+  });
+  partsInfo();
+}
+function partsInfo() {
+  const n = [0, 0, 0];
+  skins.forEach((s) => { const a = s.mesh.geometry.attributes.sfParts.array; for (let i = 0; i < a.length; i += 3) for (let k = 0; k < 3; k++) if (a[i + k] > .5) n[k]++; });
+  $('pInfo').textContent = '{{js:cp.parts_info}}'.replace('{0}', n.join(' / '));
+}
+function partColour(k) {   // the part's colour on the model: the median of its vertices' texels
+  const ch = [[], [], []];
+  skins.forEach((s) => {
+    const a = s.mesh.geometry.attributes.sfParts.array, uv = s.mesh.geometry.attributes.uv, px = texPixels(s.map);
+    if (!uv) return;
+    for (let i = 0; i < a.length / 3; i++) {
+      if (a[i * 3 + k] <= .5) continue;
+      const u = ((uv.getX(i) % 1) + 1) % 1, v = ((uv.getY(i) % 1) + 1) % 1, q = (Math.min(255, Math.floor(v * 256)) * 256 + Math.min(255, Math.floor(u * 256))) * 4;
+      for (let j = 0; j < 3; j++) ch[j].push(px[q + j] / 255);
+    }
+  });
+  if (ch[0].length) parts[k].c = ch.map((a) => a.sort((x, y) => x - y)[a.length >> 1]);
+}
+function setBrush(b) {
+  brush = brush === b ? '' : b;
+  $('brushOn').classList.toggle('on', brush === 'paint'); $('eraser').classList.toggle('on', brush === 'erase');
+  // (the camera stays free: the left button paints, the right one turns the view, the middle one pans, the wheel zooms)
+  controls.mouseButtons = brush ? { LEFT: null, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE }
+    : { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+  if (brush && action) { action.stop(); action = null; $('clip').value = ''; }   // (painted at rest)
+}
+$('brushOn').onclick = () => setBrush('paint');
+$('eraser').onclick = () => setBrush('erase');
+function paintAround(p) {
+  const r = +$('bSize').value * H, r2 = r * r;
+  skins.forEach((s) => {
+    const a = s.mesh.geometry.attributes.sfParts, A = a.array, R = s.rest;
+    let hit = false;
+    for (let i = 0; i < R.length / 3; i++) {
+      const dx = R[i * 3] - p.x, dy = R[i * 3 + 1] - p.y, dz = R[i * 3 + 2] - p.z, d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 > r2) continue;
+      const f = Math.min(1, (1 - Math.sqrt(d2) / r) * 3);   // (a soft rim, a third of the radius)
+      for (let k = 0; k < 3; k++) {
+        const j = i * 3 + k;
+        A[j] = brush === 'erase' ? Math.min(A[j], 1 - f) : k === part ? Math.max(A[j], f) : Math.min(A[j], 1 - f);
+      }
+      hit = true;
+    }
+    if (hit) a.needsUpdate = true;
+  });
+}
+function brushAt(ev) {
+  const rect = renderer.domElement.getBoundingClientRect(), rc = new THREE.Raycaster();
+  rc.setFromCamera(new THREE.Vector2((ev.clientX - rect.left) / rect.width * 2 - 1, -(ev.clientY - rect.top) / rect.height * 2 + 1), camera);
+  const h = rc.intersectObjects(skins.map((s) => s.mesh), false)[0];
+  if (h) paintAround(h.point);
+}
+renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
+renderer.domElement.addEventListener('pointerdown', (e) => { if (brush && e.button === 0) { painting = true; undoP.push(snapP()); if (undoP.length > 30) undoP.shift(); redoP.length = 0; brushAt(e); } });
+renderer.domElement.addEventListener('pointermove', (e) => { if (painting) brushAt(e); });
+addEventListener('pointerup', () => { if (!painting) return; painting = false; partColour(part); apply(); partsInfo(); });
+function undoRedo(from, to) { const sn = from.pop(); if (!sn) return; to.push(snapP()); putP(sn); [0, 1, 2].forEach(partColour); apply(); partsInfo(); }
+$('pUndo').onclick = () => undoRedo(undoP, redoP);
+$('pRedo').onclick = () => undoRedo(redoP, undoP);
+addEventListener('keydown', (e) => {
+  if (!(e.ctrlKey || e.metaKey)) return;
+  const k = e.key.toLowerCase();
+  if (k === 'z' && !e.shiftKey) { e.preventDefault(); undoRedo(undoP, redoP); }
+  else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); undoRedo(redoP, undoP); }
+});
+$('pClear').onclick = () => {
+  undoP.push(snapP()); redoP.length = 0;
+  skins.forEach((s) => { const a = s.mesh.geometry.attributes.sfParts; for (let i = part; i < a.array.length; i += 3) a.array[i] = 0; a.needsUpdate = true; });
+  partsInfo();
+};
+function partsSave() {   // each part: its mode, colours and the rest positions of its vertices (a position once)
+  return parts.map((q, k) => {
+    const seen = new Set(), pts = [];
+    skins.forEach((s) => { const A = s.mesh.geometry.attributes.sfParts.array, R = s.rest;
+      for (let i = 0; i < A.length / 3; i++) if (A[i * 3 + k] > .5) {
+        const p = [R[i * 3], R[i * 3 + 1], R[i * 3 + 2]].map((x) => +x.toFixed(5)), key = p.join(',');
+        if (!seen.has(key)) { seen.add(key); pts.push(p); }
+      } });
+    return { m: q.m, t: q.t, c: q.c.map((v) => +v.toFixed(4)), pts };
+  });
+}
+function partsLoad(saved) {   // the parts kept onto this model's vertices (by distance on a grid: a seam's twins too)
+  parts = [0, 1, 2].map((k) => ({ m: 1, t: [0.9, 0.85, 0.7], c: [0.5, 0.5, 0.5], ...((saved && saved[k]) || {}) }));
+  skins.forEach((s) => { const a = s.mesh.geometry.attributes.sfParts; a.array.fill(0); a.needsUpdate = true; });
+  if (saved && saved.some((q) => q && q.pts && q.pts.length)) {
+    const eps = H * 2e-5, cell = (v) => Math.floor(v / (eps * 4));
+    skins.forEach((s) => {
+      const grid = new Map(), R = s.rest, A = s.mesh.geometry.attributes.sfParts;
+      for (let i = 0; i < R.length / 3; i++) { const key = cell(R[i * 3]) + ',' + cell(R[i * 3 + 1]) + ',' + cell(R[i * 3 + 2]); if (!grid.has(key)) grid.set(key, []); grid.get(key).push(i); }
+      saved.forEach((q, k) => (q && q.pts || []).forEach((p) => {
+        const c = p.map(cell);
+        for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++)
+          (grid.get((c[0] + dx) + ',' + (c[1] + dy) + ',' + (c[2] + dz)) || []).forEach((i) => {
+            if (Math.hypot(R[i * 3] - p[0], R[i * 3 + 1] - p[1], R[i * 3 + 2] - p[2]) <= eps) A.array[i * 3 + k] = 1;
+          });
+      }));
+      A.needsUpdate = true;
+    });
+  }
+  undoP.length = 0; redoP.length = 0;
+  partsUi();
+}
+
 // ---------------------------------------------------------------- the bake: each base colour picture painted in UV
 // space by the same rule (each vertex at its UV, its rest position and normal carried), drawn over the original
 // picture and spread 2 pixels past each island's edge (no seams of the old colour where the picture is filtered)
-const BAKE_VS = `uniform mat4 pMat; uniform vec2 off; varying vec2 vUv; varying vec3 vPP; varying vec3 vPN;
-void main() { vUv = uv; vPP = (pMat * vec4(position, 1.)).xyz; vPN = normalize(mat3(pMat) * normal); gl_Position = vec4(uv * 2. - 1. + off, 0., 1.); }`;
-const BAKE_FS = RULE + `\nuniform sampler2D map; varying vec2 vUv; varying vec3 vPP; varying vec3 vPN;
-void main() { vec3 c = toS(texture2D(map, vUv).rgb); gl_FragColor = vec4(sfPaint(c, vPP, normalize(vPN)), 1.); }`;
+const BAKE_VS = `uniform mat4 pMat; uniform vec2 off; attribute vec3 sfParts; varying vec2 vUv; varying vec3 vPP; varying vec3 vPN; varying vec3 vParts;
+void main() { vUv = uv; vPP = (pMat * vec4(position, 1.)).xyz; vPN = normalize(mat3(pMat) * normal); vParts = sfParts; gl_Position = vec4(uv * 2. - 1. + off, 0., 1.); }`;
+const BAKE_FS = RULE + `\nuniform sampler2D map; varying vec2 vUv; varying vec3 vPP; varying vec3 vPN; varying vec3 vParts;
+void main() { vec3 c = toS(texture2D(map, vUv).rgb); gl_FragColor = vec4(sfFinal(c, vPP, normalize(vPN), vParts), 1.); }`;
 const COPY_FS = `uniform sampler2D map; varying vec2 vUv;
 vec3 toS(vec3 l) { return mix(l * 12.92, 1.055 * pow(max(l, vec3(0.)), vec3(1. / 2.4)) - .055, step(.0031308, l)); }
 void main() { gl_FragColor = vec4(toS(texture2D(map, vUv).rgb), 1.); }`;
@@ -511,7 +669,7 @@ function send(req) {
   ta.dispatchEvent(new Event('input', { bubbles: true }));
   setTimeout(() => doc.querySelector('#' + DATA.req_go).click(), 400);
 }
-$('fresh').onclick = () => { current = ''; $('vname').value = ''; load(null); varsUi(); };
+$('fresh').onclick = () => { current = ''; $('vname').value = ''; load(null); varsUi(); };   // (the parts cleared too)
 $('del').onclick = () => { if (!current) return; send({ action: 'delete', variant: current }); $('status').textContent = '{{js:sv.sent}}'; };
 $('save').onclick = async () => {
   const title = $('vname').value.trim();
@@ -558,7 +716,8 @@ const clock = new THREE.Clock();
 })();
 resize();
 // (test hooks: work/wear_test/ui/test_creature_paint.mjs)
-window.cp = { params, load, preset, zones: () => zones, bake, skins, apply, look: (c, d) => { camera.position.set(c[0] + d * .3, c[1] + d * .1, c[2] + d); controls.target.set(...c); controls.update(); } };
+window.cp = { params, load, preset, zones: () => zones, bake, skins, apply, paintAround: (p, k, b = 'paint') => { part = k; brush = b; paintAround(new V3(...p)); brush = ''; partColour(k); apply(); partsInfo(); },
+  parts: () => parts, setPart: (k, m, t) => { Object.assign(parts[k], { m, t }); partsUi(); apply(); }, look: (c, d) => { camera.position.set(c[0] + d * .3, c[1] + d * .1, c[2] + d); controls.target.set(...c); controls.update(); } };
 </script>
 </body>
 </html>
