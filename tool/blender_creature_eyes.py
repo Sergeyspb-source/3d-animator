@@ -78,14 +78,18 @@ def frame(pts, tris, span):
     c0 = sum(pts, Vector()) / len(pts)
     u, w = pts[2] - pts[0], pts[1] - pts[3]
     mid = sum((sum(tr, Vector()) / 3 for tr in tris), Vector()) / max(len(tris), 1)   # the head round the eye
-    out0 = c0 - mid
+    # (the triangles' own winding is outward; the way out checked against the head bone: by the skin round a small
+    # outline alone, its centre next to the eye, the right eye of the user's nurgl looked in toward the nose)
+    hb = arm.data.bones.get(job.get("head_bone") or "") or next((x for x in arm.data.bones if x.name.lower().endswith("head")), None)
+    out0 = c0 - (arm.matrix_world @ hb.head_local) if hb is not None else c0 - mid
     n = Vector()
     for a, b, c in tris:
         if ((a + b + c) / 3 - c0).length > 0.8 * span:
             continue
-        f = (b - a).cross(c - a)
-        n += -f if f.dot(out0) < 0 else f
+        n += (b - a).cross(c - a)
     n = n.normalized() if n.length > 0 else (out0.normalized() if out0.length > 0 else Vector((0, -1, 0)))
+    if n.dot(out0) < 0:
+        n = -n
     fw = float(job.get("forward", 0.0))   # toward the creature's forward (Blender -Y): the pupils not out to the sides
     if fw > 0:
         n = (n * (1 - fw) + Vector((0, -fw, 0))).normalized()
