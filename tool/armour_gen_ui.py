@@ -787,11 +787,14 @@ def qa(cfg, req) -> dict:
             (_t("ag.qa_held_bad") if kind == "shield" else _t("ag.qa_held_bad_sheath") if kind == "sheath" else _t("ag.qa_held_bad_weapon"))
             if bad else _t("ag.qa_held_good"))
         return {"ok": True, "log": msg, "report": (work / "qa.json").resolve().as_posix(), "points": len(rep["points"]), "need": rep["need"]}
-    lines = [_t("ag.qa_line", c["clip"], c["poke_share"] * 100, c["worst_frame"], c["hole_share"] * 100) for c in rep["clips"]]
+    # the skin through the piece's middle counts; at its edge (a rim the joint bends past) apart, a mild note
+    lines = [_t("ag.qa_line", c["clip"], c["poke_share"] * 100, c["worst_frame"], c["hole_share"] * 100)
+             + (_t("ag.qa_edge", c.get("edge_share", 0) * 100) if c.get("edge_pokes") else "") for c in rep["clips"]]
     bad = [c for c in rep["clips"] if c["poke_share"] > .02 or c["hole_share"] > .05]
     msg = _t("ag.qa_summary", len(rep["clips"]), (datetime.now() - t).seconds) + "\n" + "\n".join(lines) + "\n" + (
-        _t("ag.qa_bad") if bad else _t("ag.qa_good"))
-    return {"ok": True, "log": msg, "report": (work / "qa.json").resolve().as_posix(), "points": len(rep["points"])}
+        _t("ag.qa_bad") if bad else _t("ag.qa_good")) + ("\n" + _t("ag.qa_shots", len(rep.get("shots") or [])) if rep.get("shots") else "")
+    return {"ok": True, "log": msg, "report": (work / "qa.json").resolve().as_posix(), "points": len(rep["points"]),
+            "shots": [tuple(s) for s in rep.get("shots") or []]}
 
 
 # «Rebuild by layers» in the background: the editor works out every piece's shape at once (inside out, each over the
@@ -947,7 +950,7 @@ def handle(cfg, text):
         item = re.sub(r"[^A-Za-z0-9_-]+", "_", req.get("item") or "").strip("_")
         WF.status(cfg, rigged, f"_qa_{item}").write_text(
             json.dumps({"id": req.get("id"), **res}, ensure_ascii=False), encoding="utf-8")
-        return res["log"], None
+        return res["log"], res.get("shots") or None   # (the worst frames: in the previews' gallery)
     if req.get("action") == "bake":   # answered in <stem>_bakeq_<item>.wear.json (the queue's state: <stem>_bake.wear.json)
         rigged = Path(req["rigged"])
         item = re.sub(r"[^A-Za-z0-9_-]+", "_", (req.get("job") or {}).get("item") or "stop").strip("_")

@@ -19,7 +19,7 @@ from pathlib import Path
 
 import bpy
 import numpy as np
-from mathutils import Vector
+from mathutils import Matrix, Vector
 from mathutils.bvhtree import BVHTree
 
 job = json.loads(Path(sys.argv[sys.argv.index("--") + 1]).read_text(encoding="utf-8"))
@@ -262,11 +262,25 @@ for oi, (o, vs) in enumerate(zip(body, verts0)):
         elif tree0.ray_cast(p + n * e, n, reach)[0] is not None and not poked(tree0, p, n):
             covered.append((oi, vi))
 
+# the covered skin by the piece's edge (a few cm in from where it stops covering) apart from its middle: skin peeping out
+# at a cuff's rim as the joint bends is the edge's, a body through the middle of a plate is the real fault
+from mathutils.kdtree import KDTree
+free = [(oi, vi) for oi, vs in enumerate(verts0) for vi, (p, n) in enumerate(vs)
+        if all(lo[i] - far <= p[i] <= hi[i] + far for i in range(3))]
+cov_set = set(covered) | set(hidden)
+free = [x for x in free if x not in cov_set]
+kd = KDTree(max(1, len(free)))
+for k, (oi, vi) in enumerate(free):
+    kd.insert(verts0[oi][vi][0], k)
+kd.balance()
+edge_r = .025 * size
+edge = {x for x in covered if free and kd.find(verts0[x[0]][x[1]][0])[2] < edge_r}
+
 step = max(1, int(job.get("step", 3)))
-clips, out_pts = [], set()
+clips, out_pts, worst_mid = [], set(), {}
 for act in actions:
     f0, f1 = set_clip(act)
-    worst = (0, f0, 0)   # pokes, frame, holes
+    worst = (0, f0, 0, 0)   # pokes in the middle, frame, holes, pokes by the edge
     holes_max = 0
     for f in range(f0, f1 + 1, step):
         bpy.context.scene.frame_set(f)
@@ -277,14 +291,76 @@ for act in actions:
                 pokes.append((oi, vi))
         holes = sum(1 for oi, vi in hidden if tree.ray_cast(verts[oi][vi][0] + verts[oi][vi][1] * e, verts[oi][vi][1], far)[0] is None)
         holes_max = max(holes_max, holes)
-        if len(pokes) > worst[0]:
-            worst = (len(pokes), f, holes)
+        mid = [x for x in pokes if x not in edge]
+        if len(mid) > worst[0] or (worst[0] == 0 and len(pokes) - len(mid) > worst[3]):
+            worst = (len(mid), f, holes, len(pokes) - len(mid))
+            if mid:
+                worst_mid[act.name] = (f, [verts[oi][vi] for oi, vi in mid])
         for oi, vi in pokes:
             c = body[oi].data.vertices[vi].co   # the rest position, glTF axes, mesh-local as the editor's
             out_pts.add((round(c.x, 4), round(c.z, 4), round(-c.y, 4)))
-    clips.append({"clip": act.name, "frames": [f0, f1], "worst_frame": worst[1], "pokes": worst[0],
-                  "poke_share": round(worst[0] / max(1, len(covered)), 4), "holes": holes_max,
-                  "hole_share": round(holes_max / max(1, len(hidden)), 4)})
-report = {"covered": len(covered), "hidden": len(hidden), "clips": clips, "points": [list(x) for x in sorted(out_pts)][:3000]}
+    n_mid = max(1, len(covered) - len(edge))
+    clips.append({"clip": act.name, "frames": [f0, f1], "worst_frame": worst[1], "pokes": worst[0], "edge_pokes": worst[3],
+                  "poke_share": round(worst[0] / n_mid, 4), "edge_share": round(worst[3] / max(1, len(edge)), 4),
+                  "holes": holes_max, "hole_share": round(holes_max / max(1, len(hidden)), 4)})
+# the worst frames, pictured: the three clips with most skin through the piece's middle, at their worst frame, the
+# skin that came out marked red, the camera looking at it from outside
+shots = []
+if job.get("shots", True) and worst_mid:
+    import bmesh
+    sc = bpy.context.scene
+    try:
+        sc.render.engine = "BLENDER_WORKBENCH"
+        sc.display.shading.light = "STUDIO"
+        sc.display.shading.color_type = "MATERIAL"
+    except (TypeError, AttributeError):
+        pass
+    sc.render.resolution_x, sc.render.resolution_y = 420, 420
+    sc.world = bpy.data.worlds.new("qa_bg")
+    sc.world.color = (0.82, 0.8, 0.77)
+    for o, col in [(o, (0.72, 0.68, 0.62, 1)) for o in body] + [(o, (0.35, 0.45, 0.6, 1)) for o in pieces]:
+        m = bpy.data.materials.new("qa_" + o.name)
+        m.diffuse_color = col
+        o.data.materials.clear()
+        o.data.materials.append(m)
+    red = bpy.data.materials.new("qa_red")
+    red.diffuse_color = (0.9, 0.08, 0.05, 1)
+    cam = bpy.data.objects.new("qa_cam", bpy.data.cameras.new("qa_cam"))
+    sc.collection.objects.link(cam)
+    sc.camera = cam
+    cam.data.type = "ORTHO"
+    cam.data.clip_end = size * 100
+    by_clip = {c["clip"]: c for c in clips}
+    for name in sorted(worst_mid, key=lambda k: -by_clip[k]["pokes"])[:3]:
+        f, pts = worst_mid[name]
+        act = next(a for a in actions if a.name == name)
+        set_clip(act)
+        sc.frame_set(f)
+        mk = bpy.data.meshes.new("qa_marks")
+        bm = bmesh.new()
+        r = .011 * size
+        for p_, n_ in pts[:400]:
+            bmesh.ops.create_icosphere(bm, subdivisions=1, radius=r, matrix=Matrix.Translation(p_ + n_ * r))
+        bm.to_mesh(mk)
+        bm.free()
+        mo = bpy.data.objects.new("qa_marks", mk)
+        mo.data.materials.append(red)
+        mo.show_in_front = True   # (seen through what is in front: an armpit's skin under the arm)
+        sc.collection.objects.link(mo)
+        c = sum((p_ for p_, _ in pts), Vector()) / len(pts)
+        nn = sum((n_ for _, n_ in pts), Vector())
+        d = nn.normalized() if nn.length > 1e-9 else Vector((0, -1, 0))
+        d = (d + Vector((0, 0, .25))).normalized()
+        span = max(max((p_ - c).length for p_, _ in pts) * 2.6, .25 * size)
+        cam.data.ortho_scale = span
+        cam.location = c + d * size * 4
+        cam.rotation_euler = (-d).to_track_quat("-Z", "Y").to_euler()
+        fn = str(Path(job["out"]).with_name("qa_" + "".join(ch if ch.isalnum() else "_" for ch in name)[:40] + ".png"))
+        sc.render.filepath = fn
+        bpy.ops.render.render(write_still=True)
+        shots.append([fn, f"{name} · {f}"])
+        bpy.data.objects.remove(mo, do_unlink=True)
+report = {"covered": len(covered), "edge": len(edge), "hidden": len(hidden), "clips": clips, "shots": shots,
+          "points": [list(x) for x in sorted(out_pts)][:3000]}
 Path(job["out"]).write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
 print("WEAR_QA_OK " + json.dumps({k: report[k] for k in ("covered", "hidden", "clips")}), flush=True)

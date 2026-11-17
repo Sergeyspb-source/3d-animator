@@ -375,7 +375,7 @@
  "ag.qa_held_good": "The body does not go into the piece.",
  "ag.qa_held_line": "{0}: body in the piece — {1} points (worst frame {2})",
  "ag.qa_hide": "Hide the marks",
- "ag.qa_line": "{0}: skin through the piece {1:.1f}% (worst frame {2}), holes {3:.1f}%",
+ "ag.qa_line": "{0}: skin through the piece's middle {1:.1f}% (worst frame {2}), holes {3:.1f}%",
  "ag.qa_no_piece": "Press «Generate» first: the piece made is checked.",
  "ag.qa_running": "Checking in the animations (about a minute)…",
  "ag.qa_shield_more": "More than the slider allows: turn the shield («Turn») or make it smaller.",
@@ -2759,5 +2759,7 @@
  "cc.w_hover": "hovers",
  "cc.w_slide": "slides",
  "cc.w_seam": "jerks at the loop",
- "cc.legend": "«Into the floor» - how far the skin goes below the floor (the rest's lowest point); «Over the floor» - where the feet stand, usually (the median); «Sliding» - how far a standing foot strays from an even way, in % of the height (in place a standing foot goes back evenly, as on a treadmill; sliding is its jerks and slips); «Loop's seam» - the jump from the last frame to the first, as many times the usual step between frames (about 1 - smooth). Some sliding may be the source's own: compare with it."
+ "cc.legend": "«Into the floor» - how far the skin goes below the floor (the rest's lowest point); «Over the floor» - where the feet stand, usually (the median); «Sliding» - how far a standing foot strays from an even way, in % of the height (in place a standing foot goes back evenly, as on a treadmill; sliding is its jerks and slips); «Loop's seam» - the jump from the last frame to the first, as many times the usual step between frames (about 1 - smooth). Some sliding may be the source's own: compare with it.",
+ "ag.qa_edge": "; by its edge {0:.1f}% (skin peeping from under the rim as the joint bends - usually fine)",
+ "ag.qa_shots": "The worst frames ({0}) are in «Previews»: the skin come out through the piece's middle marked red."
 }
