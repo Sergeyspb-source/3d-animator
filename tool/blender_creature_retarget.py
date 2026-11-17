@@ -207,7 +207,11 @@ hips_t = "hips" if "hips" in tgt.data.bones else (order[0].name if T_SERP else (
 paws_t = {k: TC[k][-1].name for k in TC if k.startswith("leg")}
 stand_t = {k: (tgt.matrix_world @ tgt.data.bones[n].head_local).z for k, n in paws_t.items()}
 tip_t = {k: (tgt.matrix_world @ tgt.data.bones[n].tail_local).z for k, n in paws_t.items()}   # (the claws: a paw tipped down)
-h_t = (tgt.matrix_world @ tgt.data.bones[hips_t].head_local).z - min((tgt.matrix_world @ b.head_local).z for b in tgt.data.bones)
+_zs = [(tgt.matrix_world @ b.head_local).z for b in tgt.data.bones]
+h_t = (tgt.matrix_world @ tgt.data.bones[hips_t].head_local).z - min(_zs)
+if h_t < 0.05 * (max(_zs) - min(_zs)) and TC.get("body"):   # (a root on the ground: the body's own height)
+    h_t = max((tgt.matrix_world @ b.head_local).z for b in TC["body"][:2]) - min(_zs)
+h_t = max(h_t, 1e-4)
 # a marked open mouth: the clips' jaw from closed (its closing turn about the world X through the hinge, glTF ->
 # Blender: the world X is the same)
 close = Matrix.Rotation(math.radians(job["close_deg"]), 3, "X") if job.get("close_deg") and "jaw" in TC else None
@@ -298,6 +302,98 @@ def source(path):
     return sources[path]
 
 
+# ---- the creature's joints from the bones' turns (no scene update: a frame's legs are set many times)
+HL = {b.name: b.head_local.copy() for b in tgt.data.bones}
+TL = {b.name: b.tail_local.copy() for b in tgt.data.bones}
+SUB = {}   # each bone and every bone below it
+for b in tgt.data.bones:
+    SUB[b.name] = [b.name] + [c.name for c in b.children_recursive]
+WM = tgt.matrix_world
+wz = lambda p: (WM @ p).z  # noqa: E731
+
+
+def fk(tot, move):
+    """every bone's head in the armature's space: the parent's turn carries its children; `move` - the hips' shift"""
+    P = {}
+    for b in order:
+        if b.parent is None:
+            P[b.name] = HL[b.name] + (move if b.name == hips_t else Vector())
+        else:
+            P[b.name] = P[b.parent.name] + tot[b.parent.name] @ (HL[b.name] - HL[b.parent.name])
+            if b.name == hips_t:
+                P[b.name] = P[b.name] + move
+    return P
+
+
+def tip_of(P, tot, n):
+    return P[n] + tot[n] @ (TL[n] - HL[n])
+
+
+# each paw's own skin (led by the leg's last bone): its points about that bone's head, so a frame's paw bottom is had
+# without the skinning (a tilted hoof's rim went 9 cm below its bone's end)
+PAW_SKIN = {}
+_inv = tgt.matrix_world.inverted()
+for k, n in paws_t.items():
+    pts = []
+    for o in tmeshes:
+        gi = o.vertex_groups.get(n)
+        if gi is None:
+            continue
+        for v in o.data.vertices:
+            if v.groups and max(v.groups, key=lambda g: g.weight).group == gi.index:
+                pts.append(_inv @ (o.matrix_world @ v.co) - HL[n])
+    if pts:
+        pts.sort(key=lambda q: (WM.to_3x3() @ q).z)
+        PAW_SKIN[n] = pts[:max(40, len(pts) // 3)]   # (its lower part: what can touch the ground)
+SKIN_REST = {n: min(wz(HL[n] + q) for q in qs) for n, qs in PAW_SKIN.items()}
+
+
+def paw_bottom(P, tot, n, stand, tip):
+    """how far the paw's lowest point is above where it is at rest: its skin's, else its joint's or its bone's end"""
+    if n in PAW_SKIN:
+        return min(wz(P[n] + tot[n] @ q) for q in PAW_SKIN[n]) - SKIN_REST[n]
+    return min(wz(P[n]) - stand, wz(tip_of(P, tot, n)) - tip)
+
+
+def plant(chain, tot, P, dz):
+    """the leg's last joint moved dz up (in the world): the knee bent (its two lengths as they are) to reach, the leg
+    turned at its upper joint onto the spot, the paw (the chain's last bone and below) kept as it was turned"""
+    if len(chain) < 3:
+        return
+    j1, j2, paw = (chain[1].name, chain[2].name, chain[-1].name) if len(chain) >= 4 else (chain[0].name, chain[1].name, chain[-1].name)
+    up = WM.inverted().to_3x3() @ Vector((0, 0, 1))
+    A, B, C = P[j1], P[j2], P[paw]
+    T = C + up.normalized() * (dz / max((WM.to_3x3() @ up.normalized()).length, 1e-9))
+    a, bl = (B - A).length, (C - B).length
+    if a < 1e-9 or bl < 1e-9:
+        return
+    dT = min(max((T - A).length, abs(a - bl) + 1e-4 * (a + bl)), (a + bl) * 0.999)
+    keep = {x: tot[x].copy() for x in SUB[paw]}
+    # the knee: its angle for the new reach, about the leg's own bend axis
+    nrm = (B - A).cross(C - B)
+    if nrm.length < 1e-9:
+        nrm = (B - A).cross(up)
+    if nrm.length < 1e-9:
+        return
+    nrm.normalize()
+    cur = (B - A).angle(C - B)
+    want = math.pi - math.acos(max(-1.0, min(1.0, (a * a + bl * bl - dT * dT) / (2 * a * bl))))
+    R2, C1 = None, None
+    for sg in (1.0, -1.0):   # (the knee's turn either way: the one that gives the reach)
+        R = Matrix.Rotation(sg * (want - cur), 3, nrm)
+        Cx = B + R @ (C - B)
+        if R2 is None or abs((Cx - A).length - dT) < abs((C1 - A).length - dT):
+            R2, C1 = R, Cx
+    for x in SUB[j2]:
+        tot[x] = R2 @ tot[x]
+    # the whole leg turned at its upper joint: the paw's joint onto the spot
+    R1 = (C1 - A).rotation_difference(T - A).to_matrix()
+    for x in SUB[j1]:
+        tot[x] = R1 @ tot[x]
+    for x, m in keep.items():   # (the paw and its toes: as they were turned)
+        tot[x] = m
+
+
 done = []
 for clip in job["clips"]:
     S = source(clip["source"])
@@ -336,27 +432,41 @@ for clip in job["clips"]:
                 tot[nm] = Wt.inverted() @ tw @ Wt
             else:   # not carried: with its parent as at rest
                 tot[nm] = tot[b.parent.name] if b.parent else Matrix.Identity(3)
+        d = (Y @ ((src.matrix_world @ src.pose.bones[hips_s].head) - S["rest_hips"])) * S["scale"]
+        if first is None:
+            first = d.copy()
+        d = Vector((first.x, first.y, d.z))   # in place: the hips keep their height's move, not their travel
+        # the ground: the creature's lowest paw as far off it as the source's lowest (scaled) - turned the same, legs
+        # of other lengths put a sitting werewolf's hind paws into the floor, a standing one's in the air
+        common = [k for k in paws_t if k in S["paws_s"]]
+        if common:
+            P = fk(tot, Wt.inverted() @ d)
+            g_s = min((src.matrix_world @ src.pose.bones[S["paws_s"][k]].head).z - S["stand_s"][k] for k in common)
+            g_t = min(paw_bottom(P, tot, paws_t[k], stand_t[k], tip_t[k]) for k in common)
+            d.z += g_s * S["scale"] - g_t
+            # each paw on its own ground (the lowest one alone left the others in the floor or in the air - a horse's
+            # trot dipped 7 cm): where the source's paw stands, the creature's goes to the same height above its own
+            # stance (scaled) by its knee and its upper joint, the paw itself kept as turned; fading as the paw lifts
+            P = fk(tot, Wt.inverted() @ d)
+            for k in common:
+                hs = ((src.matrix_world @ src.pose.bones[S["paws_s"][k]].head).z - S["stand_s"][k]) * S["scale"]
+                w = 1.0 if hs < 0.02 * h_t else max(0.0, 1.0 - (hs - 0.02 * h_t) / (0.1 * h_t))
+                bottom = paw_bottom(P, tot, paws_t[k], stand_t[k], tip_t[k])   # (its skin: the claws, a hoof's rim)
+                dz = (hs - bottom) * w
+                if bottom + dz < 0:   # (never into the floor: a lifted paw of another leg's length swung through it)
+                    dz = -bottom
+                if abs(dz) > 1e-4 * h_t:
+                    plant(TC[k], tot, P, dz)
+                    P = fk(tot, Wt.inverted() @ d)
+        for b in order:
+            nm = b.name
             rp = tot[b.parent.name] if b.parent else Matrix.Identity(3)
             rc = rp.inverted() @ tot[nm]
             pb = tgt.pose.bones[nm]
             pb.rotation_quaternion = (M[nm].inverted() @ rc @ M[nm]).to_quaternion()
             pb.keyframe_insert("rotation_quaternion", frame=fi + 1)
-        d = (Y @ ((src.matrix_world @ src.pose.bones[hips_s].head) - S["rest_hips"])) * S["scale"]
-        if first is None:
-            first = d.copy()
-        d = Vector((first.x, first.y, d.z))   # in place: the hips keep their height's move, not their travel
         pb = tgt.pose.bones[hips_t]
         pb.location = M[hips_t].inverted() @ (Wt.inverted() @ d)
-        # the ground: the creature's lowest paw as far off it as the source's lowest (scaled) - turned the same, legs
-        # of other lengths put a sitting werewolf's hind paws into the floor, a standing one's in the air
-        common = [k for k in paws_t if k in S["paws_s"]]
-        if common:
-            bpy.context.view_layer.update()
-            g_s = min((src.matrix_world @ src.pose.bones[S["paws_s"][k]].head).z - S["stand_s"][k] for k in common)
-            g_t = min(min((tgt.matrix_world @ tgt.pose.bones[paws_t[k]].head).z - stand_t[k],
-                          (tgt.matrix_world @ tgt.pose.bones[paws_t[k]].tail).z - tip_t[k]) for k in common)
-            d.z += g_s * S["scale"] - g_t
-            pb.location = M[hips_t].inverted() @ (Wt.inverted() @ d)
         pb.keyframe_insert("location", frame=fi + 1)
     act.use_frame_range = True
     act.frame_start, act.frame_end = 1, n
