@@ -629,6 +629,43 @@ def paint_delete(d: Path, name: str, slug: str):
     yield _t("cr.paint_deleted", (v or {}).get("title", slug))
 
 
+# ---------------------------------------------------------------- the model's defects mended (glb_fix.py)
+def mend(d: Path, name: str, what: str):
+    """Every model of the creature mended in place (its source, skeleton, clips, colouring variants, the copies the
+    tools start from): what - "holes" (small holes in the skin closed: Tripo leaves some, seen as dark or light
+    squares) or "normals" (the vertex normals made again from the faces). Each file changed is copied once into
+    <name>_backup/ first. Yields log lines."""
+    import glb_fix
+    d = Path(d)
+    files = sorted(p for p in d.glob("*.glb") if p.is_file())
+    if not files:
+        raise RuntimeError(_t("cr.none"))
+    bak = d / f"{name}_backup"
+    total = 0
+    for f in files:
+        tmp = f.with_name(f.stem + ".mending.tmp")
+        try:
+            if what == "holes":
+                n, tris = glb_fix.fill_holes(f, tmp)
+                line = _t("cr.mend_holes_file", f.name, n, tris) if n else None
+            else:
+                n = glb_fix.fix_normals(f, tmp, mode="all")
+                line = _t("cr.mend_normals_file", f.name, n) if n else None
+        except Exception as e:  # noqa: BLE001 - one odd file does not stop the rest
+            tmp.unlink(missing_ok=True)
+            yield _t("cr.mend_skip", f.name, e)
+            continue
+        if not tmp.exists():
+            continue
+        bak.mkdir(exist_ok=True)
+        if not (bak / f.name).exists():
+            shutil.copy2(f, bak / f.name)
+        tmp.replace(f)
+        total += 1
+        yield line
+    yield _t("cr.mend_done", total, bak.name) if total else _t("cr.mend_none")
+
+
 def godot_view(cfg, d: Path, name: str) -> str:
     """The creature in Godot (godot/sf3d_creature.gd): a small project work_dir/creature_view/<name> with its clips'
     model (<name>_clips.glb, else the rigged one), imported headless, then opened. Returns the log line."""

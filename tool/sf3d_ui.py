@@ -2772,7 +2772,10 @@ def build():
                         cr_anim_view = gr.HTML()
                     with gr.Tab(_t("cr.paint_tab"), id="cr_paint") as cr_tab_paint:
                         gr.Markdown(_t("cr.paint_intro"))
-                        cr_paint_btn = gr.Button(_t("cr.view_reopen"))
+                        with gr.Row():
+                            cr_paint_btn = gr.Button(_t("cr.view_reopen"))
+                            cr_holes_btn = gr.Button(_t("cr.mend_holes"))
+                            cr_normals_btn = gr.Button(_t("cr.mend_normals"))
                         cr_paint_log = gr.Textbox(label=_t("face.progress"), lines=3, interactive=False)
                         cr_paint_view = gr.HTML()
                         cr_paint_req = gr.Textbox(elem_id=CR.PAINT_ID, elem_classes=["sf3d-hidden"], show_label=False)
@@ -3013,6 +3016,25 @@ def build():
         cr_tab_anim.select(creature_clips_viewer, cr_dd, cr_anim_view, show_progress="hidden")
         cr_tab_paint.select(creature_paint_view, cr_dd, cr_paint_view, show_progress="hidden")
         cr_paint_btn.click(creature_paint_view, cr_dd, cr_paint_view)
+
+        def cr_mend(v, what):   # the model's defects mended in every file of the creature; the page again on it
+            f = _char_files(v) or {}
+            lines = []
+            try:
+                for line in CR.mend(f["dir"], f["name"], what):
+                    lines.append(line)
+                    yield "\n".join(lines), gr.update()
+                yield "\n".join(lines), creature_paint_view(v)
+            except Exception as e:  # noqa: BLE001
+                lines.append(_t("ui.error_2", e))
+                yield "\n".join(lines), gr.update()
+        def cr_mend_holes(v):   # (generator functions of their own: a lambda's generator was not streamed once)
+            yield from cr_mend(v, "holes")
+
+        def cr_mend_normals(v):
+            yield from cr_mend(v, "normals")
+        cr_holes_btn.click(cr_mend_holes, cr_dd, [cr_paint_log, cr_paint_view], concurrency_id="creature_markup", concurrency_limit=1)
+        cr_normals_btn.click(cr_mend_normals, cr_dd, [cr_paint_log, cr_paint_view], concurrency_id="creature_markup", concurrency_limit=1)
         cr_paint_go.click(creature_paint_request, [cr_dd, cr_paint_req], [cr_paint_log, cr_paint_view],
                           concurrency_id="creature_markup", concurrency_limit=1)
 

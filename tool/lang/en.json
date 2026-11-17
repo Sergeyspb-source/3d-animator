@@ -2690,7 +2690,7 @@
  "cp.reseed": "Another pattern",
  "cp.no_texture": "The model has no colour texture: nothing to paint.",
  "cr.paint_tab": "Colouring",
- "cr.paint_intro": "**Colouring.** Colour variants of one creature: white, black, spotted and so on. Everything changes live on the model. «Save the variant» (a few seconds) bakes the textures and makes `<name>_v_<variant>.glb` - the model with every clip and the new textures. The creature's model stays as it is; after new clips, a jaw or eyes the variants are made again by themselves. «Open in Godot» switches the variants by a list.",
+ "cr.paint_intro": "**Colouring.** Colour variants of one creature: white, black, spotted and so on. Everything changes live on the model. «Save the variant» (a few seconds) bakes the textures and makes `<name>_v_<variant>.glb` - the model with every clip and the new textures. The creature's model stays as it is; after new clips, a jaw or eyes the variants are made again by themselves. «Open in Godot» switches the variants by a list. «Close the model's holes» closes small holes in the skin (Tripo leaves some - dark or light squares through them), «Recalculate the normals» makes smooth normals again; both mend every model of the creature, the copies before go into `<name>_backup`.",
  "cr.paint_need_name": "No name for the variant.",
  "cr.paint_no_images": "The page sent no textures.",
  "cr.paint_bad_upload": "A file not from the app's uploads: {0}",
@@ -2711,5 +2711,12 @@
  "cp.clear_part": "Clear the part",
  "cp.brush_size": "Brush size",
  "cp.parts_info": "Vertices marked per part: {0}",
- "cp.draft_back": "The draft is back: the changes from last time. «Save the variant» makes the model."
+ "cp.draft_back": "The draft is back: the changes from last time. «Save the variant» makes the model.",
+ "cr.mend_holes": "Close the model's holes",
+ "cr.mend_normals": "Recalculate the normals",
+ "cr.mend_holes_file": "{0}: holes closed {1} ({2} triangles).",
+ "cr.mend_normals_file": "{0}: normals recalculated ({1} vertices).",
+ "cr.mend_skip": "{0}: skipped ({1}).",
+ "cr.mend_done": "Done: {0} files mended; the copies before - in folder {1}.",
+ "cr.mend_none": "Nothing to mend: no holes (or the normals are so already)."
 }
