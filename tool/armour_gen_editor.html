@@ -5595,6 +5595,23 @@ function turn(b, axis, deg) {   // a bone turned about a world axis through its 
   const wq = b.getWorldQuaternion(new Q()), pq = b.parent.getWorldQuaternion(new Q()).invert();
   b.quaternion.copy(pq.multiply(q.multiply(wq))); b.updateMatrixWorld(true);
 }
+// a weapon in both hands: the arms as «Fist» holds it (held in front, the other hand on the haft) - each arm bone's turn
+// in the world from its rest (glTF axes, [x, y, z, w]) - for Blender's previews (blender_armour_gen.py, «two_pose»)
+function twoPose() {
+  if (!(twoHand && S.piece === 'weapon') || !charRoot) return null;
+  const ids = ['shoulder', 'arm', 'forearm', 'hand'].flatMap((j) => ['L', 'R'].map((s) => j + '_' + s)).filter((k) => PB[k]);
+  const was = pose;
+  restPose(); charRoot.updateMatrixWorld(true);
+  const rest = Object.fromEntries(ids.map((k) => [k, PB[k].getWorldQuaternion(new Q())]));
+  pose = 'fist'; applyPose(); charRoot.updateMatrixWorld(true);
+  const out = {};
+  for (const k of ids) {
+    const d = PB[k].getWorldQuaternion(new Q()).multiply(rest[k].clone().invert());
+    out[PB[k].name] = [d.x, d.y, d.z, d.w].map((x) => +x.toFixed(6));
+  }
+  pose = was; applyPose();
+  return out;
+}
 function restPose() {
   for (const [b, q] of REST) b.quaternion.copy(q);
   for (const [b, p] of RESTP) b.position.copy(p);   // a remembered fist moves the knuckles
@@ -6825,7 +6842,7 @@ async function make() {
   let js = null;
   try {
     js = await send('generate', { item, piece: S.piece, replace, style: S.style, sides: lastBuild.sides.filter((s) => s !== 'C'),
-      params: { ...S.p }, two: S.piece === 'weapon' ? twoCode() : '', point: S.piece === 'weapon' ? spearPoint : '', grasp: S.piece === 'weapon' && grasp ? grasp.code : '', mesh: isMade() ? null : payload(), under: [...WORN.entries()].filter(([, w]) => w.on && layerOf(w)).map(([k]) => k) }, '{{js:ag.working}}', '_wear_' + item);
+      params: { ...S.p }, two: S.piece === 'weapon' ? twoCode() : '', two_pose: S.piece === 'weapon' ? twoPose() : null, point: S.piece === 'weapon' ? spearPoint : '', grasp: S.piece === 'weapon' && grasp ? grasp.code : '', mesh: isMade() ? null : payload(), under: [...WORN.entries()].filter(([, w]) => w.on && layerOf(w)).map(([k]) => k) }, '{{js:ag.working}}', '_wear_' + item);
   } catch (e) { $('status').textContent = '{{js:ed.could_not_send_to_sf3d}}' + e.message; console.error(e); }
   busy = false; $('go').disabled = !lastBuild;
   if (js && js.ok) {

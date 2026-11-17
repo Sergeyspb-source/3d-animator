@@ -864,6 +864,27 @@ def hold_pose(hold, fist):
                 prev_head, prev_rest, prev_R = loc, rest.translation, R
 
 
+def arms_two(turns):
+    """The arms posed by the editor's turns (bone name -> its world turn from rest, glTF [x, y, z, w]), parents first,
+    each bone at the head its posed parent carries it to (the fingers, closed before, ride along)."""
+    A = Matrix(((1, 0, 0), (0, 0, -1), (0, 1, 0)))   # glTF -> Blender axes
+    arm.data.pose_position = "POSE"
+    W = arm.matrix_world
+    todo = []
+    for k, q in turns.items():
+        n = real.get(k, k)
+        if n in arm.pose.bones:
+            todo.append((len(arm.pose.bones[n].bone.parent_recursive), n, q))
+    for _, n, q in sorted(todo):
+        pb = arm.pose.bones[n]
+        bpy.context.view_layer.update()
+        D = A @ Quaternion((q[3], q[0], q[1], q[2])).to_matrix() @ A.transposed()
+        head_w = W @ pb.head
+        rest = W.to_3x3() @ pb.bone.matrix_local.to_3x3()
+        pb.matrix = W.inverted() @ (Matrix.Translation(head_w) @ (D @ rest).to_4x4())
+    bpy.context.view_layer.update()
+
+
 def rest_pose():
     for pb in arm.pose.bones:
         pb.matrix_basis.identity()
@@ -875,7 +896,10 @@ def rest_pose():
 sc = bpy.context.scene
 pv = job.get("preview")
 if pv and kind == "weapon" and sides != ["C"]:
-    hold_pose(sides, job.get("fist"))
+    two_side = (job.get("two") or "")[:1]
+    hold_pose(sides + ([two_side] if two_side in ("L", "R") and two_side not in sides else []), job.get("fist"))
+    if job.get("two_pose"):   # in both hands: the arms as the editor's «Fist» holds it - in front, the other hand on the haft
+        arms_two(job["two_pose"])
 if pv and kind in CLOTH_KINDS:   # a cloak is fitted over the arms hanging (a skirt beside them): so they are shown
     arms_down()
 if pv:
@@ -905,7 +929,11 @@ if pv:
         if o.type == "MESH" and o is not obj:
             o.data.materials.clear()
             o.data.materials.append(skin)
-    pts = [obj.matrix_world @ v.co for v in mesh.vertices]
+    bpy.context.view_layer.update()   # (framed as posed: a weapon held in both hands is out in front)
+    _ev = obj.evaluated_get(bpy.context.evaluated_depsgraph_get())
+    _me = _ev.to_mesh()
+    pts = [_ev.matrix_world @ v.co for v in _me.vertices]
+    _ev.to_mesh_clear()
     hx = (arm.matrix_world @ arm.data.bones[names["hips"]].head_local).x
     one = [p for p in pts if p.x > hx] if len(sides) > 1 else pts   # the close-up: the left one
     cd = bpy.data.cameras.new("c"); cd.type = "ORTHO"
