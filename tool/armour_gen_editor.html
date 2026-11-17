@@ -2230,6 +2230,21 @@ function itemMesh(acc, F) {   // the thing's local (a, e, s) to the world, faces
 }
 const ROUND = (r0, r1, a0, a1, n = 7) => Array.from({ length: n }, (_, i) => { const t = i / (n - 1); return [a0 + (a1 - a0) * t, Math.max(1e-4, r0 + (r1 - r0) * t)]; });
 const BALL = (a, r, n = 7) => Array.from({ length: n }, (_, i) => { const t = i / (n - 1) * Math.PI; return [a - r * Math.cos(t), Math.max(1e-4, r * Math.sin(t))]; });
+// the bows' kinds: up / down - each limb's length from the grip (of the height), line - a limb's centre line braced
+// ([share along, how far back toward the archer in limb lengths]; a recurve's tips flick forward again), w / t - its
+// width and thickness at the grip, taper - how much narrower at the tip, grip - how much thicker by the grip, ear - a
+// stiff ear from that share on (its width earW, thickness earT), riser - a modern bow's stiff middle (its half length)
+const BOWS = {
+  short: { legacy: true },
+  long: { up: .46, down: .46, line: [[0, 0], [.25, .02], [.5, .07], [.75, .14], [1, .23]], w: .015, t: .016, taper: .55, grip: .4 },
+  flat: { up: .4, down: .4, line: [[0, 0], [.3, .03], [.6, .1], [1, .22]], w: .03, t: .008, taper: .65, grip: .6 },
+  recurve: { up: .37, down: .37, line: [[0, 0], [.3, .04], [.6, .13], [.8, .2], [.92, .22], [1, .17]], w: .022, t: .009, taper: .6, grip: .5 },
+  scythian: { up: .3, down: .3, line: [[0, 0], [.12, -.08], [.3, -.1], [.55, .02], [.78, .16], [.92, .2], [1, .1]], w: .018, t: .011, taper: .45, grip: .8 },
+  mongol: { up: .36, down: .36, line: [[0, 0], [.2, .02], [.45, .09], [.65, .17], [.75, .2], [.88, .14], [1, .07]], w: .02, t: .011, taper: .3, grip: .6, ear: .75, earW: .55, earT: .95 },
+  turkish: { up: .2, down: .2, line: [[0, 0], [.18, -.09], [.45, -.04], [.72, .14], [.88, .21], [1, .06]], w: .016, t: .013, taper: .4, grip: 1.1 },
+  yumi: { up: .7, down: .36, line: [[0, 0], [.4, .05], [.75, .14], [.92, .17], [1, .14]], w: .016, t: .012, taper: .45, grip: .3 },
+  riser: { up: .4, down: .4, riser: .14, line: [[0, 0], [.35, .04], [.7, .13], [.88, .16], [1, .12]], w: .024, t: .008, taper: .55, grip: 0 },
+};
 function weapon(side, p) {
   const F = handFrame(side, p); if (!F) return null;
   const acc = rigidAcc(PB['hand_' + side]), { loft, lathe, box } = itemMesh(acc, F);
@@ -2344,20 +2359,83 @@ function weapon(side, p) {
     lathe([[top + r1 * .9, r1 * .3], [top + r1 + .02 * H * k(p.w_head), .0008 * H]], DETAIL, 'rivet', 8);
     lathe(BALL(bot - .9 * r0, r0), TRIM, 'trim');
     grip(-.05 * H, .05 * H, r0 * 1.06);
-  } else if (kind === 'bow') {   // a short bow, braced: its limbs bending back to the archer from the grip, the string between the tips
-    const half = .3 * H * k(p.w_len), lw = .02 * H * k(p.w_width), lt = .011 * H * k(p.w_width), bend = .1 * half, a0 = .03 * H, n = 10;
-    for (const sg of [1, -1]) {
-      const rings = [];
-      for (let i = 0; i <= n; i++) {
-        const u = i / n, a = sg * (a0 + u * (half - a0)), e = -bend * u * u, w = lw * (1 - .6 * u), t = lt * (1 - .45 * u);
-        const ring = [[a, e + t / 2, -w / 2], [a, e + t / 2, w / 2], [a, e - t / 2, w / 2], [a, e - t / 2, -w / 2]];
-        rings.push(sg > 0 ? ring : ring.reverse());
+  } else if (kind === 'bow') {   // a bow, braced: its limbs bending back to the archer from the grip, the string between
+    // the tips. Its kind (p.bow) sets the limbs' line, their section and length (BOWS): a short bow, an English
+    // longbow, a flatbow, a recurve, a Scythian, a Mongol (stiff ears, string bridges), a Turkish, a Japanese yumi (the
+    // grip a third up), a modern recurve on a riser
+    const B = BOWS[p.bow] || BOWS.short;
+    if (B.legacy) {   // (the short bow as it was made before the kinds)
+      const half = .3 * H * k(p.w_len), lw = .02 * H * k(p.w_width), lt = .011 * H * k(p.w_width), bend = .1 * half * k(p.bow_brace ?? 100), a0 = .03 * H, n = 10;
+      for (const sg of [1, -1]) {
+        const rings = [];
+        for (let i = 0; i <= n; i++) {
+          const u = i / n, a = sg * (a0 + u * (half - a0)), e = -bend * u * u, w = lw * (1 - .6 * u), t = lt * (1 - .45 * u);
+          const ring = [[a, e + t / 2, -w / 2], [a, e + t / 2, w / 2], [a, e - t / 2, w / 2], [a, e - t / 2, -w / 2]];
+          rings.push(sg > 0 ? ring : ring.reverse());
+        }
+        loft(rings, PLATE, 'plate');
       }
-      loft(rings, PLATE, 'plate');
+      lathe(ROUND(gr * 1.02, gr * 1.08, -.05 * H, .05 * H, 5), LEATHER, 'strap');   // the grip, wrapped
+      const sr = .0018 * H, se = -bend - .3 * lt;
+      loft([half * .985, -half * .985].map((a) => Array.from({ length: 5 }, (_, j) => [a, se + sr * Math.cos(j / 5 * TAU), sr * Math.sin(j / 5 * TAU)])), CLOTH, 'quilt');
+    } else {
+      const brace = k(p.bow_brace ?? 100), a0 = B.riser ? B.riser * H : .03 * H;
+      // a limb's centre line: its profile's points (along: 0 the grip's end .. 1 the tip; back: toward the archer, in
+      // the limb's lengths), through them a smooth curve; sg +1 the upper limb, -1 the lower
+      const limb = (sg) => {
+        const half = (sg > 0 ? B.up : B.down) * H * k(p.w_len), L = half - a0, P = B.line.map(([u, b]) => [a0 + u * L, -b * L * brace]);
+        const out = [], n = 26;
+        for (let i = 0; i <= n; i++) {   // (Catmull-Rom through the profile, by the share along)
+          const x = i / n * (P.length - 1), j = Math.min(P.length - 2, Math.floor(x)), f = x - j;
+          const p0 = P[Math.max(0, j - 1)], p1 = P[j], p2 = P[j + 1], p3 = P[Math.min(P.length - 1, j + 2)];
+          const cr = (q) => .5 * (2 * p1[q] + (-p0[q] + p2[q]) * f + (2 * p0[q] - 5 * p1[q] + 4 * p2[q] - p3[q]) * f * f + (-p0[q] + 3 * p1[q] - 3 * p2[q] + p3[q]) * f ** 3);
+          out.push([sg * cr(0), cr(1), i / n]);
+        }
+        return out;
+      };
+      const lw = B.w * H * k(p.w_width), lt = B.t * H * k(p.w_width);
+      const lines = {};
+      for (const sg of [1, -1]) {
+        const C = limb(sg), rings = [];
+        lines[sg] = C;
+        C.forEach(([a, e, u], i) => {   // the section across the line (its thickness in the bow's plane, its width out of it)
+          const q = C[Math.min(C.length - 1, i + 1)], o = C[Math.max(0, i - 1)], ta = q[0] - o[0], te = q[1] - o[1], tl = Math.hypot(ta, te) || 1;
+          const na = -te / tl, ne = ta / tl, ear = B.ear && u > B.ear ? 1 : 0;   // (a Mongol bow's ear: stiff, as wide as it starts)
+          const w = lw * (ear ? B.earW : 1 - B.taper * u), th = lt * (ear ? B.earT : 1 - .5 * u) * (u < .12 ? 1 + B.grip * (1 - u / .12) : 1);
+          const ring = [[-1, -1], [-1, 1], [1, 1], [1, -1]].map(([x, z]) => [a + na * x * th / 2, e + ne * x * th / 2, z * w / 2]);
+          rings.push(ring.reverse());   // (the faces outward: the normal's side flips with the limb's way)
+        });
+        loft(rings, PLATE, 'plate');
+        if (B.ear) {   // a string bridge where the ear starts: a small block on its belly
+          const iB = C.findIndex(([, , u]) => u >= B.ear), [ba, be] = C[iB];
+          box(ba - sg * .006 * H, ba + sg * .006 * H, be - lt * 1.4, be - lt * .4, -lw * .45, lw * .45, TRIM, 'trim');
+        }
+      }
+      if (B.riser) {   // a riser: the stiff middle the limbs are bolted to, the grip shaped in it
+        const r = B.riser * H, d = .022 * H;
+        loft([-r, -r * .5, -.05 * H, .05 * H, r * .5, r].map((a, i) => {
+          const sh = i === 0 || i === 5 ? .6 : i === 1 || i === 4 ? .85 : 1, e0 = -.004 * H, w = lw * .9 * sh;
+          return [[a, e0 + d * .5 * sh, -w / 2], [a, e0 + d * .5 * sh, w / 2], [a, e0 - d * .5 * sh, w / 2], [a, e0 - d * .5 * sh, -w / 2]];
+        }), TRIM, 'trim');
+        lathe(ROUND(gr * 1.02, gr * 1.06, -.04 * H, .04 * H, 5), LEATHER, 'strap');
+      } else {
+        lathe(ROUND(gr * 1.02, gr * 1.08, -.05 * H, .05 * H, 5), LEATHER, 'strap');   // the grip, wrapped
+      }
+      // the string: from each tip along the limb's belly while the limb lies back of the line between the two
+      // furthest-back points (a recurve's string lies on its tips), straight between them
+      const sr = .0016 * H, back = (C) => C.reduce((m, q, i) => (q[1] < C[m][1] ? i : m), 0);
+      const path = [];
+      const side = (C) => { const ib = back(C), pts = []; for (let i = C.length - 1; i >= ib; i--) pts.push([C[i][0], C[i][1] - lt * .55]); return pts; };
+      path.push(...side(lines[1]));
+      path.push(...side(lines[-1]).reverse());
+      const rings = [];
+      path.forEach(([a, e], i) => {
+        const q = path[Math.min(path.length - 1, i + 1)], o = path[Math.max(0, i - 1)], ta = q[0] - o[0], te = q[1] - o[1], tl = Math.hypot(ta, te) || 1;
+        const na = -te / tl, ne = ta / tl;
+        rings.push(Array.from({ length: 5 }, (_, j) => { const c = Math.cos(j / 5 * TAU) * sr, s = Math.sin(j / 5 * TAU) * sr; return [a + na * c, e + ne * c, s]; }));
+      });
+      loft(rings, CLOTH, 'quilt');
     }
-    lathe(ROUND(gr * 1.02, gr * 1.08, -.05 * H, .05 * H, 5), LEATHER, 'strap');   // the grip, wrapped
-    const sr = .0018 * H, se = -bend - .3 * lt;   // the string, from tip to tip on the archer's side
-    loft([half * .985, -half * .985].map((a) => Array.from({ length: 5 }, (_, j) => [a, se + sr * Math.cos(j / 5 * TAU), sr * Math.sin(j / 5 * TAU)])), CLOTH, 'quilt');
   } else if (kind === 'spear' || kind === 'staff') {
     const len = (kind === 'spear' ? .95 : 1.0) * H * k(p.w_len), r = gr * .85, top = len * .6, bot = -len * .4;
     haft(bot, top, r);
@@ -4855,7 +4933,15 @@ Object.assign(STYLES, {
     weapon_club: { weapon: 'club', material: 'wood', trim: 'iron', w_len: 100, w_head: 100, grip_tilt: 10, w_two: 0 },
     weapon_spear: { weapon: 'spear', w_two: 0, material: 'steel', trim: 'steel', w_len: 100, w_width: 100, w_head: 100, grip_tilt: 5 },
     weapon_staff: { weapon: 'staff', w_two: 0, material: 'steel', trim: 'bronze', w_len: 100, w_head: 100, grip_tilt: 5 },
-    weapon_bow: { weapon: 'bow', w_two: 0, material: 'wood', trim: 'leather', cloth: '#d8cfae', w_len: 100, w_width: 100, grip_tilt: 0, grip_roll: 0 },
+    weapon_bow: { weapon: 'bow', bow: 'short', bow_brace: 100, w_two: 0, material: 'wood', trim: 'leather', cloth: '#d8cfae', w_len: 100, w_width: 100, grip_tilt: 0, grip_roll: 0 },
+    weapon_bow_long: { weapon: 'bow', bow: 'long', bow_brace: 100, w_two: 0, material: 'wood', trim: 'leather', cloth: '#d8cfae', w_len: 100, w_width: 100, grip_tilt: 0, grip_roll: 0 },
+    weapon_bow_flat: { weapon: 'bow', bow: 'flat', bow_brace: 100, w_two: 0, material: 'wood', trim: 'leather', cloth: '#d8cfae', w_len: 100, w_width: 100, grip_tilt: 0, grip_roll: 0 },
+    weapon_bow_recurve: { weapon: 'bow', bow: 'recurve', bow_brace: 100, w_two: 0, material: 'wood', trim: 'leather', cloth: '#d8cfae', w_len: 100, w_width: 100, grip_tilt: 0, grip_roll: 0 },
+    weapon_bow_scythian: { weapon: 'bow', bow: 'scythian', bow_brace: 100, w_two: 0, material: 'wood', trim: 'bronze', cloth: '#d8cfae', w_len: 100, w_width: 100, grip_tilt: 0, grip_roll: 0 },
+    weapon_bow_mongol: { weapon: 'bow', bow: 'mongol', bow_brace: 100, w_two: 0, material: 'wood', trim: 'leather', cloth: '#d8cfae', w_len: 100, w_width: 100, grip_tilt: 0, grip_roll: 0 },
+    weapon_bow_turkish: { weapon: 'bow', bow: 'turkish', bow_brace: 100, w_two: 0, material: 'wood', trim: 'brass', cloth: '#d8cfae', w_len: 100, w_width: 100, grip_tilt: 0, grip_roll: 0 },
+    weapon_bow_yumi: { weapon: 'bow', bow: 'yumi', bow_brace: 100, w_two: 0, material: 'wood', trim: 'leather', cloth: '#d8cfae', w_len: 100, w_width: 100, grip_tilt: 0, grip_roll: 0 },
+    weapon_bow_riser: { weapon: 'bow', bow: 'riser', bow_brace: 100, w_two: 0, material: 'wood', trim: 'steel', cloth: '#d8cfae', w_len: 100, w_width: 100, grip_tilt: 0, grip_roll: 0 },
   },
   shield: {
     // (the face: painted planks on a round one; leather or rawhide on a kite, a heater, a scutum; gessoed canvas on a pavise)
@@ -4962,6 +5048,8 @@ SPEC.push(['{{js:ag.made_group}}', [], [
   ['strap', -50, 50, 1, '{{js:ag.helmet_strap}}', '{{js:ag.helmet_strap_info}}', 'pc', hs('barbute', 'open_bascinet', 'sallet', 'kettle_hat', 'nasal_helm', 'spangenhelm', 'morion')],
   ['strap_fwd', -50, 50, 1, '{{js:ag.helmet_strap_fwd}}', '', 'pc', hs('barbute', 'open_bascinet', 'sallet', 'kettle_hat', 'nasal_helm', 'spangenhelm', 'morion')]], isMade]);
 // held things: a weapon's sizes and its grip in the fist, a shield's; the rest of the groups is not theirs
+// a held piece's style as its button names it (a bow's kind: weapon_bow_<kind>, the short one weapon_bow)
+const heldStyle = () => S.piece + '_' + S.p[S.piece] + (S.piece === 'weapon' && S.p.weapon === 'bow' && S.p.bow && S.p.bow !== 'short' ? '_' + S.p.bow : '');
 const isHeld = () => HELD.includes(S.piece), isW = (...k) => () => S.piece === 'weapon' && k.includes(S.p.weapon);
 const isGrip = () => S.piece === 'weapon' || (S.piece === 'shield' && !!S.p.s_hand);   // held in the fist: its grip's sliders
 // a shield's place as a node's fields: [param, group, axis, tip, step]
@@ -4970,6 +5058,7 @@ const HELD_GI = SPEC.length;
 SPEC.push(['{{js:ag.held_group}}', ['plate', 'strap', 'trim', 'quilt'], [
   ['w_len', 40, 180, 5, '{{js:ag.w_len}}', '', 'pc', () => isP('weapon')() || isP('sheath')()],
   ['w_width', 40, 200, 5, '{{js:ag.w_width}}', '', 'pc', () => isW('sword', 'dagger', 'axe', 'spear', 'bow', 'greatsword', 'greataxe')() || isP('sheath')()],
+  ['bow_brace', 40, 160, 5, '{{js:ag.bow_brace}}', '{{js:ag.bow_brace_info}}', 'pc', isW('bow')],
   ['arrows', 0, 30, 1, '{{js:ag.arrows}}', '{{js:ag.arrows_info}}', '', () => S.piece === 'sheath' && /quiver/.test(S.p.sheath || '')],
   ['w_guard', 0, 200, 5, '{{js:ag.w_guard}}', '', 'pc', isW('sword', 'dagger', 'greatsword')],
   ['w_grip', 60, 200, 5, '{{js:ag.w_grip}}', '', 'pc', isW('sword', 'dagger', 'greatsword')],
@@ -5046,7 +5135,7 @@ const DEFAULTS = Object.assign({ gap: 8, thickness: 12, relief: .35, step: 5, ri
   strap: 0, strap_fwd: 0, elbow: 'elbow_winged_plate', poleyn: 'poleyn_winged_plate', made_slide: 0, made_twist: 0, made_size: 100, codpiece: 'cod_plate', cod_size: 100, cod_proj: 100, cod_top: 0, cod_belt: false, gorget_lames: 4, gorget_low: 40, gorget_high: 60, bevor: false, bevor_high: 100, w_magnet: true, rondel: 'rondel_plain', ailette: 'ailette_square', pel_len: 11, pel_point: 4, pel_lift: 0, pel_gap: .4, hauberk: 'hauberk_long', hb_hem: 90, hb_sleeve: 100, hb_slits: 45, hb_ease: 5, coif: 'coif_short', coif_cape: 5, limb_gap: 8, wing: 100, footwear: 'foot_ankle_boot', foot_gap: 6, glove: 'plain_leather', cuff: 14,
   cloth_style: 'shirt', cloth_quilt: false, quilt_lines: false, pinches: [], paints: [],
   weapon: 'sword', shield: 'round', w_len: 100, w_width: 100, w_guard: 100, w_grip: 100, w_grip_r: 100, w_head: 100, grip_along: 0, grip_out: 0,
-  grip_tilt: 15, grip_roll: 0, w_two: 0, arrows: 12, cloak_len: 60, cloak_wrap: 172, cloak_flare: 25, cloak_lift: 5, cloak_nape: 120, cloak_gap: .5, skirt_len: 30, skirt_flare: 30, skirt_lift: 6, skirt_slit: 0, skirt_gap: .5, tabard_len: 50, tabard_belt: 8, tabard_flare: 15, tabard_lift: 2, tabard_gap: 1, s_size: 100, s_curve: 30, s_rim: 100, s_boss: 100, s_along: 0, s_out: 0, s_turn: 0, s_hand: false, s_elbow: true, s_bend: 0, s_ridge: 0,
+  grip_tilt: 15, grip_roll: 0, w_two: 0, bow: 'short', bow_brace: 100, arrows: 12, cloak_len: 60, cloak_wrap: 172, cloak_flare: 25, cloak_lift: 5, cloak_nape: 120, cloak_gap: .5, skirt_len: 30, skirt_flare: 30, skirt_lift: 6, skirt_slit: 0, skirt_gap: .5, tabard_len: 50, tabard_belt: 8, tabard_flare: 15, tabard_lift: 2, tabard_gap: 1, s_size: 100, s_curve: 30, s_rim: 100, s_boss: 100, s_along: 0, s_out: 0, s_turn: 0, s_hand: false, s_elbow: true, s_bend: 0, s_ridge: 0,
   s_px: 0, s_py: 0, s_pz: 0, s_rx: 0, s_ry: 0, s_rz: 0 }, PIECES.bracer.defaults);
 // idle: no piece being made (the editor opens so: the character as it is, its worn pieces to tick) until a kind is
 // chosen or a made piece opened - a new bracer shown from the start went on beside the worn one
@@ -5199,6 +5288,13 @@ function syncPanel() {
   const pc = PIECES[S.piece], [a0, b0, a1, b1] = pc.range;
   $('i_t0').min = a0; $('i_t0').max = b0; $('i_t1').min = a1; $('i_t1').max = b1;
   $('l_t0').textContent = pc.tlabels[0]; $('l_t1').textContent = pc.tlabels[1]; $('n_t0').textContent = pc.tinfo;
+  // (the held things' group: its title and words by what is held - a bow has no blade; a shield's its own)
+  const bowNow = S.piece === 'weapon' && S.p.weapon === 'bow';
+  $('g_' + HELD_GI).querySelector('.grp').textContent = bowNow ? '{{js:ag.held_bow}}' : S.piece === 'weapon' ? '{{js:ag.held_weapon}}' : S.piece === 'shield' ? '{{js:ag.held_shield}}' : '{{js:ag.held_group}}';
+  $('l_w_width').textContent = bowNow ? '{{js:ag.w_width_bow}}' : '{{js:ag.w_width}}';
+  $('l_w_grip_r').textContent = bowNow ? '{{js:ag.w_grip_r_bow}}' : '{{js:ag.w_grip_r}}';
+  $('n_grip_tilt').textContent = bowNow ? '{{js:ag.grip_tilt_info_bow}}' : '{{js:ag.grip_tilt_info}}';
+  $('n_grip_roll').textContent = bowNow ? '{{js:ag.grip_roll_info_bow}}' : '{{js:ag.grip_roll_info}}';
   const leg = S.piece === 'poleyn';   // (the same generator's sliders, a knee's words)
   $('l_limb_gap').textContent = leg ? '{{js:ag.limb_gap_leg}}' : '{{js:ag.limb_gap}}'; $('n_limb_gap').textContent = leg ? '{{js:ag.limb_gap_leg_info}}' : '{{js:ag.limb_gap_info}}';
   for (const sp of ALL) {
@@ -5244,7 +5340,7 @@ function syncPanel() {
       $('styleSeg').dataset.kind = kind;
       $('styleSeg').innerHTML = Object.keys(set).map((k) => `<button data-style="${k}">${DATA.style_labels[k]}</button>`).join('');
     }
-    for (const b of $('styleSeg').children) b.classList.toggle('on', b.dataset.style === (isMade() ? S.p[S.piece] : isHeld() ? S.piece + '_' + S.p[S.piece] : S.style));
+    for (const b of $('styleSeg').children) b.classList.toggle('on', b.dataset.style === (isMade() ? S.p[S.piece] : isHeld() ? heldStyle() : S.style));
   }
   for (const b of $('lowSeg').children) b.classList.toggle('on', b.dataset.low === S.p.low_surface);
   for (const b of $('trimSeg').children) b.classList.toggle('on', b.dataset.trim === (S.p.trim || ''));
@@ -5252,7 +5348,7 @@ function syncPanel() {
   for (const b of $('matSeg').children) b.classList.toggle('on', b.dataset.mat === S.p.material);
   for (const b of $('surfSeg').children) b.classList.toggle('on', b.dataset.surf === S.p.surface);
   for (const b of $('pieces').querySelectorAll('button'))
-    b.classList.toggle('on', !S.idle && b.dataset.piece === S.piece && (!b.dataset.style || b.dataset.style === S.piece + '_' + S.p[S.piece]));
+    b.classList.toggle('on', !S.idle && b.dataset.piece === S.piece && (!b.dataset.style || b.dataset.style === heldStyle()));
   for (const b of $('sidesRow').querySelectorAll('button')) b.classList.toggle('on', S.sides.includes(b.dataset.side));
   $('sidesRow').hidden = !['limb', 'joint', 'glove', 'held'].includes(PIECES[S.piece].family);
   if (!S.nameTouched) S.name = autoName();   // a new piece: named by the rule as its kind and style change
@@ -7537,6 +7633,7 @@ function genAge(g, W, H, SH) {   // the varnish darkened, paint flaked off to th
   }
   g.putImageData(im, 0, 0);
 }
+window.agHeld = { look: (side = 'R') => { const F = handFrame(side, S.p); if (F) view('close', F.S.toArray()); return !!F; } };   // (the tests: across a held thing's plane)
 window.agGen = { set: (o) => Object.assign(GEN, o), pic: async (w) => (await genPicture(w)).toDataURL('image/png') };   // (the tests)
 let genBusy = false, genAgain = false;
 async function genPreview() {   // the thumbnail, again as the choices change (once at a time, the last one)

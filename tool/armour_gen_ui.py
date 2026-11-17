@@ -120,6 +120,7 @@ PIECES = {"bracer": ("forearm", "hand", "forearm", ("Spine", "Hips", "Chest", "U
           "sheath": ("hips", "spine1", "hips", (), "hips", "held", (0, 0, 0, 0),
                      dict(sheath="scabbard", material="leather", trim="steel", tint="#4a2c18", cloth="#6b4a2a", straps=0, rigidity=1))}
 WEAPONS = ("sword", "dagger", "axe", "mace", "spear", "staff", "bow", "greatsword", "greataxe", "warhammer", "club")
+BOWS = ("long", "flat", "recurve", "scythian", "mongol", "turkish", "yumi", "riser")   # the bow's kinds (weapon "bow")
 SHIELDS = ("round", "kite", "heater", "tower", "scutum")
 SHEATHS = ("scabbard", "dagger", "quiver", "quiver_hip")
 CLOTHS = ("cloth_fitted", "cloth_shirt", "cloth_aketon", "cloth_gambeson", "cloth_doublet", "cloth_voider", "cloth_vest", "cloth_braies", "cloth_braies_long",
@@ -185,7 +186,7 @@ CHOICES = {"opening_labels": ("none", "left", "right", "back", "front"), "closur
            "style_labels": ("leather", "steel", "mail", "splints", "covered", "plate_mail", "lamellar", "brigandine", "tights", "wool", "leather_tr",
                             "mail_chausses", "plate_cuisses", "hidden_plate", "plate_and_mail", "compact", "extended", "carrier",
                             "short_mail", "wrap_mail", "carrier_mail", "lames", *HELMETS, *ELBOWS, *POLEYNS, "cod_plate", "cod_leather", "cod_cloth", "rondel_plain", "rondel_spike", "rondel_fluted", "ailette_square", "ailette_shield", "hauberk_long", "haubergeon", "coif_short", "coif_long", *FOOTWEAR, *GLOVES, *CLOTHS,
-                            *(f"weapon_{w}" for w in WEAPONS), *(f"shield_{x}" for x in SHIELDS), *(f"sheath_{x}" for x in SHEATHS)),
+                            *(f"weapon_{w}" for w in WEAPONS), *(f"weapon_bow_{b}" for b in BOWS), *(f"shield_{x}" for x in SHIELDS), *(f"sheath_{x}" for x in SHEATHS)),
            "thigh_labels": ("none", "mail", "plate", "panels", "plate_mail"), "knee_labels": ("none", "patch", "cop")}
 
 
