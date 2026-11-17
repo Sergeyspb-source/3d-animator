@@ -331,6 +331,7 @@ new GLTFLoader().parse(b64(GLB), '', (gltf) => {
   $('msg').hidden = true;
   load(DATA.current && DATA.variants && DATA.variants[DATA.current] ? DATA.variants[DATA.current].params : null);
   varsUi();
+  draftLoad();
 }, (err) => { $('msg').textContent = '{{js:sv.load_failed}} ' + (err && err.message || err); });
 
 // ---------------------------------------------------------------- the colour zones: k-means of the skin's colours
@@ -424,7 +425,32 @@ function apply() {
   U.pStripe.value.set(+$('stripe_size').value, +$('stripe_warp').value, +$('stripe_dir').value);
   U.pDirt.value.set(+$('dirt_size').value, 0, 0);
   parts.forEach((q, k) => { U.qC.value[k].set(...q.c); U.qT.value[k].set(...q.t); U.qM.value[k] = q.m; });
+  draftLater();
 }
+// ---------------------------------------------------------------- the draft: what is being painted, kept in this
+// browser on every change (a reload, another creature picked and back: the work goes on where it was); a variant saved
+// is the one that counts - the draft only spares the work before it
+const DRAFT = 'sf3d_paint_draft:' + (DATA.title || '');
+let draftT = 0, draftOn = false;
+function draftLater() {
+  if (!draftOn) return;
+  clearTimeout(draftT);
+  draftT = setTimeout(() => {
+    try { localStorage.setItem(DRAFT, JSON.stringify({ current, title: $('vname').value, params: params() })); } catch (e) { /* (no storage: no draft) */ }
+  }, 700);
+}
+function draftLoad() {   // the draft of the variant opened (or of a new one), if there is one
+  let d = null;
+  try { d = JSON.parse(localStorage.getItem(DRAFT) || 'null'); } catch (e) { d = null; }
+  draftOn = true;
+  if (d && d.current && !(DATA.variants || {})[d.current]) d.current = '';   // (its variant deleted since: a new one)
+  if (d && d.params && !current && d.current) { current = d.current; varsUi(); }   // (opened as it was left: on that variant)
+  if (!d || !d.params || (d.current || '') !== (current || '')) return false;
+  load(d.params); $('vname').value = d.title || '';
+  $('status').textContent = '{{js:cp.draft_back}}';
+  return true;
+}
+function draftDrop() { try { localStorage.removeItem(DRAFT); } catch (e) { /* none */ } }
 function load(p, keepParts) {   // a variant's params (else everything as the model has it; the parts painted kept if asked)
   if (p && p.zones && p.zones.length) { zones = p.zones.map((z) => ({ c: z.c, t: z.t, m: z.m, share: z.share || 0 })); if (p.sig) U.zSig.value = p.sig; }
   else zones.forEach((z) => { z.t = z.c.slice(); z.m = z.lock0 ? 2 : 0; });
@@ -527,6 +553,7 @@ function setBrush(b) {
   controls.mouseButtons = brush ? { LEFT: null, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE }
     : { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
   if (brush && action) { action.stop(); action = null; $('clip').value = ''; }   // (painted at rest)
+  ringShow();
 }
 $('brushOn').onclick = () => setBrush('paint');
 $('eraser').onclick = () => setBrush('erase');
@@ -548,16 +575,43 @@ function paintAround(p) {
     if (hit) a.needsUpdate = true;
   });
 }
-function brushAt(ev) {
+function hitAt(ev) {
   const rect = renderer.domElement.getBoundingClientRect(), rc = new THREE.Raycaster();
   rc.setFromCamera(new THREE.Vector2((ev.clientX - rect.left) / rect.width * 2 - 1, -(ev.clientY - rect.top) / rect.height * 2 + 1), camera);
-  const h = rc.intersectObjects(skins.map((s) => s.mesh), false)[0];
-  if (h) paintAround(h.point);
+  return rc.intersectObjects(skins.map((s) => s.mesh), false)[0] || null;
 }
+function brushAt(ev) { const h = hitAt(ev); if (h) paintAround(h.point); }
+// the brush's size shown: a ring on the skin under the pointer, as wide as the brush (white over a dark rim: seen on
+// light and dark skin alike); the slider resizes it at once
+const ring = new THREE.Group();
+[[0.93, 1, 0xffffff], [1, 1.07, 0x111111]].forEach(([a, b, c]) => {
+  const m = new THREE.Mesh(new THREE.RingGeometry(a, b, 64), new THREE.MeshBasicMaterial({ color: c, depthTest: false, transparent: true, opacity: .85, side: THREE.DoubleSide }));
+  m.renderOrder = 30; ring.add(m);
+});
+ring.visible = false; scene.add(ring);
+let ringHit = null;
+function ringShow() {
+  if (!brush || !ringHit) { ring.visible = false; return; }
+  const n = ringHit.face ? ringHit.face.normal.clone().transformDirection(ringHit.object.matrixWorld) : new V3(0, 0, 1);
+  ring.position.copy(ringHit.point);
+  ring.lookAt(ringHit.point.clone().add(n));
+  ring.scale.setScalar(+$('bSize').value * H);
+  ring.visible = true;
+}
+renderer.domElement.addEventListener('pointermove', (e) => { if (brush) { ringHit = hitAt(e); ringShow(); } });
+renderer.domElement.addEventListener('pointerleave', () => { ring.visible = false; });
+$('bSize').addEventListener('input', () => {
+  if (!ringHit) {   // (no pointer on the model yet: the ring in the view's middle, to see the size)
+    const rc = new THREE.Raycaster(); rc.setFromCamera(new THREE.Vector2(0, 0), camera);
+    ringHit = rc.intersectObjects(skins.map((s) => s.mesh), false)[0] || null;
+  }
+  ringShow();
+});
 renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 renderer.domElement.addEventListener('pointerdown', (e) => { if (brush && e.button === 0) { painting = true; undoP.push(snapP()); if (undoP.length > 30) undoP.shift(); redoP.length = 0; brushAt(e); } });
 renderer.domElement.addEventListener('pointermove', (e) => { if (painting) brushAt(e); });
 addEventListener('pointerup', () => { if (!painting) return; painting = false; partColour(part); apply(); partsInfo(); });
+$('vname').addEventListener('input', () => draftLater());
 function undoRedo(from, to) { const sn = from.pop(); if (!sn) return; to.push(snapP()); putP(sn); [0, 1, 2].forEach(partColour); apply(); partsInfo(); }
 $('pUndo').onclick = () => undoRedo(undoP, redoP);
 $('pRedo').onclick = () => undoRedo(redoP, undoP);
@@ -657,7 +711,7 @@ function varsUi() {
     current = el.dataset.v;
     const v = current && vs[current];
     $('vname').value = v ? (v.title || current) : '';
-    load(v ? v.params : null); varsUi();
+    draftOn = false; load(v ? v.params : null); varsUi(); draftOn = true;
   });
   $('del').disabled = !current;
   if (current && vs[current] && !$('vname').value) $('vname').value = vs[current].title || current;
@@ -692,6 +746,7 @@ $('save').onclick = async () => {
     send({ action: 'save', title, variant: current && (DATA.variants || {})[current] && (DATA.variants[current].title === title) ? current : '',
       params: params(), images: Object.fromEntries(names.map((n, i) => [n, paths[i]])) });
     $('status').textContent = '{{js:sv.sent}}';
+    draftDrop(); draftOn = false;   // (the variant is kept by SF3D now; the page opens again on it)
   } catch (e) { $('status').textContent = '{{js:sv.send_failed}} ' + (e && e.message || e); }
   $('save').disabled = false;
 };
@@ -716,7 +771,7 @@ const clock = new THREE.Clock();
 })();
 resize();
 // (test hooks: work/wear_test/ui/test_creature_paint.mjs)
-window.cp = { params, load, preset, zones: () => zones, bake, skins, apply, paintAround: (p, k, b = 'paint') => { part = k; brush = b; paintAround(new V3(...p)); brush = ''; partColour(k); apply(); partsInfo(); },
+window.cp = { ring: () => ({ visible: ring.visible, r: +ring.scale.x.toFixed(3) }), params, load, preset, zones: () => zones, bake, skins, apply, paintAround: (p, k, b = 'paint') => { part = k; brush = b; paintAround(new V3(...p)); brush = ''; partColour(k); apply(); partsInfo(); },
   parts: () => parts, setPart: (k, m, t) => { Object.assign(parts[k], { m, t }); partsUi(); apply(); }, look: (c, d) => { camera.position.set(c[0] + d * .3, c[1] + d * .1, c[2] + d); controls.target.set(...c); controls.update(); } };
 </script>
 </body>

@@ -2710,5 +2710,6 @@
  "cp.eraser": "Eraser",
  "cp.clear_part": "Clear the part",
  "cp.brush_size": "Brush size",
- "cp.parts_info": "Vertices marked per part: {0}"
+ "cp.parts_info": "Vertices marked per part: {0}",
+ "cp.draft_back": "The draft is back: the changes from last time. «Save the variant» makes the model."
 }

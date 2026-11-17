@@ -738,6 +738,7 @@ function setBrush(b) {
   controls.mouseButtons = brush ? { LEFT: null, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE }
     : { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
   if (brush) gizmo.detach();
+  bRingShow();
 }
 $('brushPlus').onclick = () => setBrush('+');
 $('brushMinus').onclick = () => setBrush('-');
@@ -747,14 +748,35 @@ $('brushClear').onclick = () => {
   strokeEnd(); paintInfo(); mouthPaint();
 };
 let painting = false, paintQueued = false;
-function paintAt(ev) {
+function restHit(ev) {
   const rect = renderer.domElement.getBoundingClientRect();
   const ndc = new THREE.Vector2((ev.clientX - rect.left) / rect.width * 2 - 1, -(ev.clientY - rect.top) / rect.height * 2 + 1);
   const rc = new THREE.Raycaster();
   rc.setFromCamera(ndc, camera);
-  const hit = rc.intersectObjects(rests.map((r) => r.ray), false)[0];
-  if (hit) paintAround(hit.point);
+  return rc.intersectObjects(rests.map((r) => r.ray), false)[0] || null;
 }
+function paintAt(ev) { const hit = restHit(ev); if (hit) paintAround(hit.point); }
+// the brush's size shown: a ring on the skin under the pointer, as wide as the brush; the slider resizes it at once
+const bRing = new THREE.Group();
+[[0.93, 1, 0xffffff], [1, 1.07, 0x111111]].forEach(([a, b, c]) => {
+  const m = new THREE.Mesh(new THREE.RingGeometry(a, b, 64), new THREE.MeshBasicMaterial({ color: c, depthTest: false, transparent: true, opacity: .85, side: THREE.DoubleSide }));
+  m.renderOrder = 30; bRing.add(m);
+});
+bRing.visible = false; scene.add(bRing);
+let bHit = null;
+function bRingShow() {
+  if (mode !== 'mouth' || !brush || !bHit || !mouth.hinge) { bRing.visible = false; return; }
+  bRing.position.copy(bHit.point);
+  bRing.lookAt(bHit.point.clone().add(bHit.face ? bHit.face.normal : new THREE.Vector3(1, 0, 0)));
+  bRing.scale.setScalar(mouth.hinge.distanceTo(mouth.upper) * +$('brushSize').value);
+  bRing.visible = true;
+}
+renderer.domElement.addEventListener('pointermove', (e) => { if (mode === 'mouth' && brush) { bHit = restHit(e); bRingShow(); } });
+renderer.domElement.addEventListener('pointerleave', () => { bRing.visible = false; });
+$('brushSize').addEventListener('input', () => {
+  if (!bHit && mouth.hinge) { const rc = new THREE.Raycaster(); rc.setFromCamera(new THREE.Vector2(0, 0), camera); bHit = rc.intersectObjects(rests.map((r) => r.ray), false)[0] || null; }
+  bRingShow();
+});
 function paintAround(p) {
   const rad = mouth.hinge.distanceTo(mouth.upper) * +$('brushSize').value, r2 = rad * rad;
   rests.forEach((r, mi) => {
