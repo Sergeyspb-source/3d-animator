@@ -2762,9 +2762,11 @@ def build():
                     with gr.Tab(_t("cr.anim_tab"), id="cr_anim") as cr_tab_anim:
                         gr.Markdown(_t("cr.anim_intro"))
                         cr_srcs = CR.clip_sources()
-                        with gr.Row():
-                            cr_picks = [gr.CheckboxGroup(names, value=names, label=_t("cr.anim_src_" + k))
-                                        for k, (_p, names) in cr_srcs.items()]
+                        cr_picks, _items = [], list(cr_srcs.items())
+                        for i0 in range(0, len(_items), 4):   # (four sources a row)
+                            with gr.Row():
+                                cr_picks += [gr.CheckboxGroup(names, value=names if k in CR.CLIP_DEFAULT else [], label=_t("cr.anim_src_" + k))
+                                             for k, (_p, names) in _items[i0:i0 + 4]]
                         with gr.Row():
                             cr_anim_btn = gr.Button(_t("cr.anim_go"), variant="primary")
                             cr_godot_btn = gr.Button(_t("cr.godot_btn"))

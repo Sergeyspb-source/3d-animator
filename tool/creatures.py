@@ -255,7 +255,16 @@ def viewer_page(glb: Path, title: str = "", kind: str = "", badge: str = "", edi
 M2M = ROOT.parent / "Animations" / "Mesh2Motion" / "glb"
 # the sources of quadrupeds' clips: their GLB and the clips that loop
 CLIP_SOURCES = {"fox": ("fox-animations.glb", {"Idle", "Idle Alert", "Walk", "Run", "Sneak"}),
-                "horse": ("horse-animations.glb", {"Idle", "Walk", "Trot", "Run", "Eating", "Sleep"})}
+                "horse": ("horse-animations.glb", {"Idle", "Walk", "Trot", "Run", "Eating", "Sleep"}),
+                # (more bodies: a dragon's wings, a bird's, a biped's arms, eight legs, none - blender_creature_retarget.py
+                # maps them by kind: legs by their place front to back, wings to wings, a serpent's body from the head)
+                "dragon": ("dragon-animations.glb", {"Idle", "Walk", "Fly Flap", "Fly Glide"}),
+                "bird": ("bird-animations.glb", {"Idle", "Walk", "Flap", "Glide"}),
+                "kaiju": ("kaiju-animations.glb", {"Idle", "Walk", "Walk RM", "Swim"}),
+                "spider": ("spider-animations.glb", {"Idle", "Walk"}),
+                "snake": ("snake-animations.glb", {"Idle", "Side winding", "Coiled", "Dance"}),
+                "shark": ("shark-animations.glb", {"Idle", "Swim Horizontal", "Swim Vertical", "Dead Floating"})}
+CLIP_DEFAULT = ("fox", "horse")   # (picked at first: the four-legged's; the others by hand, as the creature is)
 
 
 def clip_sources() -> dict:

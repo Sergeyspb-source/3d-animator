@@ -53,11 +53,16 @@ for pb in tgt.pose.bones:
 
 # ---- what each bone is (None: not carried - ears, tips, helpers)
 def kind(name, ours):
+    """a bone's kind: body, head, snout, jaw, tail, a leg's side (legL / legR: the legs of a side are told apart by
+    their chains, front to back), a wing's main way (WL / WR)"""
     n = name.lower()
     if ours:
-        m = re.match(r"leg_(fl|fr|bl|br)_\d+", n)
+        m = re.match(r"leg_(fl|bl|l\d+|fr|br|r\d+)_\d+", n)
         if m:
-            return m[1].upper()
+            return "leg" + ("L" if "l" in m[1] else "R")
+        m = re.match(r"wing_([lr])_\d+$", n)
+        if m:
+            return "W" + m[1].upper()
         if n.startswith("tail"):
             return "tail"
         if n in ("head", "snout", "jaw"):
@@ -65,15 +70,17 @@ def kind(name, ours):
         if re.match(r"(hips|spine|chest|neck)", n):
             return "body"
         return None
-    if n in ("root",) or re.search(r"(tip|leaf)([_.][lr])?$", n) or re.search(r"ear|eye|horn|ribcage|teeth|wing|stomach|drv_|anchor", n):
+    if n in ("root",) or re.search(r"(tip|leaf)([_.][lr])?$", n):
         return None
-    side = "L" if re.search(r"[_.]l$", n) else "R" if re.search(r"[_.]r$", n) else ""
+    side = "L" if re.search(r"[_.]l(\.\d+)?$", n) else "R" if re.search(r"[_.]r(\.\d+)?$", n) else ""
+    if side and re.match(r"wing_\d+_[lr]$", n):   # (a dragon's, a bird's wing: its main way, not the feathers)
+        return "W" + side
+    if re.search(r"ear|eye|horn|ribcage|teeth|wing|stomach|drv_|anchor|thumb|finger|toes_tip", n):
+        return None
     if "tail" in n:
         return "tail"
-    if side and re.search(r"front|fore|scapula|humerus|collar|hand|arm", n):
-        return "F" + side
-    if side and re.search(r"back|hind|pelvis|thigh|leg", n):
-        return "B" + side
+    if side and re.search(r"front|fore|scapula|humerus|collar|hand|arm|back|hind|pelvis|thigh|leg|fin|foot|ankle|toe", n):
+        return "leg" + side
     if re.search(r"chin|jaw|mouth_lower", n) or n == "mouth":
         return "jaw"
     if re.search(r"nose|snout|muzzle|mouth_upper", n):
@@ -85,8 +92,31 @@ def kind(name, ours):
     return None
 
 
+def facing(arm, C):   # the hips to the head, level
+    W = arm.matrix_world
+    h = W @ C["body"][0].head_local if C.get("body") else W @ arm.data.bones[0].head_local
+    e = W @ C["head"][0].head_local if C.get("head") else h + Vector((0, -1, 0))
+    d = Vector((e.x - h.x, e.y - h.y, 0))
+    return d.normalized() if d.length > 1e-6 else Vector((0, -1, 0))
+
+
+def hops(arm, start):
+    """each bone's distance from `start` over the skeleton's links (up and down: a serpent's root may sit mid-body)"""
+    nb = {b.name: [c.name for c in b.children] + ([b.parent.name] if b.parent else []) for b in arm.data.bones}
+    d, todo = {start: 0}, [start]
+    while todo:
+        x = todo.pop(0)
+        for y in nb[x]:
+            if y not in d:
+                d[y] = d[x] + 1
+                todo.append(y)
+    return d
+
+
 def chains(arm, ours):
-    """{kind: [bones from the root outwards]}; the body: only the bones on the way from the hips to the head"""
+    """{kind: [bones from the root outwards]}; the body: only the bones on the way from the hips to the head. A side's
+    legs split into their chains (leg_L0 the front one ..); no legs (a snake): the body - with its tail - from the head
+    back (spine_01 by the head on ours)"""
     depth = lambda b: len(b.parent_recursive)  # noqa: E731
     out = {}
     for b in arm.data.bones:
@@ -96,9 +126,33 @@ def chains(arm, ours):
     for k in out:
         out[k].sort(key=depth)
     head = (out.get("head") or [None])[0]
-    if head is not None and "body" in out:
+    serpent = not any(k.startswith("leg") for k in out)
+    if serpent and head is not None:
+        body = out.pop("body", []) + out.pop("tail", [])
+        d = hops(arm, head.name)
+        out["body"] = sorted(body, key=lambda b: d.get(b.name, 1e9))
+    elif head is not None and "body" in out:
         way = {p.name for p in head.parent_recursive}
         out["body"] = [b for b in out["body"] if b.name in way]
+    W = arm.matrix_world
+    fwd = facing(arm, out)
+    for side in ("L", "R"):
+        bs = out.pop("leg" + side, [])
+        names = {b.name for b in bs}
+        comps = []
+        for b in bs:   # (each leg: its bones linked to each other, from its own root)
+            if b.parent is not None and b.parent.name in names:
+                continue
+            comp, todo = [], [b]
+            while todo:
+                x = todo.pop(0)
+                comp.append(x)
+                todo += [c for c in x.children if c.name in names]
+            comps.append(sorted(comp, key=depth))
+        comps.sort(key=lambda c: -(W @ c[-1].head_local).dot(fwd))   # (front first: by where its paw is)
+        for i, c in enumerate(comps):
+            out[f"leg{side}{i}"] = c
+    out["_serpent"] = serpent
     return out
 
 
@@ -115,17 +169,26 @@ def spans(bones, arm):
     return out
 
 
-def facing(arm, C):   # the hips to the head, level
-    W = arm.matrix_world
-    h = W @ C["body"][0].head_local if C.get("body") else W @ arm.data.bones[0].head_local
-    e = W @ C["head"][0].head_local if C.get("head") else h + Vector((0, -1, 0))
-    d = Vector((e.x - h.x, e.y - h.y, 0))
-    return d.normalized() if d.length > 1e-6 else Vector((0, -1, 0))
-
-
 TC = chains(tgt, True)
-pair = {"body": "body", "head": "head", "snout": "snout", "jaw": "jaw", "tail": "tail",
-        "FL": "FL", "FR": "FR", "BL": "BL", "BR": "BR"}
+T_SERP = TC.pop("_serpent")
+
+
+def leg_pairs(TC, SC):
+    """each target leg its source leg: a side's legs by their place front to back (the front by the front, a single
+    one a side is a hind leg - a bird's); none when no source leg stands near (a bird's clips give a dog no front legs)"""
+    out = {}
+    for side in ("L", "R"):
+        tl = sorted(k for k in TC if k.startswith("leg" + side))
+        sl = sorted(k for k in SC if k.startswith("leg" + side))
+        if not tl or not sl:
+            continue
+        pos = lambda i, n: (i / (n - 1)) if n > 1 else 1.0  # noqa: E731
+        for i, tk in enumerate(tl):
+            p = pos(i, len(tl))
+            j = min(range(len(sl)), key=lambda j: abs(pos(j, len(sl)) - p))
+            if abs(pos(j, len(sl)) - p) <= 0.34:
+                out[tk] = sl[j]
+    return out
 Wt = tgt.matrix_world.to_3x3().normalized()
 M = {b.name: b.matrix_local.to_3x3().normalized() for b in tgt.data.bones}
 order = []
@@ -140,8 +203,8 @@ def walk(b):
 for b in tgt.data.bones:
     if b.parent is None:
         walk(b)
-hips_t = TC["body"][0].name if TC.get("body") else order[0].name
-paws_t = {k: TC[k][-1].name for k in ("FL", "FR", "BL", "BR") if k in TC}
+hips_t = "hips" if "hips" in tgt.data.bones else (order[0].name if T_SERP else (TC["body"][0].name if TC.get("body") else order[0].name))
+paws_t = {k: TC[k][-1].name for k in TC if k.startswith("leg")}
 stand_t = {k: (tgt.matrix_world @ tgt.data.bones[n].head_local).z for k, n in paws_t.items()}
 tip_t = {k: (tgt.matrix_world @ tgt.data.bones[n].tail_local).z for k, n in paws_t.items()}   # (the claws: a paw tipped down)
 h_t = (tgt.matrix_world @ tgt.data.bones[hips_t].head_local).z - min((tgt.matrix_world @ b.head_local).z for b in tgt.data.bones)
@@ -162,12 +225,17 @@ def source(path):
         for t in list(src.animation_data.nla_tracks):
             src.animation_data.nla_tracks.remove(t)
     SC = chains(src, False)
+    s_serp = SC.pop("_serpent")
+    pair = {k: k for k in ("body", "head", "snout", "jaw", "tail", "WL", "WR")}
+    pair.update(leg_pairs(TC, SC))
     driver = {}
     for k, bones in TC.items():
         sk = pair.get(k)
         if sk not in SC:
             continue
         sb = SC[sk]
+        if k == "body" and T_SERP != s_serp:   # (a snake's body from the head, a beast's from the hips)
+            sb = sb[::-1]
         if len(bones) == len(sb):   # one by one
             for b, c in zip(bones, sb):
                 driver[b.name] = c.name
@@ -195,7 +263,8 @@ def source(path):
             driver[b.name] = sb[j].name
     ft, fs = facing(tgt, TC), facing(src, SC)
     yaw = math.atan2(ft.y, ft.x) - math.atan2(fs.y, fs.x)
-    hips_s = SC["body"][0].name if SC.get("body") else src.data.bones[0].name
+    hips_s = (min(SC["body"], key=lambda b: len(b.parent_recursive)).name if s_serp and SC.get("body")
+              else SC["body"][0].name if SC.get("body") else src.data.bones[0].name)
     h_s = (src.matrix_world @ src.data.bones[hips_s].head_local).z - min((src.matrix_world @ b.head_local).z for b in src.data.bones)
     Ws = src.matrix_world.to_3x3().normalized()
     # the turns are counted from the source's own stance - its idle's first pose - not its bind pose: the creature's
@@ -214,7 +283,7 @@ def source(path):
         rest_s = {pb.name: Ws @ pb.matrix.to_3x3().normalized() for pb in src.pose.bones}
         rest_hips = src.matrix_world @ src.pose.bones[hips_s].head
     # its paws' joints (each leg's last bone) as it stands: how high a paw is above that is how far off the ground
-    paws_s = {k: SC[k][-1].name for k in ("FL", "FR", "BL", "BR") if k in SC}
+    paws_s = {tk: SC[sk][-1].name for tk, sk in pair.items() if tk.startswith("leg") and sk in SC}   # (by the target's legs)
     stand_s = {k: (src.matrix_world @ (src.pose.bones[n].head if idle is not None else src.data.bones[n].head_local)).z
                for k, n in paws_s.items()}
     if idle is not None:

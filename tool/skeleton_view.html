@@ -237,6 +237,8 @@ function groupOf(name) {
   const n = name.replace(/^mixamorig\d*:?/i, '');
   let m = /^leg_(FL|FR|BL|BR)/i.exec(n);
   if (m) return m[1].toUpperCase();
+  m = /^leg_([LR])\d+_/.exec(n);   // (a spider's legs, leg_L1_.. from the front)
+  if (m) return 'leg' + m[1];
   if (/tail/i.test(n)) return 'tail';
   if (/wing/i.test(n)) return 'wing';
   if (/jaw|chin/i.test(n)) return 'jaw';

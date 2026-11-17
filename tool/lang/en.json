@@ -2541,7 +2541,7 @@
  "sv.rw_all": "anew everywhere",
  "sv.rw_none": "as they were",
  "cr.anim_tab": "Animations",
- "cr.anim_intro": "Mesh2Motion's quadruped clips (CC0) put on the creature's skeleton by chains: the spine onto the spine, each paw onto its own, the tail onto the tail, the head, the muzzle and the jaw. A bone takes the turn of the source bone at its place in the chain (one by one with as many bones, else the first from the first, the paw from the paw, the middle ones by their share of the length). The creature keeps its rest pose (a crouching werewolf walks crouching), the hips move scaled by the height, in place. A marked mouth moves from closed in the clips. The result: `<name>_clips.glb` (the model with clips `fox_walk`, `horse_trot` …), played below.",
+ "cr.anim_intro": "Mesh2Motion's clips (CC0) - a fox's, a horse's, a dragon's, a bird's, a kaiju's, a spider's, a snake's, a shark's - put on the creature's skeleton by chains: the spine onto the spine, the legs by their place along the body (the front onto the front, the hind onto the hind; a spider's in order; a bird's and a kaiju's legs onto the hind legs), the wings onto the wings, the tail onto the tail, the head, the muzzle and the jaw; a snake's body from the head to the tail. Legs with no pair in the source are left as they are (a dog on a bird's clips keeps its front legs still). Pick the source by the creature's body: the fox and the horse are ticked at first, the others by hand. A bone takes the turn of the source bone at its place in the chain (one by one with as many bones, else the first from the first, the paw from the paw, the middle ones by their share of the length). The creature keeps its rest pose (a crouching werewolf walks crouching), the hips move scaled by the height, in place. A marked mouth moves from closed in the clips. The result: `<name>_clips.glb` (the model with clips `fox_walk`, `horse_trot` …), played below.",
  "cr.anim_src_fox": "Fox (Mesh2Motion, CC0)",
  "cr.anim_src_horse": "Horse (Mesh2Motion, CC0)",
  "cr.anim_go": "Put the clips on the creature",
@@ -2735,5 +2735,11 @@
  "ag.w_width_bow": "Limbs' thickness",
  "ag.w_grip_r_bow": "Grip's thickness",
  "ag.grip_tilt_info_bow": "how the bow leans in the fist",
- "ag.grip_roll_info_bow": "where the string faces"
+ "ag.grip_roll_info_bow": "where the string faces",
+ "cr.anim_src_dragon": "Dragon (Mesh2Motion, CC0)",
+ "cr.anim_src_bird": "Bird (Mesh2Motion, CC0)",
+ "cr.anim_src_kaiju": "Kaiju - on two legs (Mesh2Motion, CC0)",
+ "cr.anim_src_spider": "Spider (Mesh2Motion, CC0)",
+ "cr.anim_src_snake": "Snake (Mesh2Motion, CC0)",
+ "cr.anim_src_shark": "Shark (Mesh2Motion, CC0)"
 }
