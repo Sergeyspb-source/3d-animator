@@ -1043,9 +1043,12 @@ def mount(config_loader, char=None, tab=None, active=None):
         opened = gr.State("")
         here = _t("ui.equipment_procedural")
         ok = lambda r: LM.is_rig(r)  # noqa: E731  (any skeleton: from the markup or the auto-rigger)
-        char.change(lambda r, act: (r, open_editor(r) if ok(r) else _t("ag.choose_a_character"), r) if act == here else (r, "", ""),
+        # (what was opened: the skeleton's file and its time - built again in «Skeleton» (the face, the eyes), the
+        # same file is opened anew when the tab is seen)
+        seen = lambda r: f"{r}|{Path(r).stat().st_mtime}" if r and Path(r).exists() else str(r or "")  # noqa: E731
+        char.change(lambda r, act: (r, open_editor(r) if ok(r) else _t("ag.choose_a_character"), seen(r)) if act == here else (r, "", ""),
                     [char, active], [rig, editor, opened], show_progress="hidden")
-        tab.select(lambda r, op: (open_editor(r) if ok(r) else _t("ag.choose_a_character"), r) if r != op else (gr.update(), op),
+        tab.select(lambda r, op: (open_editor(r) if ok(r) else _t("ag.choose_a_character"), seen(r)) if seen(r) != op else (gr.update(), op),
                    [char, opened], [editor, opened], show_progress="hidden")
     go.click(lambda: _t("ag.working"), None, log).then(run, req, [log, shots], concurrency_id="armour_gen", concurrency_limit=1,
                                                          show_progress="minimal")

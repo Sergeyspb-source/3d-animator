@@ -962,6 +962,12 @@ def _add_model(upload):
     return f"character/{name}"
 
 
+def _char_sig(value) -> str:
+    """The character's files as they are now: its skeleton's and its source's names and times (built again: another)."""
+    f = _char_files(value) or {}
+    return "|".join(f"{p.name}:{p.stat().st_mtime}" for p in (f.get("rigged"), f.get("source")) if p and p.exists())
+
+
 def char_for_tabs(value):
     """The current character's files, each in the form its tab's (hidden) picker takes."""
     f = _char_files(value) or {}
@@ -2677,7 +2683,7 @@ def build():
                                 fx_weapon = gr.Dropdown(list(__import__("fbxanim").WEAPON_SETS), value=_t("fbx.none"),
                                                         label=_t("ui.weapons_in_hand_only_for_viewing"))
                                 fx_go = gr.Button(_t("ui.retarget_onto_the_model"), variant="primary")
-                                fx_log = gr.Textbox(label=_t("face.progress"), lines=7, interactive=False)
+                                fbx_log = gr.Textbox(label=_t("face.progress"), lines=7, interactive=False)   # (not fx_log: that is the effects')
                                 fx_file = gr.File(label=_t("ui.ready_glb"), interactive=False)
                             with gr.Column(scale=6):
                                 fx_view = gr.HTML(value=_t("ui.the_viewer_appears_here_choose_a"))
@@ -2957,11 +2963,24 @@ def build():
 
         tabs_char.select(tab_shown, None, char_tab, show_progress="hidden")
         char_dd.change(char_info, char_dd, [char_md, char_view], show_progress="hidden")
+        # the character's files changed in place (its skeleton built again: the face, the eyes - a build in «Skeleton»):
+        # its line in the list, its card and its files in the tabs read again when another tab is seen or «Refresh»
+        char_seen = gr.State("")
+        char_dd.change(_char_sig, char_dd, char_seen, show_progress="hidden")
+
+        def char_recheck(v, seen, force=False):
+            sig = _char_sig(v)
+            if sig == seen and not force:
+                return (gr.update(),) * 8 + (seen,)
+            return (gr.update(choices=_characters(), value=v), *char_info(v), *char_for_tabs(v), sig)
+
+        _recheck_out = [char_dd, char_md, char_view, rig_asset, ha_asset, fx_asset, out_body, char_rig, char_seen]
+        tabs_char.select(char_recheck, [char_dd, char_seen], _recheck_out, show_progress="hidden")
         char_dd.change(char_remember, char_dd, None, show_progress="hidden")
         # another character: the one-off GLB of the «Skeleton» tab goes (the view, the markup, the build take the character)
         char_dd.change(lambda: None, None, rig_upload, show_progress="hidden")
         char_dd.change(char_for_tabs, char_dd, [rig_asset, ha_asset, fx_asset, out_body, char_rig], show_progress="hidden")
-        char_refresh.click(lambda v: gr.update(choices=_characters(), value=v), char_dd, char_dd)
+        char_refresh.click(lambda v, sn: char_recheck(v, sn, True), [char_dd, char_seen], _recheck_out)
         char_up.upload(char_add, char_up, char_dd)
         char_dir.click(char_open_folder, char_dd, None)
         char_del.click(char_delete, char_dd, char_dd,   # asked first in the page: «cancel» sends nothing to remove
@@ -3132,10 +3151,10 @@ def build():
 
         # Mixamo FBX animations
         fx_refresh.click(lambda: gr.update(choices=_rigged_assets()), None, fx_asset)
-        fx_scan_btn.click(fbx_scan, fx_folder, [fx_table, fx_log])
-        fx_save_btn.click(fbx_save, [fx_folder, fx_table], fx_log)
-        fx_go.click(fbx_run, [fx_upload, fx_asset, fx_folder, fx_table, fx_weapon], [fx_log, fx_view, fx_file])
-        ui.load(fbx_scan, fx_folder, [fx_table, fx_log])
+        fx_scan_btn.click(fbx_scan, fx_folder, [fx_table, fbx_log])
+        fx_save_btn.click(fbx_save, [fx_folder, fx_table], fbx_log)
+        fx_go.click(fbx_run, [fx_upload, fx_asset, fx_folder, fx_table, fx_weapon], [fbx_log, fx_view, fx_file])
+        ui.load(fbx_scan, fx_folder, [fx_table, fbx_log])
 
         # humanoid animations
         ha_refresh_btn.click(lambda: gr.update(choices=_rigged_assets()), None, ha_asset)
