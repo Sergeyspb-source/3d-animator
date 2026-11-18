@@ -119,8 +119,10 @@ static func wear(character: Node, piece: PackedScene, mask := "", layer := -1.0)
 	if out.size() > 0:
 		var path := mask if mask != "" else piece.resource_path.get_basename() + ".mask.json"
 		var keys := _mask_keys(path)
-		if not keys.is_empty():
+		var press := _mask_press(path)
+		if not keys.is_empty() or not press.is_empty():
 			out[0].set_meta("sf3d_mask", keys)
+			out[0].set_meta("sf3d_press", press)
 			out[0].set_meta("sf3d_character", character)
 			_hide_body(character)
 	return out
@@ -1207,8 +1209,39 @@ static func _mask_keys(path: String) -> Dictionary:
 	var data = JSON.parse_string(FileAccess.get_file_as_string(path))
 	if data is Array:
 		for p in data:
-			keys[Vector3i(int(p[0]), int(p[1]), int(p[2]))] = true
+			if p.size() == 3:   # (of six: a vertex moved, _mask_press)
+				keys[Vector3i(int(p[0]), int(p[1]), int(p[2]))] = true
 	return keys
+
+
+## The body's vertices a piece moves while it is on (an ear laid against the head, under a helmet: body_mask.head_cover):
+## the mask's entries of six - where the vertex is and how far it goes, thousandths of a unit.
+static func _mask_press(path: String) -> Dictionary:
+	var moved := {}
+	if not FileAccess.file_exists(path):
+		return moved
+	var data = JSON.parse_string(FileAccess.get_file_as_string(path))
+	if data is Array:
+		for p in data:
+			if p.size() == 6:
+				moved[Vector3i(int(p[0]), int(p[1]), int(p[2]))] = Vector3(p[3], p[4], p[5]) * 0.001
+	return moved
+
+
+static func _press_at(moved: Dictionary, v: Vector3) -> Variant:   # (found as _in_mask finds a place)
+	var opts := []
+	for c in [v.x, v.y, v.z]:
+		var q: float = c * 1000.0
+		var r := roundi(q)
+		var f := q - r
+		opts.append([r, r + (1 if f > 0 else -1)] if absf(f) > 0.3 else [r])
+	for a in opts[0]:
+		for b in opts[1]:
+			for c in opts[2]:
+				var k := Vector3i(a, b, c)
+				if moved.has(k):
+					return moved[k]
+	return null
 
 
 ## The body's meshes without the triangles whose three corners every shown piece's mask hides (the full mesh is kept
@@ -1218,9 +1251,11 @@ static func _hide_body(character: Node) -> void:
 	if skel == null:
 		return
 	var hide := {}   # (and the pieces' parts out over shown higher ones: _hide_pieces, at the end)
+	var press := {}
 	for node in skel.get_children():
 		if node is MeshInstance3D and node.has_meta("sf3d_mask") and node.visible:
 			hide.merge(node.get_meta("sf3d_mask"))
+			press.merge(node.get_meta("sf3d_press", {}))
 	for node in character.find_children("*", "MeshInstance3D", true, false):
 		var mi := node as MeshInstance3D
 		if mi.has_meta("sf3d_piece") or mi.mesh == null:
@@ -1228,7 +1263,7 @@ static func _hide_body(character: Node) -> void:
 		if not mi.has_meta("sf3d_body_mesh"):
 			mi.set_meta("sf3d_body_mesh", mi.mesh)
 		var full: Mesh = mi.get_meta("sf3d_body_mesh")
-		if hide.is_empty():
+		if hide.is_empty() and press.is_empty():
 			mi.mesh = full
 			continue
 		var am := ArrayMesh.new()
@@ -1247,6 +1282,13 @@ static func _hide_body(character: Node) -> void:
 			hid.resize(verts.size())
 			for i in verts.size():
 				hid[i] = 1 if _in_mask(hide, verts[i]) else 0
+			if not press.is_empty():   # (after the look-ups: the masks are written for the places at rest)
+				for i in verts.size():
+					var d = _press_at(press, verts[i])
+					if d != null:
+						verts[i] += d
+						taken += 1
+				arrays[Mesh.ARRAY_VERTEX] = verts
 			var keep := PackedInt32Array()
 			for t in range(0, idx.size(), 3):
 				if hid[idx[t]] and hid[idx[t + 1]] and hid[idx[t + 2]]:

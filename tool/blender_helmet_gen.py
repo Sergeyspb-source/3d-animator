@@ -18,7 +18,8 @@ brow), scaled as one piece to it (its eye slits at the eyes, a kettle hat's brim
 drawn up so it ends at the chin, not on the shoulders (a goblin's face is short and its neck shorter than a man's),
 and an aventail hangs round the neck down to the shoulders' top, closing in to the neck (it covers the neck, it does
 not fall on the chest). It moves with the head (an aventail's lower rings more and more with the neck). What it hides
-goes into the mask (body_mask.head_cover): only skin that cannot be seen, and of an ear what comes out through the shell.
+goes into the mask (body_mask.head_cover): only skin that cannot be seen; an ear meeting the shell is laid against the
+head, under it (its vertices' moves are in the mask too).
 In front of the face the shell comes forward over what it would cut (the nose): a bump (clear_face).
 Prints ARMOUR_GEN_OK {json} (as blender_armour_gen.py).
 """
@@ -353,19 +354,25 @@ for o in parts:
 
 
 # ---------------------------------------------------------------- the face goes under it: the shell goes round the nose
+def wall_tree():
+    """The helmet's metal as a BVH: not its straps and mail, nor the liner (it hangs inside the head's skin at the rim)."""
+    vs, fs = [], []
+    for o in parts:
+        if not o.name.startswith(("Aventail_Rings", "Chinstrap", "Buckle")) and "liner" not in o.name.lower():
+            k = len(vs)
+            vs += [v.co.copy() for v in o.data.vertices]
+            fs += [tuple(k + i for i in f.vertices) for f in o.data.polygons]
+    return BVHTree.FromPolygons(vs, fs)
+
+
 def clear_face():
     """Where the shell in front of the face has the skin ahead of it or too near (a nose through a nasal bar, a sallet's
     band, a great helm's front, the edges of a barbute's T), it comes forward over it, smoothly: a bump over the nose,
     the plate's thickness and rivets kept. Measured straight from the front, on a grid over the face."""
     shell = [o for o in parts if not o.name.startswith(("Aventail_Rings", "Chinstrap", "Buckle"))]
-    vs, fs = [], []
-    for o in shell:
-        k = len(vs)
-        vs += [v.co.copy() for v in o.data.vertices]
-        fs += [tuple(k + i for i in f.vertices) for f in o.data.polygons]
-    if not fs:
+    if not shell:
         return 0.0
-    t_h = BVHTree.FromPolygons(vs, fs)
+    t_h = wall_tree()
     cell = .03 * half_d
     x0, z0 = centre.x - 1.15 * half_w, chin - .1 * half_d
     nx, nz = int(2.3 * half_w / cell) + 1, int((E.z + .4 * top - z0) / cell) + 1
@@ -408,13 +415,7 @@ def clear_face():
 
 
 face_moved = clear_face()
-_sv, _sf = [], []   # the shell alone, for what comes out through it (the mask)
-for o in parts:
-    if not o.name.startswith(("Aventail_Rings", "Chinstrap", "Buckle")):
-        k = len(_sv)
-        _sv += [v.co.copy() for v in o.data.vertices]
-        _sf += [tuple(k + i for i in f.vertices) for f in o.data.polygons]
-shell_tree = BVHTree.FromPolygons(_sv, _sf)
+shell_tree = wall_tree()   # (for what comes out through it: the mask)
 
 # ---------------------------------------------------------------- one object, on the head (an aventail down to the neck)
 for o in parts:
@@ -454,7 +455,7 @@ obj.parent = arm
 obj.matrix_parent_inverse = arm.matrix_world.inverted()
 
 if job.get("mask"):   # what it hides, the ears too
-    from body_mask import above, body_mask, ears, head_cover, where
+    from body_mask import above, body_mask, ears, head_cover, where, where_thin
     # what it may hide: what it closes over and, over the brow, the head under it (hair, a hat; an open helmet's only
     # within the skull's sides); then head_cover keeps of that all the skin that can be seen - through an eye slit, under
     # a rim - and takes off an ear what came out through the shell
@@ -464,10 +465,15 @@ if job.get("mask"):   # what it hides, the ears too
     else:
         keys |= {tuple(x) for x in where(body, head_bones, lambda q: q.z > E.z + .25 * top and abs(q.x - centre.x) < .95 * half_w)}
     ear_keys = {tuple(x) for x in ears(body, head_bones, centre, half_w, J.z, E.z + top, out=1.0)}
-    # (and what else may come out through the shell: the head behind the face - an ear's root, the nape - and all over the
-    # brow - a skull's bump, hair; not the face: a nose is met by clear_face)
-    ear_keys |= {tuple(x) for x in where(body, head_bones, lambda q: q.z > E.z + .25 * top or q.y > centre.y - .15 * half_d)}
-    keys = head_cover(body, [obj], keys, ear_keys, centre, shell=shell_tree)
+    # (and an ear's part going back rather than out: what stands thin off the head's ball beside and behind it, from the eyes' level up)
+    ball = lambda q: ((q.x - centre.x) / half_w) ** 2 + ((q.y - centre.y) / half_d) ** 2 + ((q.z - centre.z) / top) ** 2  # noqa: E731
+    ear_keys |= {tuple(x) for x in where_thin(body, head_bones, lambda q: q.y > centre.y - .3 * half_d and q.z > E.z - .3 * top and ball(q) > 1.15 ** 2, .3 * half_w)}
+    # (what else may come out through the shell: the head behind the face - the nape - and all over the brow - a skull's
+    # bump, hair; not the face: a nose is met by clear_face)
+    poke = {tuple(x) for x in where(body, head_bones, lambda q: q.z > E.z + .25 * top or q.y > centre.y - .15 * half_d)}
+    # an ear that meets the shell goes under it, laid against the head (within the gap the helmet leaves)
+    keys = head_cover(body, [obj], keys, poke, centre, shell=shell_tree, ear_keys=ear_keys, press=.5 * max(gap, .04 * half_d),
+                      radii=(half_w, half_d, top), root=.35 * half_w)
     Path(job["mask"]).write_text(json.dumps(keys), encoding="utf-8")
 
 for o in list(bpy.data.objects):   # the skeleton and the helmet only

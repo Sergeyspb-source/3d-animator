@@ -11,6 +11,7 @@ three corners are all hidden, so the body's edge at the piece's rim stays.
 The vertices are given by their positions, as the glTF mesh holds them (Y up, mesh-local), in thousandths of a unit
 (integers): the index order differs between files, a position does not; Blender's import moves them by ~1e-5, so the
 lookups (godot/sf3d_equip.gd, the editors) also try the next thousandth when a coordinate is near the cells' edge."""
+import heapq
 import math
 
 from mathutils import Vector
@@ -205,6 +206,27 @@ def where(body, bones, test, share=.5):
     return [list(x) for x in sorted(out)]
 
 
+def where_thin(body, bones, test, thick, share=.5):
+    """As where, of what is also thin there: its other side within `thick` behind it (an ear, not the back of a skull)."""
+    tree = _bvh(body)
+    out = set()
+    for o in body:
+        names = [g.name for g in o.vertex_groups]
+        W, N = o.matrix_world, o.matrix_world.to_3x3().inverted().transposed()
+        for v in o.data.vertices:
+            tot = sum(g.weight for g in v.groups)
+            on = sum(g.weight for g in v.groups if names[g.group] in bones)
+            if tot <= 1e-9 or on / tot < share:
+                continue
+            p = W @ v.co
+            if test(p):
+                n = (N @ v.normal).normalized()
+                if tree.ray_cast(p - n * 1e-4 * thick, -n, thick)[0] is not None:
+                    c = v.co
+                    out.add((round(c.x * 1000), round(c.z * 1000), round(-c.y * 1000)))
+    return [list(x) for x in sorted(out)]
+
+
 def held(body, bones, piece, centre, share=.5):
     """What a piece closed round a part holds (a coif round the head: the hair under it): the body's vertices moving
     mostly with the bones from which a ray going out (away from centre, the part's middle) meets the piece. Through its
@@ -230,38 +252,120 @@ def _hemisphere(count=192):
     return out
 
 
-def head_cover(body, pieces, keys, ear_keys, centre, rings=1, shell=None):
-    """What a helmet really takes away of the head. keys: what it may hide (under it, over the brow), ear_keys: the ears.
-    Kept is all the skin that can be seen: a ray from it reaches the open past the helmet and the body - through an eye
-    slit, under a rim, round a face's opening - so no hole shows there (by the piece's nearness alone the lids, the
-    nose's sides and the ears' middles went: white gaps, ears in shreds). Hidden is what is closed in, and of an ear
-    what came out through the helmet (the helmet stands between it and the head's middle): it ends at the shell. `rings`
-    of closed-in vertices next to the kept are given back; crumbs of skin left cut off from the rest go. shell: a BVH of
-    the helmet without its straps (a strap across an ear does not cut it). As body_mask's."""
-    if not keys and not ear_keys:
-        return []
+def head_cover(body, pieces, keys, poke_keys, centre, rings=1, shell=None, ear_keys=(), press=0.0, radii=(1, 1, 1), root=.1):
+    """What a helmet does to the head. keys: what it may hide (under it, over the brow); poke_keys: what is taken off where
+    it comes out through the shell (the head behind the face, over the brow); ear_keys: the ears; press: how far off the
+    skull an ear may stay; radii: the head's half sizes (x, y, z) round centre; root: how far along the ear, from where
+    it starts, the move grows from nothing. An ear that meets the shell is laid against the head, under it: each of that
+    side's ear vertices comes in along its line to the head's middle, its height over the skull eased to at most `press`. Kept is all the skin that can be seen: a ray from it reaches the open past the
+    helmet and the body - through an eye slit, under a rim - so no hole shows there. Hidden is what is closed in and what
+    still comes out. `rings` of closed-in vertices next to the kept are given back; crumbs cut off from the rest go.
+    shell: a BVH of the helmet without its straps. Returns body_mask's list, and [x, y, z, dx, dy, dz] for each vertex
+    moved (where it is, how far: glTF axes, thousandths): readers of the hidden ones take the entries of three."""
     tree, body_tree = _bvh(pieces), _bvh(body)
+    wall = shell or tree
+    ear_keys = set(ear_keys)
+    poke_keys = set(poke_keys) | ear_keys
+    if not keys and not poke_keys:
+        return []
     lo = Vector((min(min((o.matrix_world @ v.co)[i] for v in o.data.vertices) for o in pieces) for i in range(3)))
     hi = Vector((max(max((o.matrix_world @ v.co)[i] for v in o.data.vertices) for o in pieces) for i in range(3)))
     size = (hi - lo).length
     e, near = 1e-3 * size, .25 * size   # (the body further off than that - the chest under the chin - hides nothing from a camera)
     dirs = _hemisphere()
     key_of = lambda c: (round(c.x * 1000), round(c.z * 1000), round(-c.y * 1000))  # noqa: E731
+    through = lambda p: wall.ray_cast(p, (centre - p).normalized(), (centre - p).length)[0] is not None  # noqa: E731
+
+    # ---- the ears that meet the shell (each side on its own), laid against the head
+    meets, moved, still = set(), {}, set()
+    for o in body:
+        W = o.matrix_world
+        me = o.data
+        for v in me.vertices:
+            if key_of(v.co) in ear_keys and through(W @ v.co):
+                meets.add((W @ v.co).x > centre.x)
+        for ed in me.edges:
+            a, b = ed.vertices
+            if key_of(me.vertices[a].co) in ear_keys and key_of(me.vertices[b].co) in ear_keys:
+                pa, pb = W @ me.vertices[a].co, W @ me.vertices[b].co
+                if (pb - pa).length > 1e-9 and wall.ray_cast(pa, (pb - pa).normalized(), (pb - pa).length)[0] is not None:
+                    meets.add(pa.x > centre.x)
+    if press > 0 and meets:
+        for o in body:
+            W = o.matrix_world
+            Wi = W.inverted()
+            me = o.data
+            at = {key_of(v.co): v.co for v in me.vertices}
+            adj = {}
+            for ed in me.edges:
+                ka, kb = key_of(me.vertices[ed.vertices[0]].co), key_of(me.vertices[ed.vertices[1]].co)
+                if ka != kb:
+                    adj.setdefault(ka, set()).add(kb)
+                    adj.setdefault(kb, set()).add(ka)
+            ear = {k for k in at if k in ear_keys and ((W @ at[k]).x > centre.x) in meets}
+            # how far along the skin from where the ear starts: its root stays joined to the head
+            dist, heap = {}, []
+            for k in ear:
+                for j in adj.get(k, ()):
+                    if j not in ear:
+                        L = (W @ at[k] - W @ at[j]).length
+                        if L < dist.get(k, 1e9):
+                            dist[k] = L
+                            heapq.heappush(heap, (L, k))
+            while heap:
+                dk, k = heapq.heappop(heap)
+                if dk > dist.get(k, 1e9):
+                    continue
+                for j in adj.get(k, ()):
+                    if j in ear:
+                        nd = dk + (W @ at[k] - W @ at[j]).length
+                        if nd < dist.get(j, 1e9):
+                            dist[j] = nd
+                            heapq.heappush(heap, (nd, j))
+            for k in ear:
+                p = W @ at[k]
+                d = p - centre
+                far = d.length
+                d = d.normalized()
+                # the skull there: a ball of the head's own sizes (through an ear's root the mesh has no wall)
+                skull = 1 / math.sqrt((d.x / radii[0]) ** 2 + (d.y / radii[1]) ** 2 + (d.z / radii[2]) ** 2)
+                if far <= skull:
+                    continue
+                t = dist.get(k, 1e9) / root
+                w = 1.0 if t >= 1 else t * t * (3 - 2 * t)
+                to = p.lerp(centre + d * (skull + press * (1 - math.exp(-(far - skull) / press))), w)
+                if through(to):   # (the shell closer in there than the skull's ball: just inside its inner wall)
+                    way = (centre - to).normalized()
+                    left = (centre - to).length
+                    h = wall.ray_cast(to, way, left)
+                    first, last = h[3], h[3]
+                    while True:
+                        h = wall.ray_cast(to + way * (last + 1e-5), way, left - last - 1e-5)
+                        if h[0] is None or last + h[3] - first > .5 * root:
+                            break
+                        last += h[3] + 1e-5
+                    to = to + way * min(left, last + .5 * press)
+                dl = Wi @ to - at[k]
+                if dl.length > 1e-5:
+                    moved[k] = (round(dl.x * 1000, 2), round(dl.z * 1000, 2), round(-dl.y * 1000, 2))
+                    if through(to):
+                        still.add(k)
+    keys = set(keys) - set(moved)
+    ear_set = poke_keys - set(moved)
+
     state = {}   # key -> "keep" / "hide" / "out" (came out through the helmet); a seam's twins: kept if either is
     rank = {"out": 0, "hide": 1, "keep": 2}
     for o in body:
         W, N = o.matrix_world, o.matrix_world.to_3x3().inverted().transposed()
         for v in o.data.vertices:
             k = key_of(v.co)
-            if k not in keys and k not in ear_keys:
+            if k not in keys and k not in ear_set:
                 continue
             p, n = W @ v.co, (N @ v.normal).normalized()
             q = p + n * e
             st = "hide"
-            if k in ear_keys:
-                to = centre - p
-                if (shell or tree).ray_cast(q, to.normalized(), to.length)[0] is not None:
-                    st = "out"
+            if k in ear_set and wall.ray_cast(q, (centre - p).normalized(), (centre - p).length)[0] is not None:
+                st = "out"
             if st == "hide":
                 for d in dirs:
                     if d.dot(n) > .05 and tree.ray_cast(q, d)[0] is None and body_tree.ray_cast(q, d, near)[0] is None:
@@ -269,8 +373,8 @@ def head_cover(body, pieces, keys, ear_keys, centre, rings=1, shell=None):
                         break
             if k not in state or rank[st] > rank[state[k]]:
                 state[k] = st
-    hide = {k for k, st in state.items() if st != "keep"}
-    out = {k for k, st in state.items() if st == "out"}
+    hide = {k for k, st in state.items() if st != "keep"} | still
+    out = {k for k, st in state.items() if st == "out"} | still
     for o in body:
         me = o.data
         ks = [key_of(v.co) for v in me.vertices]
@@ -283,28 +387,29 @@ def head_cover(body, pieces, keys, ear_keys, centre, rings=1, shell=None):
         W = o.matrix_world
         for ed in me.edges:
             a, b = ed.vertices
-            if ks[a] in ear_keys or ks[b] in ear_keys:
+            if ks[a] in ear_set or ks[b] in ear_set:
                 pa, pb = W @ me.vertices[a].co, W @ me.vertices[b].co
-                if (pb - pa).length > 1e-9 and (shell or tree).ray_cast(pa, (pb - pa).normalized(), (pb - pa).length)[0] is not None:
+                if (pb - pa).length > 1e-9 and wall.ray_cast(pa, (pb - pa).normalized(), (pb - pa).length)[0] is not None:
                     for k in (ks[a], ks[b]):
-                        if k in ear_keys:
+                        if k in ear_set:
                             hide.add(k)
                             out.add(k)
-        # (an ear's triangles through the shell go too: its vertices next to what came out)
+        # (the triangles through the shell go too: the vertices next to what came out)
         for j in range(len(ks)):
-            if ks[j] in ear_keys and ks[j] not in out and any(ks[i] in out for i in nb[j]):
+            if (ks[j] in ear_set or ks[j] in moved) and ks[j] not in out and any(ks[i] in out for i in nb[j]):
                 hide.add(ks[j])
         for _ in range(rings):
-            back = {ks[j] for j in range(len(ks)) if ks[j] in hide and ks[j] not in out and any(ks[i] not in hide for i in nb[j]) and not (ks[j] in ear_keys and any(ks[i] in out for i in nb[j]))}
+            back = {ks[j] for j in range(len(ks)) if ks[j] in hide and ks[j] not in out and any(ks[i] not in hide for i in nb[j])
+                    and not ((ks[j] in ear_set or ks[j] in moved) and any(ks[i] in out for i in nb[j]))}
             hide -= back
 
         def parts(ok):   # the connected pieces of the vertices for which ok holds
             seen, res = [False] * len(ks), []
-            for s in range(len(ks)):
-                if seen[s] or not ok(s):
+            for s0 in range(len(ks)):
+                if seen[s0] or not ok(s0):
                     continue
-                seen[s] = True
-                stack, cur = [s], []
+                seen[s0] = True
+                stack, cur = [s0], []
                 while stack:
                     i = stack.pop()
                     cur.append(i)
@@ -322,7 +427,7 @@ def head_cover(body, pieces, keys, ear_keys, centre, rings=1, shell=None):
                 for b in bits:
                     if len(b) < .01 * big:   # (crumbs only: a face parted by the hidden skin keeps both halves)
                         hide |= {ks[i] for i in b}
-    return [list(x) for x in sorted(hide)]
+    return [list(x) for x in sorted(hide)] + [[*k, *d] for k, d in sorted(moved.items())]   # (a hidden one moves too: its triangles with the others)
 
 
 if __name__ == "__main__":   # a piece put on before masks were made: blender -b -P body_mask.py -- rigged.glb piece.glb out.json

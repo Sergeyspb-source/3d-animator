@@ -395,7 +395,13 @@ async function wearPiece(w, on) {
 // what of the body a piece hides (<piece>.mask.json, made with it: tool/body_mask.py), as the game takes it away:
 // the triangles whose three corners are hidden
 async function loadMask(path) {   // positions in thousandths
-  try { return new Set((await (await fetch(fileUrl(path) + '?t=' + Date.now())).json()).map((q) => q.join())); } catch (e) { return null; }
+  try {
+    const list = await (await fetch(fileUrl(path) + '?t=' + Date.now())).json();
+    const m = new Set(list.filter((q) => q.length === 3).map((q) => q.join()));
+    const moved = list.filter((q) => q.length === 6);   // (entries of six: a vertex moved, not hidden - an ear laid under a helmet)
+    if (moved.length) m.press = new Map(moved.map((q) => [q.slice(0, 3).join(), q.slice(3).map((x) => x / 1000)]));
+    return m;
+  } catch (e) { return null; }
 }
 // a position in a mask: the nearest thousandth, and the next one too where a coordinate is near the cells' edge
 // (Blender's import moves vertices by ~1e-5)
@@ -404,16 +410,33 @@ function inMask(m, x, y, z) {
   for (const a of opts[0]) for (const b of opts[1]) for (const c of opts[2]) if (m.has(`${a},${b},${c}`)) return true;
   return false;
 }
+function pressOf(m, x, y, z) {   // how far a mask moves the vertex at this place (as inMask), or null
+  const opts = [x, y, z].map((v) => { const q = v * 1000, r = Math.round(q), f = q - r; return Math.abs(f) > .3 ? [r, r + Math.sign(f)] : [r]; });
+  for (const a of opts[0]) for (const b of opts[1]) for (const c of opts[2]) { const d = m.press.get(`${a},${b},${c}`); if (d) return d; }
+  return null;
+}
 let resultMask = null, previewMask = null;   // previewMask: what a helmet being chosen hides (the ears)
 function hideBody() {
   const keys = [...[...WORN.values()].filter((w) => w.on && w.mask).map((w) => w.mask), ...(showResult && resultMask ? [resultMask] : []),
     ...(!showResult && previewMask ? [previewMask] : [])];
   for (const o of charMeshes) {
     const full = o.userData.fullIndex; if (!full) continue;
+    const P = o.geometry.attributes.position, presses = keys.filter((m) => m.press);
+    // (the vertices a mask moves: from the places they have at rest, which the masks are written for)
+    if (presses.length && !o.userData.restPos) o.userData.restPos = P.array.slice();
+    const R = o.userData.restPos;
+    if (R && (presses.length || o.userData.pressed)) {
+      P.array.set(R);
+      for (let i = 0; i < P.count; i++) for (const m of presses) {
+        const d = pressOf(m, R[3 * i], R[3 * i + 1], R[3 * i + 2]);
+        if (d) { P.setXYZ(i, R[3 * i] + d[0], R[3 * i + 1] + d[1], R[3 * i + 2] + d[2]); break; }
+      }
+      P.needsUpdate = true; o.userData.pressed = presses.length > 0; o.geometry.computeBoundingSphere();
+    }
     if (!keys.length) { o.geometry.setIndex(new THREE.BufferAttribute(full, 1)); continue; }
-    const P = o.geometry.attributes.position, hid = new Uint8Array(P.count);
+    const hid = new Uint8Array(P.count);
     for (let i = 0; i < P.count; i++) {
-      const x = P.getX(i), y = P.getY(i), z = P.getZ(i);
+      const x = R ? R[3 * i] : P.getX(i), y = R ? R[3 * i + 1] : P.getY(i), z = R ? R[3 * i + 2] : P.getZ(i);
       if (keys.some((m) => inMask(m, x, y, z))) hid[i] = 1;
     }
     const keep = [];
