@@ -1277,12 +1277,13 @@ function handSkin(side) {   // {pos, n (normals), w (the skin's weights), seg ([
   const sub = new Map();
   hand.traverse((b) => { if (b.isBone) sub.set(b.name, 'hand,0'); });
   for (const f of FINGERS) for (let k = 1; k <= 3; k++) { const b = PB[`${f}${k}_${side}`]; if (b) b.traverse((c) => { if (c.isBone) sub.set(c.name, `${f},${k}`); }); }
-  const id = new Map(boneNames.map((n, i) => [n, i])), pos = [], w = [], seg = [], tris = [], keys = new Map(), v = new V3();
+  const id = new Map(boneNames.map((n, i) => [n, i])), pos = [], w = [], seg = [], tris = [], keys = new Map(), v = new V3(), skinKeys = new Set();   // skinKeys: the meshes' own positions (thousandths), a mask's
   for (const o of charMeshes) {
     o.updateMatrixWorld(true);
     const P = o.geometry.attributes.position, si = o.geometry.attributes.skinIndex, sw = o.geometry.attributes.skinWeight;
     const full = o.userData.fullIndex || (o.geometry.index && o.geometry.index.array); if (!full) continue;
     const local = new Int32Array(P.count).fill(-2);
+    const R0 = o.userData.restPos;   // (an ear moved by a helmet does not concern the hand; the places at rest all the same)
     const vid = (i) => {
       if (local[i] !== -2) return local[i];
       let on = 0, tot = 0; const bi = [], bw = [], sg = new Map();
@@ -1293,6 +1294,7 @@ function handSkin(side) {   // {pos, n (normals), w (the skin's weights), seg ([
         if (g) { on += x; sg.set(g, (sg.get(g) || 0) + x); }
       }
       if (tot <= 0 || on / tot < .5) return (local[i] = -1);
+      skinKeys.add([R0 ? R0[3 * i] : P.getX(i), R0 ? R0[3 * i + 1] : P.getY(i), R0 ? R0[3 * i + 2] : P.getZ(i)].map((c) => Math.round(c * 1000)).join());
       v.fromBufferAttribute(P, i).applyMatrix4(o.matrixWorld);
       const kp = `${Math.round(v.x * 1e4)},${Math.round(v.y * 1e4)},${Math.round(v.z * 1e4)}`;   // the seams welded
       if (keys.has(kp)) return (local[i] = keys.get(kp));
@@ -1329,7 +1331,7 @@ function handSkin(side) {   // {pos, n (normals), w (the skin's weights), seg ([
     return b0.clone().addScaledVector(d, -b0.dot(d)).normalize();
   });
   const size = Math.max(...pos.map((x) => x.distanceTo(J)));
-  const res = { pos, n, w, seg, tris, back, along, across, backOf, size, J, fingerDir };
+  const res = { pos, n, w, seg, tris, back, along, across, backOf, size, J, fingerDir, skinKeys };
   handCache.set(side, res); return res;
 }
 // a shell over some of the hand's triangles: off the skin by off, thick, its rim closed; vert(i, p) makes a vertex
@@ -1419,12 +1421,43 @@ function convexBag(pts, ws, cuts) {
   return { pos, n: normalsOf(pos, T), w, tris: T };
 }
 
+// the hand as a glove lies on it: its skin smoothed (a shrink-free filter, as many rounds as take out what is smaller than
+// a finger's girth: nails, knuckle folds, veins, the lines of the palm), never so far in that the glove's outside would
+// meet the skin. The fingers and the palm stay; each point keeps the skin's weights
+function gloveHand(H0, room) {
+  if (!H0.soft) {
+    const N = H0.pos.length, nb = Array.from({ length: N }, () => new Set());
+    for (const [a, b, c] of H0.tris) { nb[a].add(b).add(c); nb[b].add(a).add(c); nb[c].add(a).add(b); }
+    const lists = nb.map((x) => [...x]);
+    let A = new Float64Array(N * 3); H0.pos.forEach((q, i) => { A[3 * i] = q.x; A[3 * i + 1] = q.y; A[3 * i + 2] = q.z; });
+    const step = (X, k) => {
+      const Y = new Float64Array(X);
+      for (let i = 0; i < N; i++) {
+        const l = lists[i]; if (!l.length) continue;
+        for (let c = 0; c < 3; c++) { let m = 0; for (const j of l) m += X[3 * j + c]; Y[3 * i + c] = X[3 * i + c] + k * (m / l.length - X[3 * i + c]); }
+      }
+      return Y;
+    };
+    for (let it = 0; it < GLOVE_SMOOTH; it++) A = step(step(A, .55), -.58);
+    H0.soft = A;
+  }
+  const A = H0.soft, pos = H0.pos.map((_, i) => new V3(A[3 * i], A[3 * i + 1], A[3 * i + 2])), d = new V3();
+  let n = normalsOf(pos, H0.tris);
+  for (let it = 0; it < 3; it++) {   // (a nail's edge standing over the smoothed finger: the glove goes out over it)
+    pos.forEach((q, i) => { const over = d.subVectors(H0.pos[i], q).dot(n[i]) - room; if (over > 0) q.addScaledVector(n[i], over); });
+    n = normalsOf(pos, H0.tris);
+  }
+  return { ...H0, pos, n };
+}
+const GLOVE_SMOOTH = 40;
 function glove(side, p) {
-  const H = handSkin(side); if (!H) return null;
-  H.side = side;
-  const acc = new Acc(), st = p.glove, R = .08 * H.size;   // R: the unit of gaps and thicknesses here (a finger's girth)
-  const { limb } = limbOf('bracer', side);
+  const H0 = handSkin(side); if (!H0) return null;
+  const R = .08 * H0.size;   // R: the unit of gaps and thicknesses here (a finger's girth)
   const gap = p.gap * R, thick = Math.max(.02, p.thickness) * R * .6;
+  const H = gloveHand(H0, 1.5 * (gap + thick));   // (the hand under it is hidden: only what stands far out is followed)
+  H.side = side;
+  const acc = new Acc(), st = p.glove;
+  const { limb } = limbOf('bracer', side);
   const fixed = (bone) => { const r = [[bone, bone, bone, bone], [1, 0, 0, 0]]; return { direct: r }; };
   const boneId = (key) => (PB[key] ? boneNames.indexOf(PB[key].name) : boneNames.indexOf(PB['hand_' + side].name));
   const cuffW = weigher('limb', PB['forearm_' + side], .3);
@@ -1502,7 +1535,7 @@ function glove(side, p) {
     surface(acc, strapOn, { ...p, surface: 'plain' });
   } else surface(acc, sh, { ...p, surface: cuffSurface, plates: 1 });
   if (p.straps) straps(acc, strapOn, p, [ta + cl * .35], side, mid);
-  return { side, acc, R: P.R };
+  return { side, acc, R: P.R, mask: H0.skinKeys };   // (the hand under it hidden: a nail's edge or a finger's side would come through)
 }
 
 // ------------------------------------------------------------------ under the armour (the reference sheets
@@ -5465,8 +5498,8 @@ function rebuildNow() {
     for (const part of parts) applyPinches(part.acc.v, S.p.pinches, null, () => part.acc.f.filter((f, k) => SMOOTHED.has(part.acc.role[k])));
     parts.forEach((part, pi) => { for (const m of meshesOf(part.acc)) { m.userData.part = pi; pieceGroup.add(m); } });
     paintAll();
-    const pm = parts.find((x) => x.mask);
-    if (pm) { previewMask = pm.mask; hideBody(); }   // (thin cloth on the skin: the skin under it would show through its smoothed bumps)
+    const pms = parts.filter((x) => x.mask);   // (gloves: each hand's)
+    if (pms.length) { previewMask = pms.length > 1 ? new Set(pms.flatMap((x) => [...x.mask])) : pms[0].mask; hideBody(); }   // (thin cloth on the skin: the skin under it would show through its smoothed bumps)
     if (parts.length) {
       const nv = parts.reduce((s, x) => s + x.acc.v.length / 3, 0);
       info = '{{js:ag.info_line}}'.replace('{0}', nv.toLocaleString()).replace('{1}', (performance.now() - t).toFixed(0));

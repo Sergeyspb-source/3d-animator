@@ -985,6 +985,11 @@ if job.get("mask"):   # what of the body the piece hides (the game takes it away
                 hs[k] = _half(k)
             return hs[k]
         keys |= {tuple(x) for x in where(body, hb, lambda q: q.z > zn and half(q.z) is not None and abs(q.x - HJ.x) >= 1.1 * half(q.z))}
+    if job.get("piece") == "glove":   # the hand goes whole under a glove: it is smoother than the hand (a nail's edge would come through)
+        for s in sides:
+            hb = arm.data.bones.get(names.get(f"hand_{s}", ""))
+            if hb:
+                keys |= {tuple(x) for x in where(body, {hb.name} | {b.name for b in hb.children_recursive}, lambda q: True)}
     Path(job["mask"]).write_text(json.dumps([list(x) for x in sorted(keys)]), encoding="utf-8")
 
 # the separate parts (a quiver's arrows) their own objects, «Wear_<item>__arrow_<k>»: the game shows as many as are left
