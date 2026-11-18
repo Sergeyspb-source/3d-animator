@@ -5386,9 +5386,9 @@ function syncPanel() {
   // a piece the vendor generators make (a helmet, elbows, footwear): its own material as designed, or one of the editor's
   // with its colours, wear, hammering and library; the texture's size and «Texture by the unwrap» either way
   if ($('uvBox')) {
-    const gm = $('uvBox').parentElement, made = isMade() && !S.idle, own = !S.p.made_mat;
+    const gm = $('uvBox').parentElement, made = isMade() && !S.idle, own = !S.p.made_mat && !madeLib();
     if (made) gm.hidden = false;
-    const shown = (el) => el.contains($('matSeg')) || el.contains($('i_tex')) || (!own && (el.contains($('i_tint')) || ['libBox', 'r_wear', 'r_hammer'].includes(el.id)));
+    const shown = (el) => el.contains($('matSeg')) || el.contains($('i_tex')) || el.id === 'libBox' || (!own && (el.contains($('i_tint')) || ['r_wear', 'r_hammer'].includes(el.id)));
     for (const el of gm.children) {
       if (el.classList.contains('grp') || el.id === 'uvBox') continue;
       if (made && !shown(el)) { if (!el.hidden) { el.hidden = true; el.dataset.madeHid = '1'; } }
@@ -5649,7 +5649,13 @@ function madeSlot(name) {
   return has('mail', 'ring', 'aventail', 'chain') ? 'mail' : has('rivet', 'buckle', 'brass', 'gold', 'bronze', 'nail', 'stud') ? 'detail'
     : has('liner', 'lining', 'padding', 'pad', 'quilt', 'cloth', 'fabric', 'gambeson') ? 'quilt' : has('leather', 'strap', 'belt', 'lace') ? 'strap' : has('trim', 'border', 'rim', 'edge') ? 'trim' : 'plate';
 }
-const madeSpecs = () => (S.p.made_mat ? lookSpecs({ ...S.p, material: S.p.made_mat }) : null);
+// «As designed» with a library material picked for this piece: only the parts given one change (the library's choice
+// stays in the parameters from piece to piece: another piece's is not this one's)
+const madeLib = () => !S.p.made_mat && S.p.lib_for === S.piece && Object.keys(S.p.libmat || {}).length > 0;
+function madeSpecs() {
+  if (S.p.made_mat) return lookSpecs({ ...S.p, material: S.p.made_mat });
+  return madeLib() ? lookSpecs(S.p).map((x) => (x.tex ? x : null)) : null;
+}
 function madeLook() {
   if (!helmetObj) return;
   const specs = madeSpecs(), made = new Map(), size = new THREE.Box3().setFromObject(helmetObj).getSize(new V3()).length() / 2;
@@ -6957,7 +6963,7 @@ async function make() {
   let js = null;
   try {
     js = await send('generate', { item, piece: S.piece, replace, style: S.style, sides: lastBuild.sides.filter((s) => s !== 'C'),
-      params: { ...S.p, ...(isMade() && S.p.made_mat ? { made_look: madeSpecs() } : {}) }, two: S.piece === 'weapon' ? twoCode() : '', two_pose: S.piece === 'weapon' ? twoPose() : null, point: S.piece === 'weapon' ? spearPoint : '', grasp: S.piece === 'weapon' && grasp ? grasp.code : '', mesh: isMade() ? null : payload(), under: [...WORN.entries()].filter(([, w]) => w.on && layerOf(w)).map(([k]) => k) }, '{{js:ag.working}}', '_wear_' + item);
+      params: { ...S.p, ...(isMade() && madeSpecs() ? { made_look: madeSpecs() } : {}) }, two: S.piece === 'weapon' ? twoCode() : '', two_pose: S.piece === 'weapon' ? twoPose() : null, point: S.piece === 'weapon' ? spearPoint : '', grasp: S.piece === 'weapon' && grasp ? grasp.code : '', mesh: isMade() ? null : payload(), under: [...WORN.entries()].filter(([, w]) => w.on && layerOf(w)).map(([k]) => k) }, '{{js:ag.working}}', '_wear_' + item);
   } catch (e) { $('status').textContent = '{{js:ed.could_not_send_to_sf3d}}' + e.message; console.error(e); }
   busy = false; $('go').disabled = !lastBuild;
   if (js && js.ok) {
@@ -7264,10 +7270,10 @@ function libSlots() {
   const key = S.piece + '/' + (made ? S.p[S.piece] : S.style), big = (k) => (k === 'plate' && base !== PLATE ? at(LIB_SLOTS[base]) : at(k));
   const most = [...used].filter((k) => !(made && k === 'quilt')).reduce((x, y) => (big(y) > big(x) ? y : x));   // (a made piece's padding: mostly inside)
   const pick = used.has('plate') && big('plate') >= .35 * big(most) ? 'plate' : most;
-  if (libSlots.key !== key || !used.has(sel.value)) { libSlots.key = key; if (sel.value !== pick) { sel.value = pick; libSync(); } }
+  if (libSlots.key !== key || !used.has(sel.value)) { libSlots.key = key; sel.value = pick; libSync(); }
 }
 function libSync() {
-  const slot = $('lib_slot').value, m = (S.p.libmat || {})[slot];
+  const slot = $('lib_slot').value, m = isMade() && !S.p.made_mat && S.p.lib_for !== S.piece ? null : (S.p.libmat || {})[slot];
   $('lib_cur').textContent = m ? `${m.name} (${m.source === 'polyhaven' ? 'Poly Haven' : m.source === 'custom' ? '{{js:ag.lib_own}}' : 'ambientCG'})` : '{{js:ag.lib_procedural}}';
   $('lib_size').value = m ? m.size_cm : ''; $('lib_size').disabled = $('lib_clear').disabled = !m;
   for (const b of $('lib_res').children) b.classList.toggle('on', !!m && LIB_FOUND[+b.dataset.i] && LIB_FOUND[+b.dataset.i].id === m.id);
@@ -7296,7 +7302,7 @@ function libWire() {
       '{{js:ag.lib_custom_making}}'.replace('{0}', name), '_matlib_custom');
     if (!js || !js.ok) return;
     for (const k of ['color', 'normal', 'rough', 'metal']) if (js.material[k]) { const t = LIB_TEX.get(js.material[k]); if (t) { t.dispose(); LIB_TEX.delete(js.material[k]); } }
-    S.p.libmat = { ...(S.p.libmat || {}), [$('lib_slot').value]: js.material }; changed('libmat');
+    S.p.lib_for = S.piece; S.p.libmat = { ...(S.p.libmat || {}), [$('lib_slot').value]: js.material }; changed('libmat');
     $('lib_src').value = 'custom'; await libSearch('');
   });
   $('lib_res').addEventListener('click', async (e) => {
@@ -7304,7 +7310,7 @@ function libWire() {
     const x = LIB_FOUND[+b.dataset.i], slot = $('lib_slot').value;
     const js = await send('matlib_get', { source: x.source, id: x.id, size_cm: x.size_cm, dir: DATA.materials_dir }, '{{js:ag.lib_getting}}'.replace('{0}', x.name), '_matlib_get');
     if (!js || !js.ok) return;
-    S.p.libmat = { ...(S.p.libmat || {}), [slot]: js.material }; changed('libmat'); libSync();
+    S.p.lib_for = S.piece; S.p.libmat = { ...(S.p.libmat || {}), [slot]: js.material }; changed('libmat'); libSync();
   });
   $('lib_size').addEventListener('input', (e) => {
     const slot = $('lib_slot').value, m = (S.p.libmat || {})[slot], v = +e.target.value; if (!m || !(v > 0)) return;
