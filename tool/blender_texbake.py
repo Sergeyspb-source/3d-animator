@@ -274,6 +274,20 @@ def bake_made(obj, item, job, tex_dir):
     for g in groups:
         ms = [b.inputs["Metallic"].default_value for m in g["mats"] for b in _bsdfs(m)]
         g["metal"] = min(.65, sum(ms) / len(ms)) if ms else 0.
+    # another material chosen in the editor (job["look"]: its specs by slot): the metal, the straps and the small parts
+    # made of it as any piece of the editor's is, with its wear and hammering; the mail and the lining stay
+    look = job.get("look") or []
+    if look:
+        import blender_lookmat as LOOKMAT
+        R = max(.25 * max(obj.dimensions), 1e-3)
+        for g in groups:
+            i = SLOTS.index(g["slot"])
+            if g["slot"] in ("mail", "quilt") or i >= len(look) or not look[i] or look[i].get("pattern"):
+                continue
+            m, metal = LOOKMAT.node_mat(f"{item}_{g['slot']}_look", look[i], R, job)
+            for mi in g["mis"]:
+                me.materials[mi] = m
+            g["mats"], g["metal"] = [m], min(.65, metal)
     old = [l.name for l in me.uv_layers]
     rend = next((l for l in me.uv_layers if l.active_render), None)
     bl = me.uv_layers.new(name="bake_uv")
@@ -292,7 +306,7 @@ def bake_made(obj, item, job, tex_dir):
         pass
     sc.cycles.samples = 4
     for g in groups:
-        for kind, cs in (("color", "sRGB"), ("rough", "Non-Color")):
+        for kind, cs in (("color", "sRGB"), ("rough", "Non-Color")) + ((("normal", "Non-Color"),) if look else ()):
             im = bpy.data.images.new(f"{item}_{g['slot']}_{kind}", size, size, alpha=False)
             im.colorspace_settings.name = cs
             g[kind] = im
@@ -320,10 +334,13 @@ def bake_made(obj, item, job, tex_dir):
             m.node_tree.links.new(fs, b.inputs["Metallic"])
     target("rough")
     bpy.ops.object.bake(type="ROUGHNESS", margin=4)
+    if look:   # (the hammering, the grain)
+        target("normal")
+        bpy.ops.object.bake(type="NORMAL", margin=4)
     uv_user(obj, groups, size, job, info, "bake_uv")
     tex_dir = Path(tex_dir); tex_dir.mkdir(parents=True, exist_ok=True)
     for g in groups:
-        for kind in ("color", "rough"):
+        for kind in ("color", "rough") + (("normal",) if look else ()):
             im = g[kind]; im.filepath_raw = str(tex_dir / f"{im.name}.png"); im.file_format = "PNG"; im.save()
     uv_package(obj, groups, size, item, job, info, "bake_uv")
     # plain image materials, one per slot, on the bake's unwrap only
@@ -337,6 +354,9 @@ def bake_made(obj, item, job, tex_dir):
         out = N("ShaderNodeOutputMaterial"); bsdf = N("ShaderNodeBsdfPrincipled"); L(bsdf.outputs[0], out.inputs[0])
         c = N("ShaderNodeTexImage"); c.image = g["color"]; L(c.outputs[0], bsdf.inputs["Base Color"])
         r = N("ShaderNodeTexImage"); r.image = g["rough"]; L(r.outputs[0], bsdf.inputs["Roughness"])
+        if look:
+            nm = N("ShaderNodeTexImage"); nm.image = g["normal"]
+            nmap = N("ShaderNodeNormalMap"); L(nm.outputs[0], nmap.inputs["Color"]); L(nmap.outputs[0], bsdf.inputs["Normal"])
         bsdf.inputs["Metallic"].default_value = g["metal"]
         new.append(m)
     remap = np.zeros(len(src), np.int32)

@@ -699,6 +699,8 @@ def generate(cfg, req) -> dict:
     if made:
         style = params.get(piece) if params.get(piece) in made[1] else made[1][0]
         job.update(style=style[len(made[2]):], params=made[3](params))
+        if isinstance(params.get("made_look"), list):   # another material than the generator's (the editor's specs by slot)
+            job["look"] = params["made_look"]
         if piece == "helmet":
             job["under"] = _under(rigged, req)
     (work / "job.json").write_text(json.dumps(job, ensure_ascii=False, indent=1), encoding="utf-8")

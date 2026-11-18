@@ -2763,5 +2763,7 @@
  "ag.qa_edge": "; by its edge {0:.1f}% (skin peeping from under the rim as the joint bends - usually fine)",
  "ag.qa_shots": "The worst frames ({0}) are in «Previews»: the skin come out through the piece's middle marked red.",
  "cr.anim_src_nurgle": "Nurgle — its own clips from videos (leap, paw strike, wall climb)",
- "cr.anim_keyed_skipped": "Not made (the creature lacks the bones: four legs leg_FL_…leg_BR_, hips, jaw): {}"
+ "cr.anim_keyed_skipped": "Not made (the creature lacks the bones: four legs leg_FL_…leg_BR_, hips, jaw): {}",
+ "ag.mat_own": "As designed",
+ "ag.mat_own_info": "This construction's own material; the other buttons replace it with one of the editor's, with its colour, wear and hammering."
 }
