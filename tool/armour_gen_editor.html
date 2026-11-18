@@ -1428,7 +1428,7 @@ function gloveHand(H0, room) {
   if (!H0.soft) {
     const N = H0.pos.length, nb = Array.from({ length: N }, () => new Set());
     for (const [a, b, c] of H0.tris) { nb[a].add(b).add(c); nb[b].add(a).add(c); nb[c].add(a).add(b); }
-    const lists = nb.map((x) => [...x]);
+    const lists = nb.map((x) => [...x]); H0.softNb = lists;
     let A = new Float64Array(N * 3); H0.pos.forEach((q, i) => { A[3 * i] = q.x; A[3 * i + 1] = q.y; A[3 * i + 2] = q.z; });
     const step = (X, k) => {
       const Y = new Float64Array(X);
@@ -1445,6 +1445,21 @@ function gloveHand(H0, room) {
   let n = normalsOf(pos, H0.tris);
   for (let it = 0; it < 3; it++) {   // (a nail's edge standing over the smoothed finger: the glove goes out over it)
     pos.forEach((q, i) => { const over = d.subVectors(H0.pos[i], q).dot(n[i]) - room; if (over > 0) q.addScaledVector(n[i], over); });
+    n = normalsOf(pos, H0.tris);
+  }
+  // (small faces the smoothing turned over - in the folds, where a nail's edge was - would show as dark ticks: evened out)
+  const e1 = new V3(), e2 = new V3(), f0 = new V3(), f1 = new V3();
+  for (let it = 0; it < 12; it++) {
+    const bad = new Set();
+    for (const t of H0.tris) {
+      const [a, b, c] = t;
+      f0.crossVectors(e1.subVectors(H0.pos[b], H0.pos[a]), e2.subVectors(H0.pos[c], H0.pos[a]));
+      f1.crossVectors(e1.subVectors(pos[b], pos[a]), e2.subVectors(pos[c], pos[a]));
+      if (f0.dot(f1) <= 0) for (const i of t) { bad.add(i); for (const j of H0.softNb[i]) bad.add(j); }
+    }
+    if (!bad.size) break;
+    const to = [...bad].map((i) => { const l = H0.softNb[i], m = new V3(); for (const j of l) m.add(pos[j]); return l.length ? m.multiplyScalar(1 / l.length) : pos[i]; });
+    [...bad].forEach((i, k) => pos[i].lerp(to[k], .7));
     n = normalsOf(pos, H0.tris);
   }
   return { ...H0, pos, n };
@@ -1479,8 +1494,10 @@ function glove(side, p) {
       shellOf(acc, bag, bag.tris.map((_, t) => t).filter((t) => !onBag(bag, t, -.2)), 0, thick, LEATHER, 'backing', ownW(bag));
     }
   } else {
-    shellOf(acc, H, base, gap, thick, LEATHER, 'backing', ownW(H));
-    if (bag) shellOf(acc, bag, bag.tris.map((_, t) => t), 0, thick, LEATHER, 'backing', ownW(bag));
+    // (a plain glove is all its one material: the «base» the material buttons and the library change; under plates: leather)
+    const [bm, br] = st === 'plain_leather' ? [PLATE, 'plate'] : [LEATHER, 'backing'];
+    shellOf(acc, H, base, gap, thick, bm, br, ownW(H));
+    if (bag) shellOf(acc, bag, bag.tris.map((_, t) => t), 0, thick, bm, br, ownW(bag));
   }
   const over = gap + thick + .15 * R, plate = Math.max(.02, p.thickness) * R * .8;
   // the back of the hand: one plate (or a leather patch), whole with the hand
@@ -5466,7 +5483,7 @@ const fractions = (p) => ({ ...p, t0: p.t0 / 100, t1: p.t1 / 100, gap: p.gap / 1
 // on was left on screen meanwhile - a T-pose for a second or two when a piece was chosen
 let genStale = false;
 function rebuild() {
-  try { rebuildNow(); } finally { applyPose(); }
+  try { rebuildNow(); } finally { applyPose(); libSlots(); }
   if (genStale) { genStale = false; if ($('genBox').open) genPreview(); }
 }
 function rebuildNow() {
@@ -7198,6 +7215,16 @@ function libFound(list) {
   LIB_FOUND = list;
 }
 let LIB_FOUND = [];
+// the library's parts: only those this piece has can be chosen (a material laid on a part it lacks changed nothing)
+function libSlots() {
+  const sel = $('lib_slot'); if (!sel) return;
+  const used = new Set();
+  if (isMade()) { if (helmetObj) helmetObj.traverse((o) => { if (o.isMesh) { const sl = madeSlot((o.userData.ownMat || o.material).name); if (!['mail', 'quilt'].includes(sl)) used.add(sl); } }); }
+  else for (const x of parts) if (x.acc) for (const r of new Set(x.acc.role)) used.add(LIB_SLOTS[ROLE_MAT[r]]);
+  if (!used.size) return;
+  for (const o of sel.options) o.disabled = !used.has(o.value);
+  if (!used.has(sel.value)) { sel.value = LIB_SLOTS.find((k) => used.has(k)); libSync(); }
+}
 function libSync() {
   const slot = $('lib_slot').value, m = (S.p.libmat || {})[slot];
   $('lib_cur').textContent = m ? `${m.name} (${m.source === 'polyhaven' ? 'Poly Haven' : m.source === 'custom' ? '{{js:ag.lib_own}}' : 'ambientCG'})` : '{{js:ag.lib_procedural}}';
