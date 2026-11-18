@@ -18,7 +18,8 @@ brow), scaled as one piece to it (its eye slits at the eyes, a kettle hat's brim
 drawn up so it ends at the chin, not on the shoulders (a goblin's face is short and its neck shorter than a man's),
 and an aventail hangs round the neck down to the shoulders' top, closing in to the neck (it covers the neck, it does
 not fall on the chest). It moves with the head (an aventail's lower rings more and more with the neck). What it hides
-goes into the mask (body_mask.py), and the ears with it: they would stick out through the sides or under a brim.
+goes into the mask (body_mask.head_cover): only skin that cannot be seen, and of an ear what comes out through the shell.
+In front of the face the shell comes forward over what it would cut (the nose): a bump (clear_face).
 Prints ARMOUR_GEN_OK {json} (as blender_armour_gen.py).
 """
 import importlib
@@ -28,6 +29,7 @@ import sys
 from pathlib import Path
 
 import bpy
+import numpy as np
 from mathutils import Matrix, Vector
 from mathutils.bvhtree import BVHTree
 
@@ -348,6 +350,72 @@ for o in parts:
     o.data.transform(M)
     o.data.update()
 
+
+
+# ---------------------------------------------------------------- the face goes under it: the shell goes round the nose
+def clear_face():
+    """Where the shell in front of the face has the skin ahead of it or too near (a nose through a nasal bar, a sallet's
+    band, a great helm's front, the edges of a barbute's T), it comes forward over it, smoothly: a bump over the nose,
+    the plate's thickness and rivets kept. Measured straight from the front, on a grid over the face."""
+    shell = [o for o in parts if not o.name.startswith(("Aventail_Rings", "Chinstrap", "Buckle"))]
+    vs, fs = [], []
+    for o in shell:
+        k = len(vs)
+        vs += [v.co.copy() for v in o.data.vertices]
+        fs += [tuple(k + i for i in f.vertices) for f in o.data.polygons]
+    if not fs:
+        return 0.0
+    t_h = BVHTree.FromPolygons(vs, fs)
+    cell = .03 * half_d
+    x0, z0 = centre.x - 1.15 * half_w, chin - .1 * half_d
+    nx, nz = int(2.3 * half_w / cell) + 1, int((E.z + .4 * top - z0) / cell) + 1
+    y0, far, clear, deep = centre.y - 3 * half_d, 6 * half_d, max(.05 * half_d, .6 * gap), .9 * half_d
+    D = np.zeros((nz, nx))
+    for j in range(nz):
+        for i in range(nx):
+            org = Vector((x0 + i * cell, y0, z0 + j * cell))
+            sk = tree.ray_cast(org, Vector((0, 1, 0)), far)[0]
+            hl = t_h.ray_cast(org, Vector((0, 1, 0)), far)[0]
+            if sk is None or hl is None or sk.y > centre.y - .2 * half_d or hl.y > centre.y:
+                continue
+            if hl.y - sk.y < deep:   # (deeper: the far wall seen through an opening)
+                D[j, i] = clamp(hl.y - (sk.y - clear), 0, .8 * half_d)
+    need = D.copy()
+    if need.max() <= 0:
+        return 0.0
+    r = max(2, int(round(.06 * half_d / cell)))   # smoothed, never below what each place needs
+    kernel = np.ones(2 * r + 1) / (2 * r + 1)
+    wide = D.copy()
+    for _ in range(8):
+        pad = np.pad(wide, r, mode="edge")
+        pad = np.apply_along_axis(lambda m: np.convolve(m, kernel, mode="same"), 0, pad)
+        pad = np.apply_along_axis(lambda m: np.convolve(m, kernel, mode="same"), 1, pad)
+        wide = np.maximum(pad[r:-r, r:-r], need)
+    moved = 0.0
+    for o in shell:
+        for v in o.data.vertices:
+            w = smooth(0, 1, (centre.y - .1 * half_d - v.co.y) / (.45 * half_d))
+            fx, fz = (v.co.x - x0) / cell, (v.co.z - z0) / cell
+            if w <= 0 or not (0 <= fx < nx - 1 and 0 <= fz < nz - 1):
+                continue
+            i, j = int(fx), int(fz)
+            a, b = fx - i, fz - j
+            d = ((wide[j, i] * (1 - a) + wide[j, i + 1] * a) * (1 - b) + (wide[j + 1, i] * (1 - a) + wide[j + 1, i + 1] * a) * b) * w
+            v.co.y -= d
+            moved = max(moved, d)
+        o.data.update()
+    return moved
+
+
+face_moved = clear_face()
+_sv, _sf = [], []   # the shell alone, for what comes out through it (the mask)
+for o in parts:
+    if not o.name.startswith(("Aventail_Rings", "Chinstrap", "Buckle")):
+        k = len(_sv)
+        _sv += [v.co.copy() for v in o.data.vertices]
+        _sf += [tuple(k + i for i in f.vertices) for f in o.data.polygons]
+shell_tree = BVHTree.FromPolygons(_sv, _sf)
+
 # ---------------------------------------------------------------- one object, on the head (an aventail down to the neck)
 for o in parts:
     o.vertex_groups.clear()
@@ -386,21 +454,21 @@ obj.parent = arm
 obj.matrix_parent_inverse = arm.matrix_world.inverted()
 
 if job.get("mask"):   # what it hides, the ears too
-    from body_mask import above, body_mask, ears
-    # (only what it closes over: the skin seen past its rim - under a brim, behind an eye slit, round a face's opening -
-    # stays; hidden there, the face showed holes through them)
+    from body_mask import above, body_mask, ears, head_cover, where
+    # what it may hide: what it closes over and, over the brow, the head under it (hair, a hat; an open helmet's only
+    # within the skull's sides); then head_cover keeps of that all the skin that can be seen - through an eye slit, under
+    # a rim - and takes off an ear what came out through the shell
     keys = {tuple(x) for x in body_mask(body, [obj], cover=30)}
-    # the ears past the skull's side: under a helmet that closes over them (an open one - a kettle hat, a nasal helm, a
-    # morion - leaves them out below it: taken away, or cut where it meets them, their roots were holes in the head
-    # under its rim; a long ear's tip may come out through its side)
     if style not in ("kettle_hat", "nasal_helm", "spangenhelm", "morion"):
-        keys |= {tuple(x) for x in ears(body, head_bones, centre, half_w, J.z, E.z + top, out=1.0)}
-    if style not in ("kettle_hat", "nasal_helm", "spangenhelm", "morion"):
-        keys |= {tuple(x) for x in above(body, head_bones, E.z + .25 * top)}   # over the brow: hair, a hat, under the helmet
-    else:   # (an open one: within the skull's sides - not an ear going up beside it, cut it left a hole)
-        from body_mask import where
+        keys |= {tuple(x) for x in above(body, head_bones, E.z + .25 * top)}
+    else:
         keys |= {tuple(x) for x in where(body, head_bones, lambda q: q.z > E.z + .25 * top and abs(q.x - centre.x) < .95 * half_w)}
-    Path(job["mask"]).write_text(json.dumps([list(x) for x in sorted(keys)]), encoding="utf-8")
+    ear_keys = {tuple(x) for x in ears(body, head_bones, centre, half_w, J.z, E.z + top, out=1.0)}
+    # (and what else may come out through the shell: the head behind the face - an ear's root, the nape - and all over the
+    # brow - a skull's bump, hair; not the face: a nose is met by clear_face)
+    ear_keys |= {tuple(x) for x in where(body, head_bones, lambda q: q.z > E.z + .25 * top or q.y > centre.y - .15 * half_d)}
+    keys = head_cover(body, [obj], keys, ear_keys, centre, shell=shell_tree)
+    Path(job["mask"]).write_text(json.dumps(keys), encoding="utf-8")
 
 for o in list(bpy.data.objects):   # the skeleton and the helmet only
     if o.type == "MESH" and o is not obj:
@@ -412,7 +480,7 @@ bpy.context.view_layer.objects.active = arm
 bpy.ops.export_scene.gltf(filepath=job["out"], export_format="GLB", use_selection=True, export_skins=True,
                           export_animations=False, export_influence_nb=4)
 print("ARMOUR_GEN_OK " + json.dumps({"vertices": len(obj.data.vertices), "bones": [head_b.name] + ([neck_b.name] if neck_b else []),
-                                     "radius": round(half_d, 4), "sides": [], "scale": round(s, 4), "squeeze": round(squeeze, 3),
+                                     "radius": round(half_d, 4), "sides": [], "scale": round(s, 4), "squeeze": round(squeeze, 3), "face_moved": round(face_moved, 4),
                                      "head": {"half_width": round(half_w, 3), "half_depth": round(half_d, 3), "eyes_to_top": round(top, 3),
                                               "chin": round(chin, 3), "shoulder": round(shoulder, 3), "neck": round(neck_r, 3)},
                                      "build": {k: (round(v, 4) if isinstance(v, float) else v) for k, v in p.items()}, "uvtex": UVTEX}), flush=True)

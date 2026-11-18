@@ -5803,8 +5803,11 @@ function applyPose() {
       turn(PB['forearm_' + s], d.clone().cross(FRONT).normalize(), 95);
     } else if (pose === 'squat') {
       const d = dir('upleg_' + s, 'leg_' + s); if (!d || !dir('leg_' + s, 'foot_' + s)) continue;
-      turn(PB['upleg_' + s], d.clone().cross(FRONT).normalize(), 75);
-      turn(PB['leg_' + s], dir('leg_' + s, 'foot_' + s).cross(FRONT.clone().negate()).normalize(), 100);
+      // (the knee is a hinge: it bends about the axis the thigh swung about. About the shin's own line across the front -
+      // the shin by then nearly along it - any outward lean of the leg grew several times: the feet went wide apart)
+      const ax = d.clone().cross(FRONT).normalize();
+      turn(PB['upleg_' + s], ax, 75);
+      turn(PB['leg_' + s], ax, -100);
     } else if (pose === 'fist') {   // the hand closed as round a grip: as remembered in the markup, else each finger in its own plane (GRIP_DEG)
       if (s === 'L' && twoHand && S.piece === 'weapon') { readyStance(twoHand); reach(twoHand); }   // in both hands: held in front, the other hand onto the haft
       if (closeHand(s) || applyFist(s)) continue;
@@ -5817,8 +5820,9 @@ function applyPose() {
       armDown(s);
     } else if (pose === 'stride') {   // a long step: the left thigh 40° forward, the right 25° back, the knees bent
       const d = dir('upleg_' + s, 'leg_' + s); if (!d || !dir('leg_' + s, 'foot_' + s)) continue;
-      turn(PB['upleg_' + s], d.clone().cross(FRONT).normalize(), s === 'L' ? 40 : -25);
-      turn(PB['leg_' + s], dir('leg_' + s, 'foot_' + s).cross(FRONT.clone().negate()).normalize(), s === 'L' ? 35 : 20);
+      const ax = d.clone().cross(FRONT).normalize();   // (the knee: about the same axis, as «squat»)
+      turn(PB['upleg_' + s], ax, s === 'L' ? 40 : -25);
+      turn(PB['leg_' + s], ax, s === 'L' ? -35 : -20);
     }
   }
   applyPoseEdits();

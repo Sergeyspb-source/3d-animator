@@ -219,6 +219,112 @@ def above(body, bones, z, share=.5):
     return where(body, bones, lambda p: p.z > z, share)
 
 
+def _hemisphere(count=192):
+    """Directions evenly over the sphere (a vertex uses those on its outer side: about half)."""
+    out = []
+    gold = math.pi * (3 - math.sqrt(5))
+    for i in range(count):
+        z = 1 - 2 * (i + .5) / count
+        r = math.sqrt(max(0, 1 - z * z))
+        out.append(Vector((r * math.cos(i * gold), r * math.sin(i * gold), z)))
+    return out
+
+
+def head_cover(body, pieces, keys, ear_keys, centre, rings=1, shell=None):
+    """What a helmet really takes away of the head. keys: what it may hide (under it, over the brow), ear_keys: the ears.
+    Kept is all the skin that can be seen: a ray from it reaches the open past the helmet and the body - through an eye
+    slit, under a rim, round a face's opening - so no hole shows there (by the piece's nearness alone the lids, the
+    nose's sides and the ears' middles went: white gaps, ears in shreds). Hidden is what is closed in, and of an ear
+    what came out through the helmet (the helmet stands between it and the head's middle): it ends at the shell. `rings`
+    of closed-in vertices next to the kept are given back; crumbs of skin left cut off from the rest go. shell: a BVH of
+    the helmet without its straps (a strap across an ear does not cut it). As body_mask's."""
+    if not keys and not ear_keys:
+        return []
+    tree, body_tree = _bvh(pieces), _bvh(body)
+    lo = Vector((min(min((o.matrix_world @ v.co)[i] for v in o.data.vertices) for o in pieces) for i in range(3)))
+    hi = Vector((max(max((o.matrix_world @ v.co)[i] for v in o.data.vertices) for o in pieces) for i in range(3)))
+    size = (hi - lo).length
+    e, near = 1e-3 * size, .25 * size   # (the body further off than that - the chest under the chin - hides nothing from a camera)
+    dirs = _hemisphere()
+    key_of = lambda c: (round(c.x * 1000), round(c.z * 1000), round(-c.y * 1000))  # noqa: E731
+    state = {}   # key -> "keep" / "hide" / "out" (came out through the helmet); a seam's twins: kept if either is
+    rank = {"out": 0, "hide": 1, "keep": 2}
+    for o in body:
+        W, N = o.matrix_world, o.matrix_world.to_3x3().inverted().transposed()
+        for v in o.data.vertices:
+            k = key_of(v.co)
+            if k not in keys and k not in ear_keys:
+                continue
+            p, n = W @ v.co, (N @ v.normal).normalized()
+            q = p + n * e
+            st = "hide"
+            if k in ear_keys:
+                to = centre - p
+                if (shell or tree).ray_cast(q, to.normalized(), to.length)[0] is not None:
+                    st = "out"
+            if st == "hide":
+                for d in dirs:
+                    if d.dot(n) > .05 and tree.ray_cast(q, d)[0] is None and body_tree.ray_cast(q, d, near)[0] is None:
+                        st = "keep"
+                        break
+            if k not in state or rank[st] > rank[state[k]]:
+                state[k] = st
+    hide = {k for k, st in state.items() if st != "keep"}
+    out = {k for k, st in state.items() if st == "out"}
+    for o in body:
+        me = o.data
+        ks = [key_of(v.co) for v in me.vertices]
+        nb = [[] for _ in me.vertices]
+        for ed in me.edges:
+            a, b = ed.vertices
+            nb[a].append(b)
+            nb[b].append(a)
+        # (what an edge of the skin pierces the shell with: both its ends, however they lie)
+        W = o.matrix_world
+        for ed in me.edges:
+            a, b = ed.vertices
+            if ks[a] in ear_keys or ks[b] in ear_keys:
+                pa, pb = W @ me.vertices[a].co, W @ me.vertices[b].co
+                if (pb - pa).length > 1e-9 and (shell or tree).ray_cast(pa, (pb - pa).normalized(), (pb - pa).length)[0] is not None:
+                    for k in (ks[a], ks[b]):
+                        if k in ear_keys:
+                            hide.add(k)
+                            out.add(k)
+        # (an ear's triangles through the shell go too: its vertices next to what came out)
+        for j in range(len(ks)):
+            if ks[j] in ear_keys and ks[j] not in out and any(ks[i] in out for i in nb[j]):
+                hide.add(ks[j])
+        for _ in range(rings):
+            back = {ks[j] for j in range(len(ks)) if ks[j] in hide and ks[j] not in out and any(ks[i] not in hide for i in nb[j]) and not (ks[j] in ear_keys and any(ks[i] in out for i in nb[j]))}
+            hide -= back
+
+        def parts(ok):   # the connected pieces of the vertices for which ok holds
+            seen, res = [False] * len(ks), []
+            for s in range(len(ks)):
+                if seen[s] or not ok(s):
+                    continue
+                seen[s] = True
+                stack, cur = [s], []
+                while stack:
+                    i = stack.pop()
+                    cur.append(i)
+                    for j in nb[i]:
+                        if not seen[j] and ok(j):
+                            seen[j] = True
+                            stack.append(j)
+                res.append(cur)
+            return res
+        for island in parts(lambda i: True):   # (islands the mesh has of its own stay: only what the hiding cut off goes)
+            members = set(island)
+            bits = parts(lambda i: i in members and ks[i] not in hide)
+            if len(bits) > 1:
+                big = max(map(len, bits))
+                for b in bits:
+                    if len(b) < .01 * big:   # (crumbs only: a face parted by the hidden skin keeps both halves)
+                        hide |= {ks[i] for i in b}
+    return [list(x) for x in sorted(hide)]
+
+
 if __name__ == "__main__":   # a piece put on before masks were made: blender -b -P body_mask.py -- rigged.glb piece.glb out.json
     import json
     import sys
