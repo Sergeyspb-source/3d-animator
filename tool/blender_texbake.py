@@ -275,16 +275,19 @@ def bake_made(obj, item, job, tex_dir):
         ms = [b.inputs["Metallic"].default_value for m in g["mats"] for b in _bsdfs(m)]
         g["metal"] = min(.65, sum(ms) / len(ms)) if ms else 0.
     # another material chosen in the editor (job["look"]: its specs by slot): the metal, the straps and the small parts
-    # made of it as any piece of the editor's is, with its wear and hammering; the mail and the lining stay
+    # made of it as any piece of the editor's is, with its wear and hammering (mail: real rings, their metal, no ring
+    # pattern over them); the lining stays
     look = job.get("look") or []
     if look:
         import blender_lookmat as LOOKMAT
         R = max(.25 * max(obj.dimensions), 1e-3)
         for g in groups:
             i = SLOTS.index(g["slot"])
-            if g["slot"] in ("mail", "quilt") or i >= len(look) or not look[i] or look[i].get("pattern"):
+            if i >= len(look) or not look[i] or (g["slot"] == "quilt" and not look[i].get("tex")):   # (padding: a library material only)
                 continue
-            m, metal = LOOKMAT.node_mat(f"{item}_{g['slot']}_look", look[i], R, job)
+            m, metal = LOOKMAT.node_mat(f"{item}_{g['slot']}_look", {**look[i], "pattern": None}, R, job)
+            if g["slot"] == "mail" and not look[i].get("tex"):   # (rings too small for a texture's pixels: their colour itself)
+                g["flat"] = (tuple(look[i]["col"]), float(look[i]["rough"]))
             for mi in g["mis"]:
                 me.materials[mi] = m
             g["mats"], g["metal"] = [m], min(.65, metal)
@@ -352,9 +355,14 @@ def bake_made(obj, item, job, tex_dir):
             nt.nodes.remove(nd)
         N, L = nt.nodes.new, nt.links.new
         out = N("ShaderNodeOutputMaterial"); bsdf = N("ShaderNodeBsdfPrincipled"); L(bsdf.outputs[0], out.inputs[0])
-        c = N("ShaderNodeTexImage"); c.image = g["color"]; L(c.outputs[0], bsdf.inputs["Base Color"])
-        r = N("ShaderNodeTexImage"); r.image = g["rough"]; L(r.outputs[0], bsdf.inputs["Roughness"])
-        if look:
+        flat = g.get("flat") if info.get(g["slot"]) != "ok" else None   # (a texture painted on the unwrap goes first)
+        if flat:
+            bsdf.inputs["Base Color"].default_value = (*flat[0], 1)
+            bsdf.inputs["Roughness"].default_value = flat[1]
+        else:
+            c = N("ShaderNodeTexImage"); c.image = g["color"]; L(c.outputs[0], bsdf.inputs["Base Color"])
+            r = N("ShaderNodeTexImage"); r.image = g["rough"]; L(r.outputs[0], bsdf.inputs["Roughness"])
+        if look and not flat:
             nm = N("ShaderNodeTexImage"); nm.image = g["normal"]
             nmap = N("ShaderNodeNormalMap"); L(nm.outputs[0], nmap.inputs["Color"]); L(nmap.outputs[0], bsdf.inputs["Normal"])
         bsdf.inputs["Metallic"].default_value = g["metal"]

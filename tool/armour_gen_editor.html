@@ -4861,6 +4861,7 @@ function lensOn(mat) {
 // the texture units: a pattern tile (8 cells) when mail or quilting is in the piece, else a limb radius; n tiles under
 // one colour tile
 const LOOK = { U: 1, n: 1, specs: null };
+let BASE_SLOT = 0;   // the slot of a made piece that is its body (libSlots)
 function lookSpecs(p) {   // the seven materials as Blender bakes them (blender_armour_gen.node_mat)
   const tint = new THREE.Color(p.tint), leather = [tint.r, tint.g, tint.b];   // the pickers' sRGB colours -> linear
   const ct = new THREE.Color(p.cloth), cloth = [ct.r, ct.g, ct.b];
@@ -4874,7 +4875,7 @@ function lookSpecs(p) {   // the seven materials as Blender bakes them (blender_
   const plate = p.material === 'leather' ? { kind: 'leather', col: leather, spot: scuff(leather), rough: .72, metal: 0 }
     : p.material === 'cloth' ? { ...clothSpec } : p.material === 'wood' ? { kind: 'leather', col: wood, spot: scuff(wood), rough: .78, metal: 0 } : { ...metalSpec };
   const strap = leather.map((c) => c * .7);
-  return [plate, { kind: 'leather', col: strap, spot: scuff(strap), rough: .75, metal: 0 }, metalSpec,
+  const out = [plate, { kind: 'leather', col: strap, spot: scuff(strap), rough: .75, metal: 0 }, metalSpec,
     { ...metalSpec, pattern: 'mail' }, { ...clothSpec, pattern: 'quilt' }, p.trim === 'leather' ? { kind: 'leather', col: leather.map((x) => x * .6), spot: scuff(leather), rough: .75, metal: 0 }
       : { kind: 'metal', col: tc, spot: spotOf(tm, tc), rough: tr, metal: tmm, bump: p.hammer * .5 },
     { kind: 'leather', col: wood.map((x) => Math.min(1, x * 1.25)), spot: wood.map((x) => x * .8), rough: .88, metal: 0 }]   // bare boards, unpainted
@@ -4882,6 +4883,10 @@ function lookSpecs(p) {   // the seven materials as Blender bakes them (blender_
       const m = (p.libmat || {})[['plate', 'strap', 'detail', 'mail', 'quilt', 'trim', 'wood'][i]];
       return m ? { ...spec, tex: { color: m.color, normal: m.normal || null, rough: m.rough || null, metal: m.metal || null, tile: MM(m.size_cm * 10) } } : spec;
     });
+  // a made piece whose body is not its «plate» slot (a boot's leather, a leather elbow): the base goes on the body, what
+  // the plate slot holds there (a toe cap, small fittings) is small metal
+  if (isMade() && BASE_SLOT !== PLATE) { out[BASE_SLOT] = out[PLATE]; out[PLATE] = out[DETAIL]; }
+  return out;
 }
 const quiltTile = (p) => (p.quilt_lines ? 'channels' : 'quilt');   // quilting in channels along, or diamonds
 function patterned(p) {   // mail or quilting anywhere in the piece
@@ -5637,7 +5642,7 @@ function madePlace(root, piece) {
   });
 }
 // the chosen material on the made piece's preview (Blender bakes the same on «Generate»), by the parts' material names as
-// blender_texbake.slot_of: its metal, straps and small parts; the mail and the lining stay as made
+// blender_texbake.slot_of: its metal, straps, small parts and mail; the padding only by a library material
 const MADE_SLOTS = ['plate', 'strap', 'detail', 'mail', 'quilt', 'trim', 'wood'];
 function madeSlot(name) {
   const n = (name || '').toLowerCase(), has = (...w) => w.some((x) => n.includes(x));
@@ -5647,15 +5652,18 @@ function madeSlot(name) {
 const madeSpecs = () => (S.p.made_mat ? lookSpecs({ ...S.p, material: S.p.made_mat }) : null);
 function madeLook() {
   if (!helmetObj) return;
-  const specs = madeSpecs(), made = new Map();
+  const specs = madeSpecs(), made = new Map(), size = new THREE.Box3().setFromObject(helmetObj).getSize(new V3()).length() / 2;
   helmetObj.traverse((o) => {
     if (!o.isMesh) return;
     const own = o.userData.ownMat || (o.userData.ownMat = o.material);
-    const sl = madeSlot(own.name), s = specs && !['mail', 'quilt'].includes(sl) ? specs[MADE_SLOTS.indexOf(sl)] : null;
-    if (!s || s.pattern) { o.material = own; return; }
+    // (a made piece's mail is real rings: their metal changes, no ring pattern over them)
+    const sl = madeSlot(own.name), s1 = specs && specs[MADE_SLOTS.indexOf(sl)], s0 = s1 && (sl !== 'quilt' || s1.tex) ? s1 : null, s = s0 && { ...s0, pattern: undefined };   // (its padding: a library material only)
+    if (!s) { o.material = own; return; }
     if (!made.has(own)) {
       const m = own.clone(); m.color.set(1, 1, 1); m.normalMap = m.roughnessMap = m.metalnessMap = m.aoMap = null;
-      m.map = s.tex ? libTex(s.tex.color, true) : lookTexture(s, S.p.wear, S.p.seed, null, 1);
+      if (s.tex) {   // (its own UVs: the sample's size against the piece's)
+        const k = Math.max(1, size / s.tex.tile); m.map = libTex(s.tex.color, true).clone(); m.map.repeat.set(k, k); m.map.needsUpdate = true;
+      } else m.map = lookTexture(s, S.p.wear, S.p.seed, null, 1);
       m.roughness = s.rough; m.metalness = s.metal; m.bumpMap = s.tex ? null : reliefTexture(s.kind, S.p.seed); m.bumpScale = s.kind === 'metal' ? 2.4 * (s.bump ?? .5) : .6;
       m.side = THREE.DoubleSide; m.needsUpdate = true; made.set(own, m);
     }
@@ -7215,15 +7223,48 @@ function libFound(list) {
   LIB_FOUND = list;
 }
 let LIB_FOUND = [];
+// how much of the piece each material slot covers (PLATE .. WOOD -> area)
+function slotAreas() {
+  const A = new Array(LIB_SLOTS.length).fill(0), a = new V3(), b = new V3(), c = new V3(), e = new V3(), g = new V3();
+  if (isMade()) {
+    if (helmetObj) helmetObj.traverse((o) => {
+      if (!o.isMesh) return;
+      const sl = LIB_SLOTS.indexOf(madeSlot((o.userData.ownMat || o.material).name)), P = o.geometry.attributes.position, ix = o.geometry.index; if (!ix) return;
+      for (let t = 0; t < ix.count; t += 3) { a.fromBufferAttribute(P, ix.getX(t)); b.fromBufferAttribute(P, ix.getX(t + 1)); c.fromBufferAttribute(P, ix.getX(t + 2)); A[sl] += e.subVectors(b, a).cross(g.subVectors(c, a)).length() / 2; }
+    });
+    return A;
+  }
+  for (const x of parts) {
+    const q = x.acc; if (!q) continue;
+    q.f.forEach((f, k) => {
+      const pt = (i, v) => v.set(q.v[3 * i], q.v[3 * i + 1], q.v[3 * i + 2]); pt(f[0], a);
+      for (let j = 1; j < f.length - 1; j++) { pt(f[j], b); pt(f[j + 1], c); A[q.m[k]] += e.subVectors(b, a).cross(g.subVectors(c, a)).length() / 2; }
+    });
+  }
+  return A;
+}
+window.agSlots = () => ({ piece: S.piece, style: isMade() ? S.p[S.piece] : S.style, areas: Object.fromEntries(slotAreas().map((v, i) => [LIB_SLOTS[i], +v.toFixed(5)]).filter((x) => x[1] > 0)) });   // (the tests)
 // the library's parts: only those this piece has can be chosen (a material laid on a part it lacks changed nothing)
 function libSlots() {
   const sel = $('lib_slot'); if (!sel) return;
-  const used = new Set();
-  if (isMade()) { if (helmetObj) helmetObj.traverse((o) => { if (o.isMesh) { const sl = madeSlot((o.userData.ownMat || o.material).name); if (!['mail', 'quilt'].includes(sl)) used.add(sl); } }); }
-  else for (const x of parts) if (x.acc) for (const r of new Set(x.acc.role)) used.add(LIB_SLOTS[ROLE_MAT[r]]);
+  const A = slotAreas(), at = (k) => A[LIB_SLOTS.indexOf(k)], made = isMade();
+  if (!A.some((x) => x > 0)) return;
+  // a made piece's body: its largest outer surface, when its plates are little beside it (the lining and the mail apart)
+  let base = PLATE;
+  if (made) {
+    const top = ['strap', 'trim', 'wood', 'detail'].reduce((b, k) => (at(k) > at(b) ? k : b), 'strap');
+    if (at(top) > 0 && at('plate') < .35 * at(top)) base = LIB_SLOTS.indexOf(top);
+  }
+  if (base !== BASE_SLOT) { BASE_SLOT = base; madeLook(); }
+  const used = new Set(LIB_SLOTS.filter((k) => at(k) > 0));
+  if (base !== PLATE) { if (at('plate') > 0) used.add('detail'); used.delete(LIB_SLOTS[base]); used.add('plate'); }
   if (!used.size) return;
   for (const o of sel.options) o.disabled = !used.has(o.value);
-  if (!used.has(sel.value)) { sel.value = LIB_SLOTS.find((k) => used.has(k)); libSync(); }
+  // the piece changed, or the part chosen is not on it: the part that is most of it (the base, unless it is little)
+  const key = S.piece + '/' + (made ? S.p[S.piece] : S.style), big = (k) => (k === 'plate' && base !== PLATE ? at(LIB_SLOTS[base]) : at(k));
+  const most = [...used].filter((k) => !(made && k === 'quilt')).reduce((x, y) => (big(y) > big(x) ? y : x));   // (a made piece's padding: mostly inside)
+  const pick = used.has('plate') && big('plate') >= .35 * big(most) ? 'plate' : most;
+  if (libSlots.key !== key || !used.has(sel.value)) { libSlots.key = key; if (sel.value !== pick) { sel.value = pick; libSync(); } }
 }
 function libSync() {
   const slot = $('lib_slot').value, m = (S.p.libmat || {})[slot];
