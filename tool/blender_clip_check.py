@@ -5,7 +5,8 @@
 For each clip (its own action, played directly: the importer's NLA strips play nothing without their slot):
 - sink: the skin's lowest point over the frames below the floor (the rest's lowest point is the floor), mm;
 - hover: the lowest foot's height above the floor in the frames it should stand (its median over the frames), mm;
-- slide: each foot's stands (a run of at least 4 frames with its bottom within 0.6 % of the height of the floor): in
+- slide: each foot's stands (a run of at least 4 frames with its bottom within 0.6 % of the height of the floor), its
+  joint's way (not the lowest skin point's: on a flat sole that is any of them, from frame to frame): in
   place a standing foot goes back evenly (a treadmill), in the world it stays - either way a straight line at an even
   pace; how far it strays from that, the worst, mm (a foot passing low in its swing is no stand: its run is short);
 - seam: a looping clip's last frame against its first (it plays on into it): the joints' largest jump, mm, and that
@@ -36,9 +37,10 @@ skin = max(meshes, key=lambda o: len(o.data.vertices))
 ad = arm.animation_data_create()
 loops = {}
 try:   # (the clips' loop flags: written beside a creature's clips by the retargeting)
-    for c in json.loads(Path(src + ".json").read_text(encoding="utf-8")):
+    listing = json.loads(Path(src + ".json").read_text(encoding="utf-8"))
+    for c in listing.get("clips", []) if isinstance(listing, dict) else listing:   # (procedural clips: {"clips": [...], ...})
         loops[c["name"]] = bool(c.get("loop"))
-except (OSError, ValueError):
+except (OSError, ValueError, AttributeError, KeyError):
     pass
 for t in list(ad.nla_tracks):
     ad.nla_tracks.remove(t)
@@ -100,6 +102,8 @@ def frame_points():
             fb[f] = W @ arm.pose.bones[f].head
     joints = [W @ pb.head for pb in arm.pose.bones]
     ev.to_mesh_clear()
+    for f in feet:   # (the foot's own joint: where a flat sole stands, its lowest skin point is any of them)
+        fb[f + "@"] = W @ arm.pose.bones[f].head
     return low, fb, joints
 
 
@@ -140,10 +144,10 @@ for act in sorted(bpy.data.actions, key=lambda x: x.name):
             while j + 1 < len(on) and on[j + 1]:
                 j += 1
             if j - i >= 3:
-                p0, p1 = fbs[i][f], fbs[j][f]
+                p0, p1 = fbs[i][f + "@"], fbs[j][f + "@"]
                 for k in range(i, j + 1):
                     q = p0.lerp(p1, (k - i) / (j - i))
-                    worst = max(worst, math.hypot(fbs[k][f].x - q.x, fbs[k][f].y - q.y))
+                    worst = max(worst, math.hypot(fbs[k][f + "@"].x - q.x, fbs[k][f + "@"].y - q.y))
             i = j + 1
     loop = loops.get(act.name, bool(re.search(r"walk|run|trot|idle|sneak|swim|flap|glide|loop|cycle|winding", act.name.lower())))
     jump = lambda A, B: max((p - q).length for p, q in zip(A, B))  # noqa: E731

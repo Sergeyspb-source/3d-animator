@@ -848,12 +848,208 @@ def mannered(p, name):
     return p
 
 
+# ---------------------------------------------------------------- the ground: the feet on it, the body never in it
+# Each clip's poses are made first, then put on the ground: a foot that stands (its sole low, the shin about upright) for
+# a few frames keeps a straight, even way in that time (in place it goes back as on a treadmill; a stance in the world
+# stays) and its sole flat, by two-bone IK of the thigh and the shin; a foot never goes below the floor; a body lying or
+# kneeling is raised until its lowest skin is on the floor. The floor: the skin's lowest point at rest.
+GROUND = opt.get("ground", "1") != "0"
+_skins = [o for o in bpy.context.scene.objects if o.type == "MESH" and any(m.type == "ARMATURE" for m in o.modifiers)]
+_Ai = arm.matrix_world.inverted()
+
+
+def _sole_points():
+    """{side: [(bone name, the point in that bone's rest frame)]}: the skin under each foot at rest (its lowest vertices
+    led by the foot or the toes), and the floor's height along up."""
+    reset_pose()
+    bpy.context.view_layer.update()
+    pts, low = {"L": [], "R": []}, None
+    lead = {NAME[k]: k[-1] for k in ("foot_L", "foot_R", "toe_L", "toe_R") if k in NAME}
+    cand = {"L": [], "R": []}
+    for o in _skins:
+        M = _Ai @ o.matrix_world
+        gn = {g.index: g.name for g in o.vertex_groups}
+        for v in o.data.vertices:
+            p = M @ v.co
+            h = p.dot(up)
+            low = h if low is None else min(low, h)
+            if v.groups:
+                g = max(v.groups, key=lambda g: g.weight)
+                bn = gn.get(g.group)
+                if bn in lead:
+                    cand[lead[bn]].append((h, bn, p))
+    for s in "LR":
+        c = sorted(cand[s], key=lambda x: x[0])
+        if not c:
+            continue
+        lim = c[0][0] + .025 * HEIGHT   # the sole: the foot's skin within a little of its lowest
+        sel = [x for x in c if x[0] < lim]
+        step = max(1, len(sel) // 40)
+        pts[s] = [(bn, bones[bn].matrix_local.inverted() @ p) for _, bn, p in sel[::step]]
+    return pts, (low if low is not None else 0.0)
+
+
+if GROUND and _skins:
+    SOLE, FLOOR = _sole_points()
+    HIPS_UP = bones[NAME["hips"]].head_local.dot(up) - FLOOR
+else:
+    SOLE, FLOOR, HIPS_UP = {"L": [], "R": []}, 0.0, 1.0
+
+
+def _sole(side):   # the sole's points now (armature space)
+    pb = arm.pose.bones
+    return [pb[bn].matrix @ q for bn, q in SOLE[side]]
+
+
+def _aim(pb, to):   # the bone turned (least) so its tail points at `to` (armature space)
+    M = pb.matrix
+    q = (M.to_3x3().col[1]).normalized().rotation_difference((to - M.translation).normalized())
+    pb.matrix = Matrix.LocRotScale(M.translation, q @ M.to_quaternion(), None)
+    bpy.context.view_layer.update()
+
+
+def _leg_to(side, ankle, flat):
+    """The thigh and the shin turned so the ankle is at `ankle` (two-bone IK, the knee bent the way it was); the foot
+    then kept as it was in the world, turned flat by `flat` (0..1)."""
+    pb = arm.pose.bones
+    th, sh, ft = pb[NAME["thigh_" + side]], pb[NAME["shin_" + side]], pb[NAME["foot_" + side]]
+    R_ft = ft.matrix.to_quaternion()
+    A, K, F = th.head.copy(), sh.head.copy(), ft.head.copy()
+    l1, l2 = (K - A).length, (F - K).length
+    d = ankle - A
+    dist = min(max(d.length, abs(l1 - l2) + 1e-5), l1 + l2 - 1e-5)
+    e = d.normalized()
+    bend = (K - A) - e * (K - A).dot(e)
+    if bend.length < 1e-6:
+        bend = fwd.copy()
+    bend.normalize()
+    ca = (l1 * l1 + dist * dist - l2 * l2) / (2 * l1 * dist)
+    Kn = A + e * (l1 * ca) + bend * (l1 * math.sqrt(max(0.0, 1 - ca * ca)))
+    _aim(th, Kn)
+    _aim(sh, A + e * dist)
+    # the foot: its world turn kept, then flat on the ground by `flat` (its sole's up made the world's up)
+    q = R_ft
+    if flat > 0:
+        n_rest = bones[NAME["foot_" + side]].matrix_local.to_quaternion().inverted() @ up
+        q_flat = (R_ft @ n_rest).rotation_difference(up) @ R_ft
+        q = R_ft.slerp(q_flat, flat)
+    ft.matrix = Matrix.LocRotScale(ft.matrix.translation, q, None)
+    bpy.context.view_layer.update()
+
+
+def _apply(fr):
+    for bn, q in fr["q"].items():
+        arm.pose.bones[bn].rotation_quaternion = q
+    arm.pose.bones[NAME["hips"]].location = fr["loc"]
+    bpy.context.view_layer.update()
+
+
+def _lowest_skin():
+    dg = bpy.context.evaluated_depsgraph_get()
+    low = None
+    for o in _skins:
+        ev = o.evaluated_get(dg)
+        me = ev.to_mesh()
+        M = _Ai @ o.matrix_world
+        h = min((M @ v.co).dot(up) for v in me.vertices) if len(me.vertices) else None
+        ev.to_mesh_clear()
+        if h is not None:
+            low = h if low is None else min(low, h)
+    return low
+
+
+DOWN = {"walk_loop", "idle_loop", "block_loop", "spear_ready_loop"}   # (a foot always on the ground: no flight in these)
+
+
+def ground(frames, loop, name=""):
+    """The clip's poses (frames: [{q: {bone: quaternion}, loc: hips location}]) put on the ground, in place."""
+    n = len(frames)
+    if not GROUND or not SOLE["L"] or not SOLE["R"] or n < 2:
+        return
+    sides = [s for s in "LR" if "thigh_" + s in NAME and "shin_" + s in NAME and "foot_" + s in NAME]
+    tol = .02 * HEIGHT
+    if name in DOWN:   # walking, standing: the body as low as puts its lower foot on the floor (both up hovered)
+        for fr in frames:
+            _apply(fr)
+            dz = min(min(p.dot(up) for p in _sole(s)) for s in sides) - FLOOR
+            if dz > 0:
+                fr["loc"] = fr["loc"] - REST[NAME["hips"]].inverted() @ (up * dz)
+    # pass 1: each frame's soles and shins as made
+    low, at, upright = {s: [] for s in sides}, {s: [] for s in sides}, {s: [] for s in sides}
+    for fr in frames:
+        _apply(fr)
+        pb = arm.pose.bones
+        for s in sides:
+            pts = _sole(s)
+            low[s].append(min(p.dot(up) for p in pts) - FLOOR)
+            at[s].append(pb[NAME["foot_" + s]].head.copy())
+            shin = (pb[NAME["shin_" + s]].tail - pb[NAME["shin_" + s]].head).normalized()
+            upright[s].append(-shin.dot(up))
+    # the stances: runs of 3 frames or more, the sole near the floor and the shin within ~50° of upright (not lying);
+    # a looping clip's run may go on over its end into its start
+    plan = {s: [None] * n for s in sides}   # frame -> (ankle target, flat share)
+    for s in sides:
+        on = [low[s][i] < tol and upright[s][i] > .64 for i in range(n)]
+        if all(on):
+            runs = [list(range(n))]
+        else:
+            runs, i0 = [], (on.index(False) + 1) % n if loop else 0
+            cur = []
+            for k in range(n):
+                i = (i0 + k) % n if loop else k
+                if on[i]:
+                    cur.append(i)
+                elif cur:
+                    runs.append(cur); cur = []
+            if cur:
+                runs.append(cur)
+        for run in runs:
+            if len(run) < 3:
+                continue
+            a, b = at[s][run[0]], at[s][run[-1]]
+            m = len(run) - 1
+            for k, i in enumerate(run):
+                p = a.lerp(b, k / m) if m else a.copy()
+                ease = min(1.0, (k + 1) / 2, (m - k + 1) / 2)   # (a frame at each end: on its way in, out)
+                plan[s][i] = (p, ease)
+    # pass 2: the legs to their places, the feet out of the floor, the body out of it
+    for i, fr in enumerate(frames):
+        _apply(fr)
+        for s in sides:
+            pb = arm.pose.bones
+            F = pb[NAME["foot_" + s]].head.copy()
+            if plan[s][i] is not None:
+                p, ease = plan[s][i]
+                tgt = F.lerp(p, ease)
+                _leg_to(s, tgt, ease)
+                for _ in range(2):   # the flat sole on the floor (it may hang a little, or be in it, as made)
+                    dz = min(q.dot(up) for q in _sole(s)) - FLOOR
+                    if abs(dz) > .002 * HEIGHT:
+                        _leg_to(s, pb[NAME["foot_" + s]].head - up * dz * ease, ease)
+            else:
+                dz = min(q.dot(up) for q in _sole(s)) - FLOOR
+                if dz < -.002 * HEIGHT:   # a foot in the swing through the floor: up out of it
+                    _leg_to(s, F - up * dz, 0.0)
+        hb0 = arm.pose.bones[NAME["hips"]]
+        lowest = _lowest_skin() if hb0.head.dot(up) - FLOOR < HIPS_UP * .85 else None   # (standing: no part of it near the floor)
+        if lowest is not None and lowest < FLOOR - .006 * HEIGHT:   # a body down: raised onto the floor (lying, kneeling)
+            hb = arm.pose.bones[NAME["hips"]]
+            hb.location = hb.location + REST[NAME["hips"]].inverted() @ (up * (FLOOR - lowest))
+            bpy.context.view_layer.update()
+        pb = arm.pose.bones
+        for bn in fr["q"]:
+            fr["q"][bn] = pb[bn].rotation_quaternion.copy()
+        fr["loc"] = pb[NAME["hips"]].location.copy()
+
+
 def key_clip(name, seconds, fn, loop):
     if name != "death":
         seconds = seconds / max(ST["tempo"], .3)
         _fn = fn
         fn = lambda t, _f=_fn: mannered(_f(t), name)
     n = max(2, int(round(seconds * FPS)))
+    frames = []
+    KEYED = sorted({NAME[k] for k in NAME} | set(FIST))
     act = bpy.data.actions.new(name)
     ad = arm.animation_data_create()
     ad.action = act
@@ -926,12 +1122,18 @@ def key_clip(name, seconds, fn, loop):
         if name != "death":   # the hands holding the sword close on its handle (blade=fingers only)
             for bn_, q_ in FIST.items():
                 arm.pose.bones[bn_].rotation_quaternion = q_
+        frames.append({"q": {bn: arm.pose.bones[bn].rotation_quaternion.copy() for bn in KEYED},
+                       "loc": arm.pose.bones[NAME["hips"]].location.copy()})
+    ground(frames, loop, name)
+    for i, fr in enumerate(frames):
         f = 1 + i
-        for bn in {NAME[k] for k in NAME} | set(FIST):
+        for bn, q in fr["q"].items():
             pb = arm.pose.bones[bn]
+            pb.rotation_quaternion = q
             pb.keyframe_insert("rotation_quaternion", frame=f)
-            if bn == NAME["hips"]:
-                pb.keyframe_insert("location", frame=f)
+        pb = arm.pose.bones[NAME["hips"]]
+        pb.location = fr["loc"]
+        pb.keyframe_insert("location", frame=f)
     act.use_frame_range = True
     act.frame_start, act.frame_end = 1, n
     return act, n
