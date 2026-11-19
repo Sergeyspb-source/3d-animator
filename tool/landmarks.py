@@ -744,7 +744,9 @@ def _animated_model(cfg, rigged: Path, work: Path) -> Path:
     import hanim as HA
     export = Path(cfg["export_dir"]) / "character"
     names = {_slug(n) for n in (rigged.stem.replace("_rigged", ""), _stem(rigged))}
-    found = [p for n in names for p in (export / n / f"{n}_anim.glb", export / n / f"{n}_fbx.glb") if p.exists()]
+    st = _stem(rigged)   # (beside the skeleton's model; before 2026-11-19 a folder of the model's name)
+    found = [p for p in (rigged.parent / f"{st}_anim.glb", rigged.parent / f"{st}_fbx.glb") if p.exists()]
+    found += [p for n in names for p in (export / n / f"{n}_anim.glb", export / n / f"{n}_fbx.glb") if p.exists()]
     if found:
         return max(found, key=lambda p: p.stat().st_mtime)
     out = work.parent / f"{work.name}_anim.glb"   # outside the Godot project: only its copy is imported

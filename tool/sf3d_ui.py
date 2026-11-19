@@ -2024,6 +2024,22 @@ def _rigged_assets():
     return out
 
 
+def _clips_file(src: Path, kind: str) -> Path:
+    """Where a character's clips go (kind: "anim" - the procedural ones, "fbx" - Mixamo's): beside its skeleton's model,
+    in its own folder, named after it (<name>_landmarks_rigged.glb -> <name>_fbx.glb); a model loaded once from
+    elsewhere: export/character/<its name>/ as before."""
+    src = Path(src)
+    ex = Path(T.load_config()["export_dir"]).resolve()
+    try:
+        inside = src.resolve().parent.parent.parent == ex
+    except OSError:
+        inside = False
+    if inside:
+        return src.parent / f"{landmarks._stem(src)}_{kind}.glb"
+    name = T.slug(src.stem.replace("_rigged", "").replace("_wings", ""))
+    return ex / "character" / name / f"{name}_{kind}.glb"
+
+
 def _rigged_path(asset):   # "category/name" (the current character) or "category/<name>_rigged" (a file)
     f = _char_files(asset)
     if f and f["rigged"]:
@@ -2049,7 +2065,7 @@ def hanim_run(upload, asset, clip_labels, manner=None, seed=None, death=None):
     inv = {v: k for k, v in HA.CLIPS.items()}
     clips = [inv[c] for c in clip_labels if c in inv] or list(HA.CLIPS)
     name = T.slug(src.stem.replace("_rigged", "").replace("_wings", ""))
-    dst = Path(cfg["export_dir"]) / "character" / name / f"{name}_anim.glb"
+    dst = _clips_file(src, "anim")
     prev = Path(cfg["work_dir"]) / "hanim" / name / "prev"
     log = [_t("ui.adding_animations_to_about_a_minute", len(clips), src.name)]
     yield "\n".join(log), [], None
@@ -2106,8 +2122,7 @@ def fbx_run(upload, asset, folder, rows, weapon_set=_t("fbx.none")):
         return
     rows = [list(r) for r in (rows.values.tolist() if hasattr(rows, "values") else rows)]
     FA.save_map(p, rows)
-    name = T.slug(src.stem.replace("_rigged", "").replace("_wings", ""))
-    dst = Path(cfg["export_dir"]) / "character" / name / f"{name}_fbx.glb"
+    dst = _clips_file(src, "fbx")
     yield _t("ui.blender_is_retargeting_animations", len(rows), src.name), gr.update(), None
     try:
         info = FA.retarget(cfg["blender_exe"], src, p, dst)
@@ -3169,8 +3184,10 @@ def build():
             if glb is None:
                 src = Path(upload if isinstance(upload, str) else upload.name) if upload else (_rigged_path(asset) if asset else None)
                 if src:
-                    name = T.slug(src.stem.replace("_rigged", "").replace("_wings", ""))
-                    glb = Path(cfg["export_dir"]) / "character" / name / f"{name}_anim.glb"
+                    glb = _clips_file(src, "anim")
+                    if not glb.exists():   # (made before 2026-11-19: in export/character/<the model's name>/)
+                        name = T.slug(src.stem.replace("_rigged", "").replace("_wings", ""))
+                        glb = Path(cfg["export_dir"]) / "character" / name / f"{name}_anim.glb"
             if glb is None or not glb.exists():
                 yield _t("cc.none")
                 return
