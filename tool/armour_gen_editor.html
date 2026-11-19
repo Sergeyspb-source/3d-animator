@@ -324,7 +324,7 @@ async function loadCharacter() {
 // were fitted without it - «Rebuild by layers» makes them again over it.
 const LAYER = { undercloth: .5, trousers: 1, footwear: 1.5, foot: 1.5, brayette: 2, bracer: 3, rerebrace: 3, greave: 3, cuisse: 3,
   forearm: 3, upperarm: 3, arm: 3, leg: 3, upleg: 3, tassets: 3, hips: 3, glove: 3.2, hand: 3.2, codpiece: 2.5, fauld: 2.8, culet: 2.8, elbow: 3.5, gorget: 4.5, pelerine: 3.9, rondel: 5.2, ailette: 5.6, hauberk: 2.4, coif: 3.8, poleyn: 3.5, knee: 3.5, cuirass: 4, torso: 4,
-  pauldron: 5, shoulder: 5, helmet: 5, head: 5, tabard: 6, skirt: 6, cloak: 7 };
+  pauldron: 5, shoulder: 5, helmet: 5, head: 5, tabard: 6, skirt: 6, cloak: 7, hair: .3, beard: .3 };
 const CLOTH_KINDS = ['cloak', 'skirt', 'tabard'];   // over the new piece: not a wall to keep it under (the cloth is made again over it)
 let UNDER_T = 0;   // the piece being built: its thickness as a share of a profile's size (kept so far inside a wall over it)
 // a weapon or a shield in the hand is only shown with the rest: nothing is fitted over or under it, and a held piece
@@ -4145,6 +4145,201 @@ function armsOffBody() {
   offGeo.userData.faceMap = faceMap;
   offFor = G; return offGeo;
 }
+
+// ------------------------------------------------------------------ hair and beards: a base on the skin (the scalp, the
+// chin and the jaw) and locks over it - tapered, a little flattened ribbons grown from the skin along the style's way,
+// kept off the head and the shoulders, each with the weights of the skin it grows from (a beard's with the jaw)
+const HAIR_STYLES = {   // len: % of the height; flow: back | part (falling to the sides) | up; lift: how far they stand off at the root
+  hair_crop: { hair_style: 'crop', hair_len: 3, hair_vol: 90, hair_n: 260, hair_curl: 0, hair_line: 0, hair_flow: 'back', hair_lift: 30 },
+  hair_short: { hair_style: 'short', hair_len: 6, hair_vol: 110, hair_n: 240, hair_curl: 10, hair_line: 0, hair_flow: 'part', hair_lift: 35 },
+  hair_bob: { hair_style: 'bob', hair_len: 12, hair_vol: 120, hair_n: 260, hair_curl: 5, hair_line: 0, hair_flow: 'part', hair_lift: 25 },
+  hair_long: { hair_style: 'long', hair_len: 24, hair_vol: 120, hair_n: 300, hair_curl: 15, hair_line: 0, hair_flow: 'part', hair_lift: 20 },
+  hair_back: { hair_style: 'back', hair_len: 16, hair_vol: 110, hair_n: 280, hair_curl: 0, hair_line: 0, hair_flow: 'back', hair_lift: 20 },
+  hair_mohawk: { hair_style: 'mohawk', hair_len: 8, hair_vol: 120, hair_n: 160, hair_curl: 0, hair_line: 0, hair_flow: 'up', hair_lift: 90 },
+};
+const BEARD_STYLES = {
+  beard_stubble: { beard_style: 'stubble', beard_len: 0, beard_vol: 100, beard_n: 0, beard_curl: 0 },
+  beard_short: { beard_style: 'short', beard_len: 2.5, beard_vol: 100, beard_n: 220, beard_curl: 10 },
+  beard_full: { beard_style: 'full', beard_len: 6, beard_vol: 120, beard_n: 260, beard_curl: 20 },
+  beard_long: { beard_style: 'long', beard_len: 14, beard_vol: 120, beard_n: 280, beard_curl: 25 },
+  beard_goatee: { beard_style: 'goatee', beard_len: 5, beard_vol: 100, beard_n: 120, beard_curl: 10 },
+  beard_mustache: { beard_style: 'mustache', beard_len: 4, beard_vol: 90, beard_n: 70, beard_curl: 0 },
+};
+const HAIR_COLOURS = ['#1b1512', '#3b2618', '#5a3a22', '#7a4a2a', '#a8763e', '#d2b47a', '#8c3a1e', '#b04a22', '#8a8580', '#d8d4cc'];
+function hairRand(seed) { let x = (seed * 2654435761) >>> 0 || 1; return () => ((x ^= x << 13, x ^= x >>> 17, x ^= x << 5) >>> 0) / 4294967296; }
+// the head's measures: its middle at the eyes' height (O), the eyes' middle (E), the head joint to the eyes (d), the
+// skull's half width at each height (the ears past it)
+function headFrame() {
+  const J = (k) => joint(k), HJ = J('head'), NK = J('neck'); if (!HJ || !NK || !PB.head) return null;
+  const eyes = ['eye_L', 'eye_R'].map(J).filter(Boolean);
+  const E = eyes.length ? eyes.reduce((a, b) => a.add(b), new V3()).multiplyScalar(1 / eyes.length) : HJ.clone().addScaledVector(UP, .05 * HEIGHT);
+  const d = Math.max(HJ.distanceTo(E), .03 * HEIGHT), O = new V3(HJ.x, (HJ.y + E.y) / 2, HJ.z);
+  const ys = Array.from({ length: 12 }, (_, i) => NK.y + (HJ.y + 2.5 * d - NK.y) * i / 11);
+  const half = ys.map((y) => { const h2 = [1, -1].map((x) => cast(new V3(HJ.x, y, HJ.z), new V3(x, 0, 0), HEIGHT)); return h2.every(Boolean) ? Math.max(h2[0].distance, h2[1].distance) : d; });
+  const halfAt = (y) => { const f = Math.max(0, Math.min(ys.length - 1.001, (y - ys[0]) / (ys[1] - ys[0]))), i = Math.floor(f); return half[i] * (1 - (f - i)) + half[i + 1] * (f - i); };
+  return { HJ, NK, E, d, O, halfAt };
+}
+// a lock: roots[i] = {p, n (the skin's outward normal), w (weights)}; way(k, q, t): its direction at a point; out of the
+// head (from O) and the body (from the neck's axis); a ribbon of width w0, tapering, flattened against the skin
+function growLocks(acc, F, roots, L, w0, o) {
+  const rnd = hairRand(o.seed || 1), segs = 9, ring = 6, gap = o.gap, curl = o.curl || 0;
+  const q = new V3(), dir = new V3(), side = new V3(), nn = new V3(), tmp = new V3();
+  const outOf = (pt, layer) => {   // kept off the skin: the head above the neck, the neck and the shoulders below
+    const above = pt.y > F.NK.y + .25 * (F.O.y - F.NK.y);
+    const c = above ? F.O : new V3(F.NK.x, pt.y, F.NK.z);
+    const dv = pt.clone().sub(c); if (!above) dv.y = 0;
+    const len = dv.length(); if (len < 1e-6) return pt;
+    dv.multiplyScalar(1 / len);
+    const h = cast(c, dv, HEIGHT); if (!h) return pt;
+    const need = h.distance + gap + layer;
+    return len < need ? c.clone().addScaledVector(dv, need) : pt;
+  };
+  for (const [li, r] of roots.entries()) {
+    const Lr = L * (.75 + .5 * rnd()), wr = w0 * (.8 + .4 * rnd()), layer = (o.layer || 0) * rnd(), ph = rnd() * TAU, ph2 = rnd() * TAU;
+    const pts = [r.p.clone().addScaledVector(r.n, gap * .5)], dirs = [];
+    let cur = pts[0].clone();
+    for (let k = 1; k <= segs; k++) {
+      const t = k / segs;
+      o.way(r, cur, t, dir);
+      if (curl) {   // a wave across the lock's way
+        side.crossVectors(dir, r.n); if (side.lengthSq() < 1e-8) side.set(1, 0, 0); side.normalize();
+        dir.addScaledVector(side, curl * Math.sin(ph + t * 7.5)).addScaledVector(r.n, .4 * curl * Math.sin(ph2 + t * 6)).normalize();
+      }
+      cur = outOf(cur.clone().addScaledVector(dir, Lr / segs), layer * t);
+      pts.push(cur.clone());
+    }
+    // the ribbon: an ellipse across each point (flat side to the skin), tapering to the tip
+    const rows = [];
+    for (let k = 0; k <= segs; k++) {
+      const a = pts[Math.max(0, k - 1)], b = pts[Math.min(segs, k + 1)];
+      dir.subVectors(b, a).normalize();
+      nn.copy(r.n).addScaledVector(dir, -r.n.dot(dir)); if (nn.lengthSq() < 1e-8) nn.set(0, 1, 0); nn.normalize();
+      side.crossVectors(dir, nn).normalize();
+      const t = k / segs, wk = wr * (1 - .85 * t ** 1.6), tk = wk * .5;
+      const row = [];
+      for (let j = 0; j < ring; j++) {
+        const th = j / ring * TAU;
+        tmp.copy(pts[k]).addScaledVector(side, Math.cos(th) * wk / 2).addScaledVector(nn, Math.sin(th) * tk / 2 + (k ? 0 : -tk / 2));
+        row.push(acc.vert(tmp, j / ring * wk / (o.U || 1), t * Lr / (o.U || 1), { direct: o.wOf(r, t, pts[k]) }));
+      }
+      rows.push(row);
+    }
+    for (let k = 0; k < segs; k++) for (let j = 0; j < ring; j++) {
+      const j2 = (j + 1) % ring;
+      acc.face([rows[k][j], rows[k][j2], rows[k + 1][j2], rows[k + 1][j]], o.mat, o.role);
+    }
+    const tip = acc.vert(pts[segs], 0, Lr / (o.U || 1), { direct: o.wOf(r, 1, pts[segs]) });
+    for (let j = 0; j < ring; j++) acc.face([rows[segs][j], rows[segs][(j + 1) % ring], tip], o.mat, o.role);
+  }
+}
+// roots spread over the skin's chosen triangles by their area
+function rootsOn(S, sel, n, seed) {
+  if (!sel.length || n <= 0) return [];
+  const rnd = hairRand(seed + 7), e1 = new V3(), e2 = new V3(), area = sel.map((t) => { const [a, b, c] = S.tris[t]; return e1.subVectors(S.pos[b], S.pos[a]).cross(e2.subVectors(S.pos[c], S.pos[a])).length() / 2; });
+  const cum = []; let tot = 0; for (const x of area) cum.push(tot += x);
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const x = rnd() * tot; let lo = 0, hi = cum.length - 1; while (lo < hi) { const m = (lo + hi) >> 1; if (cum[m] < x) lo = m + 1; else hi = m; }
+    const [a, b, c] = S.tris[sel[lo]]; let u = rnd(), v = rnd(); if (u + v > 1) { u = 1 - u; v = 1 - v; }
+    const p = S.pos[a].clone().multiplyScalar(1 - u - v).addScaledVector(S.pos[b], u).addScaledVector(S.pos[c], v);
+    const nrm = S.n[a].clone().add(S.n[b]).add(S.n[c]).normalize();
+    out.push({ p, n: nrm, w: S.w[[a, b, c][u > v ? (u > 1 - u - v ? 1 : 0) : (v > 1 - u - v ? 2 : 0)]] });
+  }
+  return out;
+}
+function hair(p) {
+  const F = headFrame(); if (!F) return [];
+  const { O, E, d, HJ, NK } = F, acc = new Acc(); acc.w = (q) => q.direct;
+  const H = HEIGHT, hb = boneNames.indexOf(PB.head.name), nb = PB.neck ? boneNames.indexOf(PB.neck.name) : hb, cb = PB.spine2 ? boneNames.indexOf(PB.spine2.name) : nb;
+  // the scalp: the head's skin from the hairline up and back (the forehead, the temples above the ears, the nape), the
+  // ears left out
+  const yF = E.y + (.85 + (p.hair_line || 0) / 100) * d, yS = E.y + .35 * d, yB = O.y - 1.15 * d;
+  const minY = (v) => { const az = Math.abs(Math.atan2(v.x - O.x, v.z - O.z)) / Math.PI, sm = (x) => x * x * (3 - 2 * x);
+    return az < .5 ? yF + (yS - yF) * sm(az / .5) : yS + (yB - yS) * sm((az - .5) / .5); };
+  const mid = p.hair_flow === 'up' ? (v) => Math.abs(v.x - O.x) < .35 * d : () => true;
+  const keep = (v) => v.y > minY(v) && Math.abs(v.x - O.x) < 1.06 * F.halfAt(v.y) && mid(v);
+  keep.key = 'hair_' + (p.hair_line || 0) + '_' + p.hair_flow;
+  const S0 = bodySkin(new Set(['head']), keep); if (!S0.tris.length) return [];
+  const S = { ...S0, n: normalsOf(S0.pos, S0.tris) }, all = S.tris.map((_, t) => t);
+  const R = .02 * H, gap = MM(1.5), U = .02 * H;
+  const direct = (w) => w;   // the scalp's points: their own weights (the head)
+  shellOf(acc, S, all, gap * .4, MM(2.2), PLATE, 'plate', (i) => ({ direct: direct(S.w[i]) }), null, 3);
+  const L = (p.hair_len || 0) / 100 * H, w0 = (p.hair_vol || 100) / 100 * .32 * d;
+  if (L > MM(4) && p.hair_n > 0) {
+    const back = FRONT.clone().negate(), X = new V3(1, 0, 0);
+    const way = (r, cur, t, out) => {
+      const rel = cur.clone().sub(O), radial = rel.clone().normalize();
+      let f;
+      if (p.hair_flow === 'up') f = r.n.clone().multiplyScalar(1.2).addScaledVector(back, .5);
+      else if (p.hair_flow === 'back') f = back.clone().multiplyScalar(1.0).addScaledVector(UP, -.35 - 1.2 * t * t);
+      else f = X.clone().multiplyScalar(Math.sign(cur.x - O.x || 1) * .9).addScaledVector(back, .25).addScaledVector(UP, -.4 - 1.6 * t);
+      if (L > .1 * H) f.addScaledVector(UP, -1.6 * t);   // long: it falls
+      f.addScaledVector(radial, -f.dot(radial) * (1 - (p.hair_lift || 30) / 100 * (1 - t)));   // along the head, standing off at the root
+      out.copy(f.normalize());
+    };
+    const wOf = (r, t, pt) => {   // hanging below the neck: more and more with the neck and the chest
+      const k = Math.max(0, Math.min(1, (O.y - .6 * d - pt.y) / (.18 * H)));
+      if (k <= 0) return r.w;
+      return [[hb, nb, cb, hb], [1 - k, k * .6, k * .4, 0]];
+    };
+    const roots = rootsOn(S, all, Math.round(p.hair_n), p.seed || 1);
+    growLocks(acc, F, roots, L, w0, { gap, curl: (p.hair_curl || 0) / 100 * .5, layer: .25 * w0, way, wOf, mat: PLATE, role: 'plate', U, seed: p.seed || 1 });
+  }
+  return [{ side: 'C', acc, R, mask: S0.keys }];   // (the scalp under its base hidden: a bump of the skin would come through it)
+}
+function beard(p) {
+  const F = headFrame(); if (!F) return [];
+  const { O, E, d, NK } = F, acc = new Acc(); acc.w = (q) => q.direct;
+  const H = HEIGHT, jaw = PB.jaw ? boneNames.indexOf(PB.jaw.name) : -1, hb = boneNames.indexOf(PB.head.name);
+  // the face's profile down its middle (how far forward the skin is at each height): the nose's tip, the crease between
+  // the lips (the deepest point between the nose and the chin), the chin (where the profile goes back to the throat)
+  const st = p.beard_style || 'short', front = (v) => v.clone().sub(O).dot(FRONT);
+  const prof = [];
+  for (let y = E.y - .1 * d; y > NK.y - .2 * d; y -= d / 40) {
+    const h = cast(new V3(O.x, y, O.z).addScaledVector(FRONT, 4 * d), FRONT.clone().negate(), 8 * d);
+    prof.push([y, h ? h.point.clone().sub(O).dot(FRONT) : -Infinity]);
+  }
+  let iN = 0; for (let i = 0; i < prof.length && prof[i][0] > E.y - 1.2 * d; i++) if (prof[i][1] > prof[iN][1]) iN = i;
+  let iC = prof.length - 1;
+  for (let i = iN + 3; i < prof.length - 1; i++) if (prof[i][1] - prof[i + 1][1] > .12 * d) { iC = i; break; }   // (the chin: the profile goes back)
+  // the lips: the profile's bumps between the nose and the chin (the upper lip, then the lower); the mouth between them
+  // (not the deepest point: the crease under the lower lip is deeper than the mouth)
+  const peaks = [];
+  for (let i = iN + 3; i <= iC - 3; i++) if (prof[i][1] >= prof[i - 1][1] && prof[i][1] >= prof[i + 1][1] && prof[i][1] >= prof[i - 2][1] && prof[i][1] >= prof[i + 2][1]) peaks.push(i);
+  let iM;
+  if (peaks.length >= 2) { iM = peaks[0]; for (let i = peaks[0]; i <= peaks[1]; i++) if (prof[i][1] < prof[iM][1]) iM = i; }
+  else iM = peaks.length ? peaks[0] : iN + Math.round(.45 * (iC - iN));
+  const yN = prof[iN][0] - .12 * d, yM = prof[iM][0], yC = prof[iC][0], lip = .12 * d, earX = (y) => .92 * F.halfAt(y);
+  const lips = (v) => Math.abs(v.y - yM) < lip && Math.abs(v.x - O.x) < .34 * d;
+  const below = (v) => v.y < yM - lip && v.y > NK.y - .05 * d && front(v) > -.1 * d && Math.abs(v.x - O.x) < earX(v.y);
+  const cheeks = (v) => v.y < yN - .1 * d && Math.abs(v.x - O.x) > .3 * d && front(v) > -.1 * d && Math.abs(v.x - O.x) < earX(v.y) && v.y > NK.y;
+  const lipTop = (v) => v.y > yM + .5 * lip && v.y < yN && front(v) > .2 * d && Math.abs(v.x - O.x) < .45 * d;
+  const region = {   // where it grows (the face's skin)
+    stubble: (v) => !lips(v) && (below(v) || cheeks(v) || lipTop(v)),
+    short: (v) => !lips(v) && (below(v) || cheeks(v)),
+    full: (v) => !lips(v) && (below(v) || cheeks(v) || lipTop(v)),
+    long: (v) => !lips(v) && (below(v) || cheeks(v) || lipTop(v)),
+    goatee: (v) => !lips(v) && ((below(v) && Math.abs(v.x - O.x) < .3 * d && v.y > yC - .3 * d) || lipTop(v)),
+    mustache: lipTop,
+  };
+  const reg = region[st] || region.stubble;
+  const keep = (v) => reg(v); keep.key = 'beard_' + st;
+  const S0 = bodySkin(new Set(['head', 'neck']), keep); if (!S0.tris.length) return [];
+  const S = { ...S0, n: normalsOf(S0.pos, S0.tris) }, all = S.tris.map((_, t) => t);
+  const gap = MM(1), U = .02 * H;
+  shellOf(acc, S, all, gap * .3, MM(st === 'stubble' ? .8 : 1.6), PLATE, 'plate', (i) => ({ direct: S.w[i] }), null, 3);
+  const L = (p.beard_len || 0) / 100 * H, w0 = (p.beard_vol || 100) / 100 * .2 * d;
+  if (st !== 'stubble' && L > MM(3) && p.beard_n > 0) {
+    const way = (r, cur, t, out) => {
+      if (st === 'mustache' || (r.p.y > yM && st !== 'stubble')) { const sx = Math.sign(r.p.x - O.x || 1); out.set(sx, 0, 0).addScaledVector(UP, -.55 - .6 * t).addScaledVector(FRONT, .25).normalize(); return; }
+      out.copy(UP).multiplyScalar(-1).addScaledVector(FRONT, .55 - .5 * t).addScaledVector(r.n, .35 * (1 - t)).normalize();
+    };
+    const wOf = (r) => r.w;   // (with the skin it grows from: the jaw's moves with the jaw)
+    growLocks(acc, F, rootsOn(S, all, Math.round(p.beard_n), (p.seed || 1) + 3), L, w0,
+      { gap, curl: (p.beard_curl || 0) / 100 * .5, layer: .2 * w0, way, wOf, mat: PLATE, role: 'plate', U, seed: (p.seed || 1) + 3 });
+  }
+  return [{ side: 'C', acc, R: .02 * H, mask: S0.keys }];
+}
 function buildPiece(kind, sides, p) {
   const P0 = PIECES[kind], fam = P0.family, parts = [];
   const look = (limb, side) => {   // the middle of an open plate: front, a cuisse's turned outwards, an arm's outer side
@@ -4166,6 +4361,8 @@ function buildPiece(kind, sides, p) {
   if (kind === 'pelerine') parts.push(...pelerine(p));
   if (kind === 'hauberk') parts.push(...hauberk(p));
   if (kind === 'coif') parts.push(...mailCoif(p));
+  if (kind === 'hair') parts.push(...hair(p));
+  if (kind === 'beard') parts.push(...beard(p));
   if (kind === 'rondel') sides.forEach((side, i) => parts.push(...rondel(side, p, i === 0)));
   if (kind === 'ailette') sides.forEach((side, i) => parts.push(...ailette(side, p, i === 0)));
   if (kind === 'cloak') parts.push(...cloak(p));
@@ -4864,13 +5061,14 @@ const LOOK = { U: 1, n: 1, specs: null };
 let BASE_SLOT = 0;   // the slot of a made piece that is its body (libSlots)
 function lookSpecs(p) {   // the seven materials as Blender bakes them (blender_armour_gen.node_mat)
   const tint = new THREE.Color(p.tint), leather = [tint.r, tint.g, tint.b];   // the pickers' sRGB colours -> linear
-  const ct = new THREE.Color(p.cloth), cloth = [ct.r, ct.g, ct.b];
+  const ct = new THREE.Color(['hair', 'beard'].includes(S.piece) ? p.hair_color || '#3b2618' : p.cloth), cloth = [ct.r, ct.g, ct.b];   // (hair: its own colour, as cloth)
   const scuff = (c) => c.map((x) => Math.min(1, x * 1.6));
   const metal = PRESETS[p.material][2] > 0 ? p.material : 'steel', [mc, mr, mm] = PRESETS[metal];   // rings, rivets, plates on cloth: metal
   const spotOf = (m, c) => (m === 'gold' ? c.map((x) => Math.min(1, x * 1.15)) : m === 'bronze' || m === 'brass' ? [.20, .38, .30] : [.33, .14, .05]);
   const metalSpec = { kind: 'metal', col: mc, spot: spotOf(metal, mc), rough: mr, metal: mm, bump: p.hammer };
   const tm = p.trim && PRESETS[p.trim] && PRESETS[p.trim][2] > 0 ? p.trim : 'brass', [tc, tr, tmm] = PRESETS[tm];
-  const clothSpec = { kind: 'leather', col: cloth, spot: scuff(cloth), rough: .9, metal: 0 };
+  const hairy = ['hair', 'beard'].includes(S.piece);
+  const clothSpec = { kind: 'leather', col: cloth, spot: hairy ? cloth : scuff(cloth), rough: hairy ? .7 : .9, metal: 0 };   // (hair: one colour, a little sheen)
   const wood = PRESETS.wood ? [...PRESETS.wood[0]] : [.24, .14, .07];
   const plate = p.material === 'leather' ? { kind: 'leather', col: leather, spot: scuff(leather), rough: .72, metal: 0 }
     : p.material === 'cloth' ? { ...clothSpec } : p.material === 'wood' ? { kind: 'leather', col: wood, spot: scuff(wood), rough: .78, metal: 0 } : { ...metalSpec };
@@ -4926,6 +5124,7 @@ const isOpen = () => (isLimb() && S.p.sector < 359) || (S.piece === 'cuirass' &&
 // the reference sets (bracers, greaves, cuirasses: leather, plate, mail, splints, brigandine, plate over mail, lamellar):
 // a style sets the piece's parameters to look like one of them, the sliders change it from there
 const STYLES = {
+  hair: HAIR_STYLES, beard: BEARD_STYLES,
   limb: {
     leather: { surface: 'plain', material: 'leather', sector: 320, closure: 'across', stitch: true, plates: 1, relief: .2, cell: 5, top_cut: 10, bottom_cut: 5, flare: .3, hinges: false, mail_under: false, trim: '', hammer: 0, thickness: 12, wear: .3 },
     steel: { surface: 'plates', plates: 1, material: 'steel', sector: 320, closure: 'across', stitch: false, hinges: true, relief: .05, cell: 5, rim: 5, rivets: 0, top_cut: 14, bottom_cut: 8, flare: .45, mail_under: false, trim: '', hammer: .1, thickness: 9, wear: .25 },
@@ -5183,6 +5382,18 @@ SPEC.push(['{{js:ag.codpiece_group}}', ['plate', 'trim', 'strap'], [
   ['cod_size', 60, 160, 5, '{{js:ag.cod_size}}', '', 'pc', isP('codpiece')],
   ['cod_proj', 40, 200, 5, '{{js:ag.cod_proj}}', '{{js:ag.cod_proj_info}}', 'pc', isP('codpiece')],
   ['cod_top', -100, 100, 5, '{{js:ag.cod_top}}', '{{js:ag.cod_top_info}}', 'pc', isP('codpiece')]], isP('codpiece')]);
+const HAIR_GI = SPEC.length;
+SPEC.push(['{{js:ag.hair_group}}', ['plate'], [
+  ['hair_len', 0, 40, .5, '{{js:ag.hair_len}}', '{{js:ag.hair_len_info}}', 'pc', isP('hair')],
+  ['hair_vol', 40, 250, 5, '{{js:ag.hair_vol}}', '', 'pc', isP('hair')],
+  ['hair_n', 0, 600, 10, '{{js:ag.hair_n}}', '', '', isP('hair')],
+  ['hair_curl', 0, 100, 5, '{{js:ag.hair_curl}}', '', 'pc', isP('hair')],
+  ['hair_lift', 0, 100, 5, '{{js:ag.hair_lift}}', '{{js:ag.hair_lift_info}}', 'pc', isP('hair')],
+  ['hair_line', -40, 40, 2, '{{js:ag.hair_line}}', '{{js:ag.hair_line_info}}', 'pc', isP('hair')],
+  ['beard_len', 0, 30, .5, '{{js:ag.hair_len}}', '{{js:ag.hair_len_info}}', 'pc', isP('beard')],
+  ['beard_vol', 40, 250, 5, '{{js:ag.hair_vol}}', '', 'pc', isP('beard')],
+  ['beard_n', 0, 500, 10, '{{js:ag.hair_n}}', '', '', isP('beard')],
+  ['beard_curl', 0, 100, 5, '{{js:ag.hair_curl}}', '', 'pc', isP('beard')]], isP('hair', 'beard')]);
 const GOR_GI = SPEC.length;
 SPEC.push(['{{js:ag.gorget_group}}', ['plate', 'trim'], [
   ['gorget_lames', 2, 6, 1, '{{js:ag.gorget_lames}}', '', '', isP('gorget')],
@@ -5234,7 +5445,7 @@ function buildPanel() {
   // a block of their own, each variant a button)
   const own = (k) => Object.keys(STYLES[k] || {}).map((st) => [k, st]);
   const BLOCKS = [['{{js:ag.block_armour}}', []], ['{{js:ag.block_clothes}}', ['undercloth', 'trousers', 'skirt', 'tabard', 'cloak']],
-    ['{{js:ag.block_held}}', [...own('weapon'), 'shield']], ['{{js:ag.block_sheath}}', own('sheath')]];
+    ['{{js:ag.block_held}}', [...own('weapon'), 'shield']], ['{{js:ag.block_sheath}}', own('sheath')], ['{{js:ag.block_hair}}', ['hair', 'beard']]];
   for (const k of Object.keys(PIECES)) if (!BLOCKS.some(([, ks]) => ks.flat().includes(k))) BLOCKS[0][1].push(k);
   $('pieces').innerHTML = BLOCKS.map(([t, ks]) => `<div class="pgrp">${t}</div>` + ks.map((e) => (Array.isArray(e) ? e : [e])).filter(([k]) => PIECES[k])
     .map(([k, st]) => `<button data-piece="${k}"${st ? ` data-style="${st}"` : ''}>${st ? DATA.style_labels[st] : PIECES[k].label}</button>`).join('')).join('');
@@ -5271,6 +5482,7 @@ function buildPanel() {
       [['pos', '{{js:ag.node_pos}}'], ['rot', '{{js:ag.node_rot}}']].map(([g, lbl]) => `<div class="nrow"><span class="nlbl">${lbl}</span>` +
         NODE_FIELDS.filter((x) => x[1] === g).map(([k, , ax, tip, st]) => `<label title="${tip}">${ax}<input type="number" id="n_${k}" step="${st}"></label>`).join('') + `</div>`).join('') +
       `<div class="nrow"><span class="nlbl">{{js:ag.node_scale}}</span><label title="{{js:ag.s_size}}">%<input type="number" id="n_s_size" step="5" min="20" max="400"></label></div></div>` : '') +
+    (gi === HAIR_GI ? `<div class="row" id="r_hairc"><span class="note">{{js:ag.hair_colour}}</span><span class="seg" id="hairCols">${HAIR_COLOURS.map((c) => `<button data-hc="${c}" style="background:${c};width:22px;min-width:22px" title="${c}">&nbsp;</button>`).join('')}</span><input type="color" id="i_hairc"></div>` : '') +
     (gi === GOR_GI ? `<label class="chk" id="r_bevor" title="{{js:ag.bevor_info}}"><input type="checkbox" id="i_bevor"> {{js:ag.bevor}}</label>` : '') +
     (gi === HELD_GI ? `<label class="chk" id="r_w_magnet" title="{{js:ag.w_magnet_info}}"><input type="checkbox" id="i_w_magnet"> {{js:ag.w_magnet}}</label>` +
       `<label class="chk" id="r_s_hand"><input type="checkbox" id="i_s_hand"> {{js:ag.s_hand}}</label>` +
@@ -5339,6 +5551,8 @@ function buildPanel() {
   $('i_tex').addEventListener('change', (e) => { S.p.tex = +e.target.value; });
   libWire(); projWire(); uvWire();
   $('i_seed').addEventListener('change', (e) => { S.p.seed = Math.round(+e.target.value || 1); changed('seed'); });
+  $('hairCols').addEventListener('click', (e) => { const c = e.target.dataset.hc; if (c) { S.p.hair_color = c; changed('look'); } });
+  $('i_hairc').addEventListener('input', (e) => { S.p.hair_color = e.target.value; changed('look'); });
   $('matSeg').addEventListener('click', (e) => { const m = e.target.dataset.mat; if (m === undefined) return;
     if (isMade()) { S.p.made_mat = m; changed('look'); madeLook(); } else if (m) { S.p.material = m; changed('look'); } });
   $('surfSeg').addEventListener('click', (e) => { const m = e.target.dataset.surf; if (m) { S.p.surface = m; changed('surface'); } });
@@ -5424,6 +5638,7 @@ function syncPanel() {
   }
   for (const b of $('lowSeg').children) b.classList.toggle('on', b.dataset.low === S.p.low_surface);
   for (const b of $('trimSeg').children) b.classList.toggle('on', b.dataset.trim === (S.p.trim || ''));
+  $('i_hairc').value = S.p.hair_color || '#3b2618';
   $('i_tint').value = S.p.tint; $('i_cloth').value = S.p.cloth; $('i_tex').value = String(S.p.tex); $('i_seed').value = S.p.seed;
   for (const b of $('matSeg').children) b.classList.toggle('on', b.dataset.mat === (isMade() ? S.p.made_mat || '' : S.p.material));
   $('matOwn').hidden = !isMade();
@@ -6887,7 +7102,10 @@ function payload() {   // every part in one mesh: positions (glTF axes), faces (
     m: b64(Uint8Array.from(m)), g: b64(Uint16Array.from(g)), bi: b64(Uint16Array.from(bi)), bw: b64(Float32Array.from(bw)), bones: boneNames,
     mats: LOOK.specs, patterns: { mail: patternTile('mail').png, quilt: patternTile(quiltTile(S.p)).png }, pattern_unit: LOOK.U,
     radius: parts.reduce((s, x) => s + x.R, 0) / parts.length, over_clothes: parts.some((x) => x.loose), paint: paintPayload(),
-    cloth: (parts.find((x) => x.cloth) || {}).cloth || null };   // (cloth on chains: its cuts, belt, rules)
+    cloth: (parts.find((x) => x.cloth) || {}).cloth || null,   // (cloth on chains: its cuts, belt, rules)
+    // hair, a beard: what they hide is the skin under their base, as on screen (the body's own rule took the ears the
+    // locks pass by)
+    skin_mask: ['hair', 'beard'].includes(S.piece) ? [...new Set(parts.flatMap((x) => (x.mask ? [...x.mask] : [])))].map((k) => k.split(',').map(Number)) : null };
 }
 let busy = false;
 // one request at a time: they go through the one hidden field of the app's page, a second one sent at once would take
@@ -6926,7 +7144,7 @@ const SURF_STYLES = ['mail', 'scales', 'lamellar', 'brigandine', 'splints', 'qui
 const slugN = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
 function styleOf(kind, p, style) {
   const own = { weapon: p.weapon, shield: p.shield, helmet: p.helmet, glove: p.glove, elbow: String(p.elbow || '').replace(/^elbow_/, ''), poleyn: String(p.poleyn || '').replace(/^poleyn_/, ''), codpiece: String(p.codpiece || '').replace(/^cod_/, ''), rondel: String(p.rondel || '').replace(/^rondel_/, ''), ailette: String(p.ailette || '').replace(/^ailette_/, ''),
-    hauberk: String(p.hauberk || '').replace(/^hauberk_/, ''), coif: String(p.coif || '').replace(/^coif_/, ''), footwear: String(p.footwear || '').replace(/^foot_/, ''), undercloth: p.cloth_style, sheath: p.sheath }[kind];
+    hauberk: String(p.hauberk || '').replace(/^hauberk_/, ''), coif: String(p.coif || '').replace(/^coif_/, ''), footwear: String(p.footwear || '').replace(/^foot_/, ''), undercloth: p.cloth_style, sheath: p.sheath, hair: p.hair_style, beard: p.beard_style }[kind];
   if (own) return slugN(own);
   if (style) return slugN(String(style).replace(/^(cloth|shield|weapon|sheath|glove|foot|elbow|poleyn)_/, ''));
   if (SURF_STYLES.includes(p.surface)) return p.surface;

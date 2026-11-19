@@ -116,6 +116,13 @@ PIECES = {"bracer": ("forearm", "hand", "forearm", ("Spine", "Hips", "Chest", "U
           # a tabard: two panels from the shoulders, open at the sides, a belt round the waist (the same cloth on chains)
           "tabard": ("spine2", "neck", "spine2", (), "torso", "cloak", (0, 0, 0, 0),
                      dict(material="cloth", cloth="#6a2a24", surface="plain", trim="", straps=0, rigidity=.5, gap=3, thickness=1.5)),
+          # hair and beards: a base on the scalp (the chin and the jaw) and locks grown from it (armour_gen_editor hair, beard)
+          "hair": ("spine2", "head", "head", (), "head", "neck", (0, 0, 0, 0),
+                   dict(hair_style="short", hair_len=6, hair_vol=110, hair_n=240, hair_curl=10, hair_line=0, hair_flow="part", hair_lift=35,
+                        hair_color="#3b2618", material="cloth", surface="plain", trim="", straps=0, rigidity=1, wear=.05, gap=1, thickness=2)),
+          "beard": ("neck", "head", "head", (), "head", "neck", (0, 0, 0, 0),
+                    dict(beard_style="short", beard_len=2.5, beard_vol=100, beard_n=220, beard_curl=10,
+                         hair_color="#3b2618", material="cloth", surface="plain", trim="", straps=0, rigidity=1, wear=.05, gap=1, thickness=2)),
           # at the belt: a scabbard on a hip (rigid on the hips), a quiver on the back (on the chest's bone)
           "sheath": ("hips", "spine1", "hips", (), "hips", "held", (0, 0, 0, 0),
                      dict(sheath="scabbard", material="leather", trim="steel", tint="#4a2c18", cloth="#6b4a2a", straps=0, rigidity=1))}
@@ -126,6 +133,8 @@ SHEATHS = ("scabbard", "dagger", "quiver", "quiver_hip")
 CLOTHS = ("cloth_fitted", "cloth_shirt", "cloth_aketon", "cloth_gambeson", "cloth_doublet", "cloth_voider", "cloth_vest", "cloth_braies", "cloth_braies_long",
           "cloth_coif")
 GLOVES = ("glove_plain_leather", "glove_reinforced_leather", "glove_mail_mitten", "glove_hourglass", "glove_plate_mitten", "glove_hybrid")
+HAIRS = ("hair_crop", "hair_short", "hair_bob", "hair_long", "hair_back", "hair_mohawk")
+BEARDS = ("beard_stubble", "beard_short", "beard_full", "beard_long", "beard_goatee", "beard_mustache")
 HELMETS = ("kettle_hat", "open_bascinet", "barbute", "visored_bascinet", "sallet", "armet",
            "nasal_helm", "spangenhelm", "great_helm", "morion", "close_helm")   # (the last five: helmets_extra.py)
 FOOTWEAR = ("foot_leather_shoe", "foot_ankle_boot", "foot_mail_foot", "foot_round_sabaton", "foot_pointed_sabaton", "foot_hybrid_boot")
@@ -186,7 +195,7 @@ CHOICES = {"opening_labels": ("none", "left", "right", "back", "front"), "closur
            "style_labels": ("leather", "steel", "mail", "splints", "covered", "plate_mail", "lamellar", "brigandine", "tights", "wool", "leather_tr",
                             "mail_chausses", "plate_cuisses", "hidden_plate", "plate_and_mail", "compact", "extended", "carrier",
                             "short_mail", "wrap_mail", "carrier_mail", "lames", *HELMETS, *ELBOWS, *POLEYNS, "cod_plate", "cod_leather", "cod_cloth", "rondel_plain", "rondel_spike", "rondel_fluted", "ailette_square", "ailette_shield", "hauberk_long", "haubergeon", "coif_short", "coif_long", *FOOTWEAR, *GLOVES, *CLOTHS,
-                            *(f"weapon_{w}" for w in WEAPONS), *(f"weapon_bow_{b}" for b in BOWS), *(f"shield_{x}" for x in SHIELDS), *(f"sheath_{x}" for x in SHEATHS)),
+                            *(f"weapon_{w}" for w in WEAPONS), *(f"weapon_bow_{b}" for b in BOWS), *(f"shield_{x}" for x in SHIELDS), *(f"sheath_{x}" for x in SHEATHS), *HAIRS, *BEARDS),
            "thigh_labels": ("none", "mail", "plate", "panels", "plate_mail"), "knee_labels": ("none", "patch", "cop")}
 
 
