@@ -32,7 +32,11 @@ def node_mat(name, spec, R, job, pattern=None, unit=1.0):
     vor = N("ShaderNodeTexVoronoi"); vor.inputs["Scale"].default_value = 9 if kind == "metal" else 28
     for t in (big, fine, vor):
         L(mp.outputs[0], t.inputs[0])
-    dark = tuple(c * (.38 if kind == "metal" else .55) for c in col)   # dirt and tarnish
+    hair = kind == "hair"   # (hair: its colour even - no dirt blotches, no scuffs, no grain; the strands' pattern is its relief)
+    if hair:
+        big.inputs["Scale"].default_value = 4
+        wear = 0.0
+    dark = tuple(c * (.38 if kind == "metal" else .85 if hair else .55) for c in col)   # dirt and tarnish
     mix1 = N("ShaderNodeMix"); mix1.data_type = "RGBA"
     mix1.inputs[6].default_value = (*col, 1); mix1.inputs[7].default_value = (*dark, 1)
     L(big.outputs["Fac"], mix1.inputs[0])
@@ -102,7 +106,7 @@ def node_mat(name, spec, R, job, pattern=None, unit=1.0):
     if "metal" in timg:
         L(timg["metal"].outputs[0], bsdf.inputs["Metallic"])
     bump = N("ShaderNodeBump")   # hammered (as much as «hammer» says; 0 polished) / grain
-    bump.inputs["Strength"].default_value = 1.2 * float(spec.get("bump", .5)) if kind == "metal" else .55
+    bump.inputs["Strength"].default_value = 1.2 * float(spec.get("bump", .5)) if kind == "metal" else .05 if hair else .55
     bump.inputs["Distance"].default_value = .02 * R
     L(vor.outputs["Distance"], bump.inputs["Height"])
     normal = bump.outputs[0]
