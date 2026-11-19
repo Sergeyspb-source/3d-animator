@@ -4149,21 +4149,23 @@ function armsOffBody() {
 // ------------------------------------------------------------------ hair and beards: a base on the skin (the scalp, the
 // chin and the jaw) and locks over it - tapered, a little flattened ribbons grown from the skin along the style's way,
 // kept off the head and the shoulders, each with the weights of the skin it grows from (a beard's with the jaw)
-const HAIR_STYLES = {   // len: % of the height; flow: back | part (falling to the sides) | up; lift: how far they stand off at the root
-  hair_crop: { hair_style: 'crop', hair_len: 3, hair_vol: 90, hair_n: 260, hair_curl: 0, hair_line: 0, hair_flow: 'back', hair_lift: 30 },
-  hair_short: { hair_style: 'short', hair_len: 6, hair_vol: 110, hair_n: 240, hair_curl: 10, hair_line: 0, hair_flow: 'part', hair_lift: 35 },
-  hair_bob: { hair_style: 'bob', hair_len: 12, hair_vol: 120, hair_n: 260, hair_curl: 5, hair_line: 0, hair_flow: 'part', hair_lift: 25 },
-  hair_long: { hair_style: 'long', hair_len: 24, hair_vol: 120, hair_n: 300, hair_curl: 15, hair_line: 0, hair_flow: 'part', hair_lift: 20 },
-  hair_back: { hair_style: 'back', hair_len: 16, hair_vol: 110, hair_n: 280, hair_curl: 0, hair_line: 0, hair_flow: 'back', hair_lift: 20 },
-  hair_mohawk: { hair_style: 'mohawk', hair_len: 8, hair_vol: 120, hair_n: 160, hair_curl: 0, hair_line: 0, hair_flow: 'up', hair_lift: 90 },
+const HAIR_STYLES = {   // after the reference pictures (an image model's, on this kind of head): len % of the height; flow:
+  // back (combed back), brush (up and back from the forehead), fall (down from the crown), part (down to the sides of a
+  // middle parting), up (a crest); cut: where it ends (the jaw for a bob); fringe: the front falls to the brows
+  hair_crop: { hair_style: 'crop', hair_len: 3.5, hair_vol: 130, hair_n: 260, hair_curl: 0, hair_line: 0, hair_flow: 'brush', hair_lift: 60 },
+  hair_short: { hair_style: 'short', hair_len: 6, hair_vol: 150, hair_n: 240, hair_curl: 15, hair_line: 0, hair_flow: 'brush', hair_lift: 80 },
+  hair_bob: { hair_style: 'bob', hair_len: 14, hair_vol: 150, hair_n: 300, hair_curl: 0, hair_line: -10, hair_flow: 'fall', hair_lift: 30 },
+  hair_long: { hair_style: 'long', hair_len: 26, hair_vol: 140, hair_n: 320, hair_curl: 10, hair_line: 0, hair_flow: 'part', hair_lift: 20 },
+  hair_back: { hair_style: 'back', hair_len: 10, hair_vol: 140, hair_n: 260, hair_curl: 0, hair_line: 0, hair_flow: 'back', hair_lift: 55 },
+  hair_mohawk: { hair_style: 'mohawk', hair_len: 8, hair_vol: 230, hair_n: 34, hair_curl: 0, hair_line: 0, hair_flow: 'up', hair_lift: 100 },
 };
 const BEARD_STYLES = {
   beard_stubble: { beard_style: 'stubble', beard_len: 0, beard_vol: 100, beard_n: 0, beard_curl: 0 },
-  beard_short: { beard_style: 'short', beard_len: 2.5, beard_vol: 100, beard_n: 220, beard_curl: 10 },
-  beard_full: { beard_style: 'full', beard_len: 6, beard_vol: 120, beard_n: 260, beard_curl: 20 },
-  beard_long: { beard_style: 'long', beard_len: 14, beard_vol: 120, beard_n: 280, beard_curl: 25 },
-  beard_goatee: { beard_style: 'goatee', beard_len: 5, beard_vol: 100, beard_n: 120, beard_curl: 10 },
-  beard_mustache: { beard_style: 'mustache', beard_len: 4, beard_vol: 90, beard_n: 70, beard_curl: 0 },
+  beard_short: { beard_style: 'short', beard_len: 1.6, beard_vol: 90, beard_n: 320, beard_curl: 15 },
+  beard_full: { beard_style: 'full', beard_len: 5, beard_vol: 130, beard_n: 280, beard_curl: 30 },
+  beard_long: { beard_style: 'long', beard_len: 12, beard_vol: 130, beard_n: 300, beard_curl: 25 },
+  beard_goatee: { beard_style: 'goatee', beard_len: 4, beard_vol: 110, beard_n: 140, beard_curl: 15 },
+  beard_mustache: { beard_style: 'mustache', beard_len: 4.5, beard_vol: 130, beard_n: 90, beard_curl: 0 },
 };
 const HAIR_COLOURS = ['#1b1512', '#3b2618', '#5a3a22', '#7a4a2a', '#a8763e', '#d2b47a', '#8c3a1e', '#b04a22', '#8a8580', '#d8d4cc'];
 function hairRand(seed) { let x = (seed * 2654435761) >>> 0 || 1; return () => ((x ^= x << 13, x ^= x >>> 17, x ^= x << 5) >>> 0) / 4294967296; }
@@ -4191,11 +4193,11 @@ function growLocks(acc, F, roots, L, w0, o) {
     const len = dv.length(); if (len < 1e-6) return pt;
     dv.multiplyScalar(1 / len);
     const h = cast(c, dv, HEIGHT); if (!h) return pt;
-    const need = h.distance + gap + layer;
-    return len < need ? c.clone().addScaledVector(dv, need) : pt;
+    const need = h.distance + gap + layer, most = need + (o.stand ?? Infinity);
+    return len < need ? c.clone().addScaledVector(dv, need) : above && len > most ? c.clone().addScaledVector(dv, most) : pt;   // (and on the head: not standing far off it)
   };
   for (const [li, r] of roots.entries()) {
-    const Lr = L * (.75 + .5 * rnd()), wr = w0 * (.8 + .4 * rnd()), layer = (o.layer || 0) * rnd(), ph = rnd() * TAU, ph2 = rnd() * TAU;
+    const Lr0 = L * (.75 + .5 * rnd()), Lr = o.lenOf ? o.lenOf(r, Lr0) : Lr0, wr = w0 * (.8 + .4 * rnd()), layer = (o.layer || 0) * rnd(), ph = rnd() * TAU, ph2 = rnd() * TAU;
     const pts = [r.p.clone().addScaledVector(r.n, gap * .5)], dirs = [];
     let cur = pts[0].clone();
     for (let k = 1; k <= segs; k++) {
@@ -4205,7 +4207,9 @@ function growLocks(acc, F, roots, L, w0, o) {
         side.crossVectors(dir, r.n); if (side.lengthSq() < 1e-8) side.set(1, 0, 0); side.normalize();
         dir.addScaledVector(side, curl * Math.sin(ph + t * 7.5)).addScaledVector(r.n, .4 * curl * Math.sin(ph2 + t * 6)).normalize();
       }
-      cur = outOf(cur.clone().addScaledVector(dir, Lr / segs), layer * t);
+      cur = outOf(cur.clone().addScaledVector(dir, Lr / segs), layer * Math.min(1, 2.5 * t));
+      if (o.cut) { const yc = o.cut(r); if (cur.y < yc) cur.y = yc + (cur.y - yc) * .15; }   // (a cut: the lock ends at that height, curling in a little)
+      if (o.faceOut) cur = o.faceOut(cur, r);
       pts.push(cur.clone());
     }
     // the ribbon: an ellipse across each point (flat side to the skin), tapering to the tip
@@ -4215,7 +4219,7 @@ function growLocks(acc, F, roots, L, w0, o) {
       dir.subVectors(b, a).normalize();
       nn.copy(r.n).addScaledVector(dir, -r.n.dot(dir)); if (nn.lengthSq() < 1e-8) nn.set(0, 1, 0); nn.normalize();
       side.crossVectors(dir, nn).normalize();
-      const t = k / segs, wk = wr * (1 - .85 * t ** 1.6), tk = wk * .5;
+      const t = k / segs, wk = wr * (t < .3 ? .7 + t : 1.0) * (1 - .9 * Math.max(0, (t - .3) / .7) ** 1.3), tk = wk * .55;   // (a leaf: widest a third along)
       const row = [];
       for (let j = 0; j < ring; j++) {
         const th = j / ring * TAU;
@@ -4249,33 +4253,67 @@ function rootsOn(S, sel, n, seed) {
 }
 function hair(p) {
   const F = headFrame(); if (!F) return [];
-  const { O, E, d, HJ, NK } = F, acc = new Acc(); acc.w = (q) => q.direct;
+  const { O, E, HJ, NK } = F, acc = new Acc(); acc.w = (q) => q.direct;
+  const d = .95 * F.halfAt(E.y);   // (the head's size: the skull's half width at the eyes - the head joint's place differs rig to rig)
   const H = HEIGHT, hb = boneNames.indexOf(PB.head.name), nb = PB.neck ? boneNames.indexOf(PB.neck.name) : hb, cb = PB.spine2 ? boneNames.indexOf(PB.spine2.name) : nb;
   // the scalp: the head's skin from the hairline up and back (the forehead, the temples above the ears, the nape), the
   // ears left out
   const yF = E.y + (.85 + (p.hair_line || 0) / 100) * d, yS = E.y + .35 * d, yB = O.y - 1.15 * d;
   const minY = (v) => { const az = Math.abs(Math.atan2(v.x - O.x, v.z - O.z)) / Math.PI, sm = (x) => x * x * (3 - 2 * x);
     return az < .5 ? yF + (yS - yF) * sm(az / .5) : yS + (yB - yS) * sm((az - .5) / .5); };
-  const mid = p.hair_flow === 'up' ? (v) => Math.abs(v.x - O.x) < .35 * d : () => true;
-  const keep = (v) => v.y > minY(v) && Math.abs(v.x - O.x) < 1.06 * F.halfAt(v.y) && mid(v);
-  keep.key = 'hair_' + (p.hair_line || 0) + '_' + p.hair_flow;
+  const mid = p.hair_flow === 'up' ? (v) => Math.abs(v.x - O.x) < .2 * F.halfAt(E.y) : () => true;
+  // (an ear: at the side and thin - a ray in towards the head's axis meets its other side at once; the crown's sides
+  // are not ears: the skull's width measured across at its height missed them, the cap had holes there)
+  const halfEye = F.halfAt(E.y), dirIn = new V3(), thin = (v) => {
+    dirIn.set(O.x - v.x, 0, O.z - v.z); const l = dirIn.length(); if (l < 1e-6) return false; dirIn.multiplyScalar(1 / l);
+    const h = cast(v.clone().addScaledVector(dirIn, MM(.5)), dirIn, .25 * d); return !!h; };
+  const ear = (v) => (Math.abs(v.x - O.x) > 1.02 * halfEye && v.y < E.y + 1.2 * halfEye) || (Math.abs(v.x - O.x) > .6 * halfEye && v.y < E.y + 1.6 * d && thin(v));
+  const keep = (v) => v.y > minY(v) && mid(v) && !ear(v);
+  // each ear's box (its skin): a lock coming to it goes behind it, as hair tucked behind the ears
+  const earKeep = Object.assign((v) => ear(v) && v.y > NK.y, { key: 'hair_ears' });
+  const ES = bodySkin(new Set(['head']), earKeep), boxes = [new THREE.Box3(), new THREE.Box3()];
+  for (const v of ES.pos) boxes[v.x > O.x ? 0 : 1].expandByPoint(v);
+  keep.key = 'hair2_' + (p.hair_line || 0) + '_' + p.hair_flow;
   const S0 = bodySkin(new Set(['head']), keep); if (!S0.tris.length) return [];
   const S = { ...S0, n: normalsOf(S0.pos, S0.tris) }, all = S.tris.map((_, t) => t);
   const R = .02 * H, gap = MM(1.5), U = .02 * H;
   const direct = (w) => w;   // the scalp's points: their own weights (the head)
   shellOf(acc, S, all, gap * .4, MM(2.2), PLATE, 'plate', (i) => ({ direct: direct(S.w[i]) }), null, 3);
-  const L = (p.hair_len || 0) / 100 * H, w0 = (p.hair_vol || 100) / 100 * .32 * d;
+  const L = (p.hair_len || 0) / 100 * H, w0 = (p.hair_vol || 100) / 100 * .2 * halfEye;   // (by the skull's width: the head joint's place differs from rig to rig)
   if (L > MM(4) && p.hair_n > 0) {
     const back = FRONT.clone().negate(), X = new V3(1, 0, 0);
+    const crown = O.clone().addScaledVector(UP, 1.1 * d).addScaledVector(back, .25 * d);   // the whorl, a little behind the top
+    const frontOf = (v) => v.clone().sub(O).dot(FRONT) / d;
+    const fringe = (r) => frontOf(r.p) > .3 && Math.abs(r.p.x - O.x) < .55 * halfEye;
     const way = (r, cur, t, out) => {
       const rel = cur.clone().sub(O), radial = rel.clone().normalize();
       let f;
-      if (p.hair_flow === 'up') f = r.n.clone().multiplyScalar(1.2).addScaledVector(back, .5);
-      else if (p.hair_flow === 'back') f = back.clone().multiplyScalar(1.0).addScaledVector(UP, -.35 - 1.2 * t * t);
-      else f = X.clone().multiplyScalar(Math.sign(cur.x - O.x || 1) * .9).addScaledVector(back, .25).addScaledVector(UP, -.4 - 1.6 * t);
-      if (L > .1 * H) f.addScaledVector(UP, -1.6 * t);   // long: it falls
+      const fl = p.hair_flow;
+      if (fl === 'up') f = r.n.clone().multiplyScalar(1.6).addScaledVector(back, .45 + .8 * Math.max(0, frontOf(r.p)));   // (the front spikes lean back too, not over the brow)
+      else if (fl === 'back') f = back.clone().addScaledVector(UP, -.2 - 1.4 * t * t);
+      else if (fl === 'brush') { const fr = Math.max(0, Math.min(1, frontOf(r.p) + .3)); f = back.clone().multiplyScalar(.8).addScaledVector(UP, .9 * fr - .5 * (1 - fr)).addScaledVector(X, .3 * Math.sign(r.p.x - O.x || 1)); }
+      else if (fl === 'fall') { f = cur.clone().sub(crown); f.y = Math.min(f.y, 0); f.normalize().addScaledVector(UP, -.6 - 1.4 * t);
+        if (!fringe(r) && frontOf(r.p) > .1) f.addScaledVector(X, .7 * Math.sign(r.p.x - O.x || 1)); }   // (by the temples: round the face)
+      else f = X.clone().multiplyScalar(Math.sign(cur.x - O.x || 1) * .55).addScaledVector(back, .3).addScaledVector(UP, -.9 - 1.6 * t);   // (a parting: down the sides, close to the head)
+      if (L > .1 * H && fl !== 'up') f.addScaledVector(UP, -1.4 * t);   // long: it falls
+      if (cur.y < NK.y + .3 * (O.y - NK.y)) f.addScaledVector(back, 1.2);   // (below the jaw: behind the shoulders, not over them)
+      if (p.hair_style !== 'bob') for (const b of boxes) {   // (coming to an ear: steered behind it, as hair tucked behind the ears)
+        if (b.isEmpty() || (cur.x - O.x) * (b.max.x - O.x) <= 0 || Math.abs(cur.x - O.x) < .7 * halfEye) continue;
+        if (cur.y < b.max.y + .3 * halfEye && cur.y > b.min.y - .2 * halfEye && cur.z > b.min.z - .3 * halfEye) f.addScaledVector(back, 2.5).addScaledVector(UP, -.5);
+      }
       f.addScaledVector(radial, -f.dot(radial) * (1 - (p.hair_lift || 30) / 100 * (1 - t)));   // along the head, standing off at the root
+      if (fl === 'brush') f.normalize().addScaledVector(r.n, 1.1 * (p.hair_lift || 30) / 100 * (1 - t) ** 1.5);   // (a short cut's volume: it rises off the head)
       out.copy(f.normalize());
+    };
+    // a bob ends at the jaw (its fringe at the brows); long hair at its length
+    const yJaw = E.y - 1.05 * d, yBrow = E.y + .3 * d;
+    // (a bob: each lock as long as reaches its line - the fringe the brows, the rest the jaw - not cut there: cut, it ran on
+    // along the line across the face)
+    const lenOf = p.hair_style === 'bob' ? (r, Lr) => Math.max(.3 * Lr, Math.min(Lr, 1.15 * (r.p.y - (fringe(r) ? yBrow : yJaw)))) : null;
+    const cut = null;
+    // the face clear: a lock coming down in front of it (below the brows, between the temples) goes to its side
+    const faceOut = (pt, r) => {
+      return pt;
     };
     const wOf = (r, t, pt) => {   // hanging below the neck: more and more with the neck and the chest
       const k = Math.max(0, Math.min(1, (O.y - .6 * d - pt.y) / (.18 * H)));
@@ -4283,7 +4321,8 @@ function hair(p) {
       return [[hb, nb, cb, hb], [1 - k, k * .6, k * .4, 0]];
     };
     const roots = rootsOn(S, all, Math.round(p.hair_n), p.seed || 1);
-    growLocks(acc, F, roots, L, w0, { gap, curl: (p.hair_curl || 0) / 100 * .5, layer: .25 * w0, way, wOf, mat: PLATE, role: 'plate', U, seed: p.seed || 1 });
+    growLocks(acc, F, roots, L, w0, { gap, curl: (p.hair_curl || 0) / 100 * .5, layer: (p.hair_flow === 'brush' ? 1.1 : .5) * w0, way, wOf, mat: PLATE, role: 'plate', U, seed: p.seed || 1, cut, faceOut, lenOf,
+      stand: p.hair_flow === 'up' ? Infinity : (.3 + (p.hair_flow === 'brush' ? 1.6 : .6) * (p.hair_lift || 30) / 100) * w0 });
   }
   return [{ side: 'C', acc, R, mask: S0.keys }];   // (the scalp under its base hidden: a bump of the skin would come through it)
 }
@@ -4309,34 +4348,53 @@ function beard(p) {
   let iM;
   if (peaks.length >= 2) { iM = peaks[0]; for (let i = peaks[0]; i <= peaks[1]; i++) if (prof[i][1] < prof[iM][1]) iM = i; }
   else iM = peaks.length ? peaks[0] : iN + Math.round(.45 * (iC - iN));
-  const yN = prof[iN][0] - .12 * d, yM = prof[iM][0], yC = prof[iC][0], lip = .12 * d, earX = (y) => .92 * F.halfAt(y);
-  const lips = (v) => Math.abs(v.y - yM) < lip && Math.abs(v.x - O.x) < .34 * d;
-  const below = (v) => v.y < yM - lip && v.y > NK.y - .05 * d && front(v) > -.1 * d && Math.abs(v.x - O.x) < earX(v.y);
-  const cheeks = (v) => v.y < yN - .1 * d && Math.abs(v.x - O.x) > .3 * d && front(v) > -.1 * d && Math.abs(v.x - O.x) < earX(v.y) && v.y > NK.y;
-  const lipTop = (v) => v.y > yM + .5 * lip && v.y < yN && front(v) > .2 * d && Math.abs(v.x - O.x) < .45 * d;
+  let yN = prof[iN][0] - .12 * d, yM = prof[iM][0], yC = prof[iC][0], lip = .12 * d, lipUp = lip, lipDn = lip, mw = .34 * d, mx = O.x;
+  const earX = (y) => .92 * F.halfAt(y);
+  // the face's markup when it has one (the mouth's middle, its corners, the lips' top and bottom): the mouth from it
+  const fm = DATA.face || {}, mk = (k) => (Array.isArray(fm[k]) && fm[k].length === 3 ? new V3(...fm[k]) : null);
+  const mc = mk('mouth_c'), cL = mk('mouth_corner_L'), cR = mk('mouth_corner_R'), lt = mk('lip_top'), lb = mk('lip_bot');
+  if (mc && cL && cR) {
+    yM = mc.y; mx = mc.x; mw = .55 * cL.distanceTo(cR) + .04 * d;
+    lipUp = lt ? Math.max(.03 * d, lt.y - mc.y) * 1.25 : lip; lipDn = lb ? Math.max(.03 * d, mc.y - lb.y) * 1.25 : lip;
+    yN = Math.min(yN, yM + lipUp + .55 * d);   // (the nose's base: not far over the upper lip)
+  }
+  // the regions by the mouth's own measures (its width u, the lips' height, its front): the same on any head
+  const u = mc && cL && cR ? cL.distanceTo(cR) : .7 * d, fM = mc ? front(mc) : prof[iM][1];
+  const lips = (v) => v.y < yM + lipUp && v.y > yM - lipDn && Math.abs(v.x - mx) < mw;
+  const near = (v, k) => front(v) > fM - k * u;   // (no further back than k mouth widths behind the mouth's front)
+  const below = (v) => v.y < yM - lipDn && v.y > NK.y + .15 * d && near(v, 1.6) && Math.abs(v.x - O.x) < earX(v.y);
+  const yTop = yM + .55 * (E.y - yM);   // (nothing above half way from the mouth to the eyes: the cheekbones, the nose stay bare)
+  const cheeks = (v) => v.y < Math.min(yTop, yM + .45 * u) && v.y > yM - 2 * u && Math.abs(v.x - mx) > .55 * u && near(v, 1.3) && Math.abs(v.x - O.x) < .95 * F.halfAt(E.y);
+  const lipTop = (v) => v.y > yM + .6 * lipUp && v.y < Math.min(yTop, yM + lipUp + .28 * u) && near(v, .45) && Math.abs(v.x - mx) < 1.25 * mw;
   const region = {   // where it grows (the face's skin)
     stubble: (v) => !lips(v) && (below(v) || cheeks(v) || lipTop(v)),
-    short: (v) => !lips(v) && (below(v) || cheeks(v)),
+    short: (v) => !lips(v) && (below(v) || cheeks(v) || lipTop(v)),
     full: (v) => !lips(v) && (below(v) || cheeks(v) || lipTop(v)),
     long: (v) => !lips(v) && (below(v) || cheeks(v) || lipTop(v)),
-    goatee: (v) => !lips(v) && ((below(v) && Math.abs(v.x - O.x) < .3 * d && v.y > yC - .3 * d) || lipTop(v)),
+    goatee: (v) => !lips(v) && ((below(v) && Math.abs(v.x - mx) < 1.1 * mw && v.y > yC - .3 * d) || lipTop(v)),
     mustache: lipTop,
   };
+  window.agBeard = { yM, lipUp, lipDn, mw, mx, u, yTop, yN, Ey: E.y, marks: !!mc, mc: mc && mc.toArray(), lt: lt && lt.toArray(), lb: lb && lb.toArray() };   // (the tests)
   const reg = region[st] || region.stubble;
-  const keep = (v) => reg(v); keep.key = 'beard_' + st;
+  const keep = (v) => reg(v); keep.key = 'beard2_' + st + '_' + Math.round(yM * 1e4);
   const S0 = bodySkin(new Set(['head', 'neck']), keep); if (!S0.tris.length) return [];
   const S = { ...S0, n: normalsOf(S0.pos, S0.tris) }, all = S.tris.map((_, t) => t);
   const gap = MM(1), U = .02 * H;
-  shellOf(acc, S, all, gap * .3, MM(st === 'stubble' ? .8 : 1.6), PLATE, 'plate', (i) => ({ direct: S.w[i] }), null, 3);
-  const L = (p.beard_len || 0) / 100 * H, w0 = (p.beard_vol || 100) / 100 * .2 * d;
+  shellOf(acc, S, all, gap * .3, MM(st === 'stubble' ? .8 : 1.6), PLATE, 'plate', (i) => ({ direct: S.w[i] }), null, 0);   // (its edge as the skin's: smoothed, the hole round the lips closed over them)
+  const L = (p.beard_len || 0) / 100 * H, w0 = (p.beard_vol || 100) / 100 * .14 * F.halfAt(E.y);
   if (st !== 'stubble' && L > MM(3) && p.beard_n > 0) {
     const way = (r, cur, t, out) => {
-      if (st === 'mustache' || (r.p.y > yM && st !== 'stubble')) { const sx = Math.sign(r.p.x - O.x || 1); out.set(sx, 0, 0).addScaledVector(UP, -.55 - .6 * t).addScaledVector(FRONT, .25).normalize(); return; }
-      out.copy(UP).multiplyScalar(-1).addScaledVector(FRONT, .55 - .5 * t).addScaledVector(r.n, .35 * (1 - t)).normalize();
+      if (st === 'mustache' || (r.p.y > yM && st !== 'stubble')) {   // (a moustache: out to the sides; in a beard it goes down into it)
+        const sx = Math.sign(r.p.x - O.x || 1);
+        out.set(sx, 0, 0).addScaledVector(UP, -(.55 + .7 * t)).addScaledVector(FRONT, .25).normalize(); return; }
+      out.copy(UP).multiplyScalar(-1).addScaledVector(FRONT, .55 - .5 * t).addScaledVector(r.n, .35 * (1 - t));
+      if (st === 'long' || st === 'full') out.addScaledVector(new V3(mx - cur.x, 0, 0), (st === 'long' ? 5 : 2) * t / d);   // (gathered to a point below the chin)
+      out.normalize();
     };
     const wOf = (r) => r.w;   // (with the skin it grows from: the jaw's moves with the jaw)
     growLocks(acc, F, rootsOn(S, all, Math.round(p.beard_n), (p.seed || 1) + 3), L, w0,
-      { gap, curl: (p.beard_curl || 0) / 100 * .5, layer: .2 * w0, way, wOf, mat: PLATE, role: 'plate', U, seed: (p.seed || 1) + 3 });
+      { gap, curl: (p.beard_curl || 0) / 100 * .5, layer: .5 * w0, way, wOf, mat: PLATE, role: 'plate', U, seed: (p.seed || 1) + 3,
+        lenOf: st === 'mustache' ? null : (r, Lr) => (r.p.y > yM ? Math.min(Lr, 1.2 * mw) : Lr) });   // (a beard's moustache: to the mouth's corners)
   }
   return [{ side: 'C', acc, R: .02 * H, mask: S0.keys }];
 }

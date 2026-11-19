@@ -589,6 +589,14 @@ def _poses(rigged: Path) -> dict:
         return {}
 
 
+def _face_marks(rigged: Path) -> dict:
+    """The face's markup (the mouth, its corners, the lips, the eyes) where the character has one: beards go by it."""
+    try:
+        return (LM.rig_face_state(rigged) or {}).get("face") or {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
 def editor_page(rigged: Path, decals_dir: Path | None = None) -> str:
     page = i18n.fill(EDITOR.read_text(encoding="utf-8"))
     data = {"rigged": rigged.resolve().as_posix(), "rigged_v": int(rigged.stat().st_mtime), "stem": LM._stem(rigged),
@@ -602,7 +610,7 @@ def editor_page(rigged: Path, decals_dir: Path | None = None) -> str:
             "decals": decals(decals_dir) if decals_dir else [], "decals_dir": decals_dir.resolve().as_posix() if decals_dir else "",
             "materials_dir": (decals_dir.parent / "materials").resolve().as_posix() if decals_dir else "",   # the library's downloads
             "concepts_dir": (decals_dir.parent / "concepts").resolve().as_posix() if decals_dir else "",   # «Texture from a picture»'s pictures
-            "fist": LM.fist_hand(rigged), "web": web_assets(), "poses": _poses(rigged),
+            "fist": LM.fist_hand(rigged), "web": web_assets(), "poses": _poses(rigged), "face": _face_marks(rigged),
             "gen_labels": {k: _t(f"ag.gen_{k}") for k in GEN_WORDS},
             "proj_views": {k: _t(f"ag.proj_{k}") for k in ("front", "back", "left", "right")},
             "lib_slots": {k: _t(f"ag.lib_slot_{k}") for k in ("plate", "strap", "detail", "mail", "quilt", "trim", "wood")},
