@@ -4251,6 +4251,123 @@ function rootsOn(S, sel, n, seed) {
   }
   return out;
 }
+
+// a hairstyle as one sculpted mass (as the hero's own hair, the references' sculpts): columns from the style's pole (the
+// crown; the forehead for hair combed back) down over the skull at the hair's thickness, on as a hanging curtain where
+// the style hangs (a bob to the jaw, long hair behind the ears and the shoulders); clumps as ridges along the columns,
+// their tips pointed; the strands a texture along them. Its surface is one sheet (no gaps), given a thickness by shellOf.
+function hairShell(p, F, ctx) {
+  const { O, E, NK } = F, { d, halfEye, keep, boxes, hb, nb, cb, acc, H } = ctx;
+  const back = FRONT.clone().negate(), X = new V3(1, 0, 0), st = p.hair_style;
+  const frontOf = (v) => v.clone().sub(O).dot(FRONT) / d;
+  const pole = (p.hair_flow === 'back' ? FRONT.clone().multiplyScalar(.4).addScaledVector(UP, .92) : UP.clone().addScaledVector(back, .28)).normalize();
+  const b1 = new V3().crossVectors(pole, X).normalize(), b2 = new V3().crossVectors(pole, b1).normalize();
+  const T = (p.hair_vol || 100) / 100 * .16 * halfEye * Math.min(1.6, .4 + .1 * (p.hair_len || 6));   // the mass's thickness over the skull (a longer cut: fuller)
+  const L = (p.hair_len || 0) / 100 * H, yJaw = E.y - 1.05 * d, yBrow = E.y + .32 * d;
+  const hang = st === 'bob' || st === 'long', K = Math.max(8, Math.round((p.hair_n || 200) / 18)), NJ = 10 * K;   // K clumps round
+  const ds = .045 * halfEye, U = (p.cell || 3) / 1000 * HEIGHT * 8, rnd = hairRand(p.seed || 1);
+  const clumpPh = Array.from({ length: K }, () => rnd()), clumpL = Array.from({ length: K }, () => .8 + .4 * rnd());
+  const clump = (phi) => { const f = phi / TAU * K + .35 * Math.sin(phi * 3 + clumpPh[0] * 6), k = ((Math.floor(f) % K) + K) % K, fr = f - Math.floor(f); return { k, fr, ridge: Math.sin(Math.PI * fr) ** .7 }; };   // (0 at a clump's edge, 1 at its middle)
+  const cols = [];
+  for (let j = 0; j < NJ; j++) {
+    const phi = j / NJ * TAU, c = clump(phi), side = b1.clone().multiplyScalar(Math.cos(phi)).addScaledVector(b2, Math.sin(phi));
+    const pts = [], ws = [], arc = [];
+    let s = 0, prev = null, last = null, lastDir = null;
+    // over the skull: the scalp under it (the first skin from the head's middle), out by the thickness
+    let started = false;
+    for (let th = 0; th < Math.PI * .95; th += .025) {
+      const dir = pole.clone().multiplyScalar(Math.cos(th)).addScaledVector(side, Math.sin(th)).normalize();
+      const h = cast(O, dir, H); if (!h) break;
+      const S = h.point;
+      const fringe = st === 'bob' && frontOf(S) > .3 && Math.abs(S.x - O.x) < .55 * halfEye;
+      if (!keep(S) && !(fringe && S.y > yBrow)) { if (started) break; continue; }
+      started = true;
+      // tufts in tiers, each over the one below (as the hero's hair): the clumps shift by half a clump from tier to tier,
+      // each tier fuller at its lower end
+      const band = Math.floor(th / .3), tb = th / .3 - band, cr = clump(phi + band * Math.PI / K).ridge;
+      const tiers = hang ? 1 : .7 + .3 * tb;
+      const thick = T * (.55 + .45 * Math.cos(th * .8)) * (1 + (p.hair_lift || 30) / 100 * .8 * Math.max(0, frontOf(S) + .2)) * (.5 + .5 * (hang ? c.ridge : cr)) * tiers;
+      const q = S.clone().addScaledVector(dir, MM(1) + thick);
+      if (prev) s += q.distanceTo(prev);
+      pts.push(q); arc.push(s); ws.push(null); prev = q; last = S; lastDir = dir;
+    }
+    if (!last) { cols.push(null); continue; }
+    // the ends past the hairline (not where it hangs on): each clump to a point, as cut hair lies, down along the skin
+    // (a bob's fringe: the front columns on down the forehead to the brows)
+    const fringeCol = st === 'bob' && frontOf(last) > .25 && Math.abs(last.x - O.x) < .6 * halfEye;
+    const tipL = fringeCol ? Math.max(0, prev.y - yBrow) * 1.6 : (st === 'bob' || st === 'long' ? 0 : 1) * Math.min(.45 * halfEye, .06 * L + .08 * halfEye) * c.ridge * clumpL[c.k];
+    if (tipL > 0) {
+      const down = lastDir.clone(), ex = prev.clone();
+      for (let tS = 0; tS < tipL && !(fringeCol && ex.y < yBrow); tS += ds) {
+        down.addScaledVector(UP, -.15).normalize();
+        const nx = ex.clone().addScaledVector(down, ds), hh = cast(O, nx.clone().sub(O).normalize(), H);
+        const need = hh ? hh.distance + MM(1) + T * (fringeCol ? .6 : .5 * (1 - tS / tipL)) : 0, len = nx.distanceTo(O);
+        const q = len < need ? O.clone().addScaledVector(nx.clone().sub(O).normalize(), need) : nx;
+        s += q.distanceTo(ex); ex.copy(q); pts.push(q.clone()); arc.push(s); ws.push(null);
+      }
+      prev = ex.clone();
+    }
+    // hanging on: down from where the scalp ends, off the neck and the shoulders, behind the ears (long hair)
+    const front = frontOf(last) > .25 && Math.abs(last.x - O.x) < .8 * halfEye;
+    if (hang && !front) {
+      const yEnd = st === 'bob' ? yJaw : -Infinity, Lh = st === 'bob' ? Infinity : L * clumpL[c.k] * (.8 + .3 * c.ridge);
+      let cur = prev.clone(), hs = 0;
+      const gapH = .6 * T;
+      for (let n = 0; n < 120 && hs < Lh && cur.y > yEnd; n++) {
+        const dv = new V3(0, -1, 0);
+        if (st === 'long' && cur.y < F.O.y - .4 * d) dv.addScaledVector(back, .35);
+        for (const b of boxes) if (!b.isEmpty() && (cur.x - O.x) * (b.max.x - O.x) > 0 && Math.abs(cur.x - O.x) > .6 * halfEye
+          && cur.y < b.max.y + .2 * halfEye && cur.y > b.min.y - .2 * halfEye && cur.z > b.min.z - .3 * halfEye) dv.addScaledVector(back, 1.5);
+        dv.normalize();
+        // down, sliding along the skin it meets (the shoulders, the back), kept off it by the hair's thickness
+        for (let k = 0; k < 3; k++) {
+          const h = cast(cur, dv, ds + gapH);
+          if (!h || !h.face) break;
+          const nrm = h.face.normal.clone().normalize(); if (nrm.dot(dv) > 0) nrm.negate();
+          dv.addScaledVector(nrm, -dv.dot(nrm)).addScaledVector(nrm, .15).normalize();
+        }
+        const nx = cur.clone().addScaledVector(dv, ds);
+        hs += ds; s += ds; cur = nx;
+        pts.push(cur.clone()); arc.push(s); ws.push(Math.max(0, Math.min(1, (O.y - .6 * d - cur.y) / (.18 * H))));
+      }
+    }
+    cols.push({ pts, arc, ws, phi, ridge: c.ridge });
+  }
+  window.agHairDbg = { yBrow: +((yBrow - O.y) / halfEye).toFixed(2), eye: +((E.y - O.y) / halfEye).toFixed(2), d: +(d / halfEye).toFixed(2),
+    front: cols.filter(Boolean).filter((c) => Math.cos(c.phi) < -.95).map((c) => ({ phi: +c.phi.toFixed(2), n: c.pts.length,
+      yMin: +((Math.min(...c.pts.map((q) => q.y)) - O.y) / halfEye).toFixed(2), fz: +(Math.max(...c.pts.map((q) => (q.z - O.z))) / halfEye).toFixed(2) })).slice(0, 8) };   // (the tests)
+  // the sheet: rows at the same arc length in every column (a face's opening, a bob's ends: steps closed by fans)
+  const pos = [], uv = [], wv = [], tris = [], idx = cols.map(() => []);
+  const hw = [[hb, hb, hb, hb], [1, 0, 0, 0]];
+  cols.forEach((c, j) => {
+    if (!c) return;
+    const m = c.arc[c.arc.length - 1];
+    for (let sv = 0, k = 0; ; sv += ds, k++) {
+      const a = Math.min(sv, m);
+      let i = 0; while (i < c.arc.length - 1 && c.arc[i + 1] < a) i++;
+      const t = i < c.arc.length - 1 ? (a - c.arc[i]) / Math.max(1e-9, c.arc[i + 1] - c.arc[i]) : 0;
+      const q = i < c.arc.length - 1 ? c.pts[i].clone().lerp(c.pts[i + 1], t) : c.pts[i].clone();
+      const wk = c.ws[i] ?? 0;
+      idx[j].push(pos.length); pos.push(q); uv.push([c.phi / TAU * 2 * Math.PI * halfEye / U, a / U]);
+      wv.push(wk > 0 ? [[hb, nb, cb, hb], [1 - wk, wk * .6, wk * .4, 0]] : hw);
+      if (a >= m) break;
+    }
+  });
+  for (let j = 0; j < NJ; j++) {
+    const A = idx[j], B = idx[(j + 1) % NJ]; if (!A.length || !B.length) continue;
+    const n = Math.min(A.length, B.length);
+    for (let k = 0; k < n - 1; k++) tris.push([A[k], B[k], B[k + 1]], [A[k], B[k + 1], A[k + 1]]);
+    // (the longer column's rest: a fan to the shorter one's end - small steps only: past them the edge stays open, a
+    // curtain's side, a clump's point; fanned, it spread a sheet from the shoulders up to the face)
+    const [Lc, Sc, flip] = A.length > B.length ? [A, B, false] : [B, A, true];
+    if (Lc.length - n <= 3) for (let k = n - 1; k < Lc.length - 1; k++) tris.push(flip ? [Lc[k + 1], Lc[k], Sc[n - 1]] : [Lc[k], Lc[k + 1], Sc[n - 1]]);
+  }
+  if (!tris.length) return null;
+  // pointed ends: the last rows of each column drawn in to its clump's middle
+  const G = { pos, tris, n: normalsOf(pos, tris) };
+  shellOf(acc, G, tris.map((_, t) => t), 0, Math.max(MM(1.5), .25 * T), PLATE, 'plate', (i) => ({ direct: wv[i] }), null, 0, (q, nn, i) => uv[i]);
+  return true;
+}
 function hair(p) {
   const F = headFrame(); if (!F) return [];
   const { O, E, HJ, NK } = F, acc = new Acc(); acc.w = (q) => q.direct;
@@ -4280,7 +4397,10 @@ function hair(p) {
   const direct = (w) => w;   // the scalp's points: their own weights (the head)
   shellOf(acc, S, all, gap * .4, MM(2.2), PLATE, 'plate', (i) => ({ direct: direct(S.w[i]) }), null, 3);
   const L = (p.hair_len || 0) / 100 * H, w0 = (p.hair_vol || 100) / 100 * .2 * halfEye;   // (by the skull's width: the head joint's place differs from rig to rig)
-  if (L > MM(4) && p.hair_n > 0) {
+  if (L > MM(4) && p.hair_n > 0 && p.hair_flow !== 'up') {   // (a mass, sculpted: the hero's way)
+    const hb = boneNames.indexOf(PB.head.name), nb = PB.neck ? boneNames.indexOf(PB.neck.name) : hb, cb = PB.spine2 ? boneNames.indexOf(PB.spine2.name) : nb;
+    hairShell(p, F, { d, halfEye, keep, boxes, hb, nb, cb, acc, H });
+  } else if (L > MM(4) && p.hair_n > 0) {
     const back = FRONT.clone().negate(), X = new V3(1, 0, 0);
     const crown = O.clone().addScaledVector(UP, 1.1 * d).addScaledVector(back, .25 * d);   // the whorl, a little behind the top
     const frontOf = (v) => v.clone().sub(O).dot(FRONT) / d;
@@ -4901,6 +5021,10 @@ function patternTile(kind) {
     } else if (kind === 'quilt') {   // diamonds sewn through: puffed between the seams
       const a = (u + v) / 2, b = (u - v) / 2, da = Math.abs(a - Math.round(a)), db = Math.abs(b - Math.round(b)), m = Math.min(da, db);
       hh = smooth(0, .5, m) ** .6; gg = m < .03 ? .5 : .62 + .38 * hh;
+    } else if (kind === 'hair') {   // strands along v: fine ridges, each a little wavy, darker between them
+      const k = u * 3 + .18 * Math.sin(v * .9 + Math.floor(u * 3) * 1.7) + .08 * Math.sin(v * 3.1 + u * 5);
+      const m = Math.abs(k - Math.round(k)), n2 = .5 + .5 * Math.sin(Math.floor(u * 3) * 12.9898 + 4.1);
+      hh = (1 - smooth(0, .5, m)) * (.6 + .4 * n2); gg = .55 + .45 * hh;
     } else if (kind === 'channels') {   // channels sewn along, two cells wide: puffed between the seams
       const m = Math.abs(u / 2 - Math.round(u / 2));
       hh = smooth(0, .5, m) ** .6; gg = m < .02 ? .5 : .62 + .38 * hh;
@@ -5128,7 +5252,7 @@ function lookSpecs(p) {   // the seven materials as Blender bakes them (blender_
   const hairy = ['hair', 'beard'].includes(S.piece);
   const clothSpec = { kind: 'leather', col: cloth, spot: hairy ? cloth : scuff(cloth), rough: hairy ? .7 : .9, metal: 0 };   // (hair: one colour, a little sheen)
   const wood = PRESETS.wood ? [...PRESETS.wood[0]] : [.24, .14, .07];
-  const plate = p.material === 'leather' ? { kind: 'leather', col: leather, spot: scuff(leather), rough: .72, metal: 0 }
+  const plate = hairy ? { ...clothSpec, pattern: 'hair' } : p.material === 'leather' ? { kind: 'leather', col: leather, spot: scuff(leather), rough: .72, metal: 0 }
     : p.material === 'cloth' ? { ...clothSpec } : p.material === 'wood' ? { kind: 'leather', col: wood, spot: scuff(wood), rough: .78, metal: 0 } : { ...metalSpec };
   const strap = leather.map((c) => c * .7);
   const out = [plate, { kind: 'leather', col: strap, spot: scuff(strap), rough: .75, metal: 0 }, metalSpec,
@@ -5149,6 +5273,7 @@ function patterned(p) {   // mail or quilting anywhere in the piece
   const kinds = [S.piece === 'undercloth' && p.cloth_quilt ? 'quilt' : p.surface];
   if (S.piece === 'cuirass' && p.low_surface !== 'same') kinds.push(p.low_surface);
   if ((S.piece === 'cuirass' || isLimb()) && p.mail_under) kinds.push('mail');
+  if (['hair', 'beard'].includes(S.piece)) return true;   // (the strands' pattern)
   return kinds.some((k) => k === 'mail' || k === 'quilt');
 }
 function applyLook(p, R) {
@@ -5157,7 +5282,7 @@ function applyLook(p, R) {
   LOOK.n = pat && R ? Math.max(1, Math.round(R / LOOK.U)) : 1;
   LOOK.specs = specs;
   for (const [role, slot] of Object.entries(ROLE_MAT)) {
-    const s = specs[slot], m = mats[role], tile = s.pattern ? patternTile(s.pattern === 'quilt' ? quiltTile(p) : s.pattern) : null;
+    const s = specs[slot], m = mats[role], tile = s.pattern ? patternTile(s.pattern === 'quilt' ? quiltTile(p) : s.pattern) : null;   // (hair: 'hair')
     if (s.tex) {   // a library material: its own maps, a sample of «tile» on a side (the UVs are in LOOK.U)
       const k = LOOK.U / s.tex.tile, set = (t) => { if (t) t.repeat.set(k, k); return t; };
       m.map = set(libTex(s.tex.color, true)); m.normalMap = s.tex.normal ? set(libTex(s.tex.normal, false)) : null;
@@ -7158,7 +7283,7 @@ function payload() {   // every part in one mesh: positions (glTF axes), faces (
   }
   return { v: b64(Float32Array.from(v)), uv: b64(Float32Array.from(uv)), n: b64(Uint8Array.from(sizes)), f: b64(Uint32Array.from(f)),
     m: b64(Uint8Array.from(m)), g: b64(Uint16Array.from(g)), bi: b64(Uint16Array.from(bi)), bw: b64(Float32Array.from(bw)), bones: boneNames,
-    mats: LOOK.specs, patterns: { mail: patternTile('mail').png, quilt: patternTile(quiltTile(S.p)).png }, pattern_unit: LOOK.U,
+    mats: LOOK.specs, patterns: { mail: patternTile('mail').png, quilt: patternTile(quiltTile(S.p)).png, hair: patternTile('hair').png }, pattern_unit: LOOK.U,
     radius: parts.reduce((s, x) => s + x.R, 0) / parts.length, over_clothes: parts.some((x) => x.loose), paint: paintPayload(),
     cloth: (parts.find((x) => x.cloth) || {}).cloth || null,   // (cloth on chains: its cuts, belt, rules)
     // hair, a beard: what they hide is the skin under their base, as on screen (the body's own rule took the ears the

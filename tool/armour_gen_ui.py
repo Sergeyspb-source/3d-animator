@@ -119,10 +119,10 @@ PIECES = {"bracer": ("forearm", "hand", "forearm", ("Spine", "Hips", "Chest", "U
           # hair and beards: a base on the scalp (the chin and the jaw) and locks grown from it (armour_gen_editor hair, beard)
           "hair": ("spine2", "head", "head", (), "head", "neck", (0, 0, 0, 0),
                    dict(hair_style="short", hair_len=6, hair_vol=110, hair_n=240, hair_curl=10, hair_line=0, hair_flow="part", hair_lift=35,
-                        hair_color="#3b2618", material="cloth", surface="plain", trim="", straps=0, rigidity=1, wear=.05, gap=1, thickness=2)),
+                        hair_color="#3b2618", material="cloth", surface="plain", trim="", straps=0, rigidity=1, wear=.05, gap=1, thickness=2, cell=3)),
           "beard": ("neck", "head", "head", (), "head", "neck", (0, 0, 0, 0),
                     dict(beard_style="short", beard_len=2.5, beard_vol=100, beard_n=220, beard_curl=10,
-                         hair_color="#3b2618", material="cloth", surface="plain", trim="", straps=0, rigidity=1, wear=.05, gap=1, thickness=2)),
+                         hair_color="#3b2618", material="cloth", surface="plain", trim="", straps=0, rigidity=1, wear=.05, gap=1, thickness=2, cell=3)),
           # at the belt: a scabbard on a hip (rigid on the hips), a quiver on the back (on the chest's bone)
           "sheath": ("hips", "spine1", "hips", (), "hips", "held", (0, 0, 0, 0),
                      dict(sheath="scabbard", material="leather", trim="steel", tint="#4a2c18", cloth="#6b4a2a", straps=0, rigidity=1))}
