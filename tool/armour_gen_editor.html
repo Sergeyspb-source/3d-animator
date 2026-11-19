@@ -4482,6 +4482,66 @@ function hair(p) {
   }
   return [{ side: 'C', acc, R, mask: maskKeys }];   // (the scalp under its base hidden: a bump of the skin would come through it)
 }
+// a beard as one mass (as the hair: smooth, its strands the texture's): the skin it grows on raised off along its normals,
+// thin at its edges (the face, the lips' hole), thicker down to the chin and on under it - the underside's normals point
+// down, so the bulk hangs; a full or long beard's bulk gathered to the chin's middle. Its folds smoothed out (a crease's
+// normals meet), then the sheet thickened
+function beardMass(p, S, c) {
+  const { acc, O, E, NK, d, u, mx, mw, yM, yC, lipUp, L, st, H, halfEye } = c;
+  const n = S.pos.length, nb = Array.from({ length: n }, () => new Set()), ec = new Map();
+  for (const t of S.tris) for (const [a, b] of [[t[0], t[1]], [t[1], t[2]], [t[2], t[0]]]) {
+    nb[a].add(b); nb[b].add(a); const k = a < b ? a + ',' + b : b + ',' + a; ec.set(k, (ec.get(k) || 0) + 1); }
+  // each point's way in from the edge (along the skin: relaxed over the edges until it settles)
+  const dist = new Float64Array(n).fill(Infinity);
+  for (const [k, cnt] of ec) if (cnt === 1) for (const i of k.split(',').map(Number)) dist[i] = 0;
+  for (let changed = true, it = 0; changed && it < 400; it++) { changed = false;
+    for (let i = 0; i < n; i++) for (const j of nb[i]) { const dj = dist[j] + S.pos[i].distanceTo(S.pos[j]); if (dj < dist[i] - 1e-9) { dist[i] = dj; changed = true; } } }
+  const vol = (p.beard_vol || 100) / 100, side = L * .22 * vol, edgeMax = Math.max(...dist.filter(isFinite));
+  const R = Math.min(.35 * u, .6 * edgeMax);   // (the edge's taper: over a third of the mouth's width - less in a narrow moustache)
+  const fr = (v) => v.clone().sub(O).dot(FRONT);
+  const hgt = [], drop = [];
+  S.pos.forEach((v, i) => {
+    const edge = smooth(0, R, dist[i]);
+    if (st === 'mustache' || (v.y > yM && st !== 'stubble')) {   // (the moustache: its own, not the beard's length - full, over the upper lip, its ends hanging)
+      // (a pad: hung down past its own edge it folded back under itself)
+      const e2 = smooth(0, .5 * R, dist[i]);
+      hgt.push(e2 * Math.min(.25 * u, .45 * L * vol)); drop.push(0); return; }
+    // the bulk hangs: the chin's middle and under it moved down (and a little forward), the throat's edge staying -
+    // a beard's wedge, not the skin blown up along its normals
+    const centre = 1 - smooth(.5 * u, 1.5 * u, Math.abs(v.x - mx)), low = smooth(yM - .2 * u, yC - .1 * u, v.y);
+    const bulk = st === 'short' ? .3 : st === 'goatee' ? .7 : st === 'full' ? .75 : 1;
+    hgt.push(edge * side); drop.push(edge * L * vol * bulk * centre * low);
+  });
+  const DN = UP.clone().negate().addScaledVector(FRONT, .3).normalize();
+  // the outline along itself smoothed (the skin's triangles' staircase: a ragged edge), then the rest raised off it
+  const rimN = new Map();
+  for (const [k, cnt] of ec) if (cnt === 1) { const [a2, b2] = k.split(',').map(Number); (rimN.get(a2) || rimN.set(a2, []).get(a2)).push(b2); (rimN.get(b2) || rimN.set(b2, []).get(b2)).push(a2); }
+  const base = S.pos.map((v) => v.clone());
+  for (let it = 0; it < 10; it++) { const Q = new Map();
+    for (const [i, js] of rimN) if (js.length === 2) Q.set(i, base[i].clone().lerp(base[js[0]].clone().add(base[js[1]]).multiplyScalar(.5), .5));
+    for (const [i, q] of Q) base[i].copy(q); }
+  const P = base.map((v, i) => v.clone().addScaledVector(S.n[i], MM(1) + hgt[i]).addScaledVector(DN, drop[i]));
+  // gathered to the chin's middle (a full beard rounds there, a long one comes to a point)
+  if (st === 'full' || st === 'long' || st === 'goatee') P.forEach((q, i) => { const k = (st === 'long' ? .5 : .3) * smooth(0, L, drop[i]); q.x += (mx - q.x) * k; });
+  // the folds smoothed out (the edge kept where it is)
+  for (let it = 0; it < 24; it++) {
+    const lam = it % 2 ? -.53 : .5, Q = P.map((q) => q.clone());
+    for (let i = 0; i < n; i++) { if (!dist[i] || !nb[i].size) continue;
+      const m = new V3(); for (const j of nb[i]) m.add(P[j]); m.multiplyScalar(1 / nb[i].size);
+      Q[i].addScaledVector(m.sub(P[i]), lam * smooth(0, .5 * R, dist[i])); }
+    P.forEach((q, i) => q.copy(Q[i]));
+  }
+  // not into the skin (a smoothed point pulled back in): out to its own height at least the gap; hanging, not into
+  // the throat or the chest - in front of the skin at its height
+  P.forEach((q, i) => { const k = q.clone().sub(S.pos[i]).dot(S.n[i]); if (k < MM(.8)) q.addScaledVector(S.n[i], MM(.8) - k);
+    if (drop[i] > MM(2)) { const h = cast(q.clone().addScaledVector(FRONT, 4 * d), FRONT.clone().negate(), 8 * d);
+      if (h) { const need = fr(h.point) + MM(1) + hgt[i]; if (fr(q) < need) q.addScaledVector(FRONT, need - fr(q)); } } });
+  const U = (p.cell || 3) / 1000 * HEIGHT * 8;   // (the hair's pattern unit: strands down, across the face)
+  const G = { pos: P, tris: S.tris, n: normalsOf(P, S.tris) };
+  shellOf(acc, G, S.tris.map((_, t) => t), 0, Math.max(MM(1.2), .1 * side), PLATE, 'plate', (i) => ({ direct: S.w[i] }), null, 0,
+    (q, nn, i) => [(P[i].x - mx) / U * 1.6, (-P[i].y + .8 * fr(P[i])) / U]);   // (along: down the face, forward under the chin - not rings)
+  window.agBeardMass = { n, maxH: +(Math.max(...hgt) / u).toFixed(2), drop: +(Math.max(...drop) / u).toFixed(2), edgeMax: +(edgeMax / u).toFixed(2) };   // (the tests)
+}
 function beard(p) {
   const F = headFrame(); if (!F) return [];
   const { O, E, d, NK } = F, acc = new Acc(); acc.w = (q) => q.direct;
@@ -4538,20 +4598,7 @@ function beard(p) {
   const gap = MM(1), U = .02 * H;
   shellOf(acc, S, all, gap * .3, MM(st === 'stubble' ? .8 : 1.6), PLATE, 'plate', (i) => ({ direct: S.w[i] }), null, 0);   // (its edge as the skin's: smoothed, the hole round the lips closed over them)
   const L = (p.beard_len || 0) / 100 * H, w0 = (p.beard_vol || 100) / 100 * .14 * F.halfAt(E.y);
-  if (st !== 'stubble' && L > MM(3) && p.beard_n > 0) {
-    const way = (r, cur, t, out) => {
-      if (st === 'mustache' || (r.p.y > yM && st !== 'stubble')) {   // (a moustache: out to the sides; in a beard it goes down into it)
-        const sx = Math.sign(r.p.x - O.x || 1);
-        out.set(sx, 0, 0).addScaledVector(UP, -(.55 + .7 * t)).addScaledVector(FRONT, .25).normalize(); return; }
-      out.copy(UP).multiplyScalar(-1).addScaledVector(FRONT, .55 - .5 * t).addScaledVector(r.n, .35 * (1 - t));
-      if (st === 'long' || st === 'full') out.addScaledVector(new V3(mx - cur.x, 0, 0), (st === 'long' ? 5 : 2) * t / d);   // (gathered to a point below the chin)
-      out.normalize();
-    };
-    const wOf = (r) => r.w;   // (with the skin it grows from: the jaw's moves with the jaw)
-    growLocks(acc, F, rootsOn(S, all, Math.round(p.beard_n), (p.seed || 1) + 3), L, w0,
-      { gap, curl: (p.beard_curl || 0) / 100 * .5, layer: .5 * w0, way, wOf, mat: PLATE, role: 'plate', U, seed: (p.seed || 1) + 3,
-        lenOf: st === 'mustache' ? null : (r, Lr) => (r.p.y > yM ? Math.min(Lr, 1.2 * mw) : Lr) });   // (a beard's moustache: to the mouth's corners)
-  }
+  if (st !== 'stubble' && L > MM(3) && p.beard_n > 0) beardMass(p, S, { acc, O, E, NK, d, u, mx, mw, yM, yC, lipUp, L, st, H, halfEye: F.halfAt(E.y) });
   return [{ side: 'C', acc, R: .02 * H, mask: S0.keys }];
 }
 function buildPiece(kind, sides, p) {
