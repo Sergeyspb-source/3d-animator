@@ -182,7 +182,11 @@ def strands_atlas(TW=512, TH=1024):
     lum = np.full((TH, TW), .8, np.float32)
     for k in range(4):
         x0 = k * TW // 4
-        for s in range(70):
+        cw = TW // 4   # (a soft solid middle under the strands: the card reads as a lock, not a few hairs)
+        xs_ = np.arange(cw); env = np.clip(1 - np.abs((xs_ + .5) / cw * 2 - 1) ** 2 * 1.4, 0, 1) * .75
+        yy = np.arange(TH)[:, None]; tip = np.clip((TH * .78 - yy) / (TH * .12), 0, 1)
+        img[:, x0:x0 + cw, 3] = np.maximum(img[:, x0:x0 + cw, 3], env[None, :] * tip)
+        for s in range(130):
             cx = x0 + 4 + rnd.random() * (TW // 4 - 8)
             w = .6 + rnd.random() * 1.4
             end = TH * (.7 + .3 * rnd.random())
@@ -436,7 +440,7 @@ def build_cards(L, part, cut_z):
         for li in poly.loop_indices:
             c = cap.data.vertices[cap.data.loops[li].vertex_index].co - O
             uvc.data[li].uv = ((.02 + .2 * ((-c.y / (1.5 * R)) % 1.0)), .2 + .5 * math.atan2(abs(c.x - (px - O.x)), c.z) / math.pi)
-    dark = atlas.copy(); dark[..., :3] *= .55; dark[..., 3] = 1
+    dark = atlas.copy(); dark[..., :3] *= .38; dark[..., 3] = 1   # (the hair's depth: dark, no light patch on the crown)
     m_cap, _ = material("hair_cap", save("cap", dark, False), False, .8)
     cap.data.materials.append(m_cap)
     return [cards, cap], cap
@@ -567,7 +571,13 @@ def build_shell(cfg):
         for lp in f.loops:
             u, w = UVV[lp.vert.index]
             lp[uvl].uv = ((u - u0) / span, (w - v0) / span)   # (one texture over the whole cut: drawn below)
-    m = bpy.data.meshes.new("hair_shell"); bm.to_mesh(m); bm.free()
+    m = bpy.data.meshes.new("hair_shell"); bm.to_mesh(m)
+    # (what it hides: its solid part only - where it fades out (a crop's sides, any cut's ragged edge) the skin stays,
+    # hidden it showed as holes through the faded hair)
+    solid = bm.copy()
+    bmesh.ops.delete(solid, geom=[f for f in solid.faces if min(fade[v.index] for v in f.verts) < .99], context="FACES")
+    mi = bpy.data.meshes.new("hair_shell_solid"); solid.to_mesh(mi); solid.free(); bm.free()
+    inner = bpy.data.objects.new("hair_shell_solid", mi); sc.collection.objects.link(inner)
     ob = bpy.data.objects.new("hair_shell", m); sc.collection.objects.link(ob)
     for poly in m.polygons:
         poly.use_smooth = True
@@ -642,7 +652,7 @@ def build_shell(cfg):
     for md in list(ob.modifiers):
         bpy.ops.object.modifier_apply(modifier=md.name)
     m.uv_layers.remove(m.uv_layers["tile"])
-    return ob
+    return ob, inner
 
 
 def build_mohawk(base):
@@ -722,8 +732,8 @@ if style in ("long", "bob"):
     Lh = float(prm.get("length", .26 if style == "long" else .14)) * H * (1.2 if style == "long" else 2.0)
     obs, mask_of = build_cards(Lh, float(prm.get("part", 0. if style == "long" else .3)), (E.z - 1.25 * R) if style == "bob" else None)
 elif style in SHORT:
-    shell = build_shell(SHORT[style])
-    obs, mask_of = (build_mohawk(shell) if style == "mohawk" else [shell]), shell
+    shell, solid = build_shell(SHORT[style])
+    obs, mask_of = (build_mohawk(shell) if style == "mohawk" else [shell]), solid
 else:
     fail(_t("ag.unknown_piece", style))
 
@@ -738,7 +748,7 @@ def weights(z):
     return [(groups[0], 1 - k), (groups[min(1, len(groups) - 1)], .6 * k), (groups[min(2, len(groups) - 1)], .4 * k)]
 
 
-for ob in obs:
+for ob in obs + ([mask_of] if mask_of not in obs else []):
     vg = {g: ob.vertex_groups.new(name=g) for g in dict.fromkeys(groups)}
     for v in ob.data.vertices:
         for g, w in weights((ob.matrix_world @ v.co).z):
@@ -750,6 +760,8 @@ if job.get("mask"):
     from body_mask import body_mask
     keys = {tuple(x) for x in body_mask(body, [mask_of], erode=2)}
     Path(job["mask"]).write_text(json.dumps([list(x) for x in sorted(keys)]), encoding="utf-8")
+if mask_of not in obs:
+    bpy.data.objects.remove(mask_of, do_unlink=True)
 bpy.ops.object.select_all(action="DESELECT")
 for ob in obs:
     ob.select_set(True)

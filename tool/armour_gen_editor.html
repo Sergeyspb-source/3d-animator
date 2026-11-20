@@ -374,6 +374,9 @@ function buildBody() {
   vBone = Int32Array.from(vb); vW = Float32Array.from(vw);
   wordCache.clear(); profCache.clear(); limbCache.clear();
 }
+// hair (blender_hair_gen.py's materials, cut by their alpha: cards, a crop's fade) dithered by the alpha here, as
+// Blender draws them - the hard cut left a few hairs on dark sheets
+function softCut(mt) { if (mt.alphaTest > 0 && /^hair_/.test(mt.name || '')) { mt.alphaHash = true; mt.alphaTest = 0; mt.needsUpdate = true; } }
 // pieces already put on: shown on the character's own bones; ticked ones the new piece is fitted over
 const WORN = new Map();
 async function wearPiece(w, on) {
@@ -384,7 +387,7 @@ async function wearPiece(w, on) {
     restPose();
     gltf.scene.traverse((o) => {
       if (o.isSkinnedMesh) { o.skeleton.bones = o.skeleton.bones.map((b) => byName[b.name] || b); o.frustumCulled = false; meshes.push(o); }
-      if (o.isMesh) for (const mt of [].concat(o.material)) mt.side = THREE.DoubleSide;
+      if (o.isMesh) for (const mt of [].concat(o.material)) { mt.side = THREE.DoubleSide; softCut(mt); }
     });
     scene.add(gltf.scene); gltf.scene.updateMatrixWorld(true);
     e = { root: gltf.scene, meshes, on: false, piece: w.piece, mask }; WORN.set(w.item, e);
@@ -6236,7 +6239,10 @@ async function madePreview(piece, sides) {
   const gltf = await new GLTFLoader().loadAsync(fileUrl(js.preview.glb) + '?v=' + js.preview.v);
   gltf.scene.traverse((o) => {
     if (o.isSkinnedMesh) { o.skeleton.bones = o.skeleton.bones.map((b) => byName[b.name] || b); o.frustumCulled = false; }
-    if (o.isMesh) for (const mt of [].concat(o.material)) mt.side = THREE.DoubleSide;
+    if (o.isMesh) for (const mt of [].concat(o.material)) {
+      mt.side = THREE.DoubleSide;
+      softCut(mt);
+    }
   });
   return { root: gltf.scene, mask: await loadMask(js.preview.mask) };
 }
@@ -7812,7 +7818,7 @@ async function loadResult(glb) {   // the baked piece, on the character's own bo
     resultRoot = gltf.scene;
     resultRoot.traverse((o) => {
       if (o.isSkinnedMesh) { o.skeleton.bones = o.skeleton.bones.map((b) => byName[b.name] || b); o.frustumCulled = false; }
-      if (o.isMesh) for (const mt of [].concat(o.material)) mt.side = THREE.DoubleSide;
+      if (o.isMesh) for (const mt of [].concat(o.material)) { mt.side = THREE.DoubleSide; softCut(mt); }
     });
     scene.add(resultRoot);
     $('shows').hidden = false; setShow(true);
