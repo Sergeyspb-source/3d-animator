@@ -4152,12 +4152,12 @@ function armsOffBody() {
 const HAIR_STYLES = {   // after the reference pictures (an image model's, on this kind of head): len % of the height; flow:
   // back (combed back), brush (up and back from the forehead), fall (down from the crown), part (down to the sides of a
   // middle parting), up (a crest); cut: where it ends (the jaw for a bob); fringe: the front falls to the brows
-  hair_crop: { hair_style: 'crop', hair_part: 'none', hair_len: 3.5, hair_vol: 190, hair_n: 260, hair_curl: 0, hair_line: 0, hair_flow: 'brush', hair_lift: 60 },
-  hair_short: { hair_style: 'short', hair_len: 6, hair_vol: 150, hair_n: 240, hair_curl: 15, hair_line: 0, hair_flow: 'brush', hair_lift: 80, hair_part: 'left' },
-  hair_bob: { hair_style: 'bob', hair_part: 'left', hair_len: 14, hair_vol: 150, hair_n: 300, hair_curl: 0, hair_line: -10, hair_flow: 'fall', hair_lift: 30 },
-  hair_long: { hair_style: 'long', hair_part: 'none', hair_len: 26, hair_vol: 140, hair_n: 320, hair_curl: 10, hair_line: 0, hair_flow: 'part', hair_lift: 20 },
-  hair_back: { hair_style: 'back', hair_part: 'none', hair_len: 10, hair_vol: 140, hair_n: 260, hair_curl: 0, hair_line: 0, hair_flow: 'back', hair_lift: 55 },
-  hair_mohawk: { hair_style: 'mohawk', hair_part: 'none', hair_len: 8, hair_vol: 230, hair_n: 34, hair_curl: 0, hair_line: 0, hair_flow: 'up', hair_lift: 100 },
+  hair_crop: { hair: 'hair_crop', hair_style: 'crop', hair_part: 'none', hair_len: 3.5, hair_vol: 190, hair_n: 260, hair_curl: 0, hair_line: 0, hair_flow: 'brush', hair_lift: 60 },
+  hair_short: { hair: 'hair_short', hair_style: 'short', hair_len: 6, hair_vol: 150, hair_n: 240, hair_curl: 15, hair_line: 0, hair_flow: 'brush', hair_lift: 80, hair_part: 'left' },
+  hair_bob: { hair: 'hair_bob', hair_style: 'bob', hair_part: 'left', hair_len: 14, hair_vol: 150, hair_n: 300, hair_curl: 0, hair_line: -10, hair_flow: 'fall', hair_lift: 30 },
+  hair_long: { hair: 'hair_long', hair_style: 'long', hair_part: 'none', hair_len: 26, hair_vol: 140, hair_n: 320, hair_curl: 10, hair_line: 0, hair_flow: 'part', hair_lift: 20 },
+  hair_back: { hair: 'hair_back', hair_style: 'back', hair_part: 'none', hair_len: 10, hair_vol: 140, hair_n: 260, hair_curl: 0, hair_line: 0, hair_flow: 'back', hair_lift: 55 },
+  hair_mohawk: { hair: 'hair_mohawk', hair_style: 'mohawk', hair_part: 'none', hair_len: 8, hair_vol: 230, hair_n: 34, hair_curl: 0, hair_line: 0, hair_flow: 'up', hair_lift: 100 },
 };
 const BEARD_STYLES = {
   beard_stubble: { beard_style: 'stubble', beard_len: 0, beard_vol: 100, beard_n: 0, beard_curl: 0 },
@@ -5723,7 +5723,7 @@ const SPEC = [
     ['arm_share', 0, 1, .05, '{{js:ag.arm_share}}', '{{js:ag.arm_share_info}}', '', () => S.piece === 'pauldron' || (S.piece === 'cuirass' && S.p.spaulders > 0)]]],
 ];
 // pieces the generators make (vendor/blender_armour), in Blender: a style and a few parameters of theirs
-const MADE = ['helmet', 'elbow', 'footwear', 'poleyn'], isMade = () => MADE.includes(S.piece);
+const MADE = ['helmet', 'elbow', 'footwear', 'poleyn', 'hair'], isMade = () => MADE.includes(S.piece);   // (hair: blender_hair_gen.py - cards with gravity, a shell along the hair's way)
 SPEC.forEach((g) => { if (!g[3]) g[3] = () => !isMade(); });
 SPEC[1][3] = () => !isMade() && S.piece !== 'glove' && S.piece !== 'undercloth';   // a glove's, a cloth's surfaces come with its style
 SPEC[3][3] = () => !isMade() && S.piece !== 'undercloth';   // no straps on cloth
@@ -5803,11 +5803,11 @@ SPEC.push(['{{js:ag.codpiece_group}}', ['plate', 'trim', 'strap'], [
 const HAIR_GI = SPEC.length;
 SPEC.push(['{{js:ag.hair_group}}', ['plate'], [
   ['hair_len', 0, 40, .5, '{{js:ag.hair_len}}', '{{js:ag.hair_len_info}}', 'pc', isP('hair')],
-  ['hair_vol', 40, 250, 5, '{{js:ag.hair_vol}}', '', 'pc', isP('hair')],
-  ['hair_n', 0, 600, 10, '{{js:ag.hair_n}}', '', '', isP('hair')],
-  ['hair_curl', 0, 100, 5, '{{js:ag.hair_curl}}', '', 'pc', isP('hair')],
-  ['hair_lift', 0, 100, 5, '{{js:ag.hair_lift}}', '{{js:ag.hair_lift_info}}', 'pc', isP('hair')],
-  ['hair_line', -40, 40, 2, '{{js:ag.hair_line}}', '{{js:ag.hair_line_info}}', 'pc', isP('hair')],
+  ['hair_vol', 40, 250, 5, '{{js:ag.hair_vol}}', '', 'pc', () => false],   // (hair is made in Blender now: cards, a shell - its length and colour only)
+  ['hair_n', 0, 600, 10, '{{js:ag.hair_n}}', '', '', () => false],   // (hair is made in Blender now: cards, a shell - its length and colour only)
+  ['hair_curl', 0, 100, 5, '{{js:ag.hair_curl}}', '', 'pc', () => false],   // (hair is made in Blender now: cards, a shell - its length and colour only)
+  ['hair_lift', 0, 100, 5, '{{js:ag.hair_lift}}', '{{js:ag.hair_lift_info}}', 'pc', () => false],   // (hair is made in Blender now: cards, a shell - its length and colour only)
+  ['hair_line', -40, 40, 2, '{{js:ag.hair_line}}', '{{js:ag.hair_line_info}}', 'pc', () => false],   // (hair is made in Blender now: cards, a shell - its length and colour only)
   ['beard_len', 0, 30, .5, '{{js:ag.hair_len}}', '{{js:ag.hair_len_info}}', 'pc', isP('beard')],
   ['beard_vol', 40, 250, 5, '{{js:ag.hair_vol}}', '', 'pc', isP('beard')],
   ['beard_n', 0, 500, 10, '{{js:ag.hair_n}}', '', '', isP('beard')],
@@ -6291,6 +6291,11 @@ function madeSpecs() {
 }
 function madeLook() {
   if (!helmetObj) return;
+  if (S.piece === 'hair') {
+    const c = new THREE.Color(S.p.hair_color || '#3b2618');
+    helmetObj.traverse((o) => { if (o.isMesh) for (const m of [].concat(o.material)) { m.color.copy(c); m.needsUpdate = true; } });
+    return;
+  }
   const specs = madeSpecs(), made = new Map(), size = new THREE.Box3().setFromObject(helmetObj).getSize(new V3()).length() / 2;
   helmetObj.traverse((o) => {
     if (!o.isMesh) return;
@@ -6310,10 +6315,10 @@ function madeLook() {
   });
 }
 function rebuildMade() {
-  const piece = S.piece, sides = piece !== 'helmet' ? [...S.sides] : [];
-  if (piece !== 'helmet' && !sides.length) { $('warn').textContent = '{{js:ag.choose_a_side}}'; $('warn').hidden = false; lastBuild = null; $('go').disabled = true; return; }
+  const piece = S.piece, sides = !['helmet', 'hair'].includes(piece) ? [...S.sides] : [];
+  if (!['helmet', 'hair'].includes(piece) && !sides.length) { $('warn').textContent = '{{js:ag.choose_a_side}}'; $('warn').hidden = false; lastBuild = null; $('go').disabled = true; return; }
   // (a helmet: and the coifs on under it - put on or off, another one)
-  const key = [piece, S.p[piece], S.p.head_gap, piece === 'helmet' ? [...WORN.entries()].filter(([k, w]) => w.on && /coif/.test(k)).map(([k]) => k).join('+') : '', ['elbow', 'poleyn'].includes(piece) ? MADE_GAP0 : S.p.limb_gap, S.p.wing, S.p.foot_gap, S.p.visor_angle, S.p.cheek_angle, S.p.tail, S.p.brim, ...sides].join('_'), h = madeCache.get(key);
+  const key = [piece, S.p[piece], S.p.head_gap, piece === 'helmet' ? [...WORN.entries()].filter(([k, w]) => w.on && /coif/.test(k)).map(([k]) => k).join('+') : '', ['elbow', 'poleyn'].includes(piece) ? MADE_GAP0 : S.p.limb_gap, S.p.wing, S.p.foot_gap, S.p.visor_angle, S.p.cheek_angle, S.p.tail, S.p.brim, piece === 'hair' ? `${S.p.hair_len}_${S.p.hair_part}` : '', ...sides].join('_'), h = madeCache.get(key);
   if (!h) {
     // one preview at a time, of the last state, once its sliders rest (a wing dragged: not one per value on the way,
     // each queued after the other for minutes); when it is made, the state then is looked at again

@@ -2771,7 +2771,7 @@
  "ag.block_hair": "Hair",
  "ag.hair_group": "Hair",
  "ag.hair_len": "Length, % of the height",
- "ag.hair_len_info": "The locks' length; 0 - the base on the skin only (a shaved head, stubble).",
+ "ag.hair_len_info": "Hair length: for long hair and a bob how far it falls, for a mohawk its crest's height; a short cut's shape is its style's.",
  "ag.hair_vol": "Locks' width",
  "ag.hair_n": "Locks",
  "ag.hair_curl": "Wave",

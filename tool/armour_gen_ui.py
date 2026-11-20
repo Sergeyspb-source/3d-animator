@@ -118,7 +118,7 @@ PIECES = {"bracer": ("forearm", "hand", "forearm", ("Spine", "Hips", "Chest", "U
                      dict(material="cloth", cloth="#6a2a24", surface="plain", trim="", straps=0, rigidity=.5, gap=3, thickness=1.5)),
           # hair and beards: a base on the scalp (the chin and the jaw) and locks grown from it (armour_gen_editor hair, beard)
           "hair": ("spine2", "head", "head", (), "head", "neck", (0, 0, 0, 0),
-                   dict(hair_style="short", hair_len=6, hair_vol=110, hair_n=240, hair_curl=10, hair_line=0, hair_flow="part", hair_lift=35,
+                   dict(hair="hair_long", hair_style="long", hair_len=26, hair_vol=140, hair_n=320, hair_curl=10, hair_line=0, hair_flow="part", hair_lift=20,
                         hair_color="#3b2618", material="cloth", surface="plain", trim="", straps=0, rigidity=1, wear=.05, gap=1, thickness=2, cell=3)),
           "beard": ("neck", "head", "head", (), "head", "neck", (0, 0, 0, 0),
                     dict(beard_style="short", beard_len=2.5, beard_vol=100, beard_n=220, beard_curl=10,
@@ -163,6 +163,19 @@ def _foot_params(params) -> dict:
     return {"gap": float(params.get("foot_gap", 6)) / 100}
 
 
+def _hair_params(params) -> dict:
+    """The editor's hair parameters as blender_hair_gen.py's: its length (a share of the height), its colour (linear), its
+    parting (a share of the head's half width to a side)"""
+    h = str(params.get("hair_color") or "#3b2618").lstrip("#")
+    try:
+        srgb = [int(h[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+    except ValueError:
+        srgb = [.23, .15, .09]
+    lin = [c / 12.92 if c <= .04045 else ((c + .055) / 1.055) ** 2.4 for c in srgb]
+    part = {"left": .3, "right": -.3}.get(params.get("hair_part"), 0.)
+    return {"gap": 0., "length": float(params.get("hair_len", 20)) / 100, "color": lin, "seed": int(params.get("seed", 1)), "part": part}
+
+
 # pieces the generators make: piece -> (the Blender script, its styles (the editor's keys), the style key's prefix in
 # them, the editor's parameters -> the script's, the parameters a style's preview depends on besides the gap)
 MADE = {"helmet": ("blender_helmet_gen.py", HELMETS, "", _helmet_params,
@@ -174,7 +187,9 @@ MADE = {"helmet": ("blender_helmet_gen.py", HELMETS, "", _helmet_params,
                   {k: ("wing",) for k in ("elbow_winged_plate", "elbow_articulated_plate", "elbow_plate_mail_hybrid")}),
         "footwear": ("blender_footwear_gen.py", FOOTWEAR, "foot_", _foot_params, {}),
         "poleyn": ("blender_elbow_gen.py", POLEYNS, "poleyn_", _poleyn_params,
-                   {k: ("wing",) for k in ("poleyn_winged_plate", "poleyn_articulated_plate", "poleyn_plate_mail_hybrid")})}
+                   {k: ("wing",) for k in ("poleyn_winged_plate", "poleyn_articulated_plate", "poleyn_plate_mail_hybrid")}),
+        # hair: cards with gravity (long, a bob), a shell unwrapped along the hair's way (short cuts, the mohawk's base)
+        "hair": ("blender_hair_gen.py", HAIRS, "hair_", _hair_params, {k: ("length", "part") for k in HAIRS})}
 # «from» / «to» labels: a limb's along it, a torso piece's bottom and top, trousers' waist and leg length
 T_LABELS = {"limb": ("ag.from", "ag.to", "ag.from_info"), "torso": ("ag.bottom", "ag.top", "ag.bottom_info"),
             "cuirass": ("ag.bottom", "ag.neck_top", "ag.bottom_info"), "pauldron": ("ag.pauldron_from", "ag.sp_reach", "ag.pauldron_info"),
