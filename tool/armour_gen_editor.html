@@ -5544,8 +5544,10 @@ const isLimb = () => PIECES[S.piece].family === 'limb' && S.piece !== 'pauldron'
 const isOpen = () => (isLimb() && S.p.sector < 359) || (S.piece === 'cuirass' && S.p.opening !== 'none');
 // the reference sets (bracers, greaves, cuirasses: leather, plate, mail, splints, brigandine, plate over mail, lamellar):
 // a style sets the piece's parameters to look like one of them, the sliders change it from there
+// wigs: heads with hair made elsewhere (Tripo) put in the wigs' folder, each a hair style (blender_hair_gen.build_wig)
+const WIG_STYLES = Object.fromEntries((DATA.hair_models || []).map((m) => [m.key, { hair: m.key, hair_style: 'wig', hair_model: m.name }]));
 const STYLES = {
-  hair: HAIR_STYLES, beard: BEARD_STYLES,
+  hair: { ...HAIR_STYLES, ...WIG_STYLES }, beard: BEARD_STYLES,
   limb: {
     leather: { surface: 'plain', material: 'leather', sector: 320, closure: 'across', stitch: true, plates: 1, relief: .2, cell: 5, top_cut: 10, bottom_cut: 5, flare: .3, hinges: false, mail_under: false, trim: '', hammer: 0, thickness: 12, wear: .3 },
     steel: { surface: 'plates', plates: 1, material: 'steel', sector: 320, closure: 'across', stitch: false, hinges: true, relief: .05, cell: 5, rim: 5, rivets: 0, top_cut: 14, bottom_cut: 8, flare: .45, mail_under: false, trim: '', hammer: .1, thickness: 9, wear: .25 },
@@ -5903,7 +5905,7 @@ function buildPanel() {
       [['pos', '{{js:ag.node_pos}}'], ['rot', '{{js:ag.node_rot}}']].map(([g, lbl]) => `<div class="nrow"><span class="nlbl">${lbl}</span>` +
         NODE_FIELDS.filter((x) => x[1] === g).map(([k, , ax, tip, st]) => `<label title="${tip}">${ax}<input type="number" id="n_${k}" step="${st}"></label>`).join('') + `</div>`).join('') +
       `<div class="nrow"><span class="nlbl">{{js:ag.node_scale}}</span><label title="{{js:ag.s_size}}">%<input type="number" id="n_s_size" step="5" min="20" max="400"></label></div></div>` : '') +
-    (gi === HAIR_GI ? `<div class="row" id="r_hairc"><span class="note">{{js:ag.hair_colour}}</span><span class="seg" id="hairCols">${HAIR_COLOURS.map((c) => `<button data-hc="${c}" style="background:${c};width:22px;min-width:22px" title="${c}">&nbsp;</button>`).join('')}</span><input type="color" id="i_hairc"></div>` : '') +
+    (gi === HAIR_GI ? `<div class="note" id="r_wigs" style="margin:2px 0 6px">${'{{js:ag.hair_models_note}}'.replace('{0}', DATA.hair_models_dir || '')}</div><div class="row" id="r_hairc"><span class="note">{{js:ag.hair_colour}}</span><span class="seg" id="hairCols">${HAIR_COLOURS.map((c) => `<button data-hc="${c}" style="background:${c};width:22px;min-width:22px" title="${c}">&nbsp;</button>`).join('')}</span><input type="color" id="i_hairc"></div>` : '') +
     (gi === GOR_GI ? `<label class="chk" id="r_bevor" title="{{js:ag.bevor_info}}"><input type="checkbox" id="i_bevor"> {{js:ag.bevor}}</label>` : '') +
     (gi === HELD_GI ? `<label class="chk" id="r_w_magnet" title="{{js:ag.w_magnet_info}}"><input type="checkbox" id="i_w_magnet"> {{js:ag.w_magnet}}</label>` +
       `<label class="chk" id="r_s_hand"><input type="checkbox" id="i_s_hand"> {{js:ag.s_hand}}</label>` +
@@ -6060,6 +6062,7 @@ function syncPanel() {
   for (const b of $('lowSeg').children) b.classList.toggle('on', b.dataset.low === S.p.low_surface);
   for (const b of $('trimSeg').children) b.classList.toggle('on', b.dataset.trim === (S.p.trim || ''));
   $('i_hairc').value = S.p.hair_color || '#3b2618';
+  if ($('r_wigs')) $('r_wigs').hidden = S.piece !== 'hair';
   $('i_tint').value = S.p.tint; $('i_cloth').value = S.p.cloth; $('i_tex').value = String(S.p.tex); $('i_seed').value = S.p.seed;
   for (const b of $('matSeg').children) b.classList.toggle('on', b.dataset.mat === (isMade() ? S.p.made_mat || '' : S.p.material));
   $('matOwn').hidden = !isMade();
@@ -6298,6 +6301,7 @@ function madeSpecs() {
 function madeLook() {
   if (!helmetObj) return;
   if (S.piece === 'hair') {
+    if (S.p.hair_style === 'wig') return;   // (a wig: its own texture's colours)
     const c = new THREE.Color(S.p.hair_color || '#3b2618');
     helmetObj.traverse((o) => { if (o.isMesh) for (const m of [].concat(o.material)) { m.color.copy(c); m.needsUpdate = true; } });
     return;

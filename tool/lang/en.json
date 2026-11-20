@@ -2791,5 +2791,12 @@
  "ag.style_beard_full": "Full",
  "ag.style_beard_long": "Long",
  "ag.style_beard_goatee": "Goatee",
- "ag.style_beard_mustache": "Moustache"
+ "ag.style_beard_mustache": "Moustache",
+ "ag.hair_wig": "Wig: {0}",
+ "ag.wig_no_mesh": "«{0}» has no mesh.",
+ "ag.wig_no_texture": "«{0}» has no colour texture: its hair cannot be told from its skin.",
+ "ag.wig_no_hair": "No hair found in «{0}» (by its texture's colour it should differ from the skin).",
+ "ag.wig_no_head": "Could not align «{0}»'s head with the character's: too few skin points.",
+ "ag.wig_no_model": "The wig's model is not in the wigs' folder.",
+ "ag.hair_models_note": "Your own hairstyles: put a GLB of a head with hair (from Tripo, say) into {0} - it shows here as a «Wig» button. The hair is told from the skin by colour and put on the character's head."
 }

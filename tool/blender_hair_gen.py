@@ -727,8 +727,153 @@ def build_mohawk(base):
     return [ob, base]
 
 
+# ---------------------------------------------------------------- a wig: the hair of a head made elsewhere (Tripo)
+def build_wig(model):
+    """the model's hair told from its skin by the texture's colour (two clusters; the hair's the one over the top of
+    the head), small islands of it dropped (brows, a moustache drawn on the skin); its head aligned to the
+    character's (its skin points onto the character's head skin, scale and all: ICP); the hair pushed out of the body
+    (the push smoothed over it); a dark cap under it (no skin between the locks)"""
+    from mathutils import Matrix
+    gi = {g.index: g.name for g in skin.vertex_groups}
+    ours = []
+    for v in me.vertices:
+        ws = {gi[g.group]: g.weight for g in v.groups}
+        tot = sum(ws.values()) or 1
+        if ws.get(names["head"], 0) / tot > .5:
+            ours.append(list(skin.matrix_world @ v.co))
+    ours = np.array(ours)
+    before = set(bpy.data.objects)
+    bpy.ops.import_scene.gltf(filepath=model)
+    new = [o for o in bpy.data.objects if o not in before]
+    tobj = max((o for o in new if o.type == "MESH"), key=lambda o: len(o.data.vertices), default=None)
+    if tobj is None:
+        fail(_t("ag.wig_no_mesh", Path(model).name))
+    bpy.context.view_layer.update()
+    tm = tobj.data
+    import re
+    ims = [n.image for m in tm.materials if m and m.use_nodes for n in m.node_tree.nodes if n.type == "TEX_IMAGE" and n.image]
+    ims = [im for im in ims if not re.search(r"normal|_rm\b|_rm\.|rough|metal|_orm|occlusion", im.name.lower())]
+    img = next((im for im in ims if re.search(r"base|colou?r|albedo|diffuse", im.name.lower())), ims[0] if ims else None)   # (the colour's, not the normals', the roughness')
+    if img is None:
+        fail(_t("ag.wig_no_texture", Path(model).name))
+    w_, h_ = img.size
+    px = np.array(img.pixels[:], np.float32).reshape(h_, w_, 4)
+    uvd = tm.uv_layers.active.data
+    col = np.zeros((len(tm.vertices), 3)); cnt = np.zeros(len(tm.vertices))
+    for lp in tm.loops:
+        u, v = uvd[lp.index].uv
+        col[lp.vertex_index] += px[int((v % 1) * (h_ - 1)), int((u % 1) * (w_ - 1)), :3]; cnt[lp.vertex_index] += 1
+    col /= np.maximum(cnt, 1)[:, None]
+    zs = np.array([(tobj.matrix_world @ v.co).z for v in tm.vertices])
+    # two colour clusters (k-means), the hair's the one higher up (the top of the head is hair, whatever its colour)
+    c0, c1 = col[zs > np.percentile(zs, 95)].mean(0), col[zs < np.percentile(zs, 50)].mean(0)
+    for _ in range(12):
+        lab = np.linalg.norm(col - c0, axis=1) < np.linalg.norm(col - c1, axis=1)
+        if lab.all() or (~lab).all():
+            break
+        c0, c1 = col[lab].mean(0), col[~lab].mean(0)
+    is_hair = lab if zs[lab].mean() > zs[~lab].mean() else ~lab
+    bm = bmesh.new(); bm.from_mesh(tm); bm.transform(tobj.matrix_world)
+    for lay in list(bm.verts.layers.deform.values()):
+        bm.verts.layers.deform.remove(lay)
+    bm.verts.ensure_lookup_table(); bm.faces.ensure_lookup_table()
+    hf = {f.index for f in bm.faces if all(is_hair[v.index] for v in f.verts)}
+    seen, islands = set(), []
+    for f0 in hf:
+        if f0 in seen:
+            continue
+        st, isl = [f0], []; seen.add(f0)
+        while st:
+            fi = st.pop(); isl.append(fi)
+            for e in bm.faces[fi].edges:
+                for g in e.link_faces:
+                    if g.index in hf and g.index not in seen:
+                        seen.add(g.index); st.append(g.index)
+        islands.append(isl)
+    if not islands:
+        fail(_t("ag.wig_no_hair", Path(model).name))
+    big = max(len(i) for i in islands)
+    keep = {f for isl in islands if len(isl) >= .02 * big for f in isl}
+    sk = np.array([list(v.co) for v in bm.verts if not is_hair[v.index]])
+    zc = sk[:, 2].min() + .35 * (sk[:, 2].max() - sk[:, 2].min())
+    tsel = sk[sk[:, 2] > zc]   # (the bust's head, not its shoulders)
+    if len(tsel) < 50 or len(ours) < 50:
+        fail(_t("ag.wig_no_head", Path(model).name))
+    s = (ours[:, 0].max() - ours[:, 0].min()) / max(1e-9, tsel[:, 0].max() - tsel[:, 0].min())   # (ear tip to ear tip)
+    Rm = np.eye(3); t = ours.mean(0) - s * tsel.mean(0)
+    for it in range(40):
+        Y = s * (tsel @ Rm.T) + t
+        pairs = []
+        for i in range(0, len(Y), max(1, len(Y) // 3000)):
+            loc, n, fi, d = full.find_nearest(Vector(Y[i]))
+            if loc is not None:
+                pairs.append((i, np.array(list(loc)), d))
+        ds = np.array([q[2] for q in pairs]); cut = np.percentile(ds, 80)
+        A = np.array([tsel[i] for i, q, d in pairs if d <= cut]); B = np.array([q for i, q, d in pairs if d <= cut])
+        ma, mb = A.mean(0), B.mean(0); A0, B0 = A - ma, B - mb
+        U, S_, Vt = np.linalg.svd(B0.T @ A0)
+        D = np.eye(3); D[2, 2] = np.sign(np.linalg.det(U @ Vt))
+        Rm = U @ D @ Vt; s = (S_ * np.diag(D)).sum() / (A0 ** 2).sum(); t = mb - s * (Rm @ ma)
+    print("wig: icp %.4f of R, scale %.5f" % (ds.mean() / R, s), flush=True)
+    M = Matrix(((*(s * Rm[0]), t[0]), (*(s * Rm[1]), t[1]), (*(s * Rm[2]), t[2]), (0, 0, 0, 1)))
+    hair_col = col[is_hair].mean(0)
+    bmesh.ops.delete(bm, geom=[f for f in bm.faces if f.index not in keep], context="FACES")
+    bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context="VERTS")
+    bm.transform(M)
+    bm.verts.ensure_lookup_table()
+    gap = .08 * R   # out of the body, the push smoothed over the hair (no dents where one lock met the skin)
+    vec = [Vector()] * len(bm.verts)
+    for v in bm.verts:
+        loc, n, fi, d = full.find_nearest(v.co)
+        if loc is None:
+            continue
+        nn = n.normalized(); side = (v.co - loc).dot(nn)
+        if side < gap:
+            vec[v.index] = nn * (gap - side)
+    for _ in range(6):
+        nv = []
+        for v in bm.verts:
+            nb = [e.other_vert(v).index for e in v.link_edges]
+            avg = sum((vec[j] for j in nb), Vector()) / max(1, len(nb))
+            nv.append(vec[v.index] if vec[v.index].length > avg.length else avg * .9 + vec[v.index] * .1)
+        vec = nv
+    for v in bm.verts:
+        v.co += vec[v.index]
+    hm = bpy.data.meshes.new("hair_wig"); bm.to_mesh(hm); bm.free()
+    for m in tm.materials:
+        if m and m.use_nodes:   # (opaque: a head's material, not cut by its alpha)
+            b = next((n for n in m.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
+            if b is not None:
+                for l in list(b.inputs["Alpha"].links):
+                    m.node_tree.links.remove(l)
+                b.inputs["Alpha"].default_value = 1.0
+            if hasattr(m, "blend_method"):
+                try:
+                    m.blend_method = "OPAQUE"
+                except TypeError:
+                    pass
+            m.name = "hair_wig"
+        hm.materials.append(m)
+    wig = bpy.data.objects.new("hair_wig", hm); sc.collection.objects.link(wig)
+    for o in new:
+        bpy.data.objects.remove(o, do_unlink=True)
+    cap = scalp_shell(hairline, lambda v: .05 * R, "hair_cap")
+    mc = bpy.data.materials.new("hair_cap"); mc.use_nodes = True
+    b = next(n for n in mc.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
+    hc = np.clip(hair_col, 0, 1); hc = np.where(hc <= .04045, hc / 12.92, ((hc + .055) / 1.055) ** 2.4)   # (the texture's sRGB to the material's linear: else the cap came out lighter than the hair)
+    b.inputs["Base Color"].default_value = (*(hc * .45), 1); b.inputs["Roughness"].default_value = .8
+    cap.data.materials.append(mc)
+    for poly in cap.data.polygons:
+        poly.use_smooth = True
+    return [wig, cap], cap
+
+
 # ---------------------------------------------------------------- the style
-if style in ("long", "bob"):
+if style.startswith("wig"):
+    if not prm.get("model") or not Path(prm["model"]).is_file():
+        fail(_t("ag.wig_no_model"))
+    obs, mask_of = build_wig(prm["model"])
+elif style in ("long", "bob"):
     Lh = float(prm.get("length", .26 if style == "long" else .14)) * H * (1.2 if style == "long" else 2.0)
     obs, mask_of = build_cards(Lh, float(prm.get("part", 0. if style == "long" else .3)), (E.z - 1.25 * R) if style == "bob" else None)
 elif style in SHORT:

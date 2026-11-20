@@ -163,6 +163,28 @@ def _foot_params(params) -> dict:
     return {"gap": float(params.get("foot_gap", 6)) / 100}
 
 
+def hair_models_dir(export_dir) -> Path:
+    """Where heads with hair made elsewhere (Tripo) are put: each GLB a wig among the hair's styles."""
+    d = Path(export_dir) / "hair_models"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _wig_key(path: Path) -> str:
+    return "hair_wig_" + re.sub(r"[^A-Za-z0-9_-]+", "_", path.stem).strip("_")
+
+
+def hair_models(export_dir) -> list:
+    """[{key, name, path}] of the wigs' folder's GLBs."""
+    d = hair_models_dir(export_dir)
+    return [{"key": _wig_key(g), "name": g.stem, "path": g.resolve().as_posix()} for g in sorted(d.glob("*.glb"))]
+
+
+def _wig_model(style: str, cfg):
+    """A wig style's model (from its key, in the wigs' folder only - not a path the page sends)."""
+    return next((Path(m["path"]) for m in hair_models(cfg["export_dir"]) if m["key"] == style), None)
+
+
 def _hair_params(params) -> dict:
     """The editor's hair parameters as blender_hair_gen.py's: its length (a share of the height), its colour (linear), its
     parting (a share of the head's half width to a side)"""
@@ -631,6 +653,10 @@ def editor_page(rigged: Path, decals_dir: Path | None = None) -> str:
             "lib_slots": {k: _t(f"ag.lib_slot_{k}") for k in ("plate", "strap", "detail", "mail", "quilt", "trim", "wood")},
             "lib_cats": {k: _t(f"ag.lib_cat_{k}") for k in ("wood", "planks", "leather", "fabric", "metal", "rust", "paint", "gold")},
             **{grp: {k: _t(f"ag.{grp.split('_')[0]}_{k}") for k in keys} for grp, keys in CHOICES.items()}}
+    exp = decals_dir.parent if decals_dir else Path(rigged).parents[2]
+    data["hair_models"] = hair_models(exp)   # wigs: heads with hair made elsewhere (Tripo), each a style
+    data["hair_models_dir"] = hair_models_dir(exp).resolve().as_posix()
+    data["style_labels"].update({m["key"]: _t("ag.hair_wig", m["name"]) for m in data["hair_models"]})
     return page.replace("@@DATA@@", json.dumps(data, ensure_ascii=False).replace("</", "<\\/"))
 
 
@@ -658,10 +684,13 @@ def made_preview(cfg, req) -> dict:
     chosen (as «Generate» makes it, 5-20 s): work/helmets/<character>/<style>_<the parameters>.glb with its mask, made
     once. {ok, log, preview: {glb, mask, v}}."""
     piece, style, rigged = req.get("piece", "helmet"), req.get("style"), Path(req["rigged"])
-    if piece not in MADE or style not in MADE[piece][1]:
+    wig = _wig_model(style, cfg) if piece == "hair" and str(style).startswith("hair_wig_") else None
+    if piece not in MADE or (style not in MADE[piece][1] and wig is None):
         return {"ok": False, "log": _t("ag.unknown_piece", style)}
     script, _, prefix, to_job, own = MADE[piece]
     hp = to_job(req.get("params") or {})
+    if wig is not None:
+        hp["model"] = str(wig)
     sides = [x for x in req.get("sides") or [] if x in ("L", "R")]
     tag = "".join(f"_{k[0]}{round(hp[k] * (1 if 'angle' in k else 100))}" for k in ("gap", *own.get(style, ()))) + ("_" + "".join(sides) if sides else "")
     tag += "".join(f"_{k[:2]}{round(hp[k] * 10)}" for k in ("slide", "twist", "size") if k in hp and hp[k] != (100 if k == "size" else 0))   # (placed by hand)
@@ -671,7 +700,8 @@ def made_preview(cfg, req) -> dict:
     d = Path(cfg["work_dir"]) / "helmets" / LM._slug(LM._stem(rigged))
     d.mkdir(parents=True, exist_ok=True)
     glb, mask = d / f"{style}{tag}.glb", d / f"{style}{tag}.mask.json"
-    if not (glb.exists() and mask.exists() and glb.stat().st_mtime > max(rigged.stat().st_mtime, (ROOT / script).stat().st_mtime)):
+    if not (glb.exists() and mask.exists() and glb.stat().st_mtime > max(rigged.stat().st_mtime, (ROOT / script).stat().st_mtime,
+                                                                       wig.stat().st_mtime if wig is not None else 0)):
         job = {"style": style[len(prefix):], "params": hp, "sides": sides, "out": str(glb), "work": str(d), "character": str(rigged),
                "names": {n: LM.bone_names(n) for n in ("mixamo", "godot")}, "mask": str(mask), "under": under}
         (d / f"{style}{tag}.job.json").write_text(json.dumps(job, ensure_ascii=False), encoding="utf-8")
@@ -729,8 +759,11 @@ def generate(cfg, req) -> dict:
         job.pop("mask")
         (work / "mask.json").unlink(missing_ok=True)
     if made:
-        style = params.get(piece) if params.get(piece) in made[1] else made[1][0]
+        wig = _wig_model(params.get(piece), cfg) if piece == "hair" and str(params.get(piece)).startswith("hair_wig_") else None
+        style = params.get(piece) if params.get(piece) in made[1] or wig is not None else made[1][0]
         job.update(style=style[len(made[2]):], params=made[3](params))
+        if wig is not None:
+            job["params"]["model"] = str(wig)
         if isinstance(params.get("made_look"), list):   # another material than the generator's (the editor's specs by slot)
             job["look"] = params["made_look"]
         if piece == "helmet":
