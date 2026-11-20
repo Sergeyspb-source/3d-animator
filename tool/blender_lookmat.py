@@ -32,7 +32,7 @@ def node_mat(name, spec, R, job, pattern=None, unit=1.0):
     vor = N("ShaderNodeTexVoronoi"); vor.inputs["Scale"].default_value = 9 if kind == "metal" else 28
     for t in (big, fine, vor):
         L(mp.outputs[0], t.inputs[0])
-    hair = kind == "hair"   # (hair: its colour even - no dirt blotches, no scuffs, no grain; the strands' pattern is its relief)
+    hair = kind in ("hair", "stubble")   # (hair: its colour even - no dirt blotches, no scuffs, no grain; the strands' pattern is its relief)
     if hair:
         big.inputs["Scale"].default_value = 4
         wear = 0.0
@@ -92,6 +92,9 @@ def node_mat(name, spec, R, job, pattern=None, unit=1.0):
         mul = N("ShaderNodeMix"); mul.data_type = "RGBA"; mul.blend_type = "MULTIPLY"; mul.inputs[0].default_value = 1.0
         L(colour, mul.inputs[6]); L(sep.outputs[1], mul.inputs[7])
         colour = mul.outputs[2]
+        if kind == "stubble":   # (stubble: the hairs only - the pattern's height its alpha, baked into the colour's; the skin between)
+            al = N("ShaderNodeMath"); al.operation = "GREATER_THAN"; al.inputs[1].default_value = .5; al.name = "stubble_alpha"
+            L(sep.outputs[0], al.inputs[0])
     L(colour, bsdf.inputs["Base Color"])
     rr = N("ShaderNodeMapRange")
     rr.inputs[3].default_value = max(.05, rough - .12); rr.inputs[4].default_value = min(1, rough + .2)

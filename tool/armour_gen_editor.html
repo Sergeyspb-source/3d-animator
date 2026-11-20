@@ -4152,9 +4152,9 @@ function armsOffBody() {
 const HAIR_STYLES = {   // after the reference pictures (an image model's, on this kind of head): len % of the height; flow:
   // back (combed back), brush (up and back from the forehead), fall (down from the crown), part (down to the sides of a
   // middle parting), up (a crest); cut: where it ends (the jaw for a bob); fringe: the front falls to the brows
-  hair_crop: { hair_style: 'crop', hair_part: 'none', hair_len: 3.5, hair_vol: 130, hair_n: 260, hair_curl: 0, hair_line: 0, hair_flow: 'brush', hair_lift: 60 },
+  hair_crop: { hair_style: 'crop', hair_part: 'none', hair_len: 3.5, hair_vol: 190, hair_n: 260, hair_curl: 0, hair_line: 0, hair_flow: 'brush', hair_lift: 60 },
   hair_short: { hair_style: 'short', hair_len: 6, hair_vol: 150, hair_n: 240, hair_curl: 15, hair_line: 0, hair_flow: 'brush', hair_lift: 80, hair_part: 'left' },
-  hair_bob: { hair_style: 'bob', hair_part: 'none', hair_len: 14, hair_vol: 150, hair_n: 300, hair_curl: 0, hair_line: -10, hair_flow: 'fall', hair_lift: 30 },
+  hair_bob: { hair_style: 'bob', hair_part: 'left', hair_len: 14, hair_vol: 150, hair_n: 300, hair_curl: 0, hair_line: -10, hair_flow: 'fall', hair_lift: 30 },
   hair_long: { hair_style: 'long', hair_part: 'none', hair_len: 26, hair_vol: 140, hair_n: 320, hair_curl: 10, hair_line: 0, hair_flow: 'part', hair_lift: 20 },
   hair_back: { hair_style: 'back', hair_part: 'none', hair_len: 10, hair_vol: 140, hair_n: 260, hair_curl: 0, hair_line: 0, hair_flow: 'back', hair_lift: 55 },
   hair_mohawk: { hair_style: 'mohawk', hair_part: 'none', hair_len: 8, hair_vol: 230, hair_n: 34, hair_curl: 0, hair_line: 0, hair_flow: 'up', hair_lift: 100 },
@@ -4260,8 +4260,8 @@ function hairShell(p, F, ctx) {
   const { O, E, NK } = F, { d, halfEye, keep, isEar, boxes, hb, nb, cb, acc, H } = ctx;
   const back = FRONT.clone().negate(), X = new V3(1, 0, 0), st = p.hair_style;
   const frontOf = (v) => v.clone().sub(O).dot(FRONT) / d;
-  const part = p.hair_part || 'none', px = part === 'left' ? .55 : part === 'right' ? -.55 : 0;   // (a parting: the pole off to its side - the hair over the top sweeps away from it)
-  const pole = (p.hair_flow === 'back' ? FRONT.clone().multiplyScalar(.4).addScaledVector(UP, .92) : UP.clone().addScaledVector(back, .28).addScaledVector(X, px)).normalize();
+  const part = p.hair_part || 'none', px = part === 'left' ? .3 : part === 'right' ? -.3 : 0;   // (a parting: the pole off to its side - the hair over the top sweeps away from it)
+  const pole = (p.hair_flow === 'back' ? FRONT.clone().multiplyScalar(.85).addScaledVector(UP, .5) : UP.clone().addScaledVector(back, .28 + .5 * Math.abs(px)).addScaledVector(X, px)).normalize();
   const b1 = new V3().crossVectors(pole, X).normalize(), b2 = new V3().crossVectors(pole, b1).normalize();
   const T = (p.hair_vol || 100) / 100 * .16 * halfEye * Math.min(1.6, .4 + .1 * (p.hair_len || 6));   // the mass's thickness over the skull (a longer cut: fuller)
   const L = (p.hair_len || 0) / 100 * H, yJaw = E.y - 1.05 * d, yBrow = E.y + .32 * d;
@@ -4274,9 +4274,12 @@ function hairShell(p, F, ctx) {
     const phi = j / NJ * TAU, c = clump(phi), side = b1.clone().multiplyScalar(Math.cos(phi)).addScaledVector(b2, Math.sin(phi));
     const pts = [], ws = [], arc = [];
     let s = 0, prev = null, last = null, lastDir = null;
-    // over the skull: the scalp under it (the first skin from the head's middle), out by the thickness
-    let started = false, edge = null, lastThick = 0;
-    const inside = (S) => keep(S) || (st === 'bob' && frontOf(S) > .3 && Math.abs(S.x - O.x) < .6 * halfEye && S.y > yBrow);   // (a bob's fringe: on down the forehead to the brows)
+    // over the skull: the scalp under it (the first skin from the head's middle), out by the thickness - the points
+    // first, their thickness once the column's end is known (its edge rounded)
+    let started = false, edge = null, lastThick = 0, th0 = 0;
+    const fringeOn = st === 'bob' && part === 'none';
+    const inside = (S) => keep(S) || (fringeOn && frontOf(S) > .3 && Math.abs(S.x - O.x) < .6 * halfEye && S.y > yBrow);   // (a bob's fringe: on down the forehead to the brows)
+    const scal = [];
     for (let th = 0; th < Math.PI * .95; th += .025) {
       const dir = pole.clone().multiplyScalar(Math.cos(th)).addScaledVector(side, Math.sin(th)).normalize();
       const h = cast(O, dir, H); if (!h) break;
@@ -4288,21 +4291,41 @@ function hairShell(p, F, ctx) {
         for (let it = 0; it < 5; it++) { const am = (a0 + a1) / 2, dm = pole.clone().multiplyScalar(Math.cos(am)).addScaledVector(side, Math.sin(am)).normalize(), hm = cast(O, dm, H);
           if (hm && inside(hm.point)) a0 = am; else a1 = am; }
         const de = pole.clone().multiplyScalar(Math.cos(a0)).addScaledVector(side, Math.sin(a0)).normalize(), he = cast(O, de, H);
-        if (he) { const q = he.point.clone().addScaledVector(de, MM(1) + .25 * T); s += q.distanceTo(prev); pts.push(q); arc.push(s); ws.push(null); prev = q; edge = { S: he.point, dir: de }; }
+        if (he) edge = { S: he.point, dir: de };
         break;
       }
+      if (!started) th0 = th;
       started = true;
       const cr = .8 + .2 * Math.sin(phi * 4 + clumpPh[1] * 6);   // (smooth: a broad wave only - the strands are the texture's)
       const quiff = (p.hair_lift || 30) / 100 * 1.6 * smooth(.2, .9, frontOf(S) / 1.6) * smooth(-.2, .5, (S.y - E.y) / d - .6);   // (the front rises off the forehead)
-      const thick = T * (.55 + .45 * Math.cos(th * .8)) * (1 + quiff) * cr;
-      const q = S.clone().addScaledVector(dir, MM(1) + thick); lastThick = thick;
-      if (prev) s += q.distanceTo(prev);
-      pts.push(q); arc.push(s); ws.push(null); prev = q; last = S; lastDir = dir;
+      // (a crop: the sides and the back faded to nothing, the hair on the top)
+      const fade = 1;
+      scal.push({ S, dir, thick: T * (.55 + .45 * Math.cos(th * .8)) * (1 + quiff) * cr * fade });
+      last = S; lastDir = dir;
+    }
+    if (last) {
+      const fc = st === 'bob' && fringeOn && frontOf(last) > .25 && Math.abs(last.x - O.x) < .62 * halfEye;
+      const hangs = hang && !fc && !(frontOf(last) > .25 && Math.abs(last.x - O.x) < .62 * halfEye);
+      // the way along the scalp to each point, from its start and to its end: the hair's edge rounded (a quarter
+      // circle over one and a half thicknesses) where it ends, and where it starts past the pole (combed back: the
+      // hairline) - not cut off square, a bowl's rim
+      const sa = [0]; for (let k = 1; k < scal.length; k++) sa.push(sa[k - 1] + scal[k].S.distanceTo(scal[k - 1].S));
+      const sEnd = sa[sa.length - 1] + (edge ? edge.S.distanceTo(scal[scal.length - 1].S) : 0);
+      const round = (x) => Math.sqrt(Math.max(0, 1 - (1 - Math.min(1, x)) ** 2));
+      scal.forEach((c, k) => {
+        let f = 1;
+        if (!hangs) f *= Math.max(.12, st === 'crop' ? Math.min(1, (sEnd - sa[k]) / (4 * Math.max(c.thick, MM(2)))) ** .7 : round((sEnd - sa[k]) / (1.5 * Math.max(c.thick, MM(2)))));   // (a crop's: thinning out to the shaved sides)
+        if (th0 > .12) f *= Math.max(.12, round(sa[k] / (1.5 * Math.max(c.thick, MM(2)))));
+        const q = c.S.clone().addScaledVector(c.dir, MM(1) + c.thick * f); lastThick = c.thick;
+        if (prev) s += q.distanceTo(prev);
+        pts.push(q); arc.push(s); ws.push(null); prev = q;
+      });
+      if (edge) { const q = edge.S.clone().addScaledVector(edge.dir, MM(1) + (hangs ? lastThick : .12 * lastThick)); s += q.distanceTo(prev); pts.push(q); arc.push(s); ws.push(null); prev = q; }
     }
     if (!last) { cols.push(null); continue; }
     // the ends past the hairline (not where it hangs on): each clump to a point, as cut hair lies, down along the skin
     // (a bob's fringe: the front columns on down the forehead to the brows)
-    const fringeCol = st === 'bob' && frontOf(last) > .25 && Math.abs(last.x - O.x) < .62 * halfEye;
+    const fringeCol = st === 'bob' && fringeOn && frontOf(last) > .25 && Math.abs(last.x - O.x) < .62 * halfEye;
     const tipL = fringeCol ? Math.max(0, prev.y - yBrow) * 1.6 : 0;   // (no clump points: a smooth mass)
     if (tipL > 0) {
       const down = lastDir.clone(), ex = prev.clone();
@@ -4321,9 +4344,9 @@ function hairShell(p, F, ctx) {
     const front = fringeCol || (frontOf(last) > .25 && Math.abs(last.x - O.x) < .62 * halfEye);
     if (hang && !front) {
       // (the curtain goes on at the mass's thickness: the edge's taper is for where the hair ends)
-      if (edge && !tipL) { const q = edge.S.clone().addScaledVector(edge.dir, MM(1) + lastThick); s += q.distanceTo(pts[pts.length - 2] || q) - (arc[arc.length - 1] - (arc[arc.length - 2] ?? 0));
-        pts[pts.length - 1] = q; arc[arc.length - 1] = s; prev = q; }
-      const yEnd = st === 'bob' ? yJaw : -Infinity, Lh = st === 'bob' ? Infinity : L * (.92 + .08 * Math.cos(phi * 2));
+      // (long hair's ends in clumps: each clump's middle longest - pointed, not a ruler's line)
+      const yEnd = st === 'bob' ? yJaw : -Infinity, Lh = st === 'bob' ? Infinity : L * (.72 + .28 * c.ridge) * (.9 + .2 * clumpPh[c.k]);
+      const yTop = prev.y, toFront = frontOf(last) > -.15 ? 1 : -1; let xLock = null;
       let cur = prev.clone(), hs = 0;
       const gapH = Math.max(.6 * T, lastThick);
       for (let n = 0; n < 120 && hs < Lh && cur.y > yEnd; n++) {
@@ -4336,13 +4359,27 @@ function hairShell(p, F, ctx) {
           const h = cast(cur, dv, ds + gapH);
           if (!h || !h.face || (isEar && isEar(h.point))) break;
           const nrm = h.face.normal.clone().normalize(); if (nrm.dot(dv) > 0) nrm.negate();
-          dv.addScaledVector(nrm, -dv.dot(nrm)).addScaledVector(nrm, .15).normalize();
+          dv.addScaledVector(nrm, -dv.dot(nrm)).addScaledVector(nrm, .15);
+          // (on the shoulders: off them to the front or the back - not out along them onto the arms)
+          if (cur.y < NK.y + .3 * (O.y - NK.y)) { dv.x *= .3; dv.addScaledVector(FRONT, toFront * .8); }   // (the side's hair: those from in front of the ear to the chest, the rest down the back)
+          dv.normalize();
         }
         const nx = cur.clone().addScaledVector(dv, ds);
+        // below the neck: the hair keeps the width it had there (it falls, not a cape spreading over the back and
+        // the shoulders), off the body to the front or the back only
+        const low = nx.y < NK.y + .3 * (O.y - NK.y);
+        if (low) { if (xLock === null) xLock = nx.x; nx.x = O.x + Math.sign(xLock - O.x) * Math.min(Math.abs(nx.x - O.x), Math.abs(xLock - O.x)); }
+        if (low) { const zs = Math.sign(nx.z - O.z || toFront), ax = new V3(nx.x, nx.y, O.z), hh = cast(ax, new V3(0, 0, zs), H);
+          const need = hh ? hh.distance + gapH + MM(1) : 0; if (Math.abs(nx.z - O.z) < need) nx.z = O.z + zs * need; }
         // kept off the head (the cheeks, the jaw) and the neck by the hair's thickness: out from their axis, level
-        { const ax = new V3(O.x, nx.y, O.z), out = nx.clone().sub(ax); out.y = 0; const l = out.length();
+        else { const ax = new V3(O.x, nx.y, O.z), out = nx.clone().sub(ax); out.y = 0; const l = out.length();
           if (l > 1e-6) { out.multiplyScalar(1 / l); const hh = cast(ax, out, H);
-            if (hh && !(isEar && isEar(hh.point)) && l < hh.distance + gapH + MM(1)) nx.copy(ax).addScaledVector(out, hh.distance + gapH + MM(1)); } }
+            const need = hh && !(isEar && isEar(hh.point)) ? hh.distance + gapH + MM(1) : 0;
+            if (l < need) nx.copy(ax).addScaledVector(out, need);
+            else if (st === 'bob' && need) {   // (a bob's ends turned in under, to the neck)
+              const fr = Math.max(0, Math.min(1, (yTop - nx.y) / Math.max(1e-6, yTop - yJaw)));
+              nx.copy(ax).addScaledVector(out, Math.max(need, l - (l - need) * .5 * smooth(.55, 1, fr)));
+            } } }
         hs += nx.distanceTo(cur); s += nx.distanceTo(cur); cur = nx;
         pts.push(cur.clone()); arc.push(s); ws.push(Math.max(0, Math.min(1, (O.y - .6 * d - cur.y) / (.18 * H))));
       }
@@ -4379,10 +4416,79 @@ function hairShell(p, F, ctx) {
     if (Lc.length - n <= 3) for (let k = n - 1; k < Lc.length - 1; k++) tris.push(flip ? [Lc[k + 1], Lc[k], Sc[n - 1]] : [Lc[k], Lc[k + 1], Sc[n - 1]]);
   }
   if (!tris.length) return null;
+  // a crop's top: short tufts over the mass, forward and up (the reference's spiky cut), their roots in it
+  if (st === 'crop') {
+    const live = cols.map((c, j) => (c && c.pts.length > 6 ? j : -1)).filter((j) => j >= 0), nT = Math.round((p.hair_n || 200) * .45);
+    for (let k = 0; k < nT && live.length; k++) {
+      const c = cols[live[Math.floor(rnd() * live.length)]], i = 1 + Math.floor(rnd() * (c.pts.length - 4)), q = c.pts[i];
+      const n = q.clone().sub(O).normalize(), lenT = T * (2.5 + 2 * rnd()) * (.6 + .4 * smooth(-.3, .8, frontOf(q)));
+      // (lying forward over the mass, its tip lifting a little - feathers laid down, not a hedgehog's quills)
+      const fw = FRONT.clone().addScaledVector(UP, .4).addScaledVector(n, -FRONT.clone().addScaledVector(UP, .4).dot(n)).normalize();
+      const dv = fw.addScaledVector(n, .35).addScaledVector(new V3(rnd() - .5, 0, rnd() - .5), .4).normalize();
+      const r = .045 * halfEye * (p.hair_vol || 100) / 100 * (.8 + .4 * rnd()), pts2 = [q.clone().addScaledVector(n, -.6 * T)], rad = [r];
+      for (let m = 1; m <= 4; m++) { dv.addScaledVector(n, m < 3 ? -.1 : .12).normalize(); pts2.push(pts2[m - 1].clone().addScaledVector(dv, (lenT + .6 * T) / 4)); rad.push(r * Math.max(.03, (1 - m / 4) ** 1.2)); }
+      hairTube(acc, pts2, rad, () => hw, U, { ax: n, k: .45 });   // (a feather: wide across, thin up)
+    }
+  }
   // the sheet given its thickness
   const G = { pos, tris, n: normalsOf(pos, tris) };
   shellOf(acc, G, tris.map((_, t) => t), 0, Math.max(MM(1.5), .25 * T), PLATE, 'plate', (i) => ({ direct: wv[i] }), null, 0, (q, nn, i) => uv[i]);
   return true;
+}
+// a tube along a polyline: rings of 8 round it, each point its radius (flat: the ring's axis toward ax, k times the
+// radius across it); a mohawk's spikes, a ponytail, a moustache's halves
+function hairTube(acc, pts, rad, wOf, U, flat) {
+  const rows = [], n = pts.length; let s = 0;
+  for (let i = 0; i < n; i++) {
+    if (i) s += pts[i].distanceTo(pts[i - 1]);
+    const t = pts[Math.min(n - 1, i + 1)].clone().sub(pts[Math.max(0, i - 1)]).normalize();
+    const ref = flat && flat.ax ? flat.ax : Math.abs(t.y) < .9 ? UP : FRONT;
+    const n1 = ref.clone().addScaledVector(t, -ref.dot(t)).normalize(), n2 = new V3().crossVectors(t, n1).normalize();
+    const row = [], wv = wOf(i, pts[i]);
+    for (let r = 0; r < 8; r++) {
+      const an = r / 8 * TAU, q = pts[i].clone().addScaledVector(n1, Math.cos(an) * rad[i] * (flat ? flat.k : 1)).addScaledVector(n2, Math.sin(an) * rad[i]);
+      row.push(acc.vert(q, r / 8 * Math.max(MM(4), TAU * rad[i]) / U, s / U, { direct: wv }));
+    }
+    rows.push(row);
+  }
+  for (let i = 0; i < n - 1; i++) for (let r = 0; r < 8; r++) acc.face([rows[i][r], rows[i + 1][r], rows[i + 1][(r + 1) % 8], rows[i][(r + 1) % 8]], PLATE, 'plate');   // (wound outwards: lit)
+}
+// a mohawk (the reference: a crest of thick spikes, each a clump to a point, standing up at the front and swept back
+// behind, and a ponytail bound twice at the nape): three rows of tubes along the head's middle, a tube for the tail
+function mohawk(p, F, c) {
+  const { O, E, NK } = F, { d, halfEye, acc, hb, nb, cb, H, L } = c;
+  const back = FRONT.clone().negate(), X = new V3(1, 0, 0), rnd = hairRand(p.seed || 1), U = (p.cell || 3) / 1000 * HEIGHT * 8;
+  const vol = (p.hair_vol || 100) / 100, r0 = .075 * halfEye * vol, hw = () => [[hb, hb, hb, hb], [1, 0, 0, 0]];
+  const N = Math.max(8, Math.round((p.hair_n || 34) / 3)), yF = E.y + .85 * d;
+  let tail = null;
+  for (const row of [0, -1, 1]) for (let k = 0; k < N; k++) {
+    const t = (k + (row ? .5 : 0)) / (N - 1); if (t > 1) continue;
+    const ang = Math.PI * (.3 + .72 * t), dir = FRONT.clone().multiplyScalar(Math.cos(ang)).addScaledVector(UP, Math.sin(ang));
+    const o = O.clone().addScaledVector(X, row * .09 * halfEye), h = cast(o, dir, H); if (!h) continue;
+    const S = h.point; if (S.y < yF && t < .3) continue;   // (not on the forehead)
+    if (!tail || t >= tail.t) if (!row) tail = { S, n: S.clone().sub(O).normalize(), t };
+    const n = S.clone().sub(O).normalize(), Ls = L * (.5 + .6 * Math.sin(Math.PI * Math.min(1, t * 1.1)) ** .8) * (.85 + .3 * rnd()) * (row ? .8 : 1);
+    let dv = n.clone().addScaledVector(back, -.15 + 1.1 * t).addScaledVector(X, row * .25).normalize();
+    const pts = [S.clone().addScaledVector(n, -.3 * r0)], rad = [r0 * (row ? .85 : 1)], segs = 8;
+    for (let i = 1; i <= segs; i++) {
+      dv.addScaledVector(back, .07 + .05 * t).addScaledVector(UP, -.03 * t).normalize();
+      pts.push(pts[i - 1].clone().addScaledVector(dv, Ls / segs)); rad.push(rad[0] * Math.max(.02, (1 - i / segs) ** 1.1));
+    }
+    hairTube(acc, pts, rad, hw, U, { ax: dv.clone().cross(X).normalize(), k: 1.7 });   // (a clump: wide along the crest, thin across it)
+  }
+  if (tail && p.hair_tail !== 0) {   // the ponytail: from the crest's back end, back and down the neck, bound twice, to a point
+    const Lp = 1.4 * L, segs = 16, rp = .9 * r0, pts = [tail.S.clone().addScaledVector(tail.n, .5 * rp)], rad = [rp];
+    const dv = back.clone().addScaledVector(UP, -.4).normalize();
+    for (let i = 1; i <= segs; i++) {
+      dv.addScaledVector(UP, -.18).normalize();
+      const q = pts[i - 1].clone().addScaledVector(dv, Lp / segs);
+      const ax = new V3(O.x, q.y, O.z), out = q.clone().sub(ax); out.y = 0; const l = out.length();   // (off the head and the neck)
+      if (l > 1e-6) { out.multiplyScalar(1 / l); const hh = cast(ax, out, H); if (hh && l < hh.distance + 1.2 * rp) q.copy(ax).addScaledVector(out, hh.distance + 1.2 * rp); }
+      const f = i / segs, band = (f > .1 && f < .16) || (f > .22 && f < .28) ? 1.25 : 1;
+      pts.push(q); rad.push(rp * band * (f < .3 ? .75 + .25 * (1 - f / .3) : Math.max(.03, ((1 - f) / .7) ** .8) * (f < .45 ? 1.15 : 1)));
+    }
+    hairTube(acc, pts, rad, (i, q) => { const k = Math.max(0, Math.min(1, (O.y - .6 * d - q.y) / (.18 * H))); return k > 0 ? [[hb, nb, cb, hb], [1 - k, k * .6, k * .4, 0]] : hw(); }, U);
+  }
 }
 function hair(p) {
   const F = headFrame(); if (!F) return [];
@@ -4391,7 +4497,7 @@ function hair(p) {
   const H = HEIGHT, hb = boneNames.indexOf(PB.head.name), nb = PB.neck ? boneNames.indexOf(PB.neck.name) : hb, cb = PB.spine2 ? boneNames.indexOf(PB.spine2.name) : nb;
   // the scalp: the head's skin from the hairline up and back (the forehead, the temples above the ears, the nape), the
   // ears left out
-  const yF = E.y + (.85 + (p.hair_line || 0) / 100) * d, yS = E.y + .35 * d, yB = O.y - 1.15 * d;
+  const yF = E.y + (.85 + (p.hair_line || 0) / 100) * d, yS = E.y + .35 * d, yB = Math.max(O.y - 1.15 * d, E.y - 1.0 * d);   // (the nape: about the mouth's height - the head's skin ran down the neck to the shoulders)
   const minY = (v) => { const az = Math.abs(Math.atan2(v.x - O.x, v.z - O.z)) / Math.PI, sm = (x) => x * x * (3 - 2 * x);
     return az < .5 ? yF + (yS - yF) * sm(az / .5) : yS + (yB - yS) * sm(Math.min(1, (az - .5) / .14)); };   // (behind the ears: down to the nape at once)
   const mid = p.hair_flow === 'up' ? (v) => Math.abs(v.x - O.x) < .2 * F.halfAt(E.y) : () => true;
@@ -4401,12 +4507,14 @@ function hair(p) {
     dirIn.set(O.x - v.x, 0, O.z - v.z); const l = dirIn.length(); if (l < 1e-6) return false; dirIn.multiplyScalar(1 / l);
     const h = cast(v.clone().addScaledVector(dirIn, MM(.5)), dirIn, .25 * d); return !!h; };
   const ear = (v) => (Math.abs(v.x - O.x) > 1.02 * halfEye && v.y < E.y + 1.2 * halfEye) || (Math.abs(v.x - O.x) > .6 * halfEye && v.y < E.y + 1.6 * d && thin(v));
-  const keep = (v) => v.y > minY(v) && mid(v) && !ear(v);
+  // (a crop: the top only - the sides shaved from the temples, the back from the occiput down)
+  const cropped = p.hair_style === 'crop' ? (v) => v.y > E.y + (.8 - .35 * smooth(-.2, .6, (O.z - v.z) * FRONT.z / d)) * d : () => true;
+  const keep = (v) => v.y > minY(v) && mid(v) && !ear(v) && cropped(v);
   // each ear's box (its skin): a lock coming to it goes behind it, as hair tucked behind the ears
   const earKeep = Object.assign((v) => ear(v) && v.y > NK.y, { key: 'hair_ears' });
   const ES = bodySkin(new Set(['head']), earKeep), boxes = [new THREE.Box3(), new THREE.Box3()];
   for (const v of ES.pos) boxes[v.x > O.x ? 0 : 1].expandByPoint(v);
-  keep.key = 'hair2_' + (p.hair_line || 0) + '_' + p.hair_flow;
+  keep.key = 'hair2_' + (p.hair_line || 0) + '_' + p.hair_flow + '_' + p.hair_style;
   const S0 = bodySkin(new Set(['head']), keep); if (!S0.tris.length) return [];
   const S = { ...S0, n: normalsOf(S0.pos, S0.tris) }, all = S.tris.map((_, t) => t);
   const R = .02 * H, gap = MM(1.5), U = .02 * H;
@@ -4435,8 +4543,10 @@ function hair(p) {
     // (the skin hidden under it: the scalp's, no bit of an ear - the ear's holes showed)
     const maskKeep = Object.assign((v) => keep(v) && !earThin(v) && !byEar(v), { key: keep.key + '_noears' });
     maskKeys = bodySkin(new Set(['head']), maskKeep).keys;
-    hairShell(p, F, { d, halfEye, keep: (v) => v.y > minY(v) && !earThin(v) && !byEar(v), isEar: (v) => earThin(v) || byEar(v), boxes: roots, hb, nb, cb, acc, H });
-  } else if (L > MM(4) && p.hair_n > 0) {   // (a mohawk: its spikes, locks)
+    hairShell(p, F, { d, halfEye, keep: (v) => v.y > minY(v) && !earThin(v) && !byEar(v) && cropped(v), isEar: (v) => earThin(v) || byEar(v), boxes: roots, hb, nb, cb, acc, H });
+  } else if (L > MM(4) && p.hair_n > 0) {   // (a mohawk: its crest of spikes and its tail)
+    mohawk(p, F, { d, halfEye, acc, hb, nb: PB.neck ? boneNames.indexOf(PB.neck.name) : hb, cb: PB.spine2 ? boneNames.indexOf(PB.spine2.name) : hb, H, L });
+  } else if (false) {
     const back = FRONT.clone().negate(), X = new V3(1, 0, 0);
     const crown = O.clone().addScaledVector(UP, 1.1 * d).addScaledVector(back, .25 * d);   // the whorl, a little behind the top
     const frontOf = (v) => v.clone().sub(O).dot(FRONT) / d;
@@ -4496,8 +4606,8 @@ function beardMass(p, S, c) {
   for (const [k, cnt] of ec) if (cnt === 1) for (const i of k.split(',').map(Number)) dist[i] = 0;
   for (let changed = true, it = 0; changed && it < 400; it++) { changed = false;
     for (let i = 0; i < n; i++) for (const j of nb[i]) { const dj = dist[j] + S.pos[i].distanceTo(S.pos[j]); if (dj < dist[i] - 1e-9) { dist[i] = dj; changed = true; } } }
-  const vol = (p.beard_vol || 100) / 100, side = L * .22 * vol, edgeMax = Math.max(...dist.filter(isFinite));
-  const R = Math.min(.35 * u, .6 * edgeMax);   // (the edge's taper: over a third of the mouth's width - less in a narrow moustache)
+  const vol = (p.beard_vol || 100) / 100, side = L * .16 * vol, edgeMax = Math.max(...dist.filter(isFinite));
+  const R = Math.min(.6 * u, .6 * edgeMax);   // (the edge's taper: over a third of the mouth's width - less in a narrow moustache)
   const fr = (v) => v.clone().sub(O).dot(FRONT);
   const hgt = [], drop = [];
   S.pos.forEach((v, i) => {
@@ -4505,7 +4615,7 @@ function beardMass(p, S, c) {
     if (st === 'mustache' || (v.y > yM && st !== 'stubble')) {   // (the moustache: its own, not the beard's length - full, over the upper lip, its ends hanging)
       // (a pad: hung down past its own edge it folded back under itself)
       const e2 = smooth(0, .5 * R, dist[i]);
-      hgt.push(e2 * Math.min(.25 * u, .45 * L * vol)); drop.push(0); return; }
+      hgt.push(st === 'mustache' ? 0 : e2 * Math.min(.15 * u, .3 * L * vol)); drop.push(0); return; }
     // the bulk hangs: the chin's middle and under it moved down (and a little forward), the throat's edge staying -
     // a beard's wedge, not the skin blown up along its normals
     const centre = 1 - smooth(.5 * u, 1.5 * u, Math.abs(v.x - mx)), low = smooth(yM - .2 * u, yC - .1 * u, v.y);
@@ -4540,6 +4650,23 @@ function beardMass(p, S, c) {
   const G = { pos: P, tris: S.tris, n: normalsOf(P, S.tris) };
   shellOf(acc, G, S.tris.map((_, t) => t), 0, Math.max(MM(1.2), .1 * side), PLATE, 'plate', (i) => ({ direct: S.w[i] }), null, 0,
     (q, nn, i) => [(P[i].x - mx) / U * 1.6, (-P[i].y + .8 * fr(P[i])) / U]);   // (along: down the face, forward under the chin - not rings)
+  // the moustache: two thick tubes from under the nose along the upper lip, past the mouth's corners, their ends
+  // hanging and their tips turned up (the reference's), flatter than tall
+  if (st !== 'goatee' && c.mc) {
+    const r0 = (st === 'mustache' ? 1 : st === 'short' ? .5 : .7) * Math.min(.24 * u, .6 * L * vol), hu = c.mw;
+    for (const sd of [1, -1]) {
+      const pts = [], rad = [];
+      for (let k = 0; k <= 12; k++) {
+        const t = k / 12, x = mx + sd * t * (hu + .4 * u), y = yM + lipUp * 1.05 - .3 * u * smooth(.35, 1, t) + .1 * u * smooth(.85, 1, t);
+        const h = cast(new V3(x, y, O.z).addScaledVector(FRONT, 4 * d), FRONT.clone().negate(), 8 * d); if (!h) continue;
+        const r = r0 * Math.max(.06, 1 - .85 * t ** 1.3);
+        pts.push(h.point.clone().addScaledVector(FRONT, .55 * r + MM(1))); rad.push(r);
+      }
+      if (pts.length < 4) continue;
+      const near = (q) => { let bi = 0, bd = Infinity; S.pos.forEach((v, i) => { const dd = v.distanceToSquared(q); if (dd < bd) { bd = dd; bi = i; } }); return S.w[bi]; };
+      hairTube(acc, pts, rad, (i, q) => near(q), U, { ax: UP, k: 1.25 });
+    }
+  }
   window.agBeardMass = { n, maxH: +(Math.max(...hgt) / u).toFixed(2), drop: +(Math.max(...drop) / u).toFixed(2), edgeMax: +(edgeMax / u).toFixed(2) };   // (the tests)
 }
 function beard(p) {
@@ -4578,11 +4705,18 @@ function beard(p) {
   const u = mc && cL && cR ? cL.distanceTo(cR) : .7 * d, fM = mc ? front(mc) : prof[iM][1];
   const lips = (v) => v.y < yM + lipUp && v.y > yM - lipDn && Math.abs(v.x - mx) < mw;
   const near = (v, k) => front(v) > fM - k * u;   // (no further back than k mouth widths behind the mouth's front)
-  const below = (v) => v.y < yM - lipDn && v.y > NK.y + .15 * d && near(v, 1.6) && Math.abs(v.x - O.x) < earX(v.y);
+  const below = (v) => v.y < yM - lipDn && v.y > NK.y + .15 * d && near(v, v.y < yC - .2 * u ? 1.05 : 1.6) && Math.abs(v.x - O.x) < earX(v.y);   // (under the jaw: the throat only, not down the neck's sides)
   const yTop = yM + .55 * (E.y - yM);   // (nothing above half way from the mouth to the eyes: the cheekbones, the nose stay bare)
-  const cheeks = (v) => v.y < Math.min(yTop, yM + .45 * u) && v.y > yM - 2 * u && Math.abs(v.x - mx) > .55 * u && near(v, 1.3) && Math.abs(v.x - O.x) < .95 * F.halfAt(E.y);
+  // (the cheeks: up to the mouth's corners in front, rising behind to the sideburns by the ears)
+  const backK = (v) => smooth(fM - .6 * u, fM - 1.5 * u, front(v));
+  const cheeks = (v) => v.y < Math.min(yTop, yM + .45 * u) + backK(v) * Math.max(0, E.y - .25 * d - Math.min(yTop, yM + .45 * u)) && v.y > yM - 2 * u
+    && Math.abs(v.x - mx) > .55 * u && near(v, 1.3 + .5 * backK(v)) && (v.y > yC - .2 * u || near(v, 1.05));   // (its side's edge by the depth: round the jaw, not a panel; under the jaw only the throat)
   const lipTop = (v) => v.y > yM + .6 * lipUp && v.y < Math.min(yTop, yM + lipUp + .28 * u) && near(v, .45) && Math.abs(v.x - mx) < 1.25 * mw;
-  const region = {   // where it grows (the face's skin)
+  // (an ear's lobe by the sideburns: thin - a ray in toward the head's axis meets its other side at once)
+  const dIn = new V3(), earLobe = (v) => { if (Math.abs(v.x - O.x) < .5 * F.halfAt(E.y)) return false;
+    dIn.set(O.x - v.x, 0, O.z - v.z); const l = dIn.length(); if (l < 1e-6) return false; dIn.multiplyScalar(1 / l);
+    return !!cast(v.clone().addScaledVector(dIn, MM(.5)), dIn, .25 * d); };
+  const region0 = {   // where it grows (the face's skin)
     stubble: (v) => !lips(v) && (below(v) || cheeks(v) || lipTop(v)),
     short: (v) => !lips(v) && (below(v) || cheeks(v) || lipTop(v)),
     full: (v) => !lips(v) && (below(v) || cheeks(v) || lipTop(v)),
@@ -4590,16 +4724,19 @@ function beard(p) {
     goatee: (v) => !lips(v) && ((below(v) && Math.abs(v.x - mx) < 1.1 * mw && v.y > yC - .3 * d) || lipTop(v)),
     mustache: lipTop,
   };
+  const region = Object.fromEntries(Object.entries(region0).map(([k, f]) => [k, (v) => f(v) && !earLobe(v)]));
   window.agBeard = { yM, lipUp, lipDn, mw, mx, u, yTop, yN, Ey: E.y, marks: !!mc, mc: mc && mc.toArray(), lt: lt && lt.toArray(), lb: lb && lb.toArray() };   // (the tests)
   const reg = region[st] || region.stubble;
-  const keep = (v) => reg(v); keep.key = 'beard2_' + st + '_' + Math.round(yM * 1e4);
+  const keep = (v) => reg(v); keep.key = 'beard4_' + st + '_' + Math.round(yM * 1e4);
   const S0 = bodySkin(new Set(['head', 'neck']), keep); if (!S0.tris.length) return [];
   const S = { ...S0, n: normalsOf(S0.pos, S0.tris) }, all = S.tris.map((_, t) => t);
   const gap = MM(1), U = .02 * H;
-  shellOf(acc, S, all, gap * .3, MM(st === 'stubble' ? .8 : 1.6), PLATE, 'plate', (i) => ({ direct: S.w[i] }), null, 0);   // (its edge as the skin's: smoothed, the hole round the lips closed over them)
+  const Uh = (p.cell || 3) / 1000 * HEIGHT * 8;   // (the hair's pattern unit: stubble's hairs down the face, across it)
+  shellOf(acc, S, all, gap * .3, MM(st === 'stubble' ? .5 : 1.6), PLATE, 'plate', (i) => ({ direct: S.w[i] }), null, 0,
+    (q, nn, i) => [(S.pos[i].x - mx) / Uh * 1.6 + (S.pos[i].z - O.z) / Uh * .4 * Math.sign(S.pos[i].x - mx), (-S.pos[i].y + .8 * front(S.pos[i])) / Uh]);   // (its edge as the skin's: smoothed, the hole round the lips closed over them)
   const L = (p.beard_len || 0) / 100 * H, w0 = (p.beard_vol || 100) / 100 * .14 * F.halfAt(E.y);
-  if (st !== 'stubble' && L > MM(3) && p.beard_n > 0) beardMass(p, S, { acc, O, E, NK, d, u, mx, mw, yM, yC, lipUp, L, st, H, halfEye: F.halfAt(E.y) });
-  return [{ side: 'C', acc, R: .02 * H, mask: S0.keys }];
+  if (st !== 'stubble' && L > MM(3) && p.beard_n > 0) beardMass(p, S, { acc, O, E, NK, d, u, mx, mw, yM, yC, lipUp, L, st, H, halfEye: F.halfAt(E.y), mc: mc || new V3(mx, yM, O.z) });
+  return [{ side: 'C', acc, R: .02 * H, mask: st === 'stubble' ? new Set() : S0.keys }];   // (stubble: see-through - the skin under it stays)
 }
 function buildPiece(kind, sides, p) {
   const P0 = PIECES[kind], fam = P0.family, parts = [];
@@ -5111,6 +5248,15 @@ function patternTile(kind) {
       const c = u * .5 + wv * .5, band = ridge(c), n2 = .5 + .5 * Math.sin(Math.floor(c) * 12.9898 + 4.1);
       const st = ridge(u * 2 + wv + .05 * Math.sin(v * Q * 2 + u * Q * 4)), fn = ridge(u * 4 + wv * 2);
       hh = .5 * band + .32 * st + .18 * fn; gg = .74 + .26 * (.55 * band + .3 * st + .15 * fn) * (.7 + .3 * n2);
+    } else if (kind === 'stubble') {   // short hairs, one a cell (4 pixels), leaning down: their height is the alpha (the skin between seen)
+      gg = 1;
+      for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+        const ci = Math.floor(u * 4) + dc, cj = Math.floor(v * 4) + dr, wi = ((ci % 32) + 32) % 32, wj = ((cj % 32) + 32) % 32;
+        if (hash(wi, wj, 71) > .96) continue;
+        const cx = (ci + .2 + .6 * hash(wi, wj, 72)) / 4, cy = (cj + .2 + .6 * hash(wi, wj, 73)) / 4, an = (hash(wi, wj, 74) - .5) * 1.4;
+        const dx = u - cx, dy = v - cy, al = dx * Math.sin(an) + dy * Math.cos(an), ac = dx * Math.cos(an) - dy * Math.sin(an);
+        if (Math.abs(al) < .62 / 4 && Math.abs(ac) < .2 / 4) hh = 1;
+      }
     } else if (kind === 'channels') {   // channels sewn along, two cells wide: puffed between the seams
       const m = Math.abs(u / 2 - Math.round(u / 2));
       hh = smooth(0, .5, m) ** .6; gg = m < .02 ? .5 : .62 + .38 * hh;
@@ -5136,7 +5282,7 @@ function lookTexture(spec, wear, seed, pat, n) {
   if (texCache.has(key)) return texCache.get(key);
   const S = pat ? 512 : 256, cv = document.createElement('canvas'); cv.width = cv.height = S;
   const cx = cv.getContext('2d'), im = cx.createImageData(S, S), col = spec.col, spot = spec.spot;
-  const dark = col.map((c) => c * (spec.kind === 'metal' ? .38 : spec.kind === 'hair' ? .85 : .55)), r0 = Math.max(0, .72 - .35 * (spec.kind === 'hair' ? 0 : wear));
+  const dark = col.map((c) => c * (spec.kind === 'metal' ? .38 : spec.kind === 'hair' || spec.kind === 'stubble' ? .85 : .55)), r0 = Math.max(0, .72 - .35 * (spec.kind === 'hair' || spec.kind === 'stubble' ? 0 : wear));
   for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
     const u = x / S, v = y / S;
     const big = fbm(u * 2, v * 2, 2, 4, seed * 7 + 1), fine = fbm(u * 14, v * 14, 14, 3, seed * 7 + 3);
@@ -5147,7 +5293,8 @@ function lookTexture(spec, wear, seed, pat, n) {
       const base = col[c] + (dark[c] - col[c]) * Math.min(1, Math.max(0, .5 + (big - .5) * .9));
       im.data[k + c] = 255 * lin2s(Math.min(1, (base + (spot[c] - base) * r) * gp));
     }
-    im.data[k + 3] = 255;
+    // (stubble: the hairs only - the alpha is the pattern's height, the skin seen between them)
+    im.data[k + 3] = spec.kind === 'stubble' && pat ? 255 * pat.h[Math.floor((v * n % 1) * PT) * PT + Math.floor((u * n % 1) * PT)] : 255;
   }
   cx.putImageData(im, 0, 0);
   const tx = new THREE.CanvasTexture(cv); tx.colorSpace = THREE.SRGBColorSpace; tx.wrapS = tx.wrapT = THREE.RepeatWrapping; tx.anisotropy = 4;
@@ -5338,7 +5485,8 @@ function lookSpecs(p) {   // the seven materials as Blender bakes them (blender_
   const hairy = ['hair', 'beard'].includes(S.piece);
   const clothSpec = { kind: 'leather', col: cloth, spot: hairy ? cloth : scuff(cloth), rough: hairy ? .7 : .9, metal: 0 };   // (hair: one colour, a little sheen)
   const wood = PRESETS.wood ? [...PRESETS.wood[0]] : [.24, .14, .07];
-  const plate = hairy ? { ...clothSpec, kind: 'hair', rough: .55, pattern: 'hair' } : p.material === 'leather' ? { kind: 'leather', col: leather, spot: scuff(leather), rough: .72, metal: 0 }
+  const plate = hairy && S.piece === 'beard' && p.beard_style === 'stubble' ? { ...clothSpec, kind: 'stubble', rough: .7, pattern: 'stubble' }
+    : hairy ? { ...clothSpec, kind: 'hair', rough: .55, pattern: 'hair' } : p.material === 'leather' ? { kind: 'leather', col: leather, spot: scuff(leather), rough: .72, metal: 0 }
     : p.material === 'cloth' ? { ...clothSpec } : p.material === 'wood' ? { kind: 'leather', col: wood, spot: scuff(wood), rough: .78, metal: 0 } : { ...metalSpec };
   const strap = leather.map((c) => c * .7);
   const out = [plate, { kind: 'leather', col: strap, spot: scuff(strap), rough: .75, metal: 0 }, metalSpec,
@@ -5374,10 +5522,11 @@ function applyLook(p, R) {
       m.map = set(libTex(s.tex.color, true)); m.normalMap = s.tex.normal ? set(libTex(s.tex.normal, false)) : null;
       m.roughnessMap = s.tex.rough ? set(libTex(s.tex.rough, false)) : null; m.roughness = s.tex.rough ? 1 : s.rough;
       m.metalnessMap = s.tex.metal ? set(libTex(s.tex.metal, false)) : null; m.metalness = s.tex.metal ? 1 : s.metal;
-      m.bumpMap = null; m.needsUpdate = true; continue;
+      m.bumpMap = null; m.alphaTest = 0; m.needsUpdate = true; continue;
     }
     m.normalMap = m.roughnessMap = m.metalnessMap = null;
     m.map = lookTexture(s, p.wear, p.seed, tile, tile ? LOOK.n : 1);
+    m.alphaTest = s.kind === 'stubble' ? .5 : 0;
     m.roughness = s.rough; m.metalness = s.metal;
     m.bumpMap = tile ? tile.bump : reliefTexture(s.kind, p.seed); m.bumpScale = tile ? 3 : s.kind === 'metal' ? 2.4 * (s.bump ?? .5) : .6;
     m.needsUpdate = true;
@@ -7369,7 +7518,7 @@ function payload() {   // every part in one mesh: positions (glTF axes), faces (
   }
   return { v: b64(Float32Array.from(v)), uv: b64(Float32Array.from(uv)), n: b64(Uint8Array.from(sizes)), f: b64(Uint32Array.from(f)),
     m: b64(Uint8Array.from(m)), g: b64(Uint16Array.from(g)), bi: b64(Uint16Array.from(bi)), bw: b64(Float32Array.from(bw)), bones: boneNames,
-    mats: LOOK.specs, patterns: { mail: patternTile('mail').png, quilt: patternTile(quiltTile(S.p)).png, hair: patternTile('hair').png }, pattern_unit: LOOK.U,
+    mats: LOOK.specs, patterns: { mail: patternTile('mail').png, quilt: patternTile(quiltTile(S.p)).png, hair: patternTile('hair').png, stubble: patternTile('stubble').png }, pattern_unit: LOOK.U,
     radius: parts.reduce((s, x) => s + x.R, 0) / parts.length, over_clothes: parts.some((x) => x.loose), paint: paintPayload(),
     cloth: (parts.find((x) => x.cloth) || {}).cloth || null,   // (cloth on chains: its cuts, belt, rules)
     // hair, a beard: what they hide is the skin under their base, as on screen (the body's own rule took the ears the

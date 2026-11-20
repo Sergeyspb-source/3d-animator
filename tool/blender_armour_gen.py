@@ -83,9 +83,10 @@ def bake(obj, mats, size, out_dir, item, paint=None):
     obj.select_set(True)
     bpy.context.view_layer.objects.active = obj
     imgs = {}
+    cut = {m.name for m, _ in mats if "stubble_alpha" in m.node_tree.nodes}   # (stubble: its colour with an alpha, cut by it)
     for m, _ in mats:
         for kind, cs in (("color", "sRGB"), ("rough", "Non-Color"), ("normal", "Non-Color")):
-            im = bpy.data.images.new(f"{item}_{m.name}_{kind}", size, size, alpha=False)
+            im = bpy.data.images.new(f"{item}_{m.name}_{kind}", size, size, alpha=kind == "color" and m.name in cut)
             im.colorspace_settings.name = cs
             imgs[(m.name, kind)] = im
     for kind, btype in (("color", "EMIT"), ("rough", "ROUGHNESS"), ("normal", "NORMAL")):
@@ -108,6 +109,18 @@ def bake(obj, mats, size, out_dir, item, paint=None):
     uv_user(obj, mats, imgs, size, item)
     if paint and paint.get("layers"):
         paint_layers(obj, mats, imgs, size, item, paint)
+    if cut:   # the alpha baked (as emission) into the colour's fourth channel
+        def alpha_of(nt):
+            a = nt.nodes.get("stubble_alpha")
+            if a is None:
+                a = nt.nodes.new("ShaderNodeValue"); a.outputs[0].default_value = 1.0
+            return a.outputs[0]
+        al = bake_aux(obj, mats, size, item, "alpha", alpha_of)
+        for m, _ in mats:
+            if m.name in cut:
+                im = imgs[(m.name, "color")]
+                px = _pixels(im, size).copy(); px[:, 3] = (al[m.name][:, 0] > .5).astype(np.float32)
+                im.pixels.foreach_set(px.ravel()); im.alpha_mode = "STRAIGHT"
     for (mn, kind), im in imgs.items():
         im.filepath_raw = str(Path(out_dir) / f"{im.name}.png")
         im.file_format = "PNG"
@@ -120,6 +133,13 @@ def bake(obj, mats, size, out_dir, item, paint=None):
         N, L = nt.nodes.new, nt.links.new
         out = N("ShaderNodeOutputMaterial"); bsdf = N("ShaderNodeBsdfPrincipled"); L(bsdf.outputs[0], out.inputs[0])
         c = N("ShaderNodeTexImage"); c.image = imgs[(m.name, "color")]; L(c.outputs[0], bsdf.inputs["Base Color"])
+        if m.name in cut:   # (cut by its alpha: glTF's MASK - a Round node is the exporter's sign of a clip at .5)
+            rd = N("ShaderNodeMath"); rd.operation = "ROUND"; L(c.outputs["Alpha"], rd.inputs[0]); L(rd.outputs[0], bsdf.inputs["Alpha"])
+            if hasattr(m, "blend_method"):
+                try:
+                    m.blend_method = "CLIP"
+                except TypeError:
+                    pass
         r = N("ShaderNodeTexImage"); r.image = imgs[(m.name, "rough")]; L(r.outputs[0], bsdf.inputs["Roughness"])
         nm = N("ShaderNodeTexImage"); nm.image = imgs[(m.name, "normal")]
         nmap = N("ShaderNodeNormalMap"); L(nm.outputs[0], nmap.inputs["Color"]); L(nmap.outputs[0], bsdf.inputs["Normal"])
