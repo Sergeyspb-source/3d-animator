@@ -777,7 +777,16 @@ def build_wig(model):
     for lay in list(bm.verts.layers.deform.values()):
         bm.verts.layers.deform.remove(lay)
     bm.verts.ensure_lookup_table(); bm.faces.ensure_lookup_table()
-    hf = {f.index for f in bm.faces if all(is_hair[v.index] for v in f.verts)}
+    hl = bm.faces.layers.int.new("hair")
+    for f in bm.faces:
+        f[hl] = 1 if all(is_hair[v.index] for v in f.verts) else 0
+    sk = np.array([list(v.co) for v in bm.verts if not is_hair[v.index]])   # (the skin's points for the alignment)
+    # (welded first: the file splits its vertices along the unwrap's seams - unwelded, the head's skin fell apart into
+    # the unwrap's islands, and the pushed vertices opened cracks; the unwrap is kept, it is the corners')
+    span = max((max(v.co[i] for v in bm.verts) - min(v.co[i] for v in bm.verts)) for i in range(3))
+    bmesh.ops.remove_doubles(bm, verts=bm.verts[:], dist=1e-5 * span)
+    bm.verts.ensure_lookup_table(); bm.faces.ensure_lookup_table()
+    hf = {f.index for f in bm.faces if f[hl]}
     seen, islands = set(), []
     for f0 in hf:
         if f0 in seen:
@@ -794,7 +803,33 @@ def build_wig(model):
         fail(_t("ag.wig_no_hair", Path(model).name))
     big = max(len(i) for i in islands)
     keep = {f for isl in islands if len(isl) >= .02 * big for f in isl}
-    sk = np.array([list(v.co) for v in bm.verts if not is_hair[v.index]])
+    # (and the skin's small islands inside the hair are hair: the locks' light highlights read as skin by colour -
+    # the head's skin is one big piece)
+    sk_f = {f.index for f in bm.faces if f.index not in keep}
+    seen_s, sk_isl = set(), []
+    for f0 in sk_f:
+        if f0 in seen_s:
+            continue
+        st, isl = [f0], []; seen_s.add(f0)
+        while st:
+            fi = st.pop(); isl.append(fi)
+            for e in bm.faces[fi].edges:
+                for g in e.link_faces:
+                    if g.index in sk_f and g.index not in seen_s:
+                        seen_s.add(g.index); st.append(g.index)
+        sk_isl.append(isl)
+    if sk_isl:
+        bigs = max(len(i) for i in sk_isl)
+        for isl in sk_isl:
+            if len(isl) < .05 * bigs:
+                keep |= set(isl)
+    # (and two rings of faces round them: the hair's edge is drawn by the texture's alpha below, not by the faces'
+    # staircase - kept whole, a face only when all its corners were hair, it left ragged edges and holes)
+    core_f = set(keep)
+    for _ in range(2):
+        keep |= {g.index for fi in list(keep) for v in bm.faces[fi].verts for g in v.link_faces}
+    keep = {f for f in keep if f in core_f or any(is_hair[v.index] for v in bm.faces[f].verts) or
+            any(g.index in core_f for v in bm.faces[f].verts for g in v.link_faces)}
     zc = sk[:, 2].min() + .35 * (sk[:, 2].max() - sk[:, 2].min())
     tsel = sk[sk[:, 2] > zc]   # (the bust's head, not its shoulders)
     if len(tsel) < 50 or len(ours) < 50:
@@ -817,9 +852,13 @@ def build_wig(model):
     print("wig: icp %.4f of R, scale %.5f" % (ds.mean() / R, s), flush=True)
     M = Matrix(((*(s * Rm[0]), t[0]), (*(s * Rm[1]), t[1]), (*(s * Rm[2]), t[2]), (0, 0, 0, 1)))
     hair_col = col[is_hair].mean(0)
+    bm.transform(M)
+    lay = bm.faces.layers.int.new("core")   # (the faces surely hair: solid; the rings round them cut by the alpha)
+    bm.faces.ensure_lookup_table()
+    for f in bm.faces:
+        f[lay] = 1 if f.index in core_f else 0
     bmesh.ops.delete(bm, geom=[f for f in bm.faces if f.index not in keep], context="FACES")
     bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context="VERTS")
-    bm.transform(M)
     bm.verts.ensure_lookup_table()
     gap = .08 * R   # out of the body, the push smoothed over the hair (no dents where one lock met the skin)
     vec = [Vector()] * len(bm.verts)
@@ -840,20 +879,60 @@ def build_wig(model):
     for v in bm.verts:
         v.co += vec[v.index]
     hm = bpy.data.meshes.new("hair_wig"); bm.to_mesh(hm); bm.free()
+    # the colour with an alpha of how much each texel is hair (by its colour against the two clusters', soft at the
+    # line): the hair's edge as drawn, cut by it (glTF MASK; dithered in the editor)
+    c_h, c_s = (c0, c1) if zs[lab].mean() > zs[~lab].mean() else (c1, c0)
+    rgb = px[..., :3]
+    d_h = np.linalg.norm(rgb - c_h[None, None, :], axis=2); d_s = np.linalg.norm(rgb - c_s[None, None, :], axis=2)
+    hairness = d_s / np.maximum(d_h + d_s, 1e-6)
+    alpha = np.clip((hairness - .42) / .16, 0, 1)
+    rgba = np.dstack([rgb, alpha]).astype(np.float32)
+    aim = bpy.data.images.new(f"{STEM}_wig_color", w_, h_, alpha=True)
+    aim.colorspace_settings.name = img.colorspace_settings.name   # (before the pixels: changed after, a new image is made again - blank)
+    aim.pixels.foreach_set(rgba.ravel())
+    aim.filepath_raw = str(WORK / f"{STEM}_wig_color.png"); aim.file_format = "PNG"; aim.save()
+    mats = []
     for m in tm.materials:
-        if m and m.use_nodes:   # (opaque: a head's material, not cut by its alpha)
-            b = next((n for n in m.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
+        if m and m.use_nodes:
+            nt = m.node_tree
+            b = next((n for n in nt.nodes if n.type == "BSDF_PRINCIPLED"), None)
             if b is not None:
                 for l in list(b.inputs["Alpha"].links):
-                    m.node_tree.links.remove(l)
-                b.inputs["Alpha"].default_value = 1.0
+                    nt.links.remove(l)
+                for l in list(b.inputs["Base Color"].links):
+                    nt.links.remove(l)
+                t = nt.nodes.new("ShaderNodeTexImage"); t.image = aim
+                src_uv = next((n for n in nt.nodes if n.type == "TEX_IMAGE" and n.image == img), None)
+                if src_uv is not None and src_uv.inputs[0].links:
+                    nt.links.new(src_uv.inputs[0].links[0].from_socket, t.inputs[0])
+                nt.links.new(t.outputs[0], b.inputs["Base Color"])
+                rd = nt.nodes.new("ShaderNodeMath"); rd.operation = "ROUND"
+                nt.links.new(t.outputs["Alpha"], rd.inputs[0]); nt.links.new(rd.outputs[0], b.inputs["Alpha"])
             if hasattr(m, "blend_method"):
                 try:
-                    m.blend_method = "OPAQUE"
+                    m.blend_method = "CLIP"
                 except TypeError:
                     pass
-            m.name = "hair_wig"
-        hm.materials.append(m)
+            m.name = "hair_wig_edge"
+            solid = m.copy(); solid.name = "hair_wig"   # (the solid one: the same colour, not cut - the hair's light highlights cut out showed dark slits)
+            sb = next((n for n in solid.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
+            if sb is not None:
+                for l in list(sb.inputs["Alpha"].links):
+                    solid.node_tree.links.remove(l)
+                sb.inputs["Alpha"].default_value = 1.0
+            if hasattr(solid, "blend_method"):
+                try:
+                    solid.blend_method = "OPAQUE"
+                except TypeError:
+                    pass
+            mats.append((solid, m))
+    for solid, edge in mats[:1]:
+        hm.materials.append(solid); hm.materials.append(edge)
+    ca = hm.attributes.get("core")
+    if ca is not None and mats:
+        for poly, d in zip(hm.polygons, ca.data):
+            poly.material_index = 0 if d.value else 1
+        hm.attributes.remove(ca)
     wig = bpy.data.objects.new("hair_wig", hm); sc.collection.objects.link(wig)
     for o in new:
         bpy.data.objects.remove(o, do_unlink=True)
