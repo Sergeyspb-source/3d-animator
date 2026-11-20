@@ -728,11 +728,13 @@ def build_mohawk(base):
 
 
 # ---------------------------------------------------------------- a wig: the hair of a head made elsewhere (Tripo)
-def build_wig(model):
-    """the model's hair told from its skin by the texture's colour (two clusters; the hair's the one over the top of
-    the head), small islands of it dropped (brows, a moustache drawn on the skin); its head aligned to the
-    character's (its skin points onto the character's head skin, scale and all: ICP); the hair pushed out of the body
-    (the push smoothed over it); a dark cap under it (no skin between the locks)"""
+def build_wig(model, kind="hair"):
+    """the model's hair told from its skin by the texture's colour (two clusters: a wig's hair the one over the top of
+    the head; a beard's the one on the chin, its skin the more of the head's), small islands of it dropped (brows,
+    a moustache drawn on the skin); its head aligned to the character's (its skin points onto the character's head
+    skin, scale and all: ICP); a wig without the model's beard, a beard below the eyes only; pushed out of the body
+    (the push smoothed over it); a wig's dark cap under it, only where its hair is over it (no skin between the
+    locks, no dark band on the forehead)"""
     from mathutils import Matrix
     gi = {g.index: g.name for g in skin.vertex_groups}
     ours = []
@@ -772,15 +774,51 @@ def build_wig(model):
         if lab.all() or (~lab).all():
             break
         c0, c1 = col[lab].mean(0), col[~lab].mean(0)
-    is_hair = lab if zs[lab].mean() > zs[~lab].mean() else ~lab
+    upper = lab if zs[lab].mean() > zs[~lab].mean() else ~lab
+    # the skin for the alignment: a wig's - not the hair over the top; a beard's - the more of the head
+    skin_icp = ~upper if kind == "hair" else (lab if lab.sum() > (~lab).sum() else ~lab)
     bm = bmesh.new(); bm.from_mesh(tm); bm.transform(tobj.matrix_world)
     for lay in list(bm.verts.layers.deform.values()):
         bm.verts.layers.deform.remove(lay)
     bm.verts.ensure_lookup_table(); bm.faces.ensure_lookup_table()
+    sk = np.array([list(v.co) for v in bm.verts if skin_icp[v.index]])   # (the skin's points for the alignment)
+    allv = np.array([list(v.co) for v in bm.verts])
+    zc = sk[:, 2].min() + .35 * (sk[:, 2].max() - sk[:, 2].min())
+    tsel = sk[sk[:, 2] > zc]   # (the bust's head, not its shoulders)
+    if len(tsel) < 50 or len(ours) < 50:
+        fail(_t("ag.wig_no_head", Path(model).name))
+    s = (ours[:, 0].max() - ours[:, 0].min()) / max(1e-9, tsel[:, 0].max() - tsel[:, 0].min())   # (ear tip to ear tip)
+    Rm = np.eye(3); t = ours.mean(0) - s * tsel.mean(0)
+    for it in range(40):
+        Y = s * (tsel @ Rm.T) + t
+        pairs = []
+        for i in range(0, len(Y), max(1, len(Y) // 3000)):
+            loc, n, fi, d = full.find_nearest(Vector(Y[i]))
+            if loc is not None:
+                pairs.append((i, np.array(list(loc)), d))
+        ds = np.array([q[2] for q in pairs]); cut = np.percentile(ds, 80)
+        A = np.array([tsel[i] for i, q, d in pairs if d <= cut]); B = np.array([q for i, q, d in pairs if d <= cut])
+        ma, mb = A.mean(0), B.mean(0); A0, B0 = A - ma, B - mb
+        U, S_, Vt = np.linalg.svd(B0.T @ A0)
+        D = np.eye(3); D[2, 2] = np.sign(np.linalg.det(U @ Vt))
+        Rm = U @ D @ Vt; s = (S_ * np.diag(D)).sum() / (A0 ** 2).sum(); t = mb - s * (Rm @ ma)
+    print("wig: icp %.4f of R, scale %.5f" % (ds.mean() / R, s), flush=True)
+    M = Matrix(((*(s * Rm[0]), t[0]), (*(s * Rm[1]), t[1]), (*(s * Rm[2]), t[2]), (0, 0, 0, 1)))
+    Pt = s * (allv @ Rm.T) + t   # (each vertex where it lands on the character)
+    if kind == "hair":
+        is_hair = upper.copy()
+        # (not the model's beard, a moustache: in front of the face below the eyes)
+        is_hair &= ~((Pt[:, 2] < E.z - .3 * R) & (Pt[:, 1] < O.y - .4 * R) & (np.abs(Pt[:, 0] - O.x) < .7 * R))
+    else:
+        # the beard's colour: the one most on the chin (in front, below the mouth); only below the eyes
+        chin = (Pt[:, 2] < E.z - 1.1 * R) & (Pt[:, 2] > E.z - 2.6 * R) & (Pt[:, 1] < O.y - .4 * R) & (np.abs(Pt[:, 0] - O.x) < .5 * R)
+        hc = lab if (lab & chin).sum() >= (~lab & chin).sum() else ~lab
+        if not (hc & chin).any():
+            hc = ~skin_icp
+        is_hair = hc & (Pt[:, 2] < E.z - .15 * R)
     hl = bm.faces.layers.int.new("hair")
     for f in bm.faces:
         f[hl] = 1 if all(is_hair[v.index] for v in f.verts) else 0
-    sk = np.array([list(v.co) for v in bm.verts if not is_hair[v.index]])   # (the skin's points for the alignment)
     # (welded first: the file splits its vertices along the unwrap's seams - unwelded, the head's skin fell apart into
     # the unwrap's islands, and the pushed vertices opened cracks; the unwrap is kept, it is the corners')
     span = max((max(v.co[i] for v in bm.verts) - min(v.co[i] for v in bm.verts)) for i in range(3))
@@ -821,37 +859,16 @@ def build_wig(model):
     if sk_isl:
         bigs = max(len(i) for i in sk_isl)
         for isl in sk_isl:
-            if len(isl) < .05 * bigs:
+            if len(isl) < (.05 if kind == "hair" else .01) * bigs:   # (a beard: only specks - the skin under the lip, round the mouth, is a hole of its own)
                 keep |= set(isl)
     # (and two rings of faces round them: the hair's edge is drawn by the texture's alpha below, not by the faces'
     # staircase - kept whole, a face only when all its corners were hair, it left ragged edges and holes)
     core_f = set(keep)
     for _ in range(2):
         keep |= {g.index for fi in list(keep) for v in bm.faces[fi].verts for g in v.link_faces}
-    keep = {f for f in keep if f in core_f or any(is_hair[v.index] for v in bm.faces[f].verts) or
-            any(g.index in core_f for v in bm.faces[f].verts for g in v.link_faces)}
-    zc = sk[:, 2].min() + .35 * (sk[:, 2].max() - sk[:, 2].min())
-    tsel = sk[sk[:, 2] > zc]   # (the bust's head, not its shoulders)
-    if len(tsel) < 50 or len(ours) < 50:
-        fail(_t("ag.wig_no_head", Path(model).name))
-    s = (ours[:, 0].max() - ours[:, 0].min()) / max(1e-9, tsel[:, 0].max() - tsel[:, 0].min())   # (ear tip to ear tip)
-    Rm = np.eye(3); t = ours.mean(0) - s * tsel.mean(0)
-    for it in range(40):
-        Y = s * (tsel @ Rm.T) + t
-        pairs = []
-        for i in range(0, len(Y), max(1, len(Y) // 3000)):
-            loc, n, fi, d = full.find_nearest(Vector(Y[i]))
-            if loc is not None:
-                pairs.append((i, np.array(list(loc)), d))
-        ds = np.array([q[2] for q in pairs]); cut = np.percentile(ds, 80)
-        A = np.array([tsel[i] for i, q, d in pairs if d <= cut]); B = np.array([q for i, q, d in pairs if d <= cut])
-        ma, mb = A.mean(0), B.mean(0); A0, B0 = A - ma, B - mb
-        U, S_, Vt = np.linalg.svd(B0.T @ A0)
-        D = np.eye(3); D[2, 2] = np.sign(np.linalg.det(U @ Vt))
-        Rm = U @ D @ Vt; s = (S_ * np.diag(D)).sum() / (A0 ** 2).sum(); t = mb - s * (Rm @ ma)
-    print("wig: icp %.4f of R, scale %.5f" % (ds.mean() / R, s), flush=True)
-    M = Matrix(((*(s * Rm[0]), t[0]), (*(s * Rm[1]), t[1]), (*(s * Rm[2]), t[2]), (0, 0, 0, 1)))
-    hair_col = col[is_hair].mean(0)
+    keep = {f for f in keep if f in core_f or bm.faces[f][hl] or
+            any(g.index in core_f for v in bm.faces[f].verts for g in v.link_faces)}   # (by the faces' marks: welded, the vertices are numbered anew)
+    hair_col = col[is_hair].mean(0) if is_hair.any() else col.mean(0)
     bm.transform(M)
     lay = bm.faces.layers.int.new("core")   # (the faces surely hair: solid; the rings round them cut by the alpha)
     bm.faces.ensure_lookup_table()
@@ -885,7 +902,7 @@ def build_wig(model):
     rgb = px[..., :3]
     d_h = np.linalg.norm(rgb - c_h[None, None, :], axis=2); d_s = np.linalg.norm(rgb - c_s[None, None, :], axis=2)
     hairness = d_s / np.maximum(d_h + d_s, 1e-6)
-    alpha = np.clip((hairness - .42) / .16, 0, 1)
+    alpha = np.clip((hairness - .42) / .16, 0, 1) if kind == "hair" else np.clip((hairness - .52) / .12, 0, 1)   # (a beard's edge stricter: the model's skin showed as a yellow fringe)
     rgba = np.dstack([rgb, alpha]).astype(np.float32)
     aim = bpy.data.images.new(f"{STEM}_wig_color", w_, h_, alpha=True)
     aim.colorspace_settings.name = img.colorspace_settings.name   # (before the pixels: changed after, a new image is made again - blank)
@@ -936,7 +953,23 @@ def build_wig(model):
     wig = bpy.data.objects.new("hair_wig", hm); sc.collection.objects.link(wig)
     for o in new:
         bpy.data.objects.remove(o, do_unlink=True)
+    for poly in hm.polygons:
+        poly.use_smooth = True
+    if kind != "hair":
+        return [wig], wig
     cap = scalp_shell(hairline, lambda v: .05 * R, "hair_cap")
+    # (only where the wig's solid hair is over all of a face: past its own hairline - under the edge cut by the alpha
+    # too - the cap showed as dark steps on the forehead; the body's mask is the cap's, so the skin stays there)
+    wt = BVHTree.FromPolygons([wig.matrix_world @ v.co for v in hm.vertices],
+                              [list(p.vertices) for p in hm.polygons if p.material_index == 0])
+    cb = bmesh.new(); cb.from_mesh(cap.data); cb.faces.ensure_lookup_table()
+
+    def under(c):
+        n = (c - O).normalized()
+        return wt.ray_cast(c + n * (.01 * R), n, .9 * R)[0] is not None or wt.ray_cast(c - n * (.05 * R), n, .9 * R)[0] is not None
+    drop = [f for f in cb.faces if not all(under(v.co) for v in f.verts)]
+    bmesh.ops.delete(cb, geom=drop, context="FACES")
+    cb.to_mesh(cap.data); cb.free()
     mc = bpy.data.materials.new("hair_cap"); mc.use_nodes = True
     b = next(n for n in mc.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
     hc = np.clip(hair_col, 0, 1); hc = np.where(hc <= .04045, hc / 12.92, ((hc + .055) / 1.055) ** 2.4)   # (the texture's sRGB to the material's linear: else the cap came out lighter than the hair)
@@ -951,7 +984,7 @@ def build_wig(model):
 if style.startswith("wig"):
     if not prm.get("model") or not Path(prm["model"]).is_file():
         fail(_t("ag.wig_no_model"))
-    obs, mask_of = build_wig(prm["model"])
+    obs, mask_of = build_wig(prm["model"], "beard" if job.get("piece") == "beard" else "hair")
 elif style in ("long", "bob"):
     Lh = float(prm.get("length", .26 if style == "long" else .14)) * H * (1.2 if style == "long" else 2.0)
     obs, mask_of = build_cards(Lh, float(prm.get("part", 0. if style == "long" else .3)), (E.z - 1.25 * R) if style == "bob" else None)
@@ -967,13 +1000,19 @@ groups = [g for g in groups if g in arm.data.bones] or [names["head"]]
 d_ = .95 * R
 
 
+JAW = names.get("jaw") if names.get("jaw") in arm.data.bones else None
+
+
 def weights(z):
+    if job.get("piece") == "beard":   # (a beard: the head's; below the mouth the jaw's - it moves with the chin)
+        k = min(1., max(0., (E.z - 1.25 * R - z) / (.5 * R))) if JAW else 0.
+        return [(groups[0], 1 - .7 * k)] + ([(JAW, .7 * k)] if JAW else [])
     k = min(1., max(0., (O.z - .6 * d_ * 1.2 - z) / (.18 * H)))
     return [(groups[0], 1 - k), (groups[min(1, len(groups) - 1)], .6 * k), (groups[min(2, len(groups) - 1)], .4 * k)]
 
 
 for ob in obs + ([mask_of] if mask_of not in obs else []):
-    vg = {g: ob.vertex_groups.new(name=g) for g in dict.fromkeys(groups)}
+    vg = {g: ob.vertex_groups.new(name=g) for g in dict.fromkeys(groups + ([JAW] if JAW and job.get("piece") == "beard" else []))}
     for v in ob.data.vertices:
         for g, w in weights((ob.matrix_world @ v.co).z):
             if w > 1e-4:
@@ -982,7 +1021,12 @@ for ob in obs + ([mask_of] if mask_of not in obs else []):
 keys = set()
 if job.get("mask"):
     from body_mask import body_mask
-    keys = {tuple(x) for x in body_mask(body, [mask_of], erode=2)}
+    # (a beard hides nothing: it lies on the face with its gap, and where it is open - round the mouth - the hidden
+    # lips and chin showed as a hole into the head)
+    keys = {tuple(x) for x in body_mask(body, [mask_of], erode=2)} if job.get("piece") != "beard" else set()
+    for i in ear_v:   # (the ears never: long hair closes round them, the mask took them - their tips went)
+        c = me.vertices[i].co
+        keys.discard((round(c.x * 1000), round(c.z * 1000), round(-c.y * 1000)))
     Path(job["mask"]).write_text(json.dumps([list(x) for x in sorted(keys)]), encoding="utf-8")
 if mask_of not in obs:
     bpy.data.objects.remove(mask_of, do_unlink=True)

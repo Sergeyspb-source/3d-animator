@@ -4163,12 +4163,12 @@ const HAIR_STYLES = {   // after the reference pictures (an image model's, on th
   hair_mohawk: { hair: 'hair_mohawk', hair_style: 'mohawk', hair_part: 'none', hair_len: 8, hair_vol: 230, hair_n: 34, hair_curl: 0, hair_line: 0, hair_flow: 'up', hair_lift: 100 },
 };
 const BEARD_STYLES = {
-  beard_stubble: { beard_style: 'stubble', beard_len: 0, beard_vol: 100, beard_n: 0, beard_curl: 0 },
-  beard_short: { beard_style: 'short', beard_len: 1.6, beard_vol: 90, beard_n: 320, beard_curl: 15 },
-  beard_full: { beard_style: 'full', beard_len: 5, beard_vol: 130, beard_n: 280, beard_curl: 30 },
-  beard_long: { beard_style: 'long', beard_len: 12, beard_vol: 130, beard_n: 300, beard_curl: 25 },
-  beard_goatee: { beard_style: 'goatee', beard_len: 4, beard_vol: 110, beard_n: 140, beard_curl: 15 },
-  beard_mustache: { beard_style: 'mustache', beard_len: 4.5, beard_vol: 130, beard_n: 90, beard_curl: 0 },
+  beard_stubble: { beard: '', beard_style: 'stubble', beard_len: 0, beard_vol: 100, beard_n: 0, beard_curl: 0 },
+  beard_short: { beard: '', beard_style: 'short', beard_len: 1.6, beard_vol: 90, beard_n: 320, beard_curl: 15 },
+  beard_full: { beard: '', beard_style: 'full', beard_len: 5, beard_vol: 130, beard_n: 280, beard_curl: 30 },
+  beard_long: { beard: '', beard_style: 'long', beard_len: 12, beard_vol: 130, beard_n: 300, beard_curl: 25 },
+  beard_goatee: { beard: '', beard_style: 'goatee', beard_len: 4, beard_vol: 110, beard_n: 140, beard_curl: 15 },
+  beard_mustache: { beard: '', beard_style: 'mustache', beard_len: 4.5, beard_vol: 130, beard_n: 90, beard_curl: 0 },
 };
 const HAIR_COLOURS = ['#1b1512', '#3b2618', '#5a3a22', '#7a4a2a', '#a8763e', '#d2b47a', '#8c3a1e', '#b04a22', '#8a8580', '#d8d4cc'];
 function hairRand(seed) { let x = (seed * 2654435761) >>> 0 || 1; return () => ((x ^= x << 13, x ^= x >>> 17, x ^= x << 5) >>> 0) / 4294967296; }
@@ -5546,8 +5546,9 @@ const isOpen = () => (isLimb() && S.p.sector < 359) || (S.piece === 'cuirass' &&
 // a style sets the piece's parameters to look like one of them, the sliders change it from there
 // wigs: heads with hair made elsewhere (Tripo) put in the wigs' folder, each a hair style (blender_hair_gen.build_wig)
 const WIG_STYLES = Object.fromEntries((DATA.hair_models || []).map((m) => [m.key, { hair: m.key, hair_style: 'wig', hair_model: m.name }]));
+const BEARD_WIGS = Object.fromEntries((DATA.beard_models || []).map((m) => [m.key, { beard: m.key, beard_style: 'wig', hair_model: m.name }]));
 const STYLES = {
-  hair: { ...HAIR_STYLES, ...WIG_STYLES }, beard: BEARD_STYLES,
+  hair: { ...HAIR_STYLES, ...WIG_STYLES }, beard: { ...BEARD_STYLES, ...BEARD_WIGS },
   limb: {
     leather: { surface: 'plain', material: 'leather', sector: 320, closure: 'across', stitch: true, plates: 1, relief: .2, cell: 5, top_cut: 10, bottom_cut: 5, flare: .3, hinges: false, mail_under: false, trim: '', hammer: 0, thickness: 12, wear: .3 },
     steel: { surface: 'plates', plates: 1, material: 'steel', sector: 320, closure: 'across', stitch: false, hinges: true, relief: .05, cell: 5, rim: 5, rivets: 0, top_cut: 14, bottom_cut: 8, flare: .45, mail_under: false, trim: '', hammer: .1, thickness: 9, wear: .25 },
@@ -5728,7 +5729,7 @@ const SPEC = [
     ['arm_share', 0, 1, .05, '{{js:ag.arm_share}}', '{{js:ag.arm_share_info}}', '', () => S.piece === 'pauldron' || (S.piece === 'cuirass' && S.p.spaulders > 0)]]],
 ];
 // pieces the generators make (vendor/blender_armour), in Blender: a style and a few parameters of theirs
-const MADE = ['helmet', 'elbow', 'footwear', 'poleyn', 'hair'], isMade = () => MADE.includes(S.piece);   // (hair: blender_hair_gen.py - cards with gravity, a shell along the hair's way)
+const MADE = ['helmet', 'elbow', 'footwear', 'poleyn', 'hair', 'beard'], isMade = () => MADE.includes(S.piece) && (S.piece !== 'beard' || /^beard_wig_/.test(S.p.beard || ''));   // (a beard: made only from a model; its own styles built here)   // (hair: blender_hair_gen.py - cards with gravity, a shell along the hair's way)
 SPEC.forEach((g) => { if (!g[3]) g[3] = () => !isMade(); });
 SPEC[1][3] = () => !isMade() && S.piece !== 'glove' && S.piece !== 'undercloth';   // a glove's, a cloth's surfaces come with its style
 SPEC[3][3] = () => !isMade() && S.piece !== 'undercloth';   // no straps on cloth
@@ -6062,7 +6063,7 @@ function syncPanel() {
   for (const b of $('lowSeg').children) b.classList.toggle('on', b.dataset.low === S.p.low_surface);
   for (const b of $('trimSeg').children) b.classList.toggle('on', b.dataset.trim === (S.p.trim || ''));
   $('i_hairc').value = S.p.hair_color || '#3b2618';
-  if ($('r_wigs')) $('r_wigs').hidden = S.piece !== 'hair';
+  if ($('r_wigs')) $('r_wigs').textContent = (S.piece === 'beard' ? '{{js:ag.beard_models_note}}' : '{{js:ag.hair_models_note}}').replace('{0}', (S.piece === 'beard' ? DATA.beard_models_dir : DATA.hair_models_dir) || '');
   $('i_tint').value = S.p.tint; $('i_cloth').value = S.p.cloth; $('i_tex').value = String(S.p.tex); $('i_seed').value = S.p.seed;
   for (const b of $('matSeg').children) b.classList.toggle('on', b.dataset.mat === (isMade() ? S.p.made_mat || '' : S.p.material));
   $('matOwn').hidden = !isMade();
@@ -6300,6 +6301,7 @@ function madeSpecs() {
 }
 function madeLook() {
   if (!helmetObj) return;
+  if (S.piece === 'beard') return;   // (a beard from a model: its own texture's colours)
   if (S.piece === 'hair') {
     if (S.p.hair_style === 'wig') return;   // (a wig: its own texture's colours)
     const c = new THREE.Color(S.p.hair_color || '#3b2618');
@@ -6325,8 +6327,8 @@ function madeLook() {
   });
 }
 function rebuildMade() {
-  const piece = S.piece, sides = !['helmet', 'hair'].includes(piece) ? [...S.sides] : [];
-  if (!['helmet', 'hair'].includes(piece) && !sides.length) { $('warn').textContent = '{{js:ag.choose_a_side}}'; $('warn').hidden = false; lastBuild = null; $('go').disabled = true; return; }
+  const piece = S.piece, sides = !['helmet', 'hair', 'beard'].includes(piece) ? [...S.sides] : [];
+  if (!['helmet', 'hair', 'beard'].includes(piece) && !sides.length) { $('warn').textContent = '{{js:ag.choose_a_side}}'; $('warn').hidden = false; lastBuild = null; $('go').disabled = true; return; }
   // (a helmet: and the coifs on under it - put on or off, another one)
   const key = [piece, S.p[piece], S.p.head_gap, piece === 'helmet' ? [...WORN.entries()].filter(([k, w]) => w.on && /coif/.test(k)).map(([k]) => k).join('+') : '', ['elbow', 'poleyn'].includes(piece) ? MADE_GAP0 : S.p.limb_gap, S.p.wing, S.p.foot_gap, S.p.visor_angle, S.p.cheek_angle, S.p.tail, S.p.brim, piece === 'hair' ? `${S.p.hair_len}_${S.p.hair_part}` : '', ...sides].join('_'), h = madeCache.get(key);
   if (!h) {

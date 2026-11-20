@@ -170,19 +170,26 @@ def hair_models_dir(export_dir) -> Path:
     return d
 
 
-def _wig_key(path: Path) -> str:
-    return "hair_wig_" + re.sub(r"[^A-Za-z0-9_-]+", "_", path.stem).strip("_")
+def beard_models_dir(export_dir) -> Path:
+    """Where heads with a beard made elsewhere (Tripo) are put: each GLB a beard among the beard's styles."""
+    d = Path(export_dir) / "beard_models"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
 
-def hair_models(export_dir) -> list:
-    """[{key, name, path}] of the wigs' folder's GLBs."""
-    d = hair_models_dir(export_dir)
-    return [{"key": _wig_key(g), "name": g.stem, "path": g.resolve().as_posix()} for g in sorted(d.glob("*.glb"))]
+def _wig_key(path: Path, piece="hair") -> str:
+    return f"{piece}_wig_" + re.sub(r"[^A-Za-z0-9_-]+", "_", path.stem).strip("_")
 
 
-def _wig_model(style: str, cfg):
-    """A wig style's model (from its key, in the wigs' folder only - not a path the page sends)."""
-    return next((Path(m["path"]) for m in hair_models(cfg["export_dir"]) if m["key"] == style), None)
+def hair_models(export_dir, piece="hair") -> list:
+    """[{key, name, path}] of the wigs' (or the beards') folder's GLBs."""
+    d = hair_models_dir(export_dir) if piece == "hair" else beard_models_dir(export_dir)
+    return [{"key": _wig_key(g, piece), "name": g.stem, "path": g.resolve().as_posix()} for g in sorted(d.glob("*.glb"))]
+
+
+def _wig_model(style: str, cfg, piece="hair"):
+    """A wig style's model (from its key, in its folder only - not a path the page sends)."""
+    return next((Path(m["path"]) for m in hair_models(cfg["export_dir"], piece) if m["key"] == style), None)
 
 
 def _hair_params(params) -> dict:
@@ -211,7 +218,9 @@ MADE = {"helmet": ("blender_helmet_gen.py", HELMETS, "", _helmet_params,
         "poleyn": ("blender_elbow_gen.py", POLEYNS, "poleyn_", _poleyn_params,
                    {k: ("wing",) for k in ("poleyn_winged_plate", "poleyn_articulated_plate", "poleyn_plate_mail_hybrid")}),
         # hair: cards with gravity (long, a bob), a shell unwrapped along the hair's way (short cuts, the mohawk's base)
-        "hair": ("blender_hair_gen.py", HAIRS, "hair_", _hair_params, {k: ("length", "part") for k in HAIRS})}
+        "hair": ("blender_hair_gen.py", HAIRS, "hair_", _hair_params, {k: ("length", "part") for k in HAIRS}),
+        # a beard: made by the generator only from a model (beard_models); its own styles the editor builds
+        "beard": ("blender_hair_gen.py", (), "beard_", _hair_params, {})}
 # «from» / «to» labels: a limb's along it, a torso piece's bottom and top, trousers' waist and leg length
 T_LABELS = {"limb": ("ag.from", "ag.to", "ag.from_info"), "torso": ("ag.bottom", "ag.top", "ag.bottom_info"),
             "cuirass": ("ag.bottom", "ag.neck_top", "ag.bottom_info"), "pauldron": ("ag.pauldron_from", "ag.sp_reach", "ag.pauldron_info"),
@@ -657,6 +666,9 @@ def editor_page(rigged: Path, decals_dir: Path | None = None) -> str:
     data["hair_models"] = hair_models(exp)   # wigs: heads with hair made elsewhere (Tripo), each a style
     data["hair_models_dir"] = hair_models_dir(exp).resolve().as_posix()
     data["style_labels"].update({m["key"]: _t("ag.hair_wig", m["name"]) for m in data["hair_models"]})
+    data["beard_models"] = hair_models(exp, "beard")   # beards from heads with a beard made elsewhere
+    data["beard_models_dir"] = beard_models_dir(exp).resolve().as_posix()
+    data["style_labels"].update({m["key"]: _t("ag.beard_wig", m["name"]) for m in data["beard_models"]})
     return page.replace("@@DATA@@", json.dumps(data, ensure_ascii=False).replace("</", "<\\/"))
 
 
@@ -684,7 +696,7 @@ def made_preview(cfg, req) -> dict:
     chosen (as «Generate» makes it, 5-20 s): work/helmets/<character>/<style>_<the parameters>.glb with its mask, made
     once. {ok, log, preview: {glb, mask, v}}."""
     piece, style, rigged = req.get("piece", "helmet"), req.get("style"), Path(req["rigged"])
-    wig = _wig_model(style, cfg) if piece == "hair" and str(style).startswith("hair_wig_") else None
+    wig = _wig_model(style, cfg, piece) if piece in ("hair", "beard") and str(style).startswith(f"{piece}_wig_") else None
     if piece not in MADE or (style not in MADE[piece][1] and wig is None):
         return {"ok": False, "log": _t("ag.unknown_piece", style)}
     script, _, prefix, to_job, own = MADE[piece]
@@ -702,7 +714,7 @@ def made_preview(cfg, req) -> dict:
     glb, mask = d / f"{style}{tag}.glb", d / f"{style}{tag}.mask.json"
     if not (glb.exists() and mask.exists() and glb.stat().st_mtime > max(rigged.stat().st_mtime, (ROOT / script).stat().st_mtime,
                                                                        wig.stat().st_mtime if wig is not None else 0)):
-        job = {"style": style[len(prefix):], "params": hp, "sides": sides, "out": str(glb), "work": str(d), "character": str(rigged),
+        job = {"style": style[len(prefix):], "params": hp, "sides": sides, "out": str(glb), "work": str(d), "character": str(rigged), "piece": piece,
                "names": {n: LM.bone_names(n) for n in ("mixamo", "godot")}, "mask": str(mask), "under": under}
         (d / f"{style}{tag}.job.json").write_text(json.dumps(job, ensure_ascii=False), encoding="utf-8")
         blender = cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe"
@@ -737,6 +749,8 @@ def generate(cfg, req) -> dict:
     if had and had != piece and not req.get("replace"):
         return {"ok": False, "log": _t("ag.other_kind", item, had, piece)}
     made = MADE.get(piece)
+    if piece == "beard" and not str(params.get("beard") or "").startswith("beard_wig_"):
+        made = None   # (a beard of the editor's own styles: built there)
     if not made:
         (work / "mesh.json").write_text(json.dumps(req["mesh"]), encoding="utf-8")
     sides = [s for s in req.get("sides") or [] if s in ("L", "R")] if PIECES[piece][5] in ("limb", "joint", "glove", "held") else []
@@ -759,7 +773,7 @@ def generate(cfg, req) -> dict:
         job.pop("mask")
         (work / "mask.json").unlink(missing_ok=True)
     if made:
-        wig = _wig_model(params.get(piece), cfg) if piece == "hair" and str(params.get(piece)).startswith("hair_wig_") else None
+        wig = _wig_model(params.get(piece), cfg, piece) if piece in ("hair", "beard") and str(params.get(piece)).startswith(f"{piece}_wig_") else None
         style = params.get(piece) if params.get(piece) in made[1] or wig is not None else made[1][0]
         job.update(style=style[len(made[2]):], params=made[3](params))
         if wig is not None:
