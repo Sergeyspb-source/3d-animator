@@ -2800,5 +2800,7 @@
  "ag.wig_no_model": "The wig's model is not in the wigs' folder.",
  "ag.hair_models_note": "Your own hairstyles: put a GLB of a head with hair (from Tripo, say) into {0} - it shows here as a «Wig» button. The hair is told from the skin by colour and put on the character's head.",
  "ag.beard_wig": "Beard: {0}",
- "ag.beard_models_note": "Your own beards: put a GLB of a head with a beard (from Tripo, say; bald is best) into {0} - it shows here as a «Beard» button. The beard is told from the skin by colour and put on the character's face."
+ "ag.beard_models_note": "Your own beards: put a GLB of a head with a beard (from Tripo, say; bald is best) into {0} - it shows here as a «Beard» button. The beard is told from the skin by colour and put on the character's face.",
+ "ag.beard_len_info": "The beard's length: how far it hangs under the chin to a point (stubble and a short one do not hang; a moustache's: its span).",
+ "ag.beard_vol": "Thickness"
 }
