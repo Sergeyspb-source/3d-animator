@@ -1483,11 +1483,24 @@ def moustache(F, kind, vol, length):
     span0, drop0, curl0 = span, drop, curl
     MS = .45   # (a half's middle: its thickness there by its own nodes)
 
-    def skin_at(x, z):   # (the skin's point at a width and a height, from outside round the mouth)
+    lipz = yM + .5 * F["lipUp"]
+
+    def anchor(x, z):
+        """the skin's point at a width and a height under the nose: the upper lip found there first (from outside, at
+        its own height - the nose is above it), then from just in front of it at the height wanted, back: a ray
+        from outside at that height met a long nose's tip hanging in front, and the moustache stood on it"""
         ph = math.asin(max(-.98, min(.98, (x - mx) / rf)))
         d = Vector((math.sin(ph), -math.cos(ph), 0))
-        h = cast(Vector((mx, O.y, z)) + d * (3 * R), -d, 3 * R, tree=bvh)
-        return h[0] if h else Vector((x, O.y - rf, z))
+        h = cast(Vector((mx, O.y, lipz)) + d * (3 * R), -d, 3 * R, tree=bvh)
+        base = h[0] if h else Vector((mx, O.y, lipz)) + d * rf
+        h2 = cast(base + UP * (z - lipz) + d * (.08 * R), -d, 1.5 * R, tree=bvh)
+        if h2:
+            nn = h2[1].normalized()
+            return h2[0], (nn if nn.dot(d) > 0 else -nn)
+        return base + UP * (z - lipz), d
+
+    def skin_at(x, z):
+        return anchor(x, z)[0]
 
     def lagr(f0, f1, f2, t):   # (through the three stations: 0, its middle, its end)
         return f0 * (t - MS) * (t - 1) / MS + f1 * t * (t - 1) / (MS * (MS - 1)) + f2 * t * (t - MS) / (1 - MS)
@@ -1539,15 +1552,8 @@ def moustache(F, kind, vol, length):
             x_, top, bot = prof(s)
             zc, hgt = .5 * (top + bot), max(.008 * R, .5 * (top - bot))
             dep = min(hgt * .75, .11 * R * vol ** .5) if hgt > .02 * R else hgt * .75
-            ph = math.asin(max(-.98, min(.98, (x_ - mx) / rf)))
-            d = Vector((math.sin(ph), -math.cos(ph), 0))
-            h = cast(Vector((mx, O.y, zc)) + d * (3 * R), -d, 3 * R, tree=bvh)   # (from outside: not the mouth's inside)
-            if h:
-                nn = h[1].normalized()
-                nn = nn if nn.dot(d) > 0 else -nn
-                c = h[0] + nn * (.015 * R + dep)
-            else:
-                c = cen[-1] + d * (span / Nr) if cen else Vector((mx, O.y - rf, zc))
+            sp_, nn = anchor(x_, zc)   # (on the skin under the nose, not on its tip)
+            c = sp_ + nn * (.015 * R + dep)
             cen.append(c); hs.append(hgt); ds.append(dep)
         for _ in range(3):   # (its line smooth over the lips' bumps)
             cen = [cen[0]] + [(cen[i - 1] + cen[i] * 2 + cen[i + 1]) / 4 for i in range(1, len(cen) - 1)] + [cen[-1]]
