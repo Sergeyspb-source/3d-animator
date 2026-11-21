@@ -791,7 +791,7 @@ def out_of_skin(p):
     return (p - loc).dot(nn), nn
 
 
-def conform(bm, gap, reach):
+def conform(bm, gap, reach, target=None):
     """the open edge put down on the skin (at gap), the way there spread in over reach and smoothed off: a piece made
     for another face (or rounded by a remesh) stood off the skin at its edge"""
     bm.verts.ensure_lookup_table()
@@ -799,7 +799,8 @@ def conform(bm, gap, reach):
     src = {}
     for v in bm.verts:
         if dist[v.index] == 0.:
-            loc, nrm, fi, d = full.find_nearest(v.co)
+            tg = target(v.co) if target else None   # (an outline's own line, where it is near)
+            loc, nrm = tg if tg else full.find_nearest(v.co)[:2]
             if loc is not None:
                 nn = nrm.normalized()
                 src[v.index] = loc + nn * gap - v.co
@@ -933,6 +934,9 @@ def beard_field(F, kind, patch, outline=None):
         return front(p) - (fM - k * u)
 
     def lips(p):
+        if outline is not None:   # (an oval round the lips themselves: the box ate the beard by the corners, inside its outline)
+            ax, zc, az = .5 * u + .03 * R, yM + .5 * (F["lipUp"] - F["lipDn"]), .5 * (F["lipUp"] + F["lipDn"])
+            return (1 - ((p.x - mx) / ax) ** 2 - ((p.z - zc) / az) ** 2) * min(ax, az)
         return AND(p.z - (yM - F["lipDn"]), yM + F["lipUp"] - p.z, mw - abs(p.x - mx))
 
     def below(p):   # (under the mouth; under the jaw the throat only, not down the neck's sides)
@@ -1102,8 +1106,19 @@ class Outline:
             if len(got) < .25 * len(V) and max(V[i].z for i in got) < E.z:
                 inside |= got
         self.ok = len(inside) > 20
+        if job.get("debug"):   # (the line, to look at it over the beard)
+            (WORK / f"{STEM}.cur.json").write_text(json.dumps([list(c) for c in cur]), encoding="utf-8")
         self.inside, self.wall = inside, on
         print("outline: inside %d wall %d ok %s" % (len(inside), len(wall), self.ok), flush=True)
+
+    def edge_target(self, p):
+        """the outline's own point nearest an edge's vertex (the edge put down on the line, not on the skin nearest:
+        under the jaw that was down the neck, and the beard went past its outline)"""
+        c, i, d = self.kc.find(p)
+        if d > .3 * R:
+            return None
+        loc, nrm, fi, dd = full.find_nearest(self.cur[i])
+        return (self.cur[i], nrm) if loc is not None else None
 
     def __call__(self, p):
         d = self.kc.find(p)[2]
@@ -1202,8 +1217,12 @@ def build_beard(st):
                 if a_ + "_" + sn in nodes and b_ + "_" + sn in nodes:
                     seeds.append((nodes[a_ + "_" + sn] + nodes[b_ + "_" + sn]) / 2)
         mw = F["mw"]
-        OL = Outline([nodes[k] for k in LOOP], seeds,
-                     lambda v: abs(v.x - mx) < 1.1 * mw and yM - 1.2 * F["lipDn"] < v.z < yM + 1.2 * F["lipUp"])
+        def in_mouth(v):   # (the mouth's inside: hidden from the front behind the lips - the skin by its corners is not)
+            if not (abs(v.x - mx) < 1.1 * mw and yM - 1.2 * F["lipDn"] < v.z < yM + 1.2 * F["lipUp"]):
+                return False
+            h = full.ray_cast(Vector((v.x, O.y - 4 * R, v.z)), BACK, 8 * R)
+            return h[0] is not None and h[0].y < v.y - .03 * R
+        OL = Outline([nodes[k] for k in LOOP], seeds, in_mouth)
         if not OL.ok:
             OL = None
     cf = O.y - F["fC"]
@@ -1364,7 +1383,7 @@ def build_beard(st):
         big = max(len(i) for i in isl)
         bmesh.ops.delete(bm, geom=[f for i in isl if len(i) < .12 * big for f in i], context="FACES")
         bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context="VERTS")
-        conform(bm, .012 * R, .35 * R)   # (its edge down on the skin)
+        conform(bm, .012 * R, .35 * R, OL.edge_target if OL is not None else None)   # (its edge down on the skin: on its outline)
         push_out(bm, .012 * R)
         bm.verts.ensure_lookup_table()
         dist = edge_dist(bm)
