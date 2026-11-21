@@ -1230,7 +1230,10 @@ def build_beard(st):
         # the mass on the skin: the region raised by its thickness (thin at its outer edge, not at the mouth's),
         # closed under (a solid); under the jaw it hangs: its outside drawn down - most at the chin's front, none at
         # the throat - to a point in the middle, a little forward, off the chest
-        sh = scalp_shell(beard_region(F, st, cfg["patch"], OL), lambda v: 0., "beard_base", close=3)
+        fldR = beard_field(F, st, cfg["patch"], OL)
+        # (with an outline: a little past it, thinning to nothing just outside it - its edge then on the contour; the
+        # edge's way in thinned it inside it and the remesh cut that off: the beard stopped short of its outline)
+        sh = scalp_shell((lambda p: fldR(p) > -.08 * R) if OL is not None else beard_region(F, st, cfg["patch"]), lambda v: 0., "beard_base", close=3)
         sb = bmesh.new(); sb.from_mesh(sh.data); bpy.data.objects.remove(sh, do_unlink=True)
         sb.normal_update(); sb.verts.ensure_lookup_table()
         for e in sb.edges:   # (the mouth's edge: not where the thickness starts)
@@ -1256,7 +1259,12 @@ def build_beard(st):
             if nn.dot(v.co - O) < 0:
                 nn.negate()
             low = smooth(yM, yC - .3 * u, v.co.z)
-            t = vol * R * (cfg["T"] + (cfg["J"] - cfg["T"]) * low) * min(1., dist[v.index] / (.3 * R)) ** .6
+            if OL is not None:
+                m_ = fldR(v.co)
+                ramp = 1. if by_mouth(v.co) and m_ > -.02 * R else min(1., max(0., (m_ + .06 * R) / (.16 * R))) ** .6
+            else:
+                ramp = min(1., dist[v.index] / (.3 * R)) ** .6
+            t = vol * R * (cfg["T"] + (cfg["J"] - cfg["T"]) * low) * ramp
             q = v.co + nn * (.015 * R + t)
             if Lh > 0:
                 g = smooth(yC + .7 * u, yC - .1 * u, v.co.z) * smooth(fC - 1.3 * R, fC - .15 * R, front(v.co))
@@ -1284,7 +1292,7 @@ def build_beard(st):
                 if nn.dot(v.co - O) < 0:
                     nn.negate()
                 low = smooth(yM, yC - .3 * u, v.co.z)
-                t = vol * R * (cfg["T"] + (cfg["J"] - cfg["T"]) * low) * min(1., max(0., mf[v.index]) / (.25 * R)) ** .6
+                t = vol * R * (cfg["T"] + (cfg["J"] - cfg["T"]) * low) * min(1., max(0., mf[v.index] + .05 * R) / (.15 * R)) ** .6
                 tops[v.index] = v.co + nn * (.015 * R + t)
             for v in sb.verts:
                 v.co = tops[v.index]
@@ -1296,7 +1304,7 @@ def build_beard(st):
             mv = bpy.data.meshes.new("beard_thin"); ob = bpy.data.objects.new("hair_beard", mv); sc.collection.objects.link(ob)
             if job.get("debug"):
                 dm = bpy.data.meshes.new("dbg_thin"); sb.to_mesh(dm); dbo = bpy.data.objects.new("dbg_thin", dm); sc.collection.objects.link(dbo)
-            fade = {i: min(1., max(0., (m + .02 * R) / (.12 * R))) for i, m in mf.items()}
+            fade = {i: min(1., max(0., (m + .03 * R) / (.08 * R))) for i, m in mf.items()}
             obs.append(_beard_skin(ob, sb, fade, F, conv))
             if cfg["must"]:
                 obs.append(moustache(F, cfg["must"], vol, float(prm.get("length", .05))))
@@ -1461,26 +1469,28 @@ def moustache(F, kind, vol, length):
     bm = bmesh.new(); uvl = bm.loops.layers.uv.new("UVMap")
     Nr, M = 30, 12
     span0, drop0, curl0 = span, drop, curl
+    MS = .45   # (a half's middle: its thickness there by its own nodes)
+
+    def skin_at(x, z):   # (the skin's point at a width and a height, from outside round the mouth)
+        ph = math.asin(max(-.98, min(.98, (x - mx) / rf)))
+        d = Vector((math.sin(ph), -math.cos(ph), 0))
+        h = cast(Vector((mx, O.y, z)) + d * (3 * R), -d, 3 * R, tree=bvh)
+        return h[0] if h else Vector((x, O.y - rf, z))
+
+    def lagr(f0, f1, f2, t):   # (through the three stations: 0, its middle, its end)
+        return f0 * (t - MS) * (t - 1) / MS + f1 * t * (t - 1) / (MS * (MS - 1)) + f2 * t * (t - MS) / (1 - MS)
     for sd in (1, -1):
-        cen, hs, ds = [], [], []
-        span, drop, curl = span0, drop0, curl0
-        tn = NODES_IN.get("must_L" if sd > 0 else "must_R")
-        if tn is not None:   # (its end where the user put it: how far out, how high)
-            span = rf * math.asin(min(.98, abs(tn.x - mx) / rf)) + .02 * R
-            dz1 = tn.z - .5 * (yS + low)
-            if kind == "droop":
-                drop = -dz1
-            else:
-                curl = dz1 + drop
-        for i in range(Nr + 1):
-            s = -.08 + 1.08 * i / Nr
+        sn = "L" if sd > 0 else "R"
+        span = span0; drop = drop0; curl = curl0
+
+        def prof0(s):   # the default: (its x, its top edge's height, its bottom edge's)
             ph = sd * max(0., s) * span / rf
             dz = -drop * math.sin(min(1., max(0., s) / .75) * math.pi / 2) + curl * max(0., (s - .55) / .45) ** 2
             if kind == "droop":   # (down past the corners to the jaw)
                 dz = -drop * max(0., s) ** 1.3
             # its top under the nose all along it (up under the wings), its bottom over the mouth's line; tapering
             top = yS + dz
-            n_b = nose_bottom(mx + sd * max(0., s) * span)
+            n_b = nose_bottom(mx + sd * max(0., s) * span) if kind != "short" else None
             if n_b is not None:   # (blended off past the wings: no step)
                 wn = 1 - smooth(.4, .75, s)
                 top = top + wn * max(0., n_b - .015 * R - top)
@@ -1488,7 +1498,36 @@ def moustache(F, kind, vol, length):
             tap = max(.04, (1 - max(0., s) ** 1.6)) ** .7
             zc = .5 * (top + bot)
             hgt = max(.05 * R, .5 * (top - bot)) * tap * (.9 + .1 * hk * vol ** .5)
+            return mx + rf * math.sin(ph), zc + hgt, zc - hgt
+        # its outline's nodes: the middle's top (under the nose) and bottom, a half's top and bottom at its middle,
+        # its end; the user's where moved, the default's otherwise
+        st0, stm, st1 = prof0(0.), prof0(MS), prof0(1.)
+        dflt = {"must_ct": (mx, st0[1]), "must_cb": (mx, st0[2]), "must_top_" + sn: (stm[0], stm[1]),
+                "must_bot_" + sn: (stm[0], stm[2]), "must_" + sn: (st1[0], .5 * (st1[1] + st1[2]))}
+        mine = any(k in NODES_IN for k in dflt)
+        val = {k: ((NODES_IN[k].x, NODES_IN[k].z) if k in NODES_IN else v) for k, v in dflt.items()}
+        for k, (x_, z_) in val.items():
+            if k not in NODES_OUT or k in NODES_IN:
+                NODES_OUT[k] = NODES_IN[k] if k in NODES_IN else skin_at(x_, z_)
+
+        def prof(s):
+            if not mine:
+                return prof0(s)
+            t = max(0., s)
+            x0, xm, x1 = mx, val["must_top_" + sn][0] * .5 + val["must_bot_" + sn][0] * .5, val["must_" + sn][0]
+            z1 = val["must_" + sn][1]
+            top = lagr(val["must_ct"][1], val["must_top_" + sn][1], z1, t)
+            bot = lagr(val["must_cb"][1], val["must_bot_" + sn][1], z1, t)
+            if top < bot:
+                top, bot = bot, top
+            return lagr(x0, xm, x1, t), top, bot
+        cen, hs, ds = [], [], []
+        for i in range(Nr + 1):
+            s = -.08 + 1.08 * i / Nr
+            x_, top, bot = prof(s)
+            zc, hgt = .5 * (top + bot), max(.008 * R, .5 * (top - bot))
             dep = min(hgt * .75, .11 * R * vol ** .5) if hgt > .02 * R else hgt * .75
+            ph = math.asin(max(-.98, min(.98, (x_ - mx) / rf)))
             d = Vector((math.sin(ph), -math.cos(ph), 0))
             h = cast(Vector((mx, O.y, zc)) + d * (3 * R), -d, 3 * R, tree=bvh)   # (from outside: not the mouth's inside)
             if h:
@@ -1500,7 +1539,8 @@ def moustache(F, kind, vol, length):
             cen.append(c); hs.append(hgt); ds.append(dep)
         for _ in range(3):   # (its line smooth over the lips' bumps)
             cen = [cen[0]] + [(cen[i - 1] + cen[i] * 2 + cen[i + 1]) / 4 for i in range(1, len(cen) - 1)] + [cen[-1]]
-        NODES_OUT["must_L" if sd > 0 else "must_R"] = cen[-1].copy()
+        if "must_" + sn not in NODES_IN:
+            NODES_OUT["must_" + sn] = cen[-1].copy()
         rows, sl = [], 0.
         for i, c in enumerate(cen):
             if i:
@@ -1958,7 +1998,9 @@ arm.select_set(True)
 bpy.context.view_layer.objects.active = arm
 if NODES_OUT:   # (the outline's nodes, for the editor: shown on the skin, moved by hand)
     Path(job["out"]).with_suffix(".nodes.json").write_text(json.dumps(
-        {"nodes": {k: b2gl(v) for k, v in NODES_OUT.items()}, "loop": LOOP, "mid": round(O.x if not FM else FM.get("mouth_c", O).x, 5)}), encoding="utf-8")
+        {"nodes": {k: b2gl(v) for k, v in NODES_OUT.items()}, "loop": LOOP, "mid": round(O.x if not FM else FM.get("mouth_c", O).x, 5),
+         "loops": [lp for lp in (list(LOOP), ["must_L", "must_top_L", "must_ct", "must_top_R", "must_R", "must_bot_R", "must_cb", "must_bot_L"])
+                   if len(lp) > 2 and all(k in NODES_OUT for k in lp)]}), encoding="utf-8")
 _vc = {"export_vertex_color": "ACTIVE"} if "export_vertex_color" in bpy.ops.export_scene.gltf.get_rna_type().properties.keys() else {"export_colors": True}
 bpy.ops.export_scene.gltf(filepath=job["out"], export_format="GLB", use_selection=True, export_skins=True,
                           export_animations=False, export_influence_nb=4, **_vc)   # (its shadows: the vertices' colour)

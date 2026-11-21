@@ -6410,10 +6410,11 @@ function contourDraw(fresh) {
     const u = contourUser(); if (u) for (const [k, v] of Object.entries(u)) if (n[k]) n[k] = new V3(...v);
     CONTOUR.nodes = n;
   }
-  const N = CONTOUR.nodes, loop = (CONTOUR.def.loop || []).filter((k) => N[k]);
-  if (loop.length > 2) {
+  const N = CONTOUR.nodes;
+  for (const lp of CONTOUR.def.loops || [CONTOUR.def.loop || []]) {   // (the beard's outline; the moustache's)
+    const loop = lp.filter((k) => N[k]); if (loop.length < 3) continue;
     const pts = catmull3(loop.map((k) => N[k]), 16).map(onSkin);
-    const ln = new THREE.Line(new THREE.BufferGeometry().setFromPoints([...pts, pts[0]]), new THREE.LineBasicMaterial({ color: 0xff6a1e, depthTest: false, transparent: true, opacity: .7 }));
+    const ln = new THREE.Line(new THREE.BufferGeometry().setFromPoints([...pts, pts[0]]), new THREE.LineBasicMaterial({ color: loop[0].startsWith('must') ? 0x30c060 : 0xff6a1e, depthTest: false, transparent: true, opacity: .7 }));
     ln.renderOrder = 999; g.add(ln);
   }
   CONTOUR.hid = {};
@@ -6421,7 +6422,7 @@ function contourDraw(fresh) {
     const d = p.clone().sub(camera.position), L = d.length(), h = cast(camera.position, d.normalize(), L);
     const hid = CONTOUR.hid[k] = !!h && h.distance < L - .01 * HEIGHT;
     const m = new THREE.Mesh(C_SPHERE, new THREE.MeshBasicMaterial({ color: k === 'tip' ? 0x2a9df4 : k.startsWith('must') ? 0x30c060 : 0xffd23a, depthTest: false, transparent: true, opacity: hid ? .25 : 1 }));
-    m.position.copy(p); m.scale.setScalar((k === CONTOUR.drag ? .006 : .0045) * HEIGHT); m.renderOrder = 1000; g.add(m);
+    m.position.copy(p); m.scale.setScalar((k === CONTOUR.drag ? .006 : k.startsWith('must') && k !== 'must_L' && k !== 'must_R' ? .0032 : .0045) * HEIGHT); m.renderOrder = 1000; g.add(m);
   }
 }
 function contourPick(e) {   // the node under the pointer (on the screen, within 14 px)
