@@ -791,14 +791,14 @@ def out_of_skin(p):
     return (p - loc).dot(nn), nn
 
 
-def conform(bm, gap, reach, target=None):
+def conform(bm, gap, reach, target=None, fixed=()):
     """the open edge put down on the skin (at gap), the way there spread in over reach and smoothed off: a piece made
     for another face (or rounded by a remesh) stood off the skin at its edge"""
     bm.verts.ensure_lookup_table()
     dist = edge_dist(bm)
     src = {}
     for v in bm.verts:
-        if dist[v.index] == 0.:
+        if dist[v.index] == 0. and v.index not in fixed:
             tg = target(v.co) if target else None   # (an outline's own line, where it is near)
             loc, nrm = tg if tg else full.find_nearest(v.co)[:2]
             if loc is not None:
@@ -819,6 +819,8 @@ def conform(bm, gap, reach, target=None):
             if d1 < dd.get(j, 1e9):
                 dd[j] = d1; near[j] = near[i]; heapq.heappush(hq, (d1, j))
     for j, i in near.items():
+        if j in fixed:
+            continue
         k = max(0., 1 - dd[j] / reach) ** 2
         bm.verts[j].co += src[i] * k
 
@@ -830,11 +832,13 @@ def push_out(bm, gap):
             v.co += nn * (gap - s)
 
 
-def raster_fade(m, fade, T):
-    """a per-vertex value over the unwrap: rasterised from the triangles, barycentric"""
+def raster_fade(m, fade, T, mat=None):
+    """a per-vertex value over the unwrap: rasterised from the triangles, barycentric (a material's faces only)"""
     out = np.zeros((T, T), np.float32)
     uvd = m.uv_layers[0].data
     for poly in m.polygons:
+        if mat is not None and poly.material_index != mat:
+            continue
         li = list(poly.loop_indices)
         for t in range(1, len(li) - 1):
             tri = [li[0], li[t], li[t + 1]]
@@ -1143,10 +1147,22 @@ def beard_nodes(F, kind, patch, loop):
         tg["cheek_" + sn] = Vector((mx + sd * .85 * R, O.y - .55 * R, .5 * (yM + E.z) - .1 * R))
         tg["burn_" + sn] = Vector((O.x + sd * 1.0 * R, O.y - .05 * R, E.z - .6 * R))
         tg["jaw_" + sn] = Vector((O.x + sd * .75 * R, O.y + .1 * R, yC - .1 * R))
+    # (round the mouth not snapped to that edge but put by the lips: under the lower lip - under the bare skin there
+    # when it has it - and by the lips' corners; on a small chin the nearest edge was under it and the chin outside)
+    top = yM - F["lipDn"]; hz = .5 * max(.15 * R, .45 * (top - yC))
+    zch = top - 1.6 * hz if patch else top - .06 * R
+    put = {}
+    for sd, sn in ((1, "L"), (-1, "R")):
+        for k, x_, z_ in (("chin_" + sn, mx + sd * .3 * u, zch), ("lip_" + sn, mx + sd * .62 * u, yM - .2 * u)):
+            h = cast(Vector((x_, O.y - 4 * R, z_)), BACK, 8 * R, tree=bvh)
+            if h:
+                put[k] = h[0]
     out = {}
     for k in loop:
         if k in NODES_IN:
             out[k] = NODES_IN[k]
+        elif k in put:
+            out[k] = put[k]
         elif bnd:
             out[k] = V[min(bnd, key=lambda i: (V[i] - tg[k]).length)].copy()
         else:
@@ -1168,7 +1184,7 @@ def beard_uv(F, p, conv):
     return th * R * conv(p.z), -p.z
 
 
-def flow_uv(bm, F):
+def flow_uv(bm, F, skip=()):
     """the hairs' unwrap along their fall: each vertex, from the top down, takes its across (u) from the ones above it
     along the surface's steepest way up (their way down: the hairs fall that way), its along (v) as theirs and the way
     from them; where nothing is above (the beard's top edge, under the lips) across is round the head. So the hairs
@@ -1176,6 +1192,8 @@ def flow_uv(bm, F):
     bm.verts.ensure_lookup_table(); bm.normal_update()
     UV = {}
     for v in sorted(bm.verts, key=lambda v: -v.co.z):
+        if v.index in skip:   # (a moustache joined to it: its own unwrap, along it)
+            continue
         n = v.normal
         asc = UP - n * n.dot(UP)
         al = asc.length
@@ -1356,6 +1374,33 @@ def build_beard(st):
         bm = bmesh.new(); bm.from_mesh(ob.data)
         for _ in range(4):
             bmesh.ops.smooth_vert(bm, verts=bm.verts[:], factor=.5, use_axis_x=True, use_axis_y=True, use_axis_z=True)
+        merged = False
+        if cfg["must"]:   # the moustache one body with the beard where they meet (no walls inside, no seam), its own texture
+            bm.to_mesh(ob.data); bm.free()
+            ob.data.materials.append(bpy.data.materials.new("hair_beard_tmp"))   # (slot 0 the beard's, the moustache's after)
+            mo = moustache(F, cfg["must"], vol, float(prm.get("length", .05)))
+            bo = ob.modifiers.new("join", "BOOLEAN"); bo.operation = "UNION"; bo.object = mo
+            for k_, v_ in (("solver", "EXACT"), ("use_self", True), ("material_mode", "TRANSFER")):
+                try:
+                    setattr(bo, k_, v_)
+                except (AttributeError, TypeError):
+                    pass
+            nf0 = len(ob.data.polygons)
+            bpy.context.view_layer.objects.active = ob
+            try:
+                bpy.ops.object.modifier_apply(modifier=bo.name)
+                merged = len(ob.data.polygons) > .5 * nf0 and any(p_.material_index == 1 for p_ in ob.data.polygons)
+            except RuntimeError:
+                merged = False
+            if merged:
+                bpy.data.objects.remove(mo, do_unlink=True)
+            else:   # (the union failed: side by side, as before)
+                if bo.name in ob.modifiers:
+                    ob.modifiers.remove(bo)
+                obs.append(mo)
+            print("moustache joined" if merged else "moustache apart", flush=True)
+            bm = bmesh.new(); bm.from_mesh(ob.data)
+        MUST = {v.index for f in bm.faces if f.material_index == 1 for v in f.verts} if merged else set()
         # only what is out of the skin: its underside on the face, the wedge's back in the throat gone
         bm.normal_update()
         drop = []
@@ -1381,9 +1426,11 @@ def build_beard(st):
                             seen.add(g.index); stk.append(g)
             isl.append(cur)
         big = max(len(i) for i in isl)
-        bmesh.ops.delete(bm, geom=[f for i in isl if len(i) < .12 * big for f in i], context="FACES")
+        bmesh.ops.delete(bm, geom=[f for i in isl if len(i) < .12 * big and not any(f.material_index == 1 for f in i) for f in i], context="FACES")   # (not the moustache's)
         bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context="VERTS")
-        conform(bm, .012 * R, .35 * R, OL.edge_target if OL is not None else None)   # (its edge down on the skin: on its outline)
+        bm.verts.ensure_lookup_table()
+        fixed = {v.index for v in bm.verts if any(f.material_index == 1 for f in v.link_faces)}   # (the moustache's: as made)
+        conform(bm, .012 * R, .35 * R, OL.edge_target if OL is not None else None, fixed)   # (its edge down on the skin: on its outline)
         push_out(bm, .012 * R)
         bm.verts.ensure_lookup_table()
         dist = edge_dist(bm)
@@ -1393,7 +1440,8 @@ def build_beard(st):
         for v in bm.verts:
             end = smooth(yC - .45 * Lh, yC - 1.05 * Lh, v.co.z) if Lh > .05 * R else 0.
             fade[v.index] = min(min(1., dist[v.index] / (.05 * R)), 1 - .85 * end ** .8)
-        obs.append(_beard_skin(ob, bm, fade, F, conv))
+        obs.insert(0, _beard_skin(ob, bm, fade, F, conv))
+        return obs, obs[0]
     if cfg["must"]:
         obs.append(moustache(F, cfg["must"], vol, float(prm.get("length", .05))))
     return obs, obs[0]
@@ -1401,16 +1449,25 @@ def build_beard(st):
 
 def _beard_skin(ob, bm, fade, F, conv, stubble=False):
     """the hairs over a beard's mass: its unwrap (down, round the head), fine hairs and clumps in its texture and
-    normal map, clumps as grooves in its shape; its edge fading out (the alpha)"""
+    normal map, clumps as grooves in its shape; its edge fading out (the alpha). A moustache joined to it (its faces
+    the second material) keeps its own unwrap and texture"""
+    bm.faces.ensure_lookup_table(); bm.verts.ensure_lookup_table()
+    old = bm.loops.layers.uv.get("UVMap") or (bm.loops.layers.uv.values()[0] if len(bm.loops.layers.uv) else None)
+    keep = {f.index: [tuple(lp[old].uv) for lp in f.loops] for f in bm.faces if f.material_index == 1} if old is not None else {}
+    skip = {v.index for v in bm.verts if v.link_faces and all(f.material_index == 1 for f in v.link_faces)}
     for lay in list(bm.loops.layers.uv.values()):
         bm.loops.layers.uv.remove(lay)
-    UVV = flow_uv(bm, F)
+    UVV = flow_uv(bm, F, skip)
     us = [a for a, _ in UVV.values()]; vs = [b for _, b in UVV.values()]
     u0, v0, span = min(us), min(vs), max(max(us) - min(us), max(vs) - min(vs)) + 1e-6
     uvl = bm.loops.layers.uv.new("UVMap")
     for f in bm.faces:
+        if f.index in keep:
+            for lp, uv in zip(f.loops, keep[f.index]):
+                lp[uvl].uv = uv
+            continue
         for lp in f.loops:
-            a, b = UVV[lp.vert.index]
+            a, b = UVV.get(lp.vert.index, (u0, v0))
             lp[uvl].uv = ((a - u0) / span, (b - v0) / span)
     m = ob.data; bm.to_mesh(m); bm.free()
     for poly in m.polygons:
@@ -1424,7 +1481,7 @@ def _beard_skin(ob, bm, fade, F, conv, stubble=False):
     UU, VV = np.meshgrid(uu, vv)
     fi = fine[((VV / PF * 512) % 512).astype(int), ((UU / PF * 512) % 512).astype(int)]
     cl = clumps[((VV / PC * 256) % 256).astype(int), ((UU / PC * 256) % 256).astype(int)]
-    fd = raster_fade(m, fade, T)
+    fd = raster_fade(m, fade, T, 0 if keep else None)
     img = np.zeros((T, T, 4), np.float32)
     if stubble:   # (short hairs, a light shadow between them: the skin seen through)
         rs = np.random.default_rng(7)
@@ -1442,7 +1499,10 @@ def _beard_skin(ob, bm, fade, F, conv, stubble=False):
     img[..., :3] = lum[..., None] * COL[None, None, :]
     mat, _ = material("hair_beard", save("beard", img, True), True, .55)
     normal_map(mat, fi * .4 + cl * .6, "beard_normal")
-    m.materials.append(mat)
+    if len(m.materials):   # (slot 0 the beard's; a joined moustache's after it)
+        m.materials[0] = mat
+    else:
+        m.materials.append(mat)
     if not stubble:   # the clumps as grooves in the shape (applied: a game takes the mesh)
         ctex = bpy.data.textures.new("clumps", "IMAGE")
         cim = bpy.data.images.new(f"{STEM}_clumps_h", 256, 256)
@@ -1452,11 +1512,11 @@ def _beard_skin(ob, bm, fade, F, conv, stubble=False):
         uvt = m.uv_layers.new(name="tile")
         for poly in m.polygons:
             for li in poly.loop_indices:
-                a, b = UVV[m.loops[li].vertex_index]
+                a, b = UVV.get(m.loops[li].vertex_index, (0., 0.))
                 uvt.data[li].uv = (a / PC, b / PC)
-        fl = ob.vertex_groups.new(name="deep")   # (not at its edge: it lies on the skin there)
+        fl = ob.vertex_groups.new(name="deep")   # (not at its edge: it lies on the skin there; not the moustache)
         for v in m.vertices:
-            fl.add([v.index], fade[v.index], "REPLACE")
+            fl.add([v.index], 0. if v.index in skip else fade[v.index], "REPLACE")
         dsp = ob.modifiers.new("grooves", "DISPLACE"); dsp.texture = ctex; dsp.texture_coords = "UV"; dsp.uv_layer = "tile"
         dsp.strength = .06 * R; dsp.mid_level = .5; dsp.vertex_group = "deep"
         bpy.context.view_layer.objects.active = ob
@@ -1547,7 +1607,8 @@ def moustache(F, kind, vol, length):
         # its end; the user's where moved, the default's otherwise
         st0, stm, st1 = prof0(0.), prof0(MS), prof0(1.)
         dflt = {"must_ct": (mx, st0[1]), "must_cb": (mx, st0[2]), "must_top_" + sn: (stm[0], stm[1]),
-                "must_bot_" + sn: (stm[0], stm[2]), "must_" + sn: (st1[0], .5 * (st1[1] + st1[2]))}
+                "must_bot_" + sn: (stm[0], stm[2]), "must_" + sn: (st1[0], .5 * (st1[1] + st1[2])),
+                "must_lo_" + sn: (st1[0], .5 * (st1[1] + st1[2]) - .01 * R)}   # (its end's top and bottom: apart, a blunt end)
         mine = any(k in NODES_IN for k in dflt)
         val = {k: ((NODES_IN[k].x, NODES_IN[k].z) if k in NODES_IN else v) for k, v in dflt.items()}
         for k, (x_, z_) in val.items():
@@ -1558,10 +1619,9 @@ def moustache(F, kind, vol, length):
             if not mine:
                 return prof0(s)
             t = max(0., s)
-            x0, xm, x1 = mx, val["must_top_" + sn][0] * .5 + val["must_bot_" + sn][0] * .5, val["must_" + sn][0]
-            z1 = val["must_" + sn][1]
-            top = lagr(val["must_ct"][1], val["must_top_" + sn][1], z1, t)
-            bot = lagr(val["must_cb"][1], val["must_bot_" + sn][1], z1, t)
+            x0, xm, x1 = mx, val["must_top_" + sn][0] * .5 + val["must_bot_" + sn][0] * .5, val["must_" + sn][0] * .5 + val["must_lo_" + sn][0] * .5
+            top = lagr(val["must_ct"][1], val["must_top_" + sn][1], val["must_" + sn][1], t)
+            bot = lagr(val["must_cb"][1], val["must_bot_" + sn][1], val["must_lo_" + sn][1], t)
             if top < bot:
                 top, bot = bot, top
             return lagr(x0, xm, x1, t), top, bot
@@ -1576,8 +1636,9 @@ def moustache(F, kind, vol, length):
             cen.append(c); hs.append(hgt); ds.append(dep)
         for _ in range(3):   # (its line smooth over the lips' bumps)
             cen = [cen[0]] + [(cen[i - 1] + cen[i] * 2 + cen[i + 1]) / 4 for i in range(1, len(cen) - 1)] + [cen[-1]]
-        if "must_" + sn not in NODES_IN:
-            NODES_OUT["must_" + sn] = cen[-1].copy()
+        if "must_" + sn not in NODES_IN and "must_lo_" + sn not in NODES_IN:
+            NODES_OUT["must_" + sn] = cen[-1] + UP * max(.005 * R, hs[-1])
+            NODES_OUT["must_lo_" + sn] = cen[-1] - UP * max(.005 * R, hs[-1])
         rows, sl = [], 0.
         for i, c in enumerate(cen):
             if i:
@@ -1598,6 +1659,10 @@ def moustache(F, kind, vol, length):
                 f = bm.faces.new(q)
                 for lp, (a, b) in zip(f.loops, uq):
                     lp[uvl].uv = (a, b / (1.5 * R))
+        fe = bm.faces.new(list(rows[-1][0]) if sd > 0 else list(reversed(rows[-1][0])))   # (its end closed: blunt, or a point)
+        for lp in fe.loops:
+            lp[uvl].uv = (.5, rows[-1][1] / (1.5 * R))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
     push_out(bm, .01 * R)   # (not into the upper lip's bulge: a thin one's middle went behind it)
     for _ in range(2):   # (the push's bumps off)
         bmesh.ops.smooth_vert(bm, verts=bm.verts[:], factor=.5, use_axis_x=True, use_axis_y=True, use_axis_z=True)
@@ -2036,7 +2101,7 @@ bpy.context.view_layer.objects.active = arm
 if NODES_OUT:   # (the outline's nodes, for the editor: shown on the skin, moved by hand)
     Path(job["out"]).with_suffix(".nodes.json").write_text(json.dumps(
         {"nodes": {k: b2gl(v) for k, v in NODES_OUT.items()}, "loop": LOOP, "mid": round(O.x if not FM else FM.get("mouth_c", O).x, 5),
-         "loops": [lp for lp in (list(LOOP), ["must_L", "must_top_L", "must_ct", "must_top_R", "must_R", "must_bot_R", "must_cb", "must_bot_L"])
+         "loops": [lp for lp in (list(LOOP), ["must_L", "must_top_L", "must_ct", "must_top_R", "must_R", "must_lo_R", "must_bot_R", "must_cb", "must_bot_L", "must_lo_L"])
                    if len(lp) > 2 and all(k in NODES_OUT for k in lp)]}), encoding="utf-8")
 _vc = {"export_vertex_color": "ACTIVE"} if "export_vertex_color" in bpy.ops.export_scene.gltf.get_rna_type().properties.keys() else {"export_colors": True}
 bpy.ops.export_scene.gltf(filepath=job["out"], export_format="GLB", use_selection=True, export_skins=True,

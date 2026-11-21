@@ -2806,7 +2806,7 @@
  "ag.contour": "Fit the outline",
  "ag.contour_reset": "Reset the outline",
  "ag.contour_sym": "Symmetric",
- "ag.contour_info": "Nodes on the skin: yellow - the beard's edge (it reaches this line), green - the moustache's outline: its middle under the nose and over the lip, each half's top and bottom (their distance its thickness), its ends; blue - the beard's point (its length and lean). Drag them, then «Update the preview».",
+ "ag.contour_info": "Nodes on the skin: yellow - the beard's edge (it reaches this line), green - the moustache's outline: its middle under the nose and over the lip, each half's top and bottom (their distance its thickness), its end - two points, top and bottom (together a point, apart a blunt end); blue - the beard's point (its length and lean). A moustache reaching the beard is one with it. Drag them, then «Update the preview».",
  "ag.contour_hair_info": "Nodes on the scalp - the hairline: the forehead, the temples, over the ears, behind them, the nape. Drag them, then «Update the preview».",
  "ag.hair_pick_style": "Pick a style - the generator makes it for the character.",
  "ag.made_refresh": "Update the preview",

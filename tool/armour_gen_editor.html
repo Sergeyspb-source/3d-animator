@@ -6443,7 +6443,7 @@ function contourDraw(fresh) {
     const d = p.clone().sub(camera.position), L = d.length(), h = cast(camera.position, d.normalize(), L);
     const hid = CONTOUR.hid[k] = !!h && h.distance < L - .01 * HEIGHT;
     const m = new THREE.Mesh(C_SPHERE, new THREE.MeshBasicMaterial({ color: k === 'tip' ? 0x2a9df4 : k.startsWith('must') ? 0x30c060 : 0xffd23a, depthTest: false, transparent: true, opacity: hid ? .25 : 1 }));
-    m.position.copy(p); m.userData.px = k === CONTOUR.drag ? 7 : k.startsWith('must') && k !== 'must_L' && k !== 'must_R' ? 4 : 5;   // (its radius on the screen, whatever the zoom)
+    m.position.copy(p); m.userData.px = k === CONTOUR.drag ? 7 : k.startsWith('must') && !/^must_(lo_)?[LR]$/.test(k) ? 4 : 5;   // (its radius on the screen, whatever the zoom)
     m.renderOrder = 1000; g.add(m);
   }
 }
