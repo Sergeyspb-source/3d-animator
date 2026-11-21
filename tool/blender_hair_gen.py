@@ -961,9 +961,9 @@ def beard_field(F, kind, patch, outline=None):
         e = ((p.x - mx) / (.45 * u)) ** 2 + ((p.z - (top - .6 * hz)) / hz) ** 2
         return AND((1 - e) * hz, near(p, .6))
 
-    def ear(p):
+    def ear(p):   # (with an outline the ear itself only: its margin cut the sideburn short of the outline)
         loc, n, i, d = ear_pts.find_nearest(p)
-        return (d if loc is not None else R) - .2 * R
+        return (d if loc is not None else R) - (.06 if outline is not None else .2) * R
 
     def field(p):
         m = AND(-lips(p), ear(p))
@@ -1479,7 +1479,7 @@ def build_beard(st):
         bm.normal_update()
         bm.verts.ensure_lookup_table()
         fixed = {v.index for v in bm.verts if any(f.material_index == 1 for f in v.link_faces)}   # (the moustache's: as made)
-        conform(bm, .012 * R, .35 * R, (lambda p: None if by_must(p) else OL.edge_target(p)) if OL is not None else None, fixed)   # (its edge down on the skin: on its outline - not where it went on to the moustache)
+        conform(bm, .012 * R, .35 * R, (lambda p: None if bridge(p) and fldR(p) < -.02 * R else OL.edge_target(p)) if OL is not None else None, fixed)   # (its edge down on the skin: on its outline - not where it went on past it to the moustache; by the moustache it left the outline short, under the lip)
         push_out(bm, .012 * R)
         bm.verts.ensure_lookup_table()
         dist = edge_dist(bm)
@@ -1734,9 +1734,11 @@ def moustache(F, kind, vol, length, under=None, over=False):
                 if sd < 0:
                     q.reverse(); uq.reverse()
                 f = bm.faces.new(q)
+                L_ = max(1e-6, rows[-1][1])
                 for lp, (a, t_) in zip(f.loops, uq):
                     vv_ = 1 - abs(2 * t_ - 1)
-                    lp[uvl].uv = (a / (1.5 * R) + .25 * vv_, vv_)
+                    kk = .07 + .3 * min(1., max(0., a / L_)) ** 1.3   # (its slant: ~20 degrees at its middle, ~60 to its end)
+                    lp[uvl].uv = (a / (1.5 * R) + kk * vv_, vv_)
         fe = bm.faces.new(list(rows[-1][0]) if sd > 0 else list(reversed(rows[-1][0])))   # (its end closed: blunt, or a point)
         for lp in fe.loops:
             lp[uvl].uv = (rows[-1][1] / (1.5 * R), .5)
