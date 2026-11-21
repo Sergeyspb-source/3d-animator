@@ -1282,15 +1282,20 @@ def build_beard(st):
         fldR = beard_field(F, st, cfg["patch"], OL)
         # (with an outline: a little past it, thinning to nothing just outside it - its edge then on the contour; the
         # edge's way in thinned it inside it and the remesh cut that off: the beard stopped short of its outline)
-        mo = moustache(F, cfg["must"], vol, float(prm.get("length", .05))) if cfg["must"] else None
+        def beard_t(p):   # (the beard's own thickness under a point of the moustache; none off it)
+            if OL is None or fldR(p) < -.3 * R:
+                return 0.
+            return vol * R * (cfg["T"] + (cfg["J"] - cfg["T"]) * smooth(yM, yC - .3 * u, p.z))
+        mo = moustache(F, cfg["must"], vol, float(prm.get("length", .05)), beard_t) if cfg["must"] else None
         mpts = [(c, max(h_, d_)) for cen_, hs_, ds_ in MUST_LINES for c, h_, d_ in zip(cen_, hs_, ds_)]
         mend = [(c, max(h_, d_)) for cen_, hs_, ds_ in MUST_LINES for i_, (c, h_, d_) in enumerate(zip(cen_, hs_, ds_)) if i_ > .55 * len(cen_)]
 
         def by_must(p):   # (by the moustache: the beard thick right to its edge there - it has something to join)
             return any((p - c).length < r_ + .15 * R for c, r_ in mpts)
 
-        def bridge(p):   # (under a moustache's end just past the beard's edge: the beard on to it - the two one)
-            return OL is not None and fldR(p) > -.35 * R and any((p - c).length < r_ + .1 * R for c, r_ in mend)
+        def bridge(p):   # (under a moustache's end just past the beard's edge: the beard on to it - the two one; no wider
+            # than the moustache: its edge, faded, showed round it as stubble)
+            return OL is not None and fldR(p) > -.35 * R and any((p - c).length < r_ + .03 * R for c, r_ in mend)
         sh = scalp_shell((lambda p: fldR(p) > -.08 * R or bridge(p)) if OL is not None else beard_region(F, st, cfg["patch"]), lambda v: 0., "beard_base", close=3)
         sb = bmesh.new(); sb.from_mesh(sh.data); bpy.data.objects.remove(sh, do_unlink=True)
         sb.normal_update(); sb.verts.ensure_lookup_table()
@@ -1452,6 +1457,8 @@ def build_beard(st):
         for v in bm.verts:
             end = smooth(yC - .45 * Lh, yC - 1.05 * Lh, v.co.z) if Lh > .05 * R else 0.
             fade[v.index] = min(min(1., dist[v.index] / (.05 * R)), 1 - .85 * end ** .8)
+            if mpts and any((v.co - c).length < r_ + .05 * R for c, r_ in mpts):   # (by the moustache: whole, no fringe)
+                fade[v.index] = 1.
         obs.insert(0, _beard_skin(ob, bm, fade, F, conv))
         return obs, obs[0]
     if cfg["must"]:
@@ -1542,7 +1549,7 @@ def _beard_skin(ob, bm, fade, F, conv, stubble=False):
 MUST_LINES = []   # the moustache's halves: (their middle line, half heights, half depths) - the beard thick by them
 
 
-def moustache(F, kind, vol, length):
+def moustache(F, kind, vol, length, under=None):
     """two thick locks from the middle under the nose out along the upper lip over the mouth's corners, tapering to a
     point: a handlebar's ends curled up, a long beard's drooping to the chin, a short one's ending at the corners"""
     yM, mx, u, yS = F["yM"], F["mx"], F["u"], F["yS"]
@@ -1645,7 +1652,7 @@ def moustache(F, kind, vol, length):
             if n_b is not None and n_b - top < .12 * R:   # (up under the nose's wings, when it is near: skin showed between)
                 top += (1 - smooth(.4, .75, t)) * max(0., n_b - .015 * R - top)
             return x_, top, bot
-        cen, hs, ds = [], [], []
+        cen, hs, ds, sps, nns = [], [], [], [], []
         for i in range(Nr + 1):
             s = -.08 + 1.08 * i / Nr
             x_, top, bot = prof(s)
@@ -1653,7 +1660,18 @@ def moustache(F, kind, vol, length):
             dep = min(hgt * .75, .11 * R * vol ** .5) if hgt > .02 * R else hgt * .75
             sp_, nn = anchor(x_, zc)   # (on the skin under the nose, not on its tip)
             c = sp_ + nn * (.015 * R + dep)
+            sps.append(sp_); nns.append(nn)
             cen.append(c); hs.append(hgt); ds.append(dep)
+        if under is not None:   # over the beard: sunk into it, as thick as it there - not a lock cut off on top of it
+            tb = [under(p_) for p_ in sps]
+            first = next((i for i, t_ in enumerate(tb) if t_ > 0 and i > .3 * len(tb)), None)
+            if first is not None:
+                for i in range(first, len(tb)):
+                    k = min(1., (i - first + 1) / 4)
+                    t_ = max(tb[i], .02 * R)
+                    ds[i] += (min(ds[i], .5 * t_) - ds[i]) * k
+                    hs[i] += (min(hs[i], max(.6 * t_, .03 * R)) - hs[i]) * k
+                    cen[i] = cen[i] + ((sps[i] + nns[i] * max(.012 * R, t_ - ds[i])) - cen[i]) * k   # (its top at the beard's)
         for _ in range(3):   # (its line smooth over the lips' bumps)
             cen = [cen[0]] + [(cen[i - 1] + cen[i] * 2 + cen[i + 1]) / 4 for i in range(1, len(cen) - 1)] + [cen[-1]]
         MUST_LINES.append((list(cen), list(hs), list(ds)))
