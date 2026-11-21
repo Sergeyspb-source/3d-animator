@@ -2811,5 +2811,9 @@
  "ag.hair_pick_style": "Pick a style - the generator makes it for the character.",
  "ag.made_refresh": "Update the preview",
  "ag.made_refresh_info": "Make the preview again in Blender by the new parameters (10-90 s). «Generate» makes the piece by them without it too.",
- "ag.made_stale": "Parameters changed - the previous preview is shown"
+ "ag.made_stale": "Parameters changed - the previous preview is shown",
+ "ag.must_mode": "Moustache:",
+ "ag.must_merge": "Into the beard",
+ "ag.must_over": "Over the beard (long)",
+ "ag.must_none": "None"
 }

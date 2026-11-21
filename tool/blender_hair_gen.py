@@ -1217,7 +1217,10 @@ def flow_uv(bm, F, skip=()):
 
 
 def build_beard(st):
-    cfg = BEARD[st]
+    cfg = dict(BEARD[st])
+    mmode = prm.get("must", "merge")   # the moustache: into the beard, over it (long, out past it), none
+    if mmode == "none" and st != "mustache":
+        cfg["must"] = None
     F = face_frame()
     vol = float(prm.get("vol", 1.))
     Lh = float(prm.get("length", .05)) * H * cfg["hang"]
@@ -1286,7 +1289,7 @@ def build_beard(st):
             if OL is None or fldR(p) < -.3 * R:
                 return 0.
             return vol * R * (cfg["T"] + (cfg["J"] - cfg["T"]) * smooth(yM, yC - .3 * u, p.z))
-        mo = moustache(F, cfg["must"], vol, float(prm.get("length", .05)), beard_t) if cfg["must"] else None
+        mo = moustache(F, cfg["must"], vol, float(prm.get("length", .05)), beard_t if mmode == "merge" else None, mmode == "over") if cfg["must"] else None
         mpts = [(c, max(h_, d_)) for cen_, hs_, ds_ in MUST_LINES for c, h_, d_ in zip(cen_, hs_, ds_)]
         mend = [(c, max(h_, d_)) for cen_, hs_, ds_ in MUST_LINES for i_, (c, h_, d_) in enumerate(zip(cen_, hs_, ds_)) if i_ > .55 * len(cen_)]
 
@@ -1294,8 +1297,8 @@ def build_beard(st):
             return any((p - c).length < r_ + .15 * R for c, r_ in mpts)
 
         def bridge(p):   # (under a moustache's end just past the beard's edge: the beard on to it - the two one; no wider
-            # than the moustache: its edge, faded, showed round it as stubble)
-            return OL is not None and fldR(p) > -.35 * R and any((p - c).length < r_ + .03 * R for c, r_ in mend)
+            # than the moustache: its edge, faded, showed round it as stubble; over the beard its ends stay out)
+            return OL is not None and mmode == "merge" and fldR(p) > -.35 * R and any((p - c).length < r_ + .03 * R for c, r_ in mend)
         sh = scalp_shell((lambda p: fldR(p) > -.08 * R or bridge(p)) if OL is not None else beard_region(F, st, cfg["patch"]), lambda v: 0., "beard_base", close=3)
         sb = bmesh.new(); sb.from_mesh(sh.data); bpy.data.objects.remove(sh, do_unlink=True)
         sb.normal_update(); sb.verts.ensure_lookup_table()
@@ -1423,7 +1426,9 @@ def build_beard(st):
                 if s < -.005 * R:
                     drop.append(f)
                 continue
-            if s < (.03 if Lh > .05 * R else .022) * R or (s < .12 * R and f.normal.dot(nn) < -.2):
+            # (its underside: on the skin, or in it; facing the skin only right by it - further off, in the crease
+            # between the jaw and the neck, that took its outside too and opened holes there)
+            if s < (.03 if Lh > .05 * R else .022) * R or (s < .05 * R and f.normal.dot(nn) < -.5):
                 drop.append(f)
         if job.get("debug"):
             print("beard faces", len(bm.faces), "dropped", len(drop), flush=True)
@@ -1445,6 +1450,33 @@ def build_beard(st):
         big = max(len(i) for i in isl)
         bmesh.ops.delete(bm, geom=[f for i in isl if len(i) < .12 * big and not any(f.material_index == 1 for f in i) for f in i], context="FACES")   # (not the moustache's)
         bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context="VERTS")
+        # (holes in it filled: in the crease between the jaw and the neck its body folds, and cut off by the skin
+        # there its outside went too - the background showed through it from below; its outer edge and a hole round
+        # the mouth - long - stay)
+        bnd_e = {e for e in bm.edges if len(e.link_faces) == 1}
+        loops, seen_e = [], set()
+        for e0 in bnd_e:
+            if e0 in seen_e:
+                continue
+            st_, cur_ = [e0], []; seen_e.add(e0)
+            while st_:
+                e = st_.pop(); cur_.append(e)
+                for v in e.verts:
+                    for e2 in v.link_edges:
+                        if e2 in bnd_e and e2 not in seen_e:
+                            seen_e.add(e2); st_.append(e2)
+            loops.append(cur_)
+        if len(loops) > 1:
+            lens = [sum(e.calc_length() for e in lp) for lp in loops]
+            longest = max(range(len(loops)), key=lambda i: lens[i])
+            for i, lp in enumerate(loops):
+                if i != longest and lens[i] < 1.0 * R:
+                    try:
+                        res = bmesh.ops.holes_fill(bm, edges=lp, sides=0)
+                        bmesh.ops.triangulate(bm, faces=res.get("faces", []))
+                    except Exception:   # noqa: BLE001
+                        pass
+        bm.normal_update()
         bm.verts.ensure_lookup_table()
         fixed = {v.index for v in bm.verts if any(f.material_index == 1 for f in v.link_faces)}   # (the moustache's: as made)
         conform(bm, .012 * R, .35 * R, (lambda p: None if by_must(p) else OL.edge_target(p)) if OL is not None else None, fixed)   # (its edge down on the skin: on its outline - not where it went on to the moustache)
@@ -1456,7 +1488,9 @@ def build_beard(st):
         fade = {}
         for v in bm.verts:
             end = smooth(yC - .45 * Lh, yC - 1.05 * Lh, v.co.z) if Lh > .05 * R else 0.
-            fade[v.index] = min(min(1., dist[v.index] / (.05 * R)), 1 - .85 * end ** .8)
+            # (no fade at its edge on the skin: dense there, as asked - put down on its outline its last faces were
+            # drawn out, and the fade over them was a see-through patch: the background through it by the jaw)
+            fade[v.index] = 1 - .85 * end ** .8
             if mpts and any((v.co - c).length < r_ + .05 * R for c, r_ in mpts):   # (by the moustache: whole, no fringe)
                 fade[v.index] = 1.
         obs.insert(0, _beard_skin(ob, bm, fade, F, conv))
@@ -1549,13 +1583,15 @@ def _beard_skin(ob, bm, fade, F, conv, stubble=False):
 MUST_LINES = []   # the moustache's halves: (their middle line, half heights, half depths) - the beard thick by them
 
 
-def moustache(F, kind, vol, length, under=None):
+def moustache(F, kind, vol, length, under=None, over=False):
     """two thick locks from the middle under the nose out along the upper lip over the mouth's corners, tapering to a
     point: a handlebar's ends curled up, a long beard's drooping to the chin, a short one's ending at the corners"""
     yM, mx, u, yS = F["yM"], F["mx"], F["u"], F["yS"]
     kl = (length / .045) ** .5 if kind == "handlebar" and style == "mustache" else 1.
     span, drop, curl, hk = {"handlebar": (1.3, .3, .38, 1.25), "short": (.62, .1, 0., .9), "droop": (1.1, 1.2, 0., 1.25),
                             "goatee": (.8, 1.0, 0., 1.)}[kind]
+    if over:   # (over the beard: long, its ends out past it, curled - as the sculpted one's)
+        span, curl, hk = span * 1.35, max(curl, .45), hk * 1.1
     span *= u * kl; drop *= u; curl *= u * kl
     low = yM - (.12 if kind != "short" else -.25) * u   # (its lower edge: over the mouth's line; a short one's above it)
     nb = {}
@@ -1688,19 +1724,22 @@ def moustache(F, kind, vol, length, under=None):
         cap = list(rows[0][0]) if sd < 0 else list(reversed(rows[0][0]))   # (its root closed)
         fc = bm.faces.new(cap)
         for lp in fc.loops:
-            lp[uvl].uv = (.5, 0.)
+            lp[uvl].uv = (0., .5)
         for i in range(len(rows) - 1):
             for j in range(M):
                 q = [rows[i][0][j], rows[i + 1][0][j], rows[i + 1][0][(j + 1) % M], rows[i][0][(j + 1) % M]]
-                uq = [(j / M, rows[i][1]), (j / M, rows[i + 1][1]), ((j + 1) / M, rows[i + 1][1]), ((j + 1) / M, rows[i][1])]
+                # (its hairs top to bottom as the beard's: down round its section from its top edge over its front
+                # - and its back the same way - slanting out; along it they read as a rope)
+                uq = [(rows[i][1], j / M), (rows[i + 1][1], j / M), (rows[i + 1][1], (j + 1) / M), (rows[i][1], (j + 1) / M)]
                 if sd < 0:
                     q.reverse(); uq.reverse()
                 f = bm.faces.new(q)
-                for lp, (a, b) in zip(f.loops, uq):
-                    lp[uvl].uv = (a, b / (1.5 * R))
+                for lp, (a, t_) in zip(f.loops, uq):
+                    vv_ = 1 - abs(2 * t_ - 1)
+                    lp[uvl].uv = (a / (1.5 * R) + .25 * vv_, vv_)
         fe = bm.faces.new(list(rows[-1][0]) if sd > 0 else list(reversed(rows[-1][0])))   # (its end closed: blunt, or a point)
         for lp in fe.loops:
-            lp[uvl].uv = (.5, rows[-1][1] / (1.5 * R))
+            lp[uvl].uv = (rows[-1][1] / (1.5 * R), .5)
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
     push_out(bm, .01 * R)   # (not into the upper lip's bulge: a thin one's middle went behind it)
     for _ in range(2):   # (the push's bumps off)

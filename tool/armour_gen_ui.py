@@ -196,7 +196,8 @@ def _beard_params(params) -> dict:
     """The editor's beard parameters as blender_hair_gen.py's: its length (a share of the height: what hangs under
     the chin), its volume (x its thickness), its colour (linear)"""
     hp = {k: v for k, v in _hair_params(params).items() if k != "nodes"}
-    out = {**hp, "length": float(params.get("beard_len", 5)) / 100, "vol": float(params.get("beard_vol", 100)) / 100}
+    out = {**hp, "length": float(params.get("beard_len", 5)) / 100, "vol": float(params.get("beard_vol", 100)) / 100,
+           "must": params.get("beard_must") if params.get("beard_must") in ("merge", "over", "none") else "merge"}   # (the moustache with the beard)
     nodes = (params.get("beard_nodes") or {}).get(params.get("beard")) if isinstance(params.get("beard_nodes"), dict) else None
     if isinstance(nodes, dict):   # (its outline fitted by hand: the nodes on the skin, glTF's axes)
         out["nodes"] = {str(k): [float(x) for x in v][:3] for k, v in nodes.items() if isinstance(v, (list, tuple)) and len(v) >= 3}
@@ -721,6 +722,8 @@ def made_preview(cfg, req) -> dict:
     sides = [x for x in req.get("sides") or [] if x in ("L", "R")]
     tag = "".join(f"_{k[0]}{round(hp[k] * (1 if 'angle' in k else 100))}" for k in ("gap", *own.get(style, ()))) + ("_" + "".join(sides) if sides else "")
     tag += "".join(f"_{k[:2]}{round(hp[k] * 10)}" for k in ("slide", "twist", "size") if k in hp and hp[k] != (100 if k == "size" else 0))   # (placed by hand)
+    if hp.get("must", "merge") != "merge":   # (a beard's moustache over it, or none)
+        tag += "_m" + hp["must"]
     if hp.get("nodes"):   # (an outline fitted by hand)
         tag += "_n" + hashlib.md5(json.dumps(hp["nodes"], sort_keys=True).encode()).hexdigest()[:8]
     under = _under(rigged, req) if piece == "helmet" else []

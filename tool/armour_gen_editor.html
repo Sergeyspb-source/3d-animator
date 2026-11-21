@@ -299,15 +299,33 @@ const wordCache = new Map();
 
 const fileUrl = (p) => new URL('/file=' + p, window.parent.location.href).href;
 let charMeshes = [];
+// a model's triangles wound against their own normals (a generator's slips: the orc's has 70, under the jaw) turned
+// round: the body is drawn from its front only, and they were holes - seen from below, the neck had them
+function fixWinding(g) {
+  const I = g.index, P = g.attributes.position, N = g.attributes.normal; if (!I || !N) return 0;
+  const a = new V3(), b = new V3(), c = new V3(), n = new V3();
+  let k = 0;
+  for (let t = 0; t + 2 < I.count; t += 3) {
+    const i0 = I.getX(t), i1 = I.getX(t + 1), i2 = I.getX(t + 2);
+    a.fromBufferAttribute(P, i0); b.fromBufferAttribute(P, i1).sub(a); c.fromBufferAttribute(P, i2).sub(a);
+    n.set(N.getX(i0) + N.getX(i1) + N.getX(i2), N.getY(i0) + N.getY(i1) + N.getY(i2), N.getZ(i0) + N.getZ(i1) + N.getZ(i2));
+    if (b.cross(c).dot(n) < 0) { I.setX(t + 1, i2); I.setX(t + 2, i1); k++; }
+  }
+  if (k) I.needsUpdate = true;
+  return k;
+}
 async function loadCharacter() {
   const gltf = await new GLTFLoader().loadAsync(fileUrl(DATA.rigged) + '?v=' + (DATA.rigged_v || 0));
   charRoot = gltf.scene; scene.add(charRoot); charRoot.updateMatrixWorld(true);
   const isPart = (o) => PARTS.some((p) => o.name.startsWith(p) || (o.parent && o.parent.name.startsWith(p)));
   charRoot.traverse((o) => {
     if (o.isBone) { byName[o.name] = o; REST.set(o, o.quaternion.clone()); RESTP.set(o, o.position.clone()); boneNames.push(o.name); }   // every bone, an index each
-    if (o.isMesh) { ORIG.set(o, o.material); if (o.geometry.index) o.userData.fullIndex = o.geometry.index.array.slice(); }
+    if (o.isMesh) { ORIG.set(o, o.material); fixWinding(o.geometry); if (o.geometry.index) o.userData.fullIndex = o.geometry.index.array.slice(); }
     if (o.isSkinnedMesh && !isPart(o) && o.geometry.attributes.skinIndex) charMeshes.push(o);
   });
+  // (the skin drawn from both sides: a model's triangles turned inwards - winding and normals both, so not caught
+  // above - were holes, the background through them: the orc's under the jaw, seen from below)
+  for (const o of charMeshes) for (const m of [].concat(o.material)) { m.side = THREE.DoubleSide; m.needsUpdate = true; }
   buildBody();
   if (!bodyGeo) throw new Error('{{js:blender.the_character_has_no_skin_with}}');
   bodyGeo.computeBoundingBox(); HEIGHT = bodyGeo.boundingBox.max.y - bodyGeo.boundingBox.min.y;
@@ -422,6 +440,13 @@ function pressOf(m, x, y, z) {   // how far a mask moves the vertex at this plac
   return null;
 }
 let resultMask = null, previewMask = null;   // previewMask: what a helmet being chosen hides (the ears)
+window.agSetP = (k, v) => { S.p[k] = v; changed(k); };   // (the tests: a parameter set as the panel would)
+window.agHideMade = (v) => { if (helmetObj) helmetObj.visible = !v; };   // (the tests: the made piece out of sight)
+window.agDouble = () => { for (const o of charMeshes) for (const m of [].concat(o.material)) { m.side = THREE.DoubleSide; m.needsUpdate = true; } };
+window.agMasks = () => ({   // (the tests: what hides the body now, how many of its triangles are gone)
+  worn: [...WORN.entries()].filter(([, w]) => w.on && w.mask).map(([k, w]) => [k, w.mask.size]),
+  preview: previewMask ? previewMask.size : null, result: showResult && resultMask ? resultMask.size : null,
+  hidden: charMeshes.map((o) => (o.userData.fullIndex ? o.userData.fullIndex.length / 3 : 0) - (o.geometry.index ? o.geometry.index.count / 3 : 0)) });
 function hideBody() {
   const keys = [...[...WORN.values()].filter((w) => w.on && w.mask).map((w) => w.mask), ...(showResult && resultMask ? [resultMask] : []),
     ...(!showResult && previewMask ? [previewMask] : [])];
@@ -5910,6 +5935,8 @@ function buildPanel() {
         NODE_FIELDS.filter((x) => x[1] === g).map(([k, , ax, tip, st]) => `<label title="${tip}">${ax}<input type="number" id="n_${k}" step="${st}"></label>`).join('') + `</div>`).join('') +
       `<div class="nrow"><span class="nlbl">{{js:ag.node_scale}}</span><label title="{{js:ag.s_size}}">%<input type="number" id="n_s_size" step="5" min="20" max="400"></label></div></div>` : '') +
     (gi === HAIR_GI ? `<div class="note" id="r_wigs" style="margin:2px 0 6px">${'{{js:ag.hair_models_note}}'.replace('{0}', DATA.hair_models_dir || '')}</div><div class="row" id="r_hairc"><span class="note">{{js:ag.hair_colour}}</span><span class="seg" id="hairCols">${HAIR_COLOURS.map((c) => `<button data-hc="${c}" style="background:${c};width:22px;min-width:22px" title="${c}">&nbsp;</button>`).join('')}</span><input type="color" id="i_hairc"></div>` +
+      `<div id="r_must"><div class="note">{{js:ag.must_mode}}</div><div class="row" style="margin:2px 0 4px"><span class="seg" id="mustSeg">` +
+      ['merge', 'over', 'none'].map((m) => `<button data-must="${m}">${'{{js:ag.must_merge}}|{{js:ag.must_over}}|{{js:ag.must_none}}'.split('|')[['merge', 'over', 'none'].indexOf(m)]}</button>`).join('') + `</span></div></div>` +
       `<div id="r_contour"><div class="row" style="margin:4px 0 2px"><span class="seg"><button id="b_contour" title="{{js:ag.contour_info}}">{{js:ag.contour}}</button><button id="b_creset">{{js:ag.contour_reset}}</button></span>` +
       `<label class="chk" style="margin-left:8px"><input type="checkbox" id="i_csym" checked> {{js:ag.contour_sym}}</label></div><div class="note" id="contourNote">{{js:ag.contour_info}}</div></div>` : '') +
     (gi === GOR_GI ? `<label class="chk" id="r_bevor" title="{{js:ag.bevor_info}}"><input type="checkbox" id="i_bevor"> {{js:ag.bevor}}</label>` : '') +
@@ -5986,6 +6013,7 @@ function buildPanel() {
   $('i_seed').addEventListener('change', (e) => { S.p.seed = Math.round(+e.target.value || 1); changed('seed'); });
   $('hairCols').addEventListener('click', (e) => { const c = e.target.dataset.hc; if (c) { S.p.hair_color = c; changed('look'); } });
   $('b_contour').addEventListener('click', () => contourToggle(!CONTOUR.on));
+  $('mustSeg').addEventListener('click', (e) => { const m = e.target.dataset.must; if (m) { S.p.beard_must = m; changed('must'); } });
   $('remade').addEventListener('click', () => { madeForce = true; changed('made'); });
   $('i_csym').addEventListener('change', (e) => { CONTOUR.sym = e.target.checked; });
   $('b_creset').addEventListener('click', () => { const key = S.piece + '_nodes'; if (S.p[key]) { S.p[key] = { ...S.p[key] }; delete S.p[key][S.p[S.piece]]; } CONTOUR.nodes = null; changed('contour'); });
@@ -6078,6 +6106,10 @@ function syncPanel() {
   $('i_hairc').value = S.p.hair_color || '#3b2618';
   if ($('r_wigs')) $('r_wigs').textContent = (S.piece === 'beard' ? '{{js:ag.beard_models_note}}' : '{{js:ag.hair_models_note}}').replace('{0}', (S.piece === 'beard' ? DATA.beard_models_dir : DATA.hair_models_dir) || '');
   if ($('r_contour')) $('r_contour').hidden = !contourPiece();   // (fitting by hand: a beard, a hairstyle made here)
+  if ($('r_must')) {   // (a beard's moustache: into it, over it, none - a beard with one)
+    $('r_must').hidden = !(S.piece === 'beard' && ['short', 'full', 'long', 'goatee'].includes(S.p.beard_style));
+    for (const b of $('mustSeg').children) b.classList.toggle('on', b.dataset.must === (S.p.beard_must || 'merge'));
+  }
   if ($('contourNote')) $('contourNote').textContent = S.piece === 'hair' ? '{{js:ag.contour_hair_info}}' : '{{js:ag.contour_info}}';
   if (CONTOUR.group.visible !== (CONTOUR.on && !!CONTOUR.def && contourPiece())) contourDraw(true);
   $('i_tint').value = S.p.tint; $('i_cloth').value = S.p.cloth; $('i_tex').value = String(S.p.tex); $('i_seed').value = S.p.seed;
@@ -6354,7 +6386,7 @@ function rebuildMade() {
   }
   if (!['helmet', 'hair', 'beard'].includes(piece) && !sides.length) { $('warn').textContent = '{{js:ag.choose_a_side}}'; $('warn').hidden = false; lastBuild = null; $('go').disabled = true; return; }
   // (a helmet: and the coifs on under it - put on or off, another one)
-  const key = [piece, S.p[piece], S.p.head_gap, piece === 'helmet' ? [...WORN.entries()].filter(([k, w]) => w.on && /coif/.test(k)).map(([k]) => k).join('+') : '', ['elbow', 'poleyn'].includes(piece) ? MADE_GAP0 : S.p.limb_gap, S.p.wing, S.p.foot_gap, S.p.visor_angle, S.p.cheek_angle, S.p.tail, S.p.brim, piece === 'hair' ? `${S.p.hair_len}_${S.p.hair_part}_${JSON.stringify(((S.p.hair_nodes || {})[S.p.hair]) || '')}` : piece === 'beard' ? `${S.p.beard_len}_${S.p.beard_vol}_${JSON.stringify(((S.p.beard_nodes || {})[S.p.beard]) || '')}` : '', ...sides].join('_'), h = madeCache.get(key);
+  const key = [piece, S.p[piece], S.p.head_gap, piece === 'helmet' ? [...WORN.entries()].filter(([k, w]) => w.on && /coif/.test(k)).map(([k]) => k).join('+') : '', ['elbow', 'poleyn'].includes(piece) ? MADE_GAP0 : S.p.limb_gap, S.p.wing, S.p.foot_gap, S.p.visor_angle, S.p.cheek_angle, S.p.tail, S.p.brim, piece === 'hair' ? `${S.p.hair_len}_${S.p.hair_part}_${JSON.stringify(((S.p.hair_nodes || {})[S.p.hair]) || '')}` : piece === 'beard' ? `${S.p.beard_len}_${S.p.beard_vol}_${S.p.beard_must || 'merge'}_${JSON.stringify(((S.p.beard_nodes || {})[S.p.beard]) || '')}` : '', ...sides].join('_'), h = madeCache.get(key);
   const style = S.p[piece], sd = sides.join('');
   if (!h) {
     // a slider moved, a node: the last preview of this style stays, Blender makes it again only on asking («Update
@@ -6867,7 +6899,7 @@ function view(v, eyeOver, whole) {   // eyeOver: a direction of its own (the tes
   curView = v;
   for (const b of $('views').children) b.classList.toggle('on', b.dataset.v === v);
 }
-const plainMat = new THREE.MeshStandardMaterial({ color: 0x8c9670, roughness: .8 });
+const plainMat = new THREE.MeshStandardMaterial({ color: 0x8c9670, roughness: .8, side: THREE.DoubleSide });
 const xrayMat = new THREE.MeshStandardMaterial({ color: 0x8c9670, roughness: .8, transparent: true, opacity: .3, depthWrite: false });
 function skin(s) {
   for (const [o, m] of ORIG) o.material = s === 'own' ? m : s === 'plain' ? plainMat : xrayMat;
