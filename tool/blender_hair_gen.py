@@ -143,17 +143,37 @@ def by_ear(p):   # (a short cut's: the ear's core only, at the head's side - the
     return loc is not None and d < .07 * R
 
 
+def zmin_default(th):
+    """the hairline's height over the head's middle round the head (th: 0 the face, ±pi the nape): high at the
+    forehead, lower over the ears, down to the nape behind"""
+    fb = abs(th) / math.pi
+    zf, zs, zb = .62 * R, .30 * R, -.55 * R
+    return zf + (zs - zf) * min(1, fb / .5) if fb < .5 else zs + (zb - zs) * min(1, (fb - .5) / .25)
+
+
+HL = None   # the hairline fitted by hand: [(th, height)] round the head, from its nodes
+
+
+def zmin_at(th):
+    if not HL:
+        return zmin_default(th)
+    m = len(HL)
+    th = (th - HL[0][0]) % (2 * math.pi) + HL[0][0]
+    k = max(i for i in range(m) if HL[i][0] <= th)
+    a, b = HL[k][0], HL[(k + 1) % m][0] + (2 * math.pi if k + 1 >= m else 0)
+    t = (th - a) / max(1e-9, b - a)
+    z0, z1, z2, z3 = HL[(k - 1) % m][1], HL[k][1], HL[(k + 1) % m][1], HL[(k + 2) % m][1]
+    return .5 * (2 * z1 + (z2 - z0) * t + (2 * z0 - 5 * z1 + 4 * z2 - z3) * t * t + (3 * z1 - z0 - 3 * z2 + z3) * t ** 3)
+
+
 def hairline(p, ears=near_ear):
-    """high at the forehead, lower over the ears, down to the nape behind"""
+    """above the hairline (by its height round the head: the default's, or through the nodes moved by hand)"""
     rel = p - O
     if ears is near_ear and near_ear(p, .12 * R):
         return False
     if ears is by_ear and by_ear(p):
         return False
-    fb = abs(math.atan2(rel.x, -rel.y)) / math.pi
-    zf, zs, zb = .62 * R, .30 * R, -.55 * R
-    zmin = zf + (zs - zf) * min(1, fb / .5) if fb < .5 else zs + (zb - zs) * min(1, (fb - .5) / .25)
-    return rel.z > zmin
+    return rel.z > zmin_at(math.atan2(rel.x, -rel.y))
 
 
 # ---------------------------------------------------------------- textures
@@ -880,10 +900,12 @@ def face_frame():
     iC = next((i for i in range(iF, len(prof)) if prof[i][1] < fC - .35 * R), None) if iF is not None else None
     yC = prof[iC][0] if iC is not None else yM - 1.1 * R
     yC = min(yM - .5 * R, max(yM - 1.8 * R, yC))
-    # the nose's base: the deepest of the profile between the nose's tip and the upper lip
-    up = [i for i in range(iN, len(prof)) if prof[i][0] > yM + .5 * lipUp]
-    yS = prof[min(up, key=lambda i: prof[i][1])][0] if len(up) > 1 else yM + lipUp + .25 * R
-    yS = max(yM + lipUp, min(yM + lipUp + .5 * R, yS))
+    # the nose's base: going down from its tip, where the profile has gone half way back to the upper lip's front
+    # (its underside is about level: that is its bottom; the deepest point was the philtrum's, just over the lip)
+    iL = min(range(len(prof)), key=lambda i: abs(prof[i][0] - (yM + .7 * lipUp)))
+    half_f = prof[iN][1] - .5 * (prof[iN][1] - prof[iL][1])
+    iS = next((i for i in range(iN, iL + 1) if prof[i][1] < half_f), iL)
+    yS = max(yM + lipUp, min(yM + lipUp + .7 * R, prof[iS][0] - .02 * R))
     hw = {}
 
     def half(z):
@@ -894,11 +916,13 @@ def face_frame():
             hw[k] = max(3 * R - a[2] if a else R, 3 * R - b[2] if b else R)
         return hw[k]
     print("face: mouth %.3f chin %.3f nose base %.3f u %.4f marks %s" % (yM, yC, yS, u, bool(mc)), flush=True)
+    if job.get("debug"):
+        print("prof", iN, [(round(z, 4), round(f, 4)) for z, f in prof[:40]], flush=True)
     return dict(front=front, yM=yM, mx=mx, u=u, lipUp=lipUp, lipDn=lipDn, fM=fM, yC=yC, fC=fC, yS=yS, half=half,
                 mw=.55 * u + .04 * R, yTop=yM + .55 * (E.z - yM))
 
 
-def beard_field(F, kind, patch):
+def beard_field(F, kind, patch, outline=None):
     """where a beard grows, as a field: how far a point is inside it (< 0 outside) - its line smooth wherever it
     crosses the face's polygons (a yes/no per vertex was the skin's staircase). Each condition a margin: and the
     least of them, or the most, not the negative"""
@@ -935,6 +959,8 @@ def beard_field(F, kind, patch):
 
     def field(p):
         m = AND(-lips(p), ear(p))
+        if outline is not None:   # (its outline by its nodes: the user's, or the ones on the edge found here)
+            return AND(m, outline(p))
         if kind == "stubble":
             return AND(m, OR(below(p), cheeks(p), lip_top(p)))
         if patch:
@@ -945,9 +971,168 @@ def beard_field(F, kind, patch):
     return field
 
 
-def beard_region(F, kind, patch):
-    fld = beard_field(F, kind, patch)
+def beard_region(F, kind, patch, outline=None):
+    fld = beard_field(F, kind, patch, outline)
     return lambda p: fld(p) > 0
+
+
+# ---------------------------------------------------------------- fitting by hand: the outline's nodes on the skin
+def gl2b(v):
+    return Vector((v[0], -v[2], v[1]))
+
+
+def b2gl(p):
+    return [round(p.x, 5), round(p.z, 5), round(-p.y, 5)]
+
+
+NODES_IN = {k: gl2b(v) for k, v in (prm.get("nodes") or {}).items() if isinstance(v, (list, tuple)) and len(v) == 3}
+NODES_OUT, LOOP = {}, []
+BEARD_LOOP = ["burn_R", "cheek_R", "corner_R", "chin_top", "corner_L", "cheek_L", "burn_L", "jaw_L", "throat", "jaw_R"]
+GOATEE_LOOP = ["corner_R", "chin_top", "corner_L", "jaw_L", "throat", "jaw_R"]
+
+
+_KD, EDGES, REP = None, None, None
+
+
+def skin_kd():
+    """the skin's vertices to look up by place; its edges with the copies a file makes along the unwrap's seams as
+    one vertex (unwelded, a curve's wall had gaps at the seams and a fill got out through them)"""
+    global _KD, EDGES, REP
+    if _KD is None:
+        from mathutils.kdtree import KDTree
+        _KD = KDTree(len(V))
+        for i, v in enumerate(V):
+            _KD.insert(v, i)
+        _KD.balance()
+        REP = list(range(len(V)))
+        for i, v in enumerate(V):
+            if REP[i] == i:
+                for _, j, _ in _KD.find_range(v, 1e-6):
+                    if j > i:
+                        REP[j] = i
+        EDGES = {}
+        for e in me.edges:
+            i, j = REP[e.vertices[0]], REP[e.vertices[1]]
+            if i != j:
+                EDGES.setdefault(i, set()).add(j); EDGES.setdefault(j, set()).add(i)
+    return _KD
+
+
+def catmull_closed3(P, n):
+    out, m = [], len(P)
+    for i in range(m):
+        p0, p1, p2, p3 = P[i - 1], P[i], P[(i + 1) % m], P[(i + 2) % m]
+        for k in range(n):
+            t = k / n; t2 = t * t; t3 = t2 * t
+            out.append(.5 * (2 * p1 + (p2 - p0) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (3 * p1 - p0 - 3 * p2 + p3) * t3))
+    return out
+
+
+class Outline:
+    """a closed outline on the skin through the nodes (a smooth curve, each point of it put down on the skin): it cuts
+    the skin's mesh - along its edges - and what is inside is the part with the seed (the chin) in it. As a field:
+    how far from the curve, + inside, - outside (smooth: the curve's own distance, not the mesh's staircase)"""
+
+    def __init__(self, pts, seed, block=None):
+        import heapq
+        kd = skin_kd()
+        bk = {REP[i] for i, v in enumerate(V) if block(v)} if block else set()
+        # (put down on the outer skin: not into the mouth, not on an ear - a curve through the cheek went there)
+        outer = BVHTree.FromPolygons(V, [f for f in P if not any(REP[i] in bk or i in ear_v for i in f)])
+        cur = [outer.find_nearest(c)[0] or c for c in catmull_closed3([p.copy() for p in pts], 24)]
+        self.cur = cur
+        from mathutils.kdtree import KDTree
+        self.kc = KDTree(len(cur))
+        for i, c in enumerate(cur):
+            self.kc.insert(c, i)
+        self.kc.balance()
+
+        def path(a, b):   # (the shortest way along the mesh's edges)
+            if a == b:
+                return [a]
+            dist, prev, hq = {a: 0.}, {}, [(0., a)]
+            while hq:
+                d0, i = heapq.heappop(hq)
+                if i == b:
+                    break
+                if d0 > dist[i] or d0 > 2 * R:
+                    continue
+                for j in EDGES.get(i, ()):
+                    d1 = d0 + (V[j] - V[i]).length
+                    if d1 < dist.get(j, 1e9):
+                        dist[j] = d1; prev[j] = i; heapq.heappush(hq, (d1, j))
+            out, i = [b], b
+            while i != a and i in prev:
+                i = prev[i]; out.append(i)
+            return out
+        ids = [REP[kd.find(c)[1]] for c in cur]
+        # (the mouth a wall too, outside: the lower lip runs into the mouth and out over the upper one)
+        wall = set()
+        gaps = 0
+        for k in range(len(ids)):
+            pp = path(ids[k - 1], ids[k])
+            if pp[-1] != ids[k - 1]:
+                gaps += 1
+            wall.update(pp)
+        if job.get("debug"):
+            jumps = sorted(((cur[k] - cur[k - 1]).length / R, k) for k in range(len(cur)))[-5:]
+            print("outline gaps", gaps, "jumps/R", [(round(a, 2), k) for a, k in jumps], flush=True)
+        on = set(wall)
+        wall |= bk
+        # (filled from a few places that should be inside - the chin, under it, the cheeks; a fill that got out - up
+        # past the eyes, or a quarter of the body - was from outside: dropped)
+        inside = set()
+        for sp in seed:
+            q = outer.find_nearest(sp)[0] or sp
+            sd = REP[kd.find(q)[1]]
+            if sd in wall:
+                sd = next((j for j in EDGES.get(sd, ()) if j not in wall), None)
+            if sd is None or sd in inside:
+                continue
+            got, st = {sd}, [sd]
+            while st and len(got) < .25 * len(V):
+                i = st.pop()
+                for j in EDGES.get(i, ()):
+                    if j not in got and j not in wall:
+                        got.add(j); st.append(j)
+            if job.get("debug"):
+                print("fill", tuple(round(x, 3) for x in sp), len(got), round(max(V[i].z for i in got), 3), flush=True)
+            if len(got) < .25 * len(V) and max(V[i].z for i in got) < E.z:
+                inside |= got
+        self.ok = len(inside) > 20
+        self.inside, self.wall = inside, on
+        print("outline: inside %d wall %d ok %s" % (len(inside), len(wall), self.ok), flush=True)
+
+    def __call__(self, p):
+        d = self.kc.find(p)[2]
+        i = REP[skin_kd().find(p)[1]]
+        return d if (i in self.inside or i in self.wall) else -d
+
+
+def beard_nodes(F, kind, patch, loop):
+    """the outline's nodes: the user's where given; the rest on the edge of where it grows by the face's measures -
+    each rough place snapped to the nearest skin vertex on that edge"""
+    fld = beard_field(F, kind, patch)
+    near_ = [i for i, p in enumerate(V) if (p - O).length < 3.5 * R and p.z < E.z]
+    val = {i: fld(V[i]) for i in near_}
+    bnd = [i for i in near_ if val[i] > 0 and any(val.get(j, -1.) <= 0 for j in nbr.get(i, ()))]
+    mx, yM, u, yC = F["mx"], F["yM"], F["u"], F["yC"]
+    cf = O.y - F["fC"]
+    tg = {"chin_top": Vector((mx, cf, yM - F["lipDn"] - .3 * u)), "throat": Vector((mx, cf + 1.1 * u, yC - .5 * u))}
+    for sd, sn in ((1, "L"), (-1, "R")):
+        tg["corner_" + sn] = Vector((mx + sd * .75 * u, O.y - F["fM"] + .3 * u, yM + .35 * u))
+        tg["cheek_" + sn] = Vector((mx + sd * .85 * R, O.y - .55 * R, .5 * (yM + E.z) - .1 * R))
+        tg["burn_" + sn] = Vector((O.x + sd * 1.0 * R, O.y - .05 * R, E.z - .6 * R))
+        tg["jaw_" + sn] = Vector((O.x + sd * .75 * R, O.y + .1 * R, yC - .1 * R))
+    out = {}
+    for k in loop:
+        if k in NODES_IN:
+            out[k] = NODES_IN[k]
+        elif bnd:
+            out[k] = V[min(bnd, key=lambda i: (V[i] - tg[k]).length)].copy()
+        else:
+            out[k] = tg[k]
+    return out
 
 
 def beard_uv(F, p, conv):
@@ -993,8 +1178,32 @@ def build_beard(st):
     Lh = float(prm.get("length", .05)) * H * cfg["hang"]
     obs = []
     yM, mx, u, yC = F["yM"], F["mx"], F["u"], F["yC"]
+    OL = None
+    if st != "mustache":   # its outline's nodes (shown in the editor, moved there by hand)
+        LOOP[:] = GOATEE_LOOP if st == "goatee" else BEARD_LOOP
+        nodes = beard_nodes(F, st, cfg["patch"], LOOP)
+        NODES_OUT.update(nodes)
+        cf_ = O.y - F["fC"]
+        seeds = [Vector((mx, cf_, .5 * (yC + yM - F["lipDn"]))), Vector((mx, cf_ + .5 * u, yC - .1 * u))]
+        for a_, b_ in (("corner", "jaw"), ("cheek", "jaw"), ("burn", "corner")):
+            for sn in "LR":
+                if a_ + "_" + sn in nodes and b_ + "_" + sn in nodes:
+                    seeds.append((nodes[a_ + "_" + sn] + nodes[b_ + "_" + sn]) / 2)
+        mw = F["mw"]
+        OL = Outline([nodes[k] for k in LOOP], seeds,
+                     lambda v: abs(v.x - mx) < 1.1 * mw and yM - 1.2 * F["lipDn"] < v.z < yM + 1.2 * F["lipUp"])
+        if not OL.ok:
+            OL = None
+    cf = O.y - F["fC"]
+    kf = .25   # (the hanging part's lean forward, x its drop)
+    if Lh > 0:
+        tip = NODES_IN.get("tip")
+        if tip is not None:   # (its point where the user put it: its length, its lean)
+            Lh = max(.1 * R, yC - tip.z)
+            kf = max(-.5, min(1.5, (cf - vol * R * cfg["J"] - tip.y) / Lh))
+        NODES_OUT["tip"] = Vector((mx, cf - vol * R * cfg["J"] - kf * Lh, yC - Lh))
     if st == "stubble":
-        fld = beard_field(F, "stubble", False)
+        fld = beard_field(F, "stubble", False, OL)
         sh = scalp_shell(lambda p: fld(p) > -.06 * R, lambda v: .006 * R, "hair_beard", close=3)
         bm = bmesh.new(); bm.from_mesh(sh.data)
         bm.verts.ensure_lookup_table()
@@ -1021,7 +1230,7 @@ def build_beard(st):
         # the mass on the skin: the region raised by its thickness (thin at its outer edge, not at the mouth's),
         # closed under (a solid); under the jaw it hangs: its outside drawn down - most at the chin's front, none at
         # the throat - to a point in the middle, a little forward, off the chest
-        sh = scalp_shell(beard_region(F, st, cfg["patch"]), lambda v: 0., "beard_base", close=3)
+        sh = scalp_shell(beard_region(F, st, cfg["patch"], OL), lambda v: 0., "beard_base", close=3)
         sb = bmesh.new(); sb.from_mesh(sh.data); bpy.data.objects.remove(sh, do_unlink=True)
         sb.normal_update(); sb.verts.ensure_lookup_table()
         for e in sb.edges:   # (the mouth's edge: not where the thickness starts)
@@ -1052,7 +1261,7 @@ def build_beard(st):
             if Lh > 0:
                 g = smooth(yC + .7 * u, yC - .1 * u, v.co.z) * smooth(fC - 1.3 * R, fC - .15 * R, front(v.co))
                 hang = Lh * shape(v.co.x) * g
-                q = q - UP * hang + FRONT * (.25 * hang)
+                q = q - UP * hang + FRONT * (kf * hang)
             vin[v.index] = cb.verts.new(v.co - nn * (.015 * R)); vout[v.index] = cb.verts.new(q)
         for f in sb.faces:
             cb.faces.new([vout[v.index] for v in f.verts])
@@ -1063,7 +1272,7 @@ def build_beard(st):
                     cb.faces.new((vout[b], vout[a], vin[a], vin[b]))
         if Lh <= .05 * R and cfg["T"] < .05:   # (thin, nothing hanging: its outside only, straight off the skin - a remesh lost it)
             cb.free(); sb.free()
-            fld = beard_field(F, st, cfg["patch"])
+            fld = beard_field(F, st, cfg["patch"], OL)
             sh = scalp_shell(lambda p: fld(p) > -.06 * R, lambda v: 0., "beard_base", close=3)   # (wider: its line drawn by the alpha)
             sb = bmesh.new(); sb.from_mesh(sh.data); bpy.data.objects.remove(sh, do_unlink=True)
             sb.normal_update(); sb.verts.ensure_lookup_table()
@@ -1139,7 +1348,12 @@ def build_beard(st):
         push_out(bm, .012 * R)
         bm.verts.ensure_lookup_table()
         dist = edge_dist(bm)
-        fade = {v.index: min(1., dist[v.index] / (.15 * R)) for v in bm.verts}
+        # dense at the skin (only a short fringe of hairs at its edge there), the hairs thinning to its ends (the
+        # hanging part's lower half, to the point)
+        fade = {}
+        for v in bm.verts:
+            end = smooth(yC - .45 * Lh, yC - 1.05 * Lh, v.co.z) if Lh > .05 * R else 0.
+            fade[v.index] = min(min(1., dist[v.index] / (.05 * R)), 1 - .85 * end ** .8)
         obs.append(_beard_skin(ob, bm, fade, F, conv))
     if cfg["must"]:
         obs.append(moustache(F, cfg["must"], vol, float(prm.get("length", .05))))
@@ -1184,7 +1398,8 @@ def _beard_skin(ob, bm, fade, F, conv, stubble=False):
     else:
         k = np.clip(fi * .6 + .3, 0, 1) * np.clip(cl * .5 + .6, 0, 1.1)
         lum = .4 + .6 * np.clip(k, 0, 1)
-        img[..., 3] = np.maximum(fd ** 3, np.clip(fd * (fi * 1.6 - .2), 0, 1))
+        # (where it covers: whole; thinning, only the hairs - each one there or not, no see-through speckle)
+        img[..., 3] = np.clip((fd - .25 + .6 * fi + .15 * cl) * 4, 0, 1)
     img[..., :3] = lum[..., None] * COL[None, None, :]
     mat, _ = material("hair_beard", save("beard", img, True), True, .55)
     normal_map(mat, fi * .4 + cl * .6, "beard_normal")
@@ -1221,22 +1436,60 @@ def moustache(F, kind, vol, length):
     span, drop, curl, hk = {"handlebar": (1.3, .3, .38, 1.25), "short": (.62, .1, 0., .9), "droop": (1.1, 1.2, 0., 1.25),
                             "goatee": (.8, 1.0, 0., 1.)}[kind]
     span *= u * kl; drop *= u; curl *= u * kl
-    h0 = max(.06 * R, .5 * (yS - yM) + .05 * u) * hk * vol ** .5   # (its half height at the middle: from the nose's base over the upper lip)
-    zc0 = yS - h0 * .95
+    low = yM - (.12 if kind != "short" else -.25) * u   # (its lower edge: over the mouth's line; a short one's above it)
+    nb = {}
+
+    def nose_bottom(x):
+        """the nose's lower outline at a width: going up from the upper lip, where the profile there comes forward
+        (the nose's wings higher than its middle); none past the wings"""
+        k = round((x - mx) / (.02 * R))
+        if k not in nb:
+            f0, out, z = None, None, yM + .6 * F["lipUp"]
+            while z < E.z - .3 * R:
+                h = cast(Vector((x, O.y - 4 * R, z)), BACK, 8 * R, tree=bvh)
+                f = F["front"](h[0]) if h else -1e9
+                if f0 is None:
+                    f0 = f
+                elif f > f0 + .22 * R:
+                    out = z; break
+                else:
+                    f0 = max(f0, f) if f < f0 + .05 * R else f0
+                z += .01 * R
+            nb[k] = out
+        return nb[k]
     rf = max(.6 * R, F["fM"])   # (the face's radius at the mouth)
     bm = bmesh.new(); uvl = bm.loops.layers.uv.new("UVMap")
     Nr, M = 30, 12
+    span0, drop0, curl0 = span, drop, curl
     for sd in (1, -1):
         cen, hs, ds = [], [], []
+        span, drop, curl = span0, drop0, curl0
+        tn = NODES_IN.get("must_L" if sd > 0 else "must_R")
+        if tn is not None:   # (its end where the user put it: how far out, how high)
+            span = rf * math.asin(min(.98, abs(tn.x - mx) / rf)) + .02 * R
+            dz1 = tn.z - .5 * (yS + low)
+            if kind == "droop":
+                drop = -dz1
+            else:
+                curl = dz1 + drop
         for i in range(Nr + 1):
             s = -.08 + 1.08 * i / Nr
             ph = sd * max(0., s) * span / rf
-            zc = zc0 - drop * math.sin(min(1., max(0., s) / .75) * math.pi / 2) + curl * max(0., (s - .55) / .45) ** 2
+            dz = -drop * math.sin(min(1., max(0., s) / .75) * math.pi / 2) + curl * max(0., (s - .55) / .45) ** 2
             if kind == "droop":   # (down past the corners to the jaw)
-                zc = zc0 - drop * max(0., s) ** 1.3
+                dz = -drop * max(0., s) ** 1.3
+            # its top under the nose all along it (up under the wings), its bottom over the mouth's line; tapering
+            top = yS + dz
+            n_b = nose_bottom(mx + sd * max(0., s) * span)
+            if n_b is not None:   # (blended off past the wings: no step)
+                wn = 1 - smooth(.4, .75, s)
+                top = top + wn * max(0., n_b - .015 * R - top)
+            bot = low + dz
+            tap = max(.04, (1 - max(0., s) ** 1.6)) ** .7
+            zc = .5 * (top + bot)
+            hgt = max(.05 * R, .5 * (top - bot)) * tap * (.9 + .1 * hk * vol ** .5)
+            dep = min(hgt * .75, .11 * R * vol ** .5) if hgt > .02 * R else hgt * .75
             d = Vector((math.sin(ph), -math.cos(ph), 0))
-            hgt = h0 * max(.04, (1 - max(0., s) ** 1.6)) ** .7
-            dep = hgt * .75
             h = cast(Vector((mx, O.y, zc)) + d * (3 * R), -d, 3 * R, tree=bvh)   # (from outside: not the mouth's inside)
             if h:
                 nn = h[1].normalized()
@@ -1247,6 +1500,7 @@ def moustache(F, kind, vol, length):
             cen.append(c); hs.append(hgt); ds.append(dep)
         for _ in range(3):   # (its line smooth over the lips' bumps)
             cen = [cen[0]] + [(cen[i - 1] + cen[i] * 2 + cen[i + 1]) / 4 for i in range(1, len(cen) - 1)] + [cen[-1]]
+        NODES_OUT["must_L" if sd > 0 else "must_R"] = cen[-1].copy()
         rows, sl = [], 0.
         for i, c in enumerate(cen):
             if i:
@@ -1561,6 +1815,22 @@ elif job.get("piece") == "beard":
     obs, mask_of = build_beard(style)
     if job.get("debug"):
         bpy.ops.wm.save_as_mainfile(filepath=str(WORK / f"{STEM}_debug.blend"))
+else:   # a hairstyle made here: its hairline's nodes (shown in the editor, moved there by hand)
+    HAIR_ANG = {"front": 0, "temple_L": 40, "ear_L": 90, "back_L": 135, "nape": 180, "back_R": -135, "ear_R": -90, "temple_R": -40}
+    LOOP[:] = ["front", "temple_L", "ear_L", "back_L", "nape", "back_R", "ear_R", "temple_R"]
+    if any(k in NODES_IN for k in LOOP):
+        HL = sorted(((math.atan2((NODES_IN[k] - O).x, -(NODES_IN[k] - O).y), (NODES_IN[k] - O).z) if k in NODES_IN
+                     else (math.radians(a) if a < 180 else math.pi, zmin_default(math.radians(a))) for k, a in HAIR_ANG.items()))
+    for k, a in HAIR_ANG.items():
+        if k in NODES_IN:
+            NODES_OUT[k] = NODES_IN[k]
+            continue
+        th = math.radians(a); zz = O.z + zmin_at(th)
+        d = Vector((math.sin(th), -math.cos(th), 0))
+        h = cast(Vector((O.x, O.y, zz)) + d * (3 * R), -d, 3 * R, tree=bvh)
+        NODES_OUT[k] = h[0] if h else Vector((O.x, O.y, zz)) + d * R
+if job.get("piece") == "beard" or style.startswith("wig"):
+    pass
 elif style in ("long", "bob"):
     Lh = float(prm.get("length", .26 if style == "long" else .14)) * H * (1.2 if style == "long" else 2.0)
     obs, mask_of = build_cards(Lh, float(prm.get("part", 0. if style == "long" else .3)), (E.z - 1.25 * R) if style == "bob" else None)
@@ -1569,6 +1839,67 @@ elif style in SHORT:
     obs, mask_of = (build_mohawk(shell) if style == "mohawk" else [shell]), solid
 else:
     fail(_t("ag.unknown_piece", style))
+
+# ---------------------------------------------------------------- the hair's own shadows, in its vertices' colour
+def bake_ao(objs, rays=10, reach=.7):
+    """how much of the sky each hair vertex sees past the other locks and the body (ambient occlusion), as its colour
+    (glTF's COLOR_0: times the texture, in any engine): the dark between the locks, under them, by the skin - what a
+    ray-traced render shows and a real-time one (the editor's, a game's) does not work out itself"""
+    reach *= R
+    verts, polys = [], []
+    for ob in objs:
+        b0 = len(verts); M = ob.matrix_world
+        verts += [M @ v.co for v in ob.data.vertices]
+        polys += [[b0 + i for i in p.vertices] for p in ob.data.polygons]
+    if not polys:
+        return
+    hair_tree = BVHTree.FromPolygons(verts, polys)
+    rs = random.Random(5)
+    dirs = []   # (round the normal, more of them up it: as the light comes)
+    for k in range(rays):
+        u1 = (k + rs.random()) / rays; th = 2 * math.pi * rs.random(); r = math.sqrt(u1)
+        dirs.append((r * math.cos(th), r * math.sin(th), math.sqrt(max(0., 1 - u1))))
+    for ob in objs:
+        m = ob.data; M = ob.matrix_world; N3 = M.to_3x3().inverted().transposed()
+        nv = len(m.vertices)
+        if not nv:
+            continue
+        ao = np.ones(nv, np.float32)
+        for v in m.vertices:
+            p = M @ v.co
+            n = (N3 @ v.normal).normalized()
+            loc, nrm, fi, d = full.find_nearest(p)
+            out = (p - loc) if loc is not None and d > 1e-6 else (nrm if loc is not None else p - O)
+            if n.length < .5:
+                n = out.normalized()
+            if n.dot(out) < 0:
+                n = -n
+            t1 = n.orthogonal().normalized(); t2 = n.cross(t1)
+            o = p + n * (.012 * R)
+            hit = 0
+            for a, b, c in dirs:
+                w = t1 * a + t2 * b + n * c
+                if full.ray_cast(o, w, reach)[0] is not None or hair_tree.ray_cast(o, w, reach)[0] is not None:
+                    hit += 1
+            ao[v.index] = 1 - hit / rays
+        ed = np.zeros(len(m.edges) * 2, np.int32); m.edges.foreach_get("vertices", ed); ed = ed.reshape(-1, 2)
+        for _ in range(2):   # (the rays' noise smoothed)
+            acc = np.zeros(nv, np.float32); cnt = np.zeros(nv, np.float32)
+            np.add.at(acc, ed[:, 0], ao[ed[:, 1]]); np.add.at(acc, ed[:, 1], ao[ed[:, 0]])
+            np.add.at(cnt, ed[:, 0], 1); np.add.at(cnt, ed[:, 1], 1)
+            ao = np.where(cnt > 0, .5 * ao + .5 * acc / np.maximum(cnt, 1), ao)
+        k = (.4 + .6 * ao) ** 2.2   # (seen as .4 .. 1 of the texture's light; the colour is linear)
+        ca = m.color_attributes.get("ao") or m.color_attributes.new("ao", "FLOAT_COLOR", "POINT")
+        ca.data.foreach_set("color", np.column_stack([k, k, k, np.ones(nv, np.float32)]).ravel())
+        m.color_attributes.active_color = ca
+        try:
+            m.color_attributes.render_color_index = m.color_attributes.active_color_index
+        except AttributeError:
+            pass
+
+
+bake_ao(obs)
+print("ao baked", flush=True)
 
 # ---------------------------------------------------------------- weights: the head's; below the jaw the neck's and the chest's
 groups = [names["head"], names.get("neck", names["head"]), names.get("spine2", names.get("neck", names["head"]))]
@@ -1625,6 +1956,10 @@ bpy.ops.object.select_all(action="DESELECT")
 obj.select_set(True)
 arm.select_set(True)
 bpy.context.view_layer.objects.active = arm
+if NODES_OUT:   # (the outline's nodes, for the editor: shown on the skin, moved by hand)
+    Path(job["out"]).with_suffix(".nodes.json").write_text(json.dumps(
+        {"nodes": {k: b2gl(v) for k, v in NODES_OUT.items()}, "loop": LOOP, "mid": round(O.x if not FM else FM.get("mouth_c", O).x, 5)}), encoding="utf-8")
+_vc = {"export_vertex_color": "ACTIVE"} if "export_vertex_color" in bpy.ops.export_scene.gltf.get_rna_type().properties.keys() else {"export_colors": True}
 bpy.ops.export_scene.gltf(filepath=job["out"], export_format="GLB", use_selection=True, export_skins=True,
-                          export_animations=False, export_influence_nb=4)
+                          export_animations=False, export_influence_nb=4, **_vc)   # (its shadows: the vertices' colour)
 print("ARMOUR_GEN_OK " + json.dumps({"vertices": len(obj.data.vertices), "bones": groups, "style": style, "uvtex": {}}), flush=True)

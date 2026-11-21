@@ -5906,7 +5906,9 @@ function buildPanel() {
       [['pos', '{{js:ag.node_pos}}'], ['rot', '{{js:ag.node_rot}}']].map(([g, lbl]) => `<div class="nrow"><span class="nlbl">${lbl}</span>` +
         NODE_FIELDS.filter((x) => x[1] === g).map(([k, , ax, tip, st]) => `<label title="${tip}">${ax}<input type="number" id="n_${k}" step="${st}"></label>`).join('') + `</div>`).join('') +
       `<div class="nrow"><span class="nlbl">{{js:ag.node_scale}}</span><label title="{{js:ag.s_size}}">%<input type="number" id="n_s_size" step="5" min="20" max="400"></label></div></div>` : '') +
-    (gi === HAIR_GI ? `<div class="note" id="r_wigs" style="margin:2px 0 6px">${'{{js:ag.hair_models_note}}'.replace('{0}', DATA.hair_models_dir || '')}</div><div class="row" id="r_hairc"><span class="note">{{js:ag.hair_colour}}</span><span class="seg" id="hairCols">${HAIR_COLOURS.map((c) => `<button data-hc="${c}" style="background:${c};width:22px;min-width:22px" title="${c}">&nbsp;</button>`).join('')}</span><input type="color" id="i_hairc"></div>` : '') +
+    (gi === HAIR_GI ? `<div class="note" id="r_wigs" style="margin:2px 0 6px">${'{{js:ag.hair_models_note}}'.replace('{0}', DATA.hair_models_dir || '')}</div><div class="row" id="r_hairc"><span class="note">{{js:ag.hair_colour}}</span><span class="seg" id="hairCols">${HAIR_COLOURS.map((c) => `<button data-hc="${c}" style="background:${c};width:22px;min-width:22px" title="${c}">&nbsp;</button>`).join('')}</span><input type="color" id="i_hairc"></div>` +
+      `<div id="r_contour"><div class="row" style="margin:4px 0 2px"><span class="seg"><button id="b_contour" title="{{js:ag.contour_info}}">{{js:ag.contour}}</button><button id="b_creset">{{js:ag.contour_reset}}</button></span>` +
+      `<label class="chk" style="margin-left:8px"><input type="checkbox" id="i_csym" checked> {{js:ag.contour_sym}}</label></div><div class="note" id="contourNote">{{js:ag.contour_info}}</div></div>` : '') +
     (gi === GOR_GI ? `<label class="chk" id="r_bevor" title="{{js:ag.bevor_info}}"><input type="checkbox" id="i_bevor"> {{js:ag.bevor}}</label>` : '') +
     (gi === HELD_GI ? `<label class="chk" id="r_w_magnet" title="{{js:ag.w_magnet_info}}"><input type="checkbox" id="i_w_magnet"> {{js:ag.w_magnet}}</label>` +
       `<label class="chk" id="r_s_hand"><input type="checkbox" id="i_s_hand"> {{js:ag.s_hand}}</label>` +
@@ -5952,7 +5954,11 @@ function buildPanel() {
       `<div class="row" style="margin-top:4px"><select id="uv_slot"></select><label class="filebtn"><input type="file" id="uv_file" accept="image/*" hidden><span>{{js:ag.uv_load}}</span></label><button id="uv_take" title="{{js:ag.uv_take_title}}">{{js:ag.uv_take}}</button></div>` +
       `<div class="note" id="uv_applied"></div><div class="row"><button id="uv_clear">{{js:ag.uv_clear}}</button></div></details>` : '') + '</div>').join('');
   $('groups').innerHTML = html;
-  for (const sp of ALL) $('i_' + sp[0]).addEventListener('input', (e) => { S.p[sp[0]] = +e.target.value; changed(sp[0]); });
+  for (const sp of ALL) $('i_' + sp[0]).addEventListener('input', (e) => {
+    S.p[sp[0]] = +e.target.value;
+    if (sp[0] === 'beard_len' && contourUser() && contourUser().tip) { const key = 'beard_nodes'; S.p[key] = { ...S.p[key], [S.p.beard]: { ...contourUser() } }; delete S.p[key][S.p.beard].tip; }   // (its length by the slider again, not the point moved)
+    changed(sp[0]);
+  });
   $('i_buckle').addEventListener('change', (e) => { S.p.buckle = e.target.checked; changed('buckle'); });
   for (const k of ['cuffs', 'two_plates', 'mail_under', 'stitch', 'hinges', 'fly', 'wrap', 'front_panel', 'hem_band']) $('i_' + k).addEventListener('change', (e) => { S.p[k] = e.target.checked; changed(k); });
   $('i_s_hand').addEventListener('change', (e) => { S.p.s_hand = e.target.checked; if (S.p.s_hand) fistPose(); changed('s_hand'); });
@@ -5976,6 +5982,9 @@ function buildPanel() {
   libWire(); projWire(); uvWire();
   $('i_seed').addEventListener('change', (e) => { S.p.seed = Math.round(+e.target.value || 1); changed('seed'); });
   $('hairCols').addEventListener('click', (e) => { const c = e.target.dataset.hc; if (c) { S.p.hair_color = c; changed('look'); } });
+  $('b_contour').addEventListener('click', () => contourToggle(!CONTOUR.on));
+  $('i_csym').addEventListener('change', (e) => { CONTOUR.sym = e.target.checked; });
+  $('b_creset').addEventListener('click', () => { const key = S.piece + '_nodes'; if (S.p[key]) { S.p[key] = { ...S.p[key] }; delete S.p[key][S.p[S.piece]]; } CONTOUR.nodes = null; changed('contour'); });
   $('i_hairc').addEventListener('input', (e) => { S.p.hair_color = e.target.value; changed('look'); });
   $('matSeg').addEventListener('click', (e) => { const m = e.target.dataset.mat; if (m === undefined) return;
     if (isMade()) { S.p.made_mat = m; changed('look'); madeLook(); } else if (m) { S.p.material = m; changed('look'); } });
@@ -6064,6 +6073,9 @@ function syncPanel() {
   for (const b of $('trimSeg').children) b.classList.toggle('on', b.dataset.trim === (S.p.trim || ''));
   $('i_hairc').value = S.p.hair_color || '#3b2618';
   if ($('r_wigs')) $('r_wigs').textContent = (S.piece === 'beard' ? '{{js:ag.beard_models_note}}' : '{{js:ag.hair_models_note}}').replace('{0}', (S.piece === 'beard' ? DATA.beard_models_dir : DATA.hair_models_dir) || '');
+  if ($('r_contour')) $('r_contour').hidden = !contourPiece();   // (fitting by hand: a beard, a hairstyle made here)
+  if ($('contourNote')) $('contourNote').textContent = S.piece === 'hair' ? '{{js:ag.contour_hair_info}}' : '{{js:ag.contour_info}}';
+  if (CONTOUR.group.visible !== (CONTOUR.on && !!CONTOUR.def && contourPiece())) contourDraw(true);
   $('i_tint').value = S.p.tint; $('i_cloth').value = S.p.cloth; $('i_tex').value = String(S.p.tex); $('i_seed').value = S.p.seed;
   for (const b of $('matSeg').children) b.classList.toggle('on', b.dataset.mat === (isMade() ? S.p.made_mat || '' : S.p.material));
   $('matOwn').hidden = !isMade();
@@ -6248,7 +6260,7 @@ async function madePreview(piece, sides) {
       softCut(mt);
     }
   });
-  return { root: gltf.scene, mask: await loadMask(js.preview.mask) };
+  return { root: gltf.scene, mask: await loadMask(js.preview.mask), nodes: js.preview.nodes || null };
 }
 // an elbow's, a poleyn's preview placed by hand at once (as blender_elbow_gen.py will make it: round the joint, along the
 // upper bone, turned round it to the outside, sized), from the preview made at the style's own place
@@ -6329,7 +6341,7 @@ function rebuildMade() {
   const piece = S.piece, sides = !['helmet', 'hair', 'beard'].includes(piece) ? [...S.sides] : [];
   if (!['helmet', 'hair', 'beard'].includes(piece) && !sides.length) { $('warn').textContent = '{{js:ag.choose_a_side}}'; $('warn').hidden = false; lastBuild = null; $('go').disabled = true; return; }
   // (a helmet: and the coifs on under it - put on or off, another one)
-  const key = [piece, S.p[piece], S.p.head_gap, piece === 'helmet' ? [...WORN.entries()].filter(([k, w]) => w.on && /coif/.test(k)).map(([k]) => k).join('+') : '', ['elbow', 'poleyn'].includes(piece) ? MADE_GAP0 : S.p.limb_gap, S.p.wing, S.p.foot_gap, S.p.visor_angle, S.p.cheek_angle, S.p.tail, S.p.brim, piece === 'hair' ? `${S.p.hair_len}_${S.p.hair_part}` : piece === 'beard' ? `${S.p.beard_len}_${S.p.beard_vol}` : '', ...sides].join('_'), h = madeCache.get(key);
+  const key = [piece, S.p[piece], S.p.head_gap, piece === 'helmet' ? [...WORN.entries()].filter(([k, w]) => w.on && /coif/.test(k)).map(([k]) => k).join('+') : '', ['elbow', 'poleyn'].includes(piece) ? MADE_GAP0 : S.p.limb_gap, S.p.wing, S.p.foot_gap, S.p.visor_angle, S.p.cheek_angle, S.p.tail, S.p.brim, piece === 'hair' ? `${S.p.hair_len}_${S.p.hair_part}_${JSON.stringify(((S.p.hair_nodes || {})[S.p.hair]) || '')}` : piece === 'beard' ? `${S.p.beard_len}_${S.p.beard_vol}_${JSON.stringify(((S.p.beard_nodes || {})[S.p.beard]) || '')}` : '', ...sides].join('_'), h = madeCache.get(key);
   if (!h) {
     // one preview at a time, of the last state, once its sliders rest (a wing dragged: not one per value on the way,
     // each queued after the other for minutes); when it is made, the state then is looked at again
@@ -6344,6 +6356,7 @@ function rebuildMade() {
     return;
   }
   helmetObj = h.root; scene.add(helmetObj);
+  contourSet(h);
   madeLook();
   madePlace(h.root, piece);
   previewMask = h.mask; hideBody();
@@ -6352,6 +6365,107 @@ function rebuildMade() {
   $('warn').hidden = true; $('go').disabled = busy;
   applyPose();
   if (!framed) { framed = true; view(curView); }
+}
+
+// ------------------------------------------------------------------ a beard fitted by hand: its outline's nodes on the skin
+// (as the face's markup: the generator's own nodes shown - on the edge of where it grows, the moustache's ends, the
+// beard's point - each moved with the mouse over the skin; let go, the beard is made again by them)
+const CONTOUR = { on: false, sym: true, def: null, nodes: null, drag: null, group: new THREE.Group() };
+scene.add(CONTOUR.group);
+const C_SPHERE = new THREE.SphereGeometry(1, 12, 8);
+const cPair = (k) => (k.endsWith('_L') ? k.slice(0, -2) + '_R' : k.endsWith('_R') ? k.slice(0, -2) + '_L' : null);
+const contourUser = () => ((S.p[S.piece + '_nodes'] || {})[S.p[S.piece]]) || null;
+const contourPiece = () => (S.piece === 'beard' && S.p.beard_style !== 'wig') || (S.piece === 'hair' && S.p.hair_style !== 'wig');   // (a beard, a hairstyle made here)
+function contourSet(h) { CONTOUR.def = h && h.nodes && h.nodes.nodes ? h.nodes : null; contourDraw(true); }
+const onSkin = (p) => { const c = bodyGeo && bodyGeo.boundsTree.closestPointToPoint(p); return c ? c.point.clone() : p.clone(); };
+function catmull3(P, n) {   // a closed curve through the points
+  const out = [], m = P.length;
+  for (let i = 0; i < m; i++) {
+    const p0 = P[(i - 1 + m) % m], p1 = P[i], p2 = P[(i + 1) % m], p3 = P[(i + 2) % m];
+    for (let k = 0; k < n; k++) {
+      const t = k / n, t2 = t * t, t3 = t2 * t;
+      out.push(new V3().addScaledVector(p1, 2).addScaledVector(p2.clone().sub(p0), t)
+        .addScaledVector(p0.clone().multiplyScalar(2).addScaledVector(p1, -5).addScaledVector(p2, 4).sub(p3), t2)
+        .addScaledVector(p1.clone().multiplyScalar(3).sub(p0).addScaledVector(p2, -3).add(p3), t3).multiplyScalar(.5));
+    }
+  }
+  return out;
+}
+function contourDraw(fresh) {
+  const g = CONTOUR.group;
+  for (const c of [...g.children]) { g.remove(c); if (c.geometry !== C_SPHERE) c.geometry.dispose(); c.material.dispose(); }
+  g.visible = CONTOUR.on && !!CONTOUR.def && contourPiece();
+  if ($('b_contour')) $('b_contour').classList.toggle('on', CONTOUR.on);
+  if (!g.visible) return;
+  if (fresh || !CONTOUR.nodes) {
+    const n = {}; for (const [k, v] of Object.entries(CONTOUR.def.nodes)) n[k] = new V3(...v);
+    const u = contourUser(); if (u) for (const [k, v] of Object.entries(u)) if (n[k]) n[k] = new V3(...v);
+    CONTOUR.nodes = n;
+  }
+  const N = CONTOUR.nodes, loop = (CONTOUR.def.loop || []).filter((k) => N[k]);
+  if (loop.length > 2) {
+    const pts = catmull3(loop.map((k) => N[k]), 16).map(onSkin);
+    const ln = new THREE.Line(new THREE.BufferGeometry().setFromPoints([...pts, pts[0]]), new THREE.LineBasicMaterial({ color: 0xff6a1e, depthTest: false, transparent: true, opacity: .7 }));
+    ln.renderOrder = 999; g.add(ln);
+  }
+  CONTOUR.hid = {};
+  for (const [k, p] of Object.entries(N)) {   // (one behind the head from here: faint, not taken - turn the view to it)
+    const d = p.clone().sub(camera.position), L = d.length(), h = cast(camera.position, d.normalize(), L);
+    const hid = CONTOUR.hid[k] = !!h && h.distance < L - .01 * HEIGHT;
+    const m = new THREE.Mesh(C_SPHERE, new THREE.MeshBasicMaterial({ color: k === 'tip' ? 0x2a9df4 : k.startsWith('must') ? 0x30c060 : 0xffd23a, depthTest: false, transparent: true, opacity: hid ? .25 : 1 }));
+    m.position.copy(p); m.scale.setScalar((k === CONTOUR.drag ? .006 : .0045) * HEIGHT); m.renderOrder = 1000; g.add(m);
+  }
+}
+function contourPick(e) {   // the node under the pointer (on the screen, within 14 px)
+  const rc = cnv.getBoundingClientRect(); let best = null, bd = 14;
+  for (const [k, p] of Object.entries(CONTOUR.nodes || {})) {
+    if ((CONTOUR.hid || {})[k]) continue;
+    const s = p.clone().project(camera), x = (s.x + 1) / 2 * rc.width + rc.left, y = (1 - s.y) / 2 * rc.height + rc.top, d = Math.hypot(x - e.clientX, y - e.clientY);
+    if (d < bd) { bd = d; best = k; }
+  }
+  return best;
+}
+function contourRay(e) {
+  const rc = cnv.getBoundingClientRect(), r = new THREE.Raycaster();
+  r.setFromCamera(new THREE.Vector2((e.clientX - rc.left) / rc.width * 2 - 1, -(e.clientY - rc.top) / rc.height * 2 + 1), camera);
+  return r.ray;
+}
+cnv.addEventListener('pointerdown', (e) => {
+  if (!CONTOUR.on || e.button !== 0 || !CONTOUR.group.visible) return;
+  const k = contourPick(e); if (!k) return;
+  CONTOUR.drag = k; controls.enabled = false; cnv.setPointerCapture(e.pointerId); e.stopImmediatePropagation(); contourDraw(false);
+}, { capture: true });
+cnv.addEventListener('pointermove', (e) => {
+  const k = CONTOUR.drag; if (!k) return;
+  const ray = contourRay(e), N = CONTOUR.nodes, mid = CONTOUR.def.mid || 0;
+  let p = null;
+  if (k === 'tip') p = ray.intersectPlane(new THREE.Plane(new V3(1, 0, 0), -mid), new V3());   // (the beard's point: in the face's middle)
+  else { const h = bodyGeo.boundsTree.raycastFirst(ray, THREE.DoubleSide); if (h) p = h.point.clone(); }
+  if (!p) return;
+  N[k] = p;
+  const pk = cPair(k);
+  if (pk && CONTOUR.sym && N[pk]) N[pk] = onSkin(new V3(2 * mid - p.x, p.y, p.z));
+  contourDraw(false);
+});
+function contourDrop() {
+  if (!CONTOUR.drag) return;
+  CONTOUR.drag = null; controls.enabled = true;
+  const key = S.piece + '_nodes', st = S.p[S.piece];
+  S.p[key] = { ...(S.p[key] || {}), [st]: Object.fromEntries(Object.entries(CONTOUR.nodes).map(([k, v]) => [k, [+v.x.toFixed(5), +v.y.toFixed(5), +v.z.toFixed(5)]])) };
+  contourDraw(false); changed('contour');
+}
+cnv.addEventListener('pointerup', contourDrop);
+cnv.addEventListener('pointercancel', contourDrop);
+window.agContour = () => {   // (the tests: each node's place on the screen, in the page's frame)
+  const rc = cnv.getBoundingClientRect();
+  return Object.fromEntries(Object.entries(CONTOUR.group.visible ? CONTOUR.nodes || {} : {}).map(([k, p]) => { const q = p.clone().project(camera); return [k, [(q.x + 1) / 2 * rc.width + rc.left, (1 - q.y) / 2 * rc.height + rc.top]]; }));
+};
+controls.addEventListener('end', () => { if (CONTOUR.group.visible && !CONTOUR.drag) contourDraw(false); });
+function contourToggle(on) {
+  CONTOUR.on = on;
+  if (on && pose !== 'rest') { pose = 'rest'; for (const b of $('poses').children) b.classList.toggle('on', b.dataset.p === 'rest'); applyPose(); }   // (the nodes are on the skin at rest)
+  if (on) view('front', null, 'head');
+  contourDraw(true);
 }
 
 // ------------------------------------------------------------------ poses: the character's bones turned, the piece goes with its weights

@@ -2802,5 +2802,10 @@
  "ag.beard_wig": "Beard: {0}",
  "ag.beard_models_note": "Your own beards: put a GLB of a head with a beard (from Tripo, say; bald is best) into {0} - it shows here as a «Beard» button. The beard is told from the skin by colour and put on the character's face.",
  "ag.beard_len_info": "The beard's length: how far it hangs under the chin to a point (stubble and a short one do not hang; a moustache's: its span).",
- "ag.beard_vol": "Thickness"
+ "ag.beard_vol": "Thickness",
+ "ag.contour": "Fit the outline",
+ "ag.contour_reset": "Reset the outline",
+ "ag.contour_sym": "Symmetric",
+ "ag.contour_info": "Nodes on the skin: yellow - the beard's edge, green - the moustache's ends, blue - the beard's point (its length and lean). Drag them; let go and the beard is made again by them.",
+ "ag.contour_hair_info": "Nodes on the scalp - the hairline: the forehead, the temples, over the ears, behind them, the nape. Drag them; let go and the hairstyle is made again by it."
 }

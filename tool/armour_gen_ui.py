@@ -195,8 +195,12 @@ def _wig_model(style: str, cfg, piece="hair"):
 def _beard_params(params) -> dict:
     """The editor's beard parameters as blender_hair_gen.py's: its length (a share of the height: what hangs under
     the chin), its volume (x its thickness), its colour (linear)"""
-    hp = _hair_params(params)
-    return {**hp, "length": float(params.get("beard_len", 5)) / 100, "vol": float(params.get("beard_vol", 100)) / 100}
+    hp = {k: v for k, v in _hair_params(params).items() if k != "nodes"}
+    out = {**hp, "length": float(params.get("beard_len", 5)) / 100, "vol": float(params.get("beard_vol", 100)) / 100}
+    nodes = (params.get("beard_nodes") or {}).get(params.get("beard")) if isinstance(params.get("beard_nodes"), dict) else None
+    if isinstance(nodes, dict):   # (its outline fitted by hand: the nodes on the skin, glTF's axes)
+        out["nodes"] = {str(k): [float(x) for x in v][:3] for k, v in nodes.items() if isinstance(v, (list, tuple)) and len(v) >= 3}
+    return out
 
 
 def _hair_params(params) -> dict:
@@ -209,7 +213,11 @@ def _hair_params(params) -> dict:
         srgb = [.23, .15, .09]
     lin = [c / 12.92 if c <= .04045 else ((c + .055) / 1.055) ** 2.4 for c in srgb]
     part = {"left": .3, "right": -.3}.get(params.get("hair_part"), 0.)
-    return {"gap": 0., "length": float(params.get("hair_len", 20)) / 100, "color": lin, "seed": int(params.get("seed", 1)), "part": part}
+    out = {"gap": 0., "length": float(params.get("hair_len", 20)) / 100, "color": lin, "seed": int(params.get("seed", 1)), "part": part}
+    nodes = (params.get("hair_nodes") or {}).get(params.get("hair")) if isinstance(params.get("hair_nodes"), dict) else None
+    if isinstance(nodes, dict):   # (its hairline fitted by hand: the nodes on the scalp, glTF's axes)
+        out["nodes"] = {str(k): [float(x) for x in v][:3] for k, v in nodes.items() if isinstance(v, (list, tuple)) and len(v) >= 3}
+    return out
 
 
 # pieces the generators make: piece -> (the Blender script, its styles (the editor's keys), the style key's prefix in
@@ -713,6 +721,8 @@ def made_preview(cfg, req) -> dict:
     sides = [x for x in req.get("sides") or [] if x in ("L", "R")]
     tag = "".join(f"_{k[0]}{round(hp[k] * (1 if 'angle' in k else 100))}" for k in ("gap", *own.get(style, ()))) + ("_" + "".join(sides) if sides else "")
     tag += "".join(f"_{k[:2]}{round(hp[k] * 10)}" for k in ("slide", "twist", "size") if k in hp and hp[k] != (100 if k == "size" else 0))   # (placed by hand)
+    if hp.get("nodes"):   # (an outline fitted by hand)
+        tag += "_n" + hashlib.md5(json.dumps(hp["nodes"], sort_keys=True).encode()).hexdigest()[:8]
     under = _under(rigged, req) if piece == "helmet" else []
     if under:   # (over a coif: another helmet; the coif made again, another again)
         tag += "_u" + hashlib.md5("|".join(f"{u}{int(Path(u).stat().st_mtime)}" for u in under).encode()).hexdigest()[:6]
@@ -733,8 +743,13 @@ def made_preview(cfg, req) -> dict:
         if not any(x.startswith("ARMOUR_GEN_OK") for x in r.stdout.splitlines()):
             bad = next((x[len("ARMOUR_GEN_FAIL "):] for x in r.stdout.splitlines() if x.startswith("ARMOUR_GEN_FAIL")), None)
             return {"ok": False, "log": _t("ag.failed") + (bad or (r.stdout + r.stderr)[-1500:])}
+    nf = glb.with_suffix(".nodes.json")   # (a beard's outline nodes, for fitting it by hand)
+    try:
+        nodes = json.loads(nf.read_text(encoding="utf-8")) if nf.exists() else None
+    except (OSError, ValueError):
+        nodes = None
     return {"ok": True, "log": _t("ag.helmet_ready"),
-            "preview": {"glb": glb.resolve().as_posix(), "mask": mask.resolve().as_posix(), "v": int(glb.stat().st_mtime)}}
+            "preview": {"glb": glb.resolve().as_posix(), "mask": mask.resolve().as_posix(), "v": int(glb.stat().st_mtime), "nodes": nodes}}
 
 
 def generate(cfg, req) -> dict:
