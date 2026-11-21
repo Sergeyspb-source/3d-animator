@@ -6101,6 +6101,7 @@ function setPiece(k, keep) {
     if (k !== 'trousers' && was === 'trousers' && S.armour) Object.assign(S.p, S.armour);
     S.p.fitted = false;   // (tights chosen before: not the next trousers' unless chosen again)
     Object.assign(S.p, PIECES[k].defaults);
+    if (k === 'hair' || k === 'beard') S.p[k] = '';   // (no style chosen yet: Blender makes none until one is picked)
     S.p.pinches = []; S.p.paints = [];
   }
   // a name that is another kind's piece (a cuirass opened, then «Weapon» chosen) is not kept: it would be made over it
@@ -6339,6 +6340,13 @@ function madeLook() {
 }
 function rebuildMade() {
   const piece = S.piece, sides = !['helmet', 'hair', 'beard'].includes(piece) ? [...S.sides] : [];
+  if ((piece === 'hair' || piece === 'beard') && !S.p[piece]) {   // (a hairstyle, a beard: made only once its style is picked)
+    clearTimeout(madeTimer); contourSet(null);
+    if (previewMask) { previewMask = null; hideBody(); }
+    $('info').textContent = '{{js:ag.hair_pick_style}}'; $('warn').hidden = true; $('go').disabled = true; lastBuild = null;
+    if (!framed) { framed = true; view('front', null, 'head'); }
+    return;
+  }
   if (!['helmet', 'hair', 'beard'].includes(piece) && !sides.length) { $('warn').textContent = '{{js:ag.choose_a_side}}'; $('warn').hidden = false; lastBuild = null; $('go').disabled = true; return; }
   // (a helmet: and the coifs on under it - put on or off, another one)
   const key = [piece, S.p[piece], S.p.head_gap, piece === 'helmet' ? [...WORN.entries()].filter(([k, w]) => w.on && /coif/.test(k)).map(([k]) => k).join('+') : '', ['elbow', 'poleyn'].includes(piece) ? MADE_GAP0 : S.p.limb_gap, S.p.wing, S.p.foot_gap, S.p.visor_angle, S.p.cheek_angle, S.p.tail, S.p.brim, piece === 'hair' ? `${S.p.hair_len}_${S.p.hair_part}_${JSON.stringify(((S.p.hair_nodes || {})[S.p.hair]) || '')}` : piece === 'beard' ? `${S.p.beard_len}_${S.p.beard_vol}_${JSON.stringify(((S.p.beard_nodes || {})[S.p.beard]) || '')}` : '', ...sides].join('_'), h = madeCache.get(key);
