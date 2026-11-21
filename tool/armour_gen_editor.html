@@ -207,6 +207,7 @@
       </ul></details>
     </div>
     <div class="box foot">
+      <div class="row" id="remadeRow" hidden><button class="grow" id="remade" title="{{ag.made_refresh_info}}">{{ag.made_refresh}}</button></div>
       <div class="row"><button class="primary grow" id="go">{{ag.generate}}</button><button id="room">{{ed.fitting_room_in_godot}}</button></div>
       <div class="row" style="margin-top:5px"><button id="qa" class="grow" title="{{ag.qa_title}}">{{ag.qa_button}}</button><button id="qaHide" hidden>{{ag.qa_hide}}</button></div>
       <div class="row" style="margin-top:5px"><button id="qaFix" class="grow" hidden title="{{ag.qa_shield_out_title}}"></button></div>
@@ -5983,6 +5984,7 @@ function buildPanel() {
   $('i_seed').addEventListener('change', (e) => { S.p.seed = Math.round(+e.target.value || 1); changed('seed'); });
   $('hairCols').addEventListener('click', (e) => { const c = e.target.dataset.hc; if (c) { S.p.hair_color = c; changed('look'); } });
   $('b_contour').addEventListener('click', () => contourToggle(!CONTOUR.on));
+  $('remade').addEventListener('click', () => { madeForce = true; changed('made'); });
   $('i_csym').addEventListener('change', (e) => { CONTOUR.sym = e.target.checked; });
   $('b_creset').addEventListener('click', () => { const key = S.piece + '_nodes'; if (S.p[key]) { S.p[key] = { ...S.p[key] }; delete S.p[key][S.p[S.piece]]; } CONTOUR.nodes = null; changed('contour'); });
   $('i_hairc').addEventListener('input', (e) => { S.p.hair_color = e.target.value; changed('look'); });
@@ -6160,6 +6162,7 @@ function rebuildNow() {
     return;
   }
   $('qa').disabled = busy;
+  $('remadeRow').hidden = true;
   if (isMade()) { rebuildMade(); return; }
   if (previewMask) { previewMask = null; hideBody(); }
   const sides = ['limb', 'glove', 'held'].includes(PIECES[S.piece].family) ? S.sides : ['C'];
@@ -6350,26 +6353,42 @@ function rebuildMade() {
   if (!['helmet', 'hair', 'beard'].includes(piece) && !sides.length) { $('warn').textContent = '{{js:ag.choose_a_side}}'; $('warn').hidden = false; lastBuild = null; $('go').disabled = true; return; }
   // (a helmet: and the coifs on under it - put on or off, another one)
   const key = [piece, S.p[piece], S.p.head_gap, piece === 'helmet' ? [...WORN.entries()].filter(([k, w]) => w.on && /coif/.test(k)).map(([k]) => k).join('+') : '', ['elbow', 'poleyn'].includes(piece) ? MADE_GAP0 : S.p.limb_gap, S.p.wing, S.p.foot_gap, S.p.visor_angle, S.p.cheek_angle, S.p.tail, S.p.brim, piece === 'hair' ? `${S.p.hair_len}_${S.p.hair_part}_${JSON.stringify(((S.p.hair_nodes || {})[S.p.hair]) || '')}` : piece === 'beard' ? `${S.p.beard_len}_${S.p.beard_vol}_${JSON.stringify(((S.p.beard_nodes || {})[S.p.beard]) || '')}` : '', ...sides].join('_'), h = madeCache.get(key);
+  const style = S.p[piece], sd = sides.join('');
   if (!h) {
+    // a slider moved, a node: the last preview of this style stays, Blender makes it again only on asking («Update
+    // the preview»; «Generate» makes the piece by them at once) - a style picked is made at once
+    if (madeShown && madeShown.piece === piece && madeShown.style === style && madeShown.sides === sd && !madeForce && !madePending) {
+      clearTimeout(madeTimer); showMade(madeShown.h, piece, sides, true); return;
+    }
+    madeForce = false;
     // one preview at a time, of the last state, once its sliders rest (a wing dragged: not one per value on the way,
     // each queued after the other for minutes); when it is made, the state then is looked at again
     clearTimeout(madeTimer);
     if (!madePending && madeFailed !== key) madeTimer = setTimeout(() => {
       if (madePending || S.piece !== piece) return;
       madePending = key;
-      madePreview(piece, sides).then((x) => { if (x) madeCache.set(key, x); else madeFailed = key; madePending = null; changed('made'); });   // (a failed one not tried again and again)
+      madePreview(piece, sides).then((x) => {   // (a failed one not tried again and again)
+        if (x) { madeCache.set(key, x); madeShown = { piece, style, sides: sd, h: x }; } else madeFailed = key;
+        madePending = null; changed('made');
+      });
     }, 600);
     if (previewMask) { previewMask = null; hideBody(); }
     $('info').textContent = '{{js:ag.helmet_making}}'; $('go').disabled = true; lastBuild = null;
     return;
   }
+  madeShown = { piece, style, sides: sd, h };
+  showMade(h, piece, sides, false);
+}
+var madeShown = null, madeForce = false;   // (var: a rebuild may come before this line) the preview on show (its piece, style, sides); made again on asking
+function showMade(h, piece, sides, stale) {
   helmetObj = h.root; scene.add(helmetObj);
   contourSet(h);
   madeLook();
   madePlace(h.root, piece);
   previewMask = h.mask; hideBody();
   lastBuild = { piece, sides };
-  $('info').textContent = DATA.style_labels[S.p[piece]] || S.p[piece];
+  $('info').textContent = stale ? '{{js:ag.made_stale}}' : DATA.style_labels[S.p[piece]] || S.p[piece];
+  $('remadeRow').hidden = !stale;
   $('warn').hidden = true; $('go').disabled = busy;
   applyPose();
   if (!framed) { framed = true; view(curView); }

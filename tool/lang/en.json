@@ -2806,7 +2806,10 @@
  "ag.contour": "Fit the outline",
  "ag.contour_reset": "Reset the outline",
  "ag.contour_sym": "Symmetric",
- "ag.contour_info": "Nodes on the skin: yellow - the beard's edge (it reaches this line), green - the moustache's outline: its middle under the nose and over the lip, each half's top and bottom (their distance its thickness), its ends; blue - the beard's point (its length and lean). Drag them; let go and the beard is made again by them.",
- "ag.contour_hair_info": "Nodes on the scalp - the hairline: the forehead, the temples, over the ears, behind them, the nape. Drag them; let go and the hairstyle is made again by it.",
- "ag.hair_pick_style": "Pick a style - the generator makes it for the character."
+ "ag.contour_info": "Nodes on the skin: yellow - the beard's edge (it reaches this line), green - the moustache's outline: its middle under the nose and over the lip, each half's top and bottom (their distance its thickness), its ends; blue - the beard's point (its length and lean). Drag them, then «Update the preview».",
+ "ag.contour_hair_info": "Nodes on the scalp - the hairline: the forehead, the temples, over the ears, behind them, the nape. Drag them, then «Update the preview».",
+ "ag.hair_pick_style": "Pick a style - the generator makes it for the character.",
+ "ag.made_refresh": "Update the preview",
+ "ag.made_refresh_info": "Make the preview again in Blender by the new parameters (10-90 s). «Generate» makes the piece by them without it too.",
+ "ag.made_stale": "Parameters changed - the previous preview is shown"
 }
