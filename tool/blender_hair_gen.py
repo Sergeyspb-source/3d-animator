@@ -1282,7 +1282,16 @@ def build_beard(st):
         fldR = beard_field(F, st, cfg["patch"], OL)
         # (with an outline: a little past it, thinning to nothing just outside it - its edge then on the contour; the
         # edge's way in thinned it inside it and the remesh cut that off: the beard stopped short of its outline)
-        sh = scalp_shell((lambda p: fldR(p) > -.08 * R) if OL is not None else beard_region(F, st, cfg["patch"]), lambda v: 0., "beard_base", close=3)
+        mo = moustache(F, cfg["must"], vol, float(prm.get("length", .05))) if cfg["must"] else None
+        mpts = [(c, max(h_, d_)) for cen_, hs_, ds_ in MUST_LINES for c, h_, d_ in zip(cen_, hs_, ds_)]
+        mend = [(c, max(h_, d_)) for cen_, hs_, ds_ in MUST_LINES for i_, (c, h_, d_) in enumerate(zip(cen_, hs_, ds_)) if i_ > .55 * len(cen_)]
+
+        def by_must(p):   # (by the moustache: the beard thick right to its edge there - it has something to join)
+            return any((p - c).length < r_ + .15 * R for c, r_ in mpts)
+
+        def bridge(p):   # (under a moustache's end just past the beard's edge: the beard on to it - the two one)
+            return OL is not None and fldR(p) > -.35 * R and any((p - c).length < r_ + .1 * R for c, r_ in mend)
+        sh = scalp_shell((lambda p: fldR(p) > -.08 * R or bridge(p)) if OL is not None else beard_region(F, st, cfg["patch"]), lambda v: 0., "beard_base", close=3)
         sb = bmesh.new(); sb.from_mesh(sh.data); bpy.data.objects.remove(sh, do_unlink=True)
         sb.normal_update(); sb.verts.ensure_lookup_table()
         for e in sb.edges:   # (the mouth's edge: not where the thickness starts)
@@ -1310,7 +1319,7 @@ def build_beard(st):
             low = smooth(yM, yC - .3 * u, v.co.z)
             if OL is not None:
                 m_ = fldR(v.co)
-                ramp = 1. if by_mouth(v.co) and m_ > -.02 * R else min(1., max(0., (m_ + .06 * R) / (.16 * R))) ** .6
+                ramp = 1. if ((by_mouth(v.co) or by_must(v.co)) and m_ > -.02 * R) or bridge(v.co) else min(1., max(0., (m_ + .06 * R) / (.16 * R))) ** .6
             else:
                 ramp = min(1., dist[v.index] / (.3 * R)) ** .6
             t = vol * R * (cfg["T"] + (cfg["J"] - cfg["T"]) * low) * ramp
@@ -1378,7 +1387,6 @@ def build_beard(st):
         if cfg["must"]:   # the moustache one body with the beard where they meet (no walls inside, no seam), its own texture
             bm.to_mesh(ob.data); bm.free()
             ob.data.materials.append(bpy.data.materials.new("hair_beard_tmp"))   # (slot 0 the beard's, the moustache's after)
-            mo = moustache(F, cfg["must"], vol, float(prm.get("length", .05)))
             bo = ob.modifiers.new("join", "BOOLEAN"); bo.operation = "UNION"; bo.object = mo
             for k_, v_ in (("solver", "EXACT"), ("use_self", True), ("material_mode", "TRANSFER")):
                 try:
@@ -1406,6 +1414,10 @@ def build_beard(st):
         drop = []
         for f in bm.faces:
             s, nn = out_of_skin(f.calc_center_median())
+            if f.material_index == 1:   # (the moustache's: on the lip as made - cut there it came out in stripes)
+                if s < -.005 * R:
+                    drop.append(f)
+                continue
             if s < (.03 if Lh > .05 * R else .022) * R or (s < .12 * R and f.normal.dot(nn) < -.2):
                 drop.append(f)
         if job.get("debug"):
@@ -1430,7 +1442,7 @@ def build_beard(st):
         bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context="VERTS")
         bm.verts.ensure_lookup_table()
         fixed = {v.index for v in bm.verts if any(f.material_index == 1 for f in v.link_faces)}   # (the moustache's: as made)
-        conform(bm, .012 * R, .35 * R, OL.edge_target if OL is not None else None, fixed)   # (its edge down on the skin: on its outline)
+        conform(bm, .012 * R, .35 * R, (lambda p: None if by_must(p) else OL.edge_target(p)) if OL is not None else None, fixed)   # (its edge down on the skin: on its outline - not where it went on to the moustache)
         push_out(bm, .012 * R)
         bm.verts.ensure_lookup_table()
         dist = edge_dist(bm)
@@ -1527,6 +1539,9 @@ def _beard_skin(ob, bm, fade, F, conv, stubble=False):
     return ob
 
 
+MUST_LINES = []   # the moustache's halves: (their middle line, half heights, half depths) - the beard thick by them
+
+
 def moustache(F, kind, vol, length):
     """two thick locks from the middle under the nose out along the upper lip over the mouth's corners, tapering to a
     point: a handlebar's ends curled up, a long beard's drooping to the chin, a short one's ending at the corners"""
@@ -1560,6 +1575,7 @@ def moustache(F, kind, vol, length):
     bm = bmesh.new(); uvl = bm.loops.layers.uv.new("UVMap")
     Nr, M = 30, 12
     span0, drop0, curl0 = span, drop, curl
+    MUST_LINES.clear()
     MS = .45   # (a half's middle: its thickness there by its own nodes)
 
     lipz = yM + .5 * F["lipUp"]
@@ -1624,7 +1640,11 @@ def moustache(F, kind, vol, length):
             bot = lagr(val["must_cb"][1], val["must_bot_" + sn][1], val["must_lo_" + sn][1], t)
             if top < bot:
                 top, bot = bot, top
-            return lagr(x0, xm, x1, t), top, bot
+            x_ = lagr(x0, xm, x1, t)
+            n_b = nose_bottom(x_)
+            if n_b is not None and n_b - top < .12 * R:   # (up under the nose's wings, when it is near: skin showed between)
+                top += (1 - smooth(.4, .75, t)) * max(0., n_b - .015 * R - top)
+            return x_, top, bot
         cen, hs, ds = [], [], []
         for i in range(Nr + 1):
             s = -.08 + 1.08 * i / Nr
@@ -1636,6 +1656,7 @@ def moustache(F, kind, vol, length):
             cen.append(c); hs.append(hgt); ds.append(dep)
         for _ in range(3):   # (its line smooth over the lips' bumps)
             cen = [cen[0]] + [(cen[i - 1] + cen[i] * 2 + cen[i + 1]) / 4 for i in range(1, len(cen) - 1)] + [cen[-1]]
+        MUST_LINES.append((list(cen), list(hs), list(ds)))
         if "must_" + sn not in NODES_IN and "must_lo_" + sn not in NODES_IN:
             NODES_OUT["must_" + sn] = cen[-1] + UP * max(.005 * R, hs[-1])
             NODES_OUT["must_lo_" + sn] = cen[-1] - UP * max(.005 * R, hs[-1])
