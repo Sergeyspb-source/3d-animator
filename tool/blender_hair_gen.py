@@ -987,8 +987,10 @@ def b2gl(p):
 
 NODES_IN = {k: gl2b(v) for k, v in (prm.get("nodes") or {}).items() if isinstance(v, (list, tuple)) and len(v) == 3}
 NODES_OUT, LOOP = {}, []
-BEARD_LOOP = ["burn_R", "cheek_R", "corner_R", "chin_top", "corner_L", "cheek_L", "burn_L", "jaw_L", "throat", "jaw_R"]
-GOATEE_LOOP = ["corner_R", "chin_top", "corner_L", "jaw_L", "throat", "jaw_R"]
+# (under the lower lip a pair, as the rest: one in the middle sat there alone)
+# (and one by each corner of the lips: the outline round the mouth drawn closer)
+BEARD_LOOP = ["burn_R", "cheek_R", "corner_R", "lip_R", "chin_R", "chin_L", "lip_L", "corner_L", "cheek_L", "burn_L", "jaw_L", "throat", "jaw_R"]
+GOATEE_LOOP = ["corner_R", "lip_R", "chin_R", "chin_L", "lip_L", "corner_L", "jaw_L", "throat", "jaw_R"]
 
 
 _KD, EDGES, REP = None, None, None
@@ -1118,8 +1120,10 @@ def beard_nodes(F, kind, patch, loop):
     bnd = [i for i in near_ if val[i] > 0 and any(val.get(j, -1.) <= 0 for j in nbr.get(i, ()))]
     mx, yM, u, yC = F["mx"], F["yM"], F["u"], F["yC"]
     cf = O.y - F["fC"]
-    tg = {"chin_top": Vector((mx, cf, yM - F["lipDn"] - .3 * u)), "throat": Vector((mx, cf + 1.1 * u, yC - .5 * u))}
+    tg = {"throat": Vector((mx, cf + 1.1 * u, yC - .5 * u))}
     for sd, sn in ((1, "L"), (-1, "R")):
+        tg["chin_" + sn] = Vector((mx + sd * .3 * u, cf, yM - F["lipDn"] - .3 * u))
+        tg["lip_" + sn] = Vector((mx + sd * .62 * u, O.y - F["fM"] + .25 * u, yM - .25 * u))
         tg["corner_" + sn] = Vector((mx + sd * .75 * u, O.y - F["fM"] + .3 * u, yM + .35 * u))
         tg["cheek_" + sn] = Vector((mx + sd * .85 * R, O.y - .55 * R, .5 * (yM + E.z) - .1 * R))
         tg["burn_" + sn] = Vector((O.x + sd * 1.0 * R, O.y - .05 * R, E.z - .6 * R))
@@ -1132,6 +1136,14 @@ def beard_nodes(F, kind, patch, loop):
             out[k] = V[min(bnd, key=lambda i: (V[i] - tg[k]).length)].copy()
         else:
             out[k] = tg[k]
+    # (the pairs mirror each other about the face's middle: snapped each to its own vertex they came out uneven)
+    for k in loop:
+        if k.endswith("_L") and k[:-2] + "_R" in out and k not in NODES_IN and k[:-2] + "_R" not in NODES_IN:
+            a, b = out[k], out[k[:-2] + "_R"]
+            m = (a + Vector((2 * mx - b.x, b.y, b.z))) / 2
+            out[k] = full.find_nearest(m)[0] or m
+            mm = Vector((2 * mx - m.x, m.y, m.z))
+            out[k[:-2] + "_R"] = full.find_nearest(mm)[0] or mm
     return out
 
 
