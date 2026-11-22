@@ -408,8 +408,8 @@ def build_cards(L, part, cut_z, wave=0., messy=0., swept=0., narrow=1.):
                 if loc is not None:
                     q = loc + (nrm.normalized() if nrm.dot(q - O) > 0 else -nrm.normalized()) * gap
             q = push_out(q, gap)
-            if in_front(q):
-                q.x = O.x + math.copysign(keep_x(q), q.x - O.x if abs(q.x - O.x) > 1e-6 else 1)
+            if in_front(q):   # (off the face: half way each step - a jump to its side made a corner at the temple)
+                q.x += (O.x + math.copysign(keep_x(q), q.x - O.x if abs(q.x - O.x) > 1e-6 else 1) - q.x) * .5
             if q.z < NK.z + .6 * R and abs(q.x - O.x) > max(x0, 1.3 * R):
                 q.x = O.x + math.copysign(max(x0, 1.3 * R), q.x - O.x)
             d = (q - p).normalized() if (q - p).length > 1e-9 else d
@@ -484,13 +484,31 @@ def build_cards(L, part, cut_z, wave=0., messy=0., swept=0., narrow=1.):
                     nn = nrm.normalized(); side = (pos[i] - loc).dot(nn)
                     if side < gap:
                         pos[i] = pos[i] + nn * (gap - side)
-        for i in range(k0, n):   # (off the face in the end too: the smoothing brought locks back over it)
-            if in_front(pos[i]):
-                dx = pos[i].x - O.x
-                kx = keep_x(pos[i])
-                if abs(dx) < kx:
-                    pos[i].x = O.x + math.copysign(kx, dx if abs(dx) > 1e-6 else 1)
-        return pos
+        return smooth_lock(pos, gap)
+
+    def smooth_lock(pts, gap, iters=30):
+        """the whole strand a smooth curve: each point half way to its neighbours' middle, again and again, kept out of
+        the body and drawn off the face a little each time (its root stays; its end goes with the one before it) -
+        where it turned off the skull to fall, or the face pushed it aside, it bent at a corner"""
+        P = [q.copy() for q in pts]
+        m = len(P)
+        if m < 4:
+            return P
+        for it in range(iters):
+            Q = [P[0]] + [P[i] * .5 + (P[i - 1] + P[i + 1]) * .25 for i in range(1, m - 1)]
+            Q.append(P[-1] + (Q[-1] - P[-2]))
+            for i in range(1, m):
+                loc, nrm, fi, dist = full.find_nearest(Q[i])
+                if loc is not None:
+                    nn = nrm.normalized(); side = (Q[i] - loc).dot(nn)
+                    if side < gap:
+                        Q[i] = Q[i] + nn * (gap - side)
+                if in_front(Q[i]):
+                    dx = Q[i].x - O.x; kx = keep_x(Q[i])
+                    if abs(dx) < kx:
+                        Q[i].x += (O.x + math.copysign(kx, dx if abs(dx) > 1e-6 else 1) - Q[i].x) * .5
+            P = Q
+        return P
 
     bm = bmesh.new()
     uvl = bm.loops.layers.uv.new("UVMap")
