@@ -310,7 +310,7 @@ def material(name, im, cut, rough=.6):
 
 
 # ---------------------------------------------------------------- long hair, a bob: cards
-def build_cards(L, part, cut_z, wave=0.):
+def build_cards(L, part, cut_z, wave=0., messy=0., swept=0., narrow=1.):
     roots = []
     N = 2000   # (fewer roots, steps and points than the prototype's: a preview in about a minute, a lighter piece)
     for i in range(N):
@@ -326,7 +326,7 @@ def build_cards(L, part, cut_z, wave=0.):
         return t * t * (3 - 2 * t)
 
     def keep_x(q):   # how far from the middle hair in front of the face and the chest stays (smooth with the height)
-        return R * (.9 + .4 * _ramp((q - O).z, -.8 * R, -2.2 * R))
+        return R * (.9 + .3 * swept + .4 * _ramp((q - O).z, -.8 * R, -2.2 * R))
 
     def in_front(q):
         rel = q - O
@@ -339,7 +339,7 @@ def build_cards(L, part, cut_z, wave=0.):
         sd = math.tanh((p.x - px) / (.06 * R))
         top = min(1., max(0., ((p - O).z / R + .1) / .9))
         fr = min(1., max(0., (-(p - O).y / R + .5) / .9))
-        f = X * sd * 1.3 * top * fr - UP * (.35 + .9 * (1 - top * fr)) + BACK * (.3 * top + .55 * (1 - top))
+        f = X * sd * 1.3 * (1 - .7 * swept) * top * fr - UP * (.35 + .9 * (1 - top * fr)) + BACK * (.3 * top + .55 * (1 - top) + 1.3 * swept * fr)   # (swept: back off the face first)
         f = f - n * f.dot(n)
         return f.normalized() if f.length > 1e-6 else -UP
 
@@ -466,6 +466,10 @@ def build_cards(L, part, cut_z, wave=0.):
             cr = random.Random(hash(cell) & 0xffffffff)
             ph, amp, lam = cr.random() * 6.28 + .35 * rnd.random(), (.06 + .07 * wave) * R * (.8 + .4 * cr.random()), (.75 + .4 * cr.random()) * R
         pts = [p if p.z > zst else p + Vector((math.sin(ph + (zst - p.z) / lam * 3.14), 0, 0)) * amp * min(1., (zst - p.z) / R) for p in pts]
+        if messy:   # (tousled: each lock its own way out and aside, more to its end)
+            mr = random.Random(hash((round(r0.x / (.2 * R)), round(r0.y / (.2 * R)), round(r0.z / (.2 * R)))) & 0xffffffff)
+            dv = Vector((mr.uniform(-1, 1), mr.uniform(-1, 1), mr.uniform(-.2, .5))) * (messy * .14 * R)
+            pts = [p + dv * (i / (len(pts) - 1)) ** 1.5 for i, p in enumerate(pts)]
         left, right = [], []
         for i, p in enumerate(pts):
             t = (pts[min(i + 1, len(pts) - 1)] - pts[max(i - 1, 0)]).normalized()
@@ -493,7 +497,7 @@ def build_cards(L, part, cut_z, wave=0.):
             if k % every:
                 continue
             pts, kf = guide(r0 + n * ((.04 + .08 * layer) * R), n, layer)
-            card(settle(pts, kf, layer), w * R * (.8 + .4 * rnd.random()), rnd.randrange(4))
+            card(settle(pts, kf, layer), w * narrow * R * (.8 + .4 * rnd.random()), rnd.randrange(4))
             n_cards += 1
     print("cards", n_cards, flush=True)
     cm = bpy.data.meshes.new("hair_cards"); bm.to_mesh(cm); bm.free()
@@ -548,6 +552,12 @@ def scalp_shell(region, lift, name, close=0):
 
 # ---------------------------------------------------------------- short cuts: a shell
 SHORT = {"back": dict(T=.13, quiff=.22, side=.07, fade=False, turn=0.),
+         # (cut: a straight line round the head - its height at the front and at the back (x R over the head's middle):
+         # a fringe over the forehead to it; crown: the hairs fall from the top of the head all round; bald: the top
+         # of the head bare within that angle; edge: the cut blunt (x R of its rounding))
+         "bowl": dict(T=.17, quiff=0., side=.13, fade=False, turn=0., cut=(.18, -.3), crown=True, edge=.12),
+         "tonsure": dict(T=.11, quiff=0., side=.1, fade=False, turn=0., cut=(.22, -.35), crown=True, bald=50., edge=.1),
+         "caesar": dict(T=.05, quiff=0., side=.025, fade=False, turn=0., cut=(.5, None), crown=True, edge=.08),
          "crop": dict(T=.12, quiff=.10, side=.02, fade=True, turn=0.),
          "short": dict(T=.12, quiff=.16, side=.06, fade=False, turn=25.),
          "mohawk": dict(T=.03, quiff=0., side=.02, fade=True, turn=0.)}
@@ -557,7 +567,22 @@ def build_shell(cfg):
     def backness(p):
         return min(1., max(0., ((p - O).y / R + .2) / 1.0))
 
+    def cut_z(p):   # (a straight cut's height round the head: the front's to the back's)
+        f, b = cfg["cut"]
+        fb = abs(math.atan2((p - O).x, -(p - O).y)) / math.pi
+        return (f + (b - f) * smooth(.15, .75, fb)) * R if b is not None else None
+
     def in_cut(p):
+        rel = p - O
+        if cfg.get("bald") and math.degrees((rel).angle(Vector((0, .1, 1)))) < cfg["bald"]:   # (a monk's: the top bare)
+            return False
+        if cfg.get("cut"):   # (over the cut, the ears left out: a fringe over the forehead; where the cut is none, the hairline)
+            cz = cut_z(p)
+            if by_ear(p) or rel.z < -1.2 * R:
+                return False
+            if cz is None:   # (a fringe only: the hairline, and over the forehead down to the cut)
+                return hairline(p, by_ear) or (rel.z > cfg["cut"][0] * R and abs(math.atan2(rel.x, -rel.y)) < math.radians(70))
+            return rel.z > cz
         if not hairline(p, by_ear):
             return False
         if style == "crop":
@@ -602,7 +627,7 @@ def build_shell(cfg):
         top = min(1., max(0., (rel.z / R - .1) / .6))
         front = min(1., max(0., (-rel.y / R - .1) / .7)) * top
         t = R * (cfg["side"] + (cfg["T"] - cfg["side"]) * top + cfg["quiff"] * front ** 1.5)
-        return t * min(1., dist[i] / (.6 * R)) ** .7   # (rounded off to the edge: no rim)
+        return t * min(1., dist[i] / (cfg.get("edge", .6) * R)) ** .7   # (rounded off to the edge: no rim; a straight cut blunt)
     hgt = [thick(v, i) for i, v in enumerate(bm.verts)]
     for v, h in zip(bm.verts, hgt):
         nn = v.normal.copy()
@@ -625,23 +650,31 @@ def build_shell(cfg):
     fwd = FRONT * math.cos(a) + X * math.sin(a)
     PF = O + fwd * R - UP * (.15 * R)
     PB = O - fwd * (.9 * R) - UP * (1.6 * R)
+    if cfg.get("crown"):   # (the hairs from the top of the head down all round: a bowl's, a fringe's)
+        PF, PB = O + UP * (2.2 * R) + BACK * (.2 * R), O - UP * (3 * R)
     CC = (PF + PB) * .5; ax = (PF - PB).normalized()
-    ref = (UP - ax * UP.dot(ax)).normalized(); ref2 = ax.cross(ref)
+    ref = UP - ax * UP.dot(ax)
+    if ref.length < .3:   # (an axis up through the crown: round it from the face)
+        ref = FRONT - ax * FRONT.dot(ax)
+    ref.normalize(); ref2 = ax.cross(ref)
     S = 2.2 * R
     UVV = {}
     for v in bm.verts:
         d = v.co - CC; dl = d.length
         pol = math.acos(max(-1., min(1., d.dot(ax) / max(dl, 1e-12))))
         az = math.atan2(d.dot(ref2), d.dot(ref))
-        UVV[v.index] = (az * 1.3 * R / S, pol * 1.6 * R / S)
+        UVV[v.index] = (az / (2 * math.pi) * 5., pol * 1.6 * R / S)   # (round it: five tiles - whole: no seam)
     fade = {v.index: (min(1., dist[v.index] / (.45 * R)) if cfg["fade"] else min(1., dist[v.index] / (.06 * R))) for v in bm.verts}
     uvl = bm.loops.layers.uv.new("UVMap")
-    us = [u for u, _ in UVV.values()]; vs = [w for _, w in UVV.values()]
-    u0, v0, span = min(us), min(vs), max(max(us) - min(us), max(vs) - min(vs))
+    vs = [w for _, w in UVV.values()]
+    u0, v0, span = -2.5, min(vs), max(5., max(vs) - min(vs))   # (the texture one turn wide: its edges meet)
+
+    def wrapped(us_):   # (a face across the cut: its far side a turn on - the texture repeats there)
+        return [u + 5. if (max(us_) - min(us_) > 2.5 and u < 0) else u for u in us_]
     for f in bm.faces:
-        for lp in f.loops:
-            u, w = UVV[lp.vert.index]
-            lp[uvl].uv = ((u - u0) / span, (w - v0) / span)   # (one texture over the whole cut: drawn below)
+        uu_ = wrapped([UVV[lp.vert.index][0] for lp in f.loops])
+        for lp, u in zip(f.loops, uu_):
+            lp[uvl].uv = ((u - u0) / span, (UVV[lp.vert.index][1] - v0) / span)   # (one texture over the whole cut: drawn below)
     m = bpy.data.meshes.new("hair_shell"); bm.to_mesh(m)
     # (what it hides: its solid part only - where it fades out (a crop's sides, any cut's ragged edge) the skin stays,
     # hidden it showed as holes through the faded hair)
@@ -673,23 +706,25 @@ def build_shell(cfg):
         li = list(poly.loop_indices)
         for t in range(1, len(li) - 1):
             tri = [li[0], li[t], li[t + 1]]
-            pu = np.array([uvd[j].uv[0] * T for j in tri]); pv = np.array([uvd[j].uv[1] * T for j in tri])
+            pu0 = np.array([uvd[j].uv[0] * T for j in tri]); pv = np.array([uvd[j].uv[1] * T for j in tri])
             fv = np.array([fade[m.loops[j].vertex_index] for j in tri])
-            x0, x1 = int(max(0, pu.min() - 1)), int(min(T - 1, pu.max() + 1))
-            y0, y1 = int(max(0, pv.min() - 1)), int(min(T - 1, pv.max() + 1))
-            if x1 < x0 or y1 < y0:
-                continue
-            gx, gy = np.meshgrid(np.arange(x0, x1 + 1) + .5, np.arange(y0, y1 + 1) + .5)
-            den = (pv[1] - pv[2]) * (pu[0] - pu[2]) + (pu[2] - pu[1]) * (pv[0] - pv[2])
-            if abs(den) < 1e-12:
-                continue
-            l0 = ((pv[1] - pv[2]) * (gx - pu[2]) + (pu[2] - pu[1]) * (gy - pv[2])) / den
-            l1 = ((pv[2] - pv[0]) * (gx - pu[2]) + (pu[0] - pu[2]) * (gy - pv[2])) / den
-            l2 = 1 - l0 - l1
-            inside = (l0 >= -.02) & (l1 >= -.02) & (l2 >= -.02)
-            val = l0 * fv[0] + l1 * fv[1] + l2 * fv[2]
-            sub = fade_img[y0:y1 + 1, x0:x1 + 1]
-            sub[inside] = np.maximum(sub[inside], val[inside])
+            for shift in ((0., -T) if pu0.max() > T else (0.,)):   # (a face across the cut: past the edge, drawn again from the other)
+                pu = pu0 + shift
+                x0, x1 = int(max(0, pu.min() - 1)), int(min(T - 1, pu.max() + 1))
+                y0, y1 = int(max(0, pv.min() - 1)), int(min(T - 1, pv.max() + 1))
+                if x1 < x0 or y1 < y0:
+                    continue
+                gx, gy = np.meshgrid(np.arange(x0, x1 + 1) + .5, np.arange(y0, y1 + 1) + .5)
+                den = (pv[1] - pv[2]) * (pu[0] - pu[2]) + (pu[2] - pu[1]) * (pv[0] - pv[2])
+                if abs(den) < 1e-12:
+                    continue
+                l0 = ((pv[1] - pv[2]) * (gx - pu[2]) + (pu[2] - pu[1]) * (gy - pv[2])) / den
+                l1 = ((pv[2] - pv[0]) * (gx - pu[2]) + (pu[0] - pu[2]) * (gy - pv[2])) / den
+                l2 = 1 - l0 - l1
+                inside = (l0 >= -.02) & (l1 >= -.02) & (l2 >= -.02)
+                val = l0 * fv[0] + l1 * fv[1] + l2 * fv[2]
+                sub = fade_img[y0:y1 + 1, x0:x1 + 1]
+                sub[inside] = np.maximum(sub[inside], val[inside])
     img[..., 3] = np.maximum(fade_img ** 3, np.clip(fade_img * (fi * 1.6 - .2), 0, 1))
     m_shell, tnode = material("hair_shell", save("shell", img, True), True, .55)
     # the relief: fine hairs and clumps as a normal map over the same unwrap
@@ -714,11 +749,11 @@ def build_shell(cfg):
     # (the displacement's own unwrap: the clumps' tiling coordinates, not the texture's square)
     uvt = m.uv_layers.new(name="tile")
     for poly in m.polygons:
-        for li in poly.loop_indices:
-            u, w = UVV[m.loops[li].vertex_index]
-            uvt.data[li].uv = (u, w)
+        lis = list(poly.loop_indices)
+        for li, u in zip(lis, wrapped([UVV[m.loops[li].vertex_index][0] for li in lis])):
+            uvt.data[li].uv = (u, UVV[m.loops[li].vertex_index][1])
     dsp = ob.modifiers.new("grooves", "DISPLACE"); dsp.texture = ctex; dsp.texture_coords = "UV"; dsp.uv_layer = "tile"
-    dsp.strength = .09 * R; dsp.mid_level = .5
+    dsp.strength = .09 * R * min(1., cfg["T"] / .1); dsp.mid_level = .5   # (a thin cut's grooves shallow)
     bpy.context.view_layer.objects.active = ob
     for md in list(ob.modifiers):
         bpy.ops.object.modifier_apply(modifier=md.name)
@@ -2897,10 +2932,22 @@ else:   # a hairstyle made here: its hairline's nodes (shown in the editor, move
         NODES_OUT[k] = h[0] if h else Vector((O.x, O.y, zz)) + d * R
 if job.get("piece") == "beard" or style.startswith("wig"):
     pass
-elif style in ("long", "bob", "wavy", "half_up"):
+elif style in ("long", "bob", "wavy", "half_up", "wavy_short", "shaggy", "warrior", "top_knot"):
     Lh = float(prm.get("length", .26 if style != "bob" else .14)) * H * (2.0 if style == "bob" else 1.2)
     obs, mask_of = build_cards(Lh, float(prm.get("part", .3 if style == "bob" else 0.)), (E.z - 1.25 * R) if style == "bob" else None,
-                               wave=1. if style in ("wavy", "half_up") else 0.)
+                               wave={"wavy": 1., "half_up": 1., "wavy_short": 1.1, "warrior": .9, "top_knot": .8, "shaggy": .4}.get(style, 0.),
+                               messy=1. if style == "shaggy" else 0., swept=1. if style in ("wavy_short", "warrior", "top_knot") else 0.,
+                               narrow=.65 if style in ("wavy_short", "warrior", "top_knot", "shaggy") else 1.)
+    if style == "warrior":   # (thin braids from the temples back over the ears)
+        obs.append(locks_obj("hair_braids", lambda bm, uvl: temple_braids(bm, uvl, .07 * R, .44 * R, 150., .3, .05), 58))
+    if style == "top_knot":   # (the top's hair tied at the crown in a short tail)
+        def knot(bm, uvl):
+            h = cast(O, Vector((0, .45, 1)).normalized(), tree=bvh)   # (on the crown)
+            c = h[0] if h else O + UP * R
+            nn = (c - O).normalized()
+            tube_e(bm, uvl, [c + nn * (.18 * R + .06 * R * i) for i in range(4)], [.2 * R] * 4, [.2 * R] * 4, [X] * 4, M=14, mat=1)
+            braid(bm, uvl, coil(c, nn, .36 * R, 2., 1., .42 * R), .15 * R, tassel=0., tie=False)
+        obs.append(locks_obj("hair_knot", knot, 59))
     if style == "half_up":   # (braids from the temples back over the hair)
         obs.append(locks_obj("hair_braids", lambda bm, uvl: temple_braids(bm, uvl, .11 * R, .36 * R), 55))   # (over the hair's outer layer)
 elif style in GATHERED:
