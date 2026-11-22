@@ -131,7 +131,6 @@ for sd in (1, -1):
 core = {i for i in ear_v if thin(V[i])}
 core |= {j for i in core for j in nbr.get(i, ()) if abs(V[j].x - O.x) > .85 * R}
 core_tree = BVHTree.FromPolygons(V, [f for f in P if all(i in core for i in f)])
-ear_body = core | {i for i in ear_v if abs(V[i].x - O.x) > 1.0 * R}   # (an ear's own vertices, its tip out past the head too)
 
 
 def near_ear(p, r):
@@ -173,8 +172,9 @@ def zmin_at(th):
 
 
 def ear_gap(p):
-    """how far a point is from an ear's own body (its thin shell and its root's ring): the hair goes round it there"""
-    loc, n, i, d = core_tree.find_nearest(p)
+    """how far a point is from an ear - all of it, its thick root and the hollow in it too (by its thin shell only,
+    bits of a cut were left in the ear's hollow and by its root): the hair goes round it there"""
+    loc, n, i, d = ear_pts.find_nearest(p)
     return d if loc is not None else 9 * R
 
 
@@ -182,7 +182,7 @@ def hair_field(p):
     """how far a point is inside the hairline (+ in, - out), smooth along the head, an ear left out round it: an edge
     drawn by it is a line, not the skin mesh's vertices' staircase, and leaves no holes by the ears"""
     rel = p - O
-    return min(rel.z - zmin_at(math.atan2(rel.x, -rel.y)), ear_gap(p) - .05 * R)
+    return min(rel.z - zmin_at(math.atan2(rel.x, -rel.y)), ear_gap(p) - .03 * R)
 
 
 def hairline(p, ears=near_ear):
@@ -631,14 +631,14 @@ def build_shell(cfg):
                 v = min(v, .3 * R - abs(p.x - O.x))
         if cfg.get("bald"):   # (a monk's: the top bare)
             v = min(v, (rel.angle(Vector((0, .1, 1))) - math.radians(cfg["bald"])) * rel.length)
-        return min(v, ear_gap(p) - .05 * R, rel.z + 1.2 * R)
+        return min(v, ear_gap(p) - .03 * R, rel.z + 1.2 * R)
 
     def in_cut(p):   # (a little past the line: its edge is the alpha's; not on an ear's own body)
         return field(p) > -.1 * R and ear_gap(p) > .015 * R
     bm = bmesh.new(); bm.from_mesh(me); bm.transform(skin.matrix_world)
     for lay in list(bm.verts.layers.deform.values()):   # (the skin's weights not carried over: its groups are not the hair's)
         bm.verts.layers.deform.remove(lay)
-    keep = {v for v in bm.verts if in_cut(v.co) and v.index not in ear_body}   # (bits of it were left on the ears' tips)
+    keep = {v for v in bm.verts if in_cut(v.co) and v.index not in ear_v}   # (none on an ear: bits were left on its tip, in its hollow)
     bmesh.ops.delete(bm, geom=[v for v in bm.verts if v not in keep], context="VERTS")
     bmesh.ops.remove_doubles(bm, verts=bm.verts[:], dist=1e-5)
     for lay in list(bm.loops.layers.uv.values()):
@@ -2761,10 +2761,10 @@ def sleek_base(gathers, lift=.035, part=.9, name="sleek", px=None):
     for lay in list(bm.verts.layers.deform.values()):
         bm.verts.layers.deform.remove(lay)
     over = hair_field
-    keep = {v for v in bm.verts if over(v.co) > -.1 * R and ear_gap(v.co) > .015 * R and v.index not in ear_body}
+    keep = {v for v in bm.verts if over(v.co) > -.1 * R and ear_gap(v.co) > .015 * R and v.index not in ear_v}
     grown = set(keep)
     for _ in range(4):
-        grown |= {e.other_vert(v) for v in grown for e in v.link_edges if ear_gap(e.other_vert(v).co) > .015 * R and e.other_vert(v).index not in ear_body}
+        grown |= {e.other_vert(v) for v in grown for e in v.link_edges if ear_gap(e.other_vert(v).co) > .015 * R and e.other_vert(v).index not in ear_v}
     closed = set(grown)
     for _ in range(4):
         closed -= {v for v in closed if any(e.other_vert(v) not in closed for e in v.link_edges)}
