@@ -6,8 +6,9 @@ and put on it (a MADE piece, as blender_footwear_gen.py).
 job.json: {"style": long | bob | back | crop | short | mohawk, "params": {"length": share of the height, "color":
            linear rgb, "seed"}, "out": piece.glb, "work": a folder, "character": rigged.glb, "names": {naming: {joint:
            bone}}, "mask": mask.json, "uv_out": (made for the character, not a style's preview: its colour in the
-           texture; a preview's is grey, the editor tints it), "template": the user's default beard outlines (over
-           tool/beard_template.json), "learn": a template file the nodes fitted by hand go into (only that is done)}
+           texture; a preview's is grey, the editor tints it), "template": the user's default beard outlines or
+           hairlines (over tool/beard_template.json, tool/hair_template.json), "learn": a template file the nodes
+           fitted by hand go into (only that is done)}
 
 Two ways, after what games do (and what the user chose from the prototypes):
 - long hair, a bob: hair cards - strips with a strands texture (alpha) laid along strands. Each strand grows from
@@ -1128,9 +1129,65 @@ def learn_template(F, st, path):
         if not k.endswith(("_L", "_R")):
             rec[k][1] = 0.
     tp[st] ={k: [r[0]] + [round(x, 4) for x in r[1:]] for k, r in sorted(rec.items())}
+    write_template(pth, tp)
+    print("tmpl learnt", st, len(tp[st]), flush=True)
+
+
+def write_template(pth, tp):
     rows = [json.dumps(k) + ": {\n" + ",\n".join("  %s: %s" % (json.dumps(n), json.dumps(r)) for n, r in v.items()) + "}" for k, v in sorted(tp.items())]
     pth.write_text("{\n" + ",\n".join(rows) + "\n}\n", encoding="utf-8")   # (a node a line)
-    print("tmpl learnt", st, len(tp[st]), flush=True)
+
+
+# the hairline's default: its nodes fitted by hand kept by the head's measures - each its angle round the head's axis,
+# its height between the neck, the eyes and the top of the head - put on another head by them; a style's own, or the
+# last one kept for any hairstyle («hair»)
+HAIR_TPL_FILE = HERE / "hair_template.json"
+
+
+def _hknots():
+    return [NK.z, E.z, TOP.z], [-1., 0., 1.]
+
+
+def _hair_on(th, z):
+    """the scalp's point at an angle round the head's axis and a height (from outside, the ears left out)"""
+    d = Vector((math.sin(th), -math.cos(th), 0))
+    h = cast(Vector((O.x, O.y, z)) + d * (3 * R), -d, 3 * R, tree=bvh)
+    return h[0] if h else Vector((O.x, O.y, z)) + d * R
+
+
+def hair_template(st):
+    """this hairstyle's hairline nodes on this head: the user's own (job's «template») over the toolkit's"""
+    srcs = []
+    for f in (job.get("template"), HAIR_TPL_FILE):
+        try:
+            srcs.append(json.loads(Path(f).read_text(encoding="utf-8")) if f else {})
+        except (OSError, ValueError):
+            srcs.append({})
+    rec = next((src[k] for k in ("hair_" + st, "hair") for src in srcs if isinstance(src.get(k), dict)), {})
+    zs, ws = _hknots()
+    return {k: _hair_on(r[1], _pw(r[2], ws, zs)) for k, r in rec.items() if isinstance(r, list) and len(r) == 3 and r[0] == "h"}
+
+
+def learn_hair(st, path, angs):
+    """the hairline's nodes fitted by hand kept as this style's default and as any hairstyle's without its own"""
+    pth = Path(path)
+    try:
+        tp = json.loads(pth.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        tp = {}
+    zs, ws = _hknots()
+    rec = {k: ["h", math.atan2((p - O).x, -(p - O).y), _pw(p.z, zs, ws)] for k, p in NODES_IN.items() if k in angs}
+    for k in [k for k in rec if k.endswith("_L") and k[:-2] + "_R" in rec]:   # (the pairs mirrored: one shape)
+        l_, r_ = rec[k], rec[k[:-2] + "_R"]
+        th, z = .5 * (abs(l_[1]) + abs(r_[1])), .5 * (l_[2] + r_[2])
+        rec[k], rec[k[:-2] + "_R"] = ["h", th, z], ["h", -th, z]
+    for k, a in (("front", 0.), ("nape", math.pi)):   # (in the middle: on it)
+        if k in rec:
+            rec[k][1] = a
+    rec = {k: [r[0]] + [round(x, 4) for x in r[1:]] for k, r in sorted(rec.items())}
+    tp["hair_" + st] = rec; tp["hair"] = rec
+    write_template(pth, tp)
+    print("tmpl learnt hair", st, len(rec), flush=True)
 # (under the lower lip a pair, as the rest: one in the middle sat there alone)
 # (and one by each corner of the lips: the outline round the mouth drawn closer)
 BEARD_LOOP = ["burn_R", "cheek_R", "corner_R", "lip_R", "chin_R", "chin_L", "lip_L", "corner_L", "cheek_L", "burn_L", "jaw_L", "throat", "jaw_R"]
@@ -2407,12 +2464,16 @@ elif job.get("piece") == "beard":
 else:   # a hairstyle made here: its hairline's nodes (shown in the editor, moved there by hand)
     HAIR_ANG = {"front": 0, "temple_L": 40, "ear_L": 90, "back_L": 135, "nape": 180, "back_R": -135, "ear_R": -90, "temple_R": -40}
     LOOP[:] = ["front", "temple_L", "ear_L", "back_L", "nape", "back_R", "ear_R", "temple_R"]
-    if any(k in NODES_IN for k in LOOP):
-        HL = sorted(((math.atan2((NODES_IN[k] - O).x, -(NODES_IN[k] - O).y), (NODES_IN[k] - O).z) if k in NODES_IN
+    if job.get("learn"):   # (the nodes fitted by hand kept as the default: only that)
+        learn_hair(style, job["learn"], HAIR_ANG)
+        sys.exit(0)
+    GIVEN = {**hair_template(style), **NODES_IN}   # (by hand; or the default fitted by hand once)
+    if any(k in GIVEN for k in LOOP):
+        HL = sorted(((math.atan2((GIVEN[k] - O).x, -(GIVEN[k] - O).y), (GIVEN[k] - O).z) if k in GIVEN
                      else (math.radians(a) if a < 180 else math.pi, zmin_default(math.radians(a))) for k, a in HAIR_ANG.items()))
     for k, a in HAIR_ANG.items():
-        if k in NODES_IN:
-            NODES_OUT[k] = NODES_IN[k]
+        if k in GIVEN:
+            NODES_OUT[k] = GIVEN[k]
             continue
         th = math.radians(a); zz = O.z + zmin_at(th)
         d = Vector((math.sin(th), -math.cos(th), 0))

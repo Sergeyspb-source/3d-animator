@@ -707,27 +707,31 @@ def _under(rigged: Path, req) -> list:
     return sorted(out)
 
 
-def beard_template(cfg) -> Path:
-    """The user's own default beard outlines («Remember as the default»), over the toolkit's tool/beard_template.json."""
-    return Path(cfg["export_dir"]) / "beard_template.json"
+def beard_template(cfg, piece="beard") -> Path:
+    """The user's own default beard outlines or hairlines («Remember as the default»), over the toolkit's
+    tool/beard_template.json, tool/hair_template.json."""
+    return Path(cfg["export_dir"]) / f"{piece}_template.json"
 
 
 def contour_learn(cfg, req) -> dict:
-    """«Remember as the default»: a beard's outline nodes as fitted by hand become its style's default for every
-    character, kept by the face's measures (blender_hair_gen.py's learn: the mouth's width, the chin, the eyes, the
-    head's half width) in <export>/beard_template.json. {ok, log}."""
-    rigged, style = Path(req["rigged"]), req.get("style")
-    if style not in BEARDS:
+    """«Remember as the default»: a beard's outline nodes or a hairstyle's hairline as fitted by hand become the style's
+    default for every character (a hairline: any hairstyle's without its own too), kept by the head's measures
+    (blender_hair_gen.py's learn: a beard by the mouth's width, the chin, the eyes, the head's half width; a hairline
+    each node's angle round the head and its height between the neck, the eyes and the top) in
+    <export>/beard_template.json, hair_template.json. {ok, log}."""
+    rigged, style, piece = Path(req["rigged"]), req.get("style"), req.get("piece", "beard")
+    if piece not in ("beard", "hair") or style not in (BEARDS if piece == "beard" else HAIRS):
         return {"ok": False, "log": _t("ag.unknown_piece", style)}
     nodes = req.get("nodes") if isinstance(req.get("nodes"), dict) else {}
-    hp = _beard_params({**(req.get("params") or {}), "beard": style, "beard_nodes": {style: nodes}})
+    to_job = _beard_params if piece == "beard" else _hair_params
+    hp = to_job({**(req.get("params") or {}), piece: style, f"{piece}_nodes": {style: nodes}})
     if not hp.get("nodes"):
         return {"ok": False, "log": _t("ag.contour_learn_none")}
     d = Path(cfg["work_dir"]) / "helmets" / LM._slug(LM._stem(rigged))
     d.mkdir(parents=True, exist_ok=True)
-    job = {"style": style[len("beard_"):], "params": hp, "out": str(d / "learn.glb"), "work": str(d), "character": str(rigged),
-           "piece": "beard", "names": {n: LM.bone_names(n) for n in ("mixamo", "godot")}, "face": _face_marks(rigged),
-           "learn": str(beard_template(cfg))}
+    job = {"style": style[len(piece) + 1:], "params": hp, "out": str(d / "learn.glb"), "work": str(d), "character": str(rigged),
+           "piece": piece, "names": {n: LM.bone_names(n) for n in ("mixamo", "godot")}, "face": _face_marks(rigged),
+           "learn": str(beard_template(cfg, piece))}
     (d / "learn.job.json").write_text(json.dumps(job, ensure_ascii=False), encoding="utf-8")
     blender = cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe"
     r = subprocess.run([blender, "-b", "--factory-startup", "-P", str(ROOT / "blender_hair_gen.py"), "--", str(d / "learn.job.json")],
@@ -737,7 +741,7 @@ def contour_learn(cfg, req) -> dict:
     if not any(x.startswith("tmpl learnt") for x in r.stdout.splitlines()):
         bad = next((x[len("ARMOUR_GEN_FAIL "):] for x in r.stdout.splitlines() if x.startswith("ARMOUR_GEN_FAIL")), None)
         return {"ok": False, "log": _t("ag.failed") + (bad or (r.stdout + r.stderr)[-1500:])}
-    return {"ok": True, "log": _t("ag.contour_learnt", style[len("beard_"):])}
+    return {"ok": True, "log": _t("ag.contour_learnt" if piece == "beard" else "ag.contour_learnt_hair", style[len(piece) + 1:])}
 
 
 def made_preview(cfg, req) -> dict:
@@ -765,14 +769,14 @@ def made_preview(cfg, req) -> dict:
     d = Path(cfg["work_dir"]) / "helmets" / LM._slug(LM._stem(rigged))
     d.mkdir(parents=True, exist_ok=True)
     glb, mask = d / f"{style}{tag}.glb", d / f"{style}{tag}.mask.json"
-    tpl = [f for f in (beard_template(cfg), ROOT / "beard_template.json") if f.exists()] if piece == "beard" else []   # (a beard's default outline)
+    tpl = [f for f in (beard_template(cfg, piece), ROOT / f"{piece}_template.json") if f.exists()] if piece in ("beard", "hair") else []   # (a beard's default outline, a hairline)
     if not (glb.exists() and mask.exists() and glb.stat().st_mtime > max(rigged.stat().st_mtime, (ROOT / script).stat().st_mtime,
                                                                        wig.stat().st_mtime if wig is not None else 0,
                                                                        *(f.stat().st_mtime for f in tpl))):
         job = {"style": style[len(prefix):], "params": hp, "sides": sides, "out": str(glb), "work": str(d), "character": str(rigged), "piece": piece,
                "names": {n: LM.bone_names(n) for n in ("mixamo", "godot")}, "mask": str(mask), "under": under,
                "face": _face_marks(rigged) if piece == "beard" else {},   # (a beard by the face's markup: the mouth, the lips)
-               "template": str(beard_template(cfg)) if piece == "beard" else ""}
+               "template": str(beard_template(cfg, piece)) if piece in ("beard", "hair") else ""}
         (d / f"{style}{tag}.job.json").write_text(json.dumps(job, ensure_ascii=False), encoding="utf-8")
         blender = cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe"
         r = subprocess.run([blender, "-b", "--factory-startup", "-P", str(ROOT / script), "--", str(d / f"{style}{tag}.job.json")],
@@ -838,7 +842,8 @@ def generate(cfg, req) -> dict:
         job.update(style=style[len(made[2]):], params=made[3](params))
         if piece == "beard":
             job["face"] = _face_marks(rigged)
-            job["template"] = str(beard_template(cfg))   # (its default outline: the user's own over the toolkit's)
+        if piece in ("beard", "hair"):   # (its default outline, hairline: the user's own over the toolkit's)
+            job["template"] = str(beard_template(cfg, piece))
         if wig is not None:
             job["params"]["model"] = str(wig)
         if isinstance(params.get("made_look"), list):   # another material than the generator's (the editor's specs by slot)

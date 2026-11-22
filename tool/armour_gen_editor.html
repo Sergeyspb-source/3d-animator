@@ -6107,7 +6107,7 @@ function syncPanel() {
   $('i_hairc').value = S.p.hair_color || '#3b2618';
   if ($('r_wigs')) $('r_wigs').textContent = (S.piece === 'beard' ? '{{js:ag.beard_models_note}}' : '{{js:ag.hair_models_note}}').replace('{0}', (S.piece === 'beard' ? DATA.beard_models_dir : DATA.hair_models_dir) || '');
   if ($('r_contour')) $('r_contour').hidden = !contourPiece();   // (fitting by hand: a beard, a hairstyle made here)
-  if ($('b_clearn')) $('b_clearn').hidden = S.piece !== 'beard';   // (a beard's nodes kept as its style's default)
+  if ($('b_clearn')) $('b_clearn').title = S.piece === 'hair' ? '{{js:ag.contour_learn_hair_info}}' : '{{js:ag.contour_learn_info}}';   // (a beard's nodes, a hairline kept as the default)
   if ($('r_must')) {   // (a beard's moustache: into it, over it, none - a beard with one)
     $('r_must').hidden = !(S.piece === 'beard' && ['short', 'full', 'long', 'goatee'].includes(S.p.beard_style));
     for (const b of $('mustSeg').children) b.classList.toggle('on', b.dataset.must === (S.p.beard_must || 'merge'));
@@ -6532,13 +6532,14 @@ window.agContour = () => {   // (the tests: each node's place on the screen, in 
 };
 controls.addEventListener('end', () => { if (CONTOUR.group.visible && !CONTOUR.drag) contourDraw(false); });
 // «Remember as the default»: the nodes as they are now (shown, or as last moved) become the style's default for every
-// character (armour_gen_ui.contour_learn: kept by the face's measures in export/beard_template.json)
+// character (armour_gen_ui.contour_learn: kept by the head's measures in export/beard_template.json, hair_template.json;
+// a hairline: any hairstyle's without its own too)
 async function contourLearn() {
-  if (S.piece !== 'beard' || busy) return;
-  const st = S.p.beard, N = CONTOUR.group.visible && CONTOUR.nodes ? CONTOUR.nodes : null;
+  if (!contourPiece() || busy) return;
+  const piece = S.piece, st = S.p[piece], N = CONTOUR.group.visible && CONTOUR.nodes ? CONTOUR.nodes : null;
   const nodes = N ? Object.fromEntries(Object.entries(N).map(([k, v]) => [k, [+v.x.toFixed(5), +v.y.toFixed(5), +v.z.toFixed(5)]])) : contourUser();
   if (!nodes) { $('status').textContent = '{{js:ag.contour_learn_none}}'; return; }
-  const js = await send('contour_learn', { piece: 'beard', style: st, params: S.p, nodes }, '{{js:ag.contour_learning}}', '_contour_learn');
+  const js = await send('contour_learn', { piece, style: st, params: S.p, nodes }, '{{js:ag.contour_learning}}', '_contour_learn');
   if (js && js.ok) madeCache.clear();   // (the previews made by the old default)
 }
 function contourToggle(on) {

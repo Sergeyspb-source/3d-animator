@@ -562,6 +562,7 @@
   тоньше и со рта шириной, контур по умолчанию — узлы пользователя в мерах лица (`tool/beard_template.json`, задание с
   `learn`), запасной контур при разрывах сетки (goblin_hero_2, man-young). Проверено: свои узлы пользователя дают те же
   контуры; по умолчанию — man_muscul, man-young, goblin_hero_2. Кнопка «Запомнить как по умолчанию» в редакторе
-  (`contour_learn` → `export/beard_template.json`; тест `work/wear_test/ui/test_beard_learn.mjs` на 7871). Осталось:
-  проверка на других головах; то же для линии роста волос у причёсок; у goblin_hero_2 тёмные пятна на лбу — сам
+  (`contour_learn` → `export/beard_template.json`; тест `work/wear_test/ui/test_beard_learn.mjs` на 7871). Линия роста
+  волос — так же (`export/hair_template.json`: стиль и общая «hair»; тест тот же с `hair_short man-young hair_crop`).
+  Осталось: проверка на других головах; у goblin_hero_2 тёмные пятна на лбу — сам
   персонаж. Снимки `work/wear_test/hair_gen/s1/` (compare_user.png, d_styles.png, d_fix2.png).

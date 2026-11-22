@@ -2813,6 +2813,8 @@
  "ag.contour_learning": "Remembering the nodes (~10-20 s)…",
  "ag.contour_learnt": "The «{0}» layout is remembered: new beards of this style on any character are put the same way.",
  "ag.contour_learn_none": "First press «Fit the outline» and place the nodes.",
+ "ag.contour_learn_hair_info": "The hairline, as its nodes are now, becomes the default for this style and for every hairstyle without its own, on any character: each node kept by its angle round the head and its height between the neck, the eyes and the top. File: export/hair_template.json; hairstyles fitted by hand keep their own nodes.",
+ "ag.contour_learnt_hair": "The hairline is remembered: new «{0}» hairstyles (and styles without their own) on any character are put the same way.",
  "ag.hair_pick_style": "Pick a style - the generator makes it for the character.",
  "ag.made_refresh": "Update the preview",
  "ag.made_refresh_info": "Make the preview again in Blender by the new parameters (10-90 s). «Generate» makes the piece by them without it too.",
