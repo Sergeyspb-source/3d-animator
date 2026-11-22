@@ -384,8 +384,10 @@ def build_cards(L, part, cut_z, wave=0., messy=0., swept=0., narrow=1.):
             return loc + nn * gap
         return p
 
+    lift_k = .55 if cut_z is not None else 1.   # (a bob close to the head: its layers stood off it - a hood)
+
     def lay_gap(q, layer):   # (its height over the skin: low by the hairline, its layer's further in)
-        return (.025 + (.035 + .1 * layer) * smooth(0., .45 * R, hair_field(q))) * R
+        return (.025 + (.035 + .1 * layer) * lift_k * smooth(0., .45 * R, hair_field(q))) * R
 
     def guide(root, n, layer):
         p = root.copy(); pts = [p.copy()]
@@ -434,7 +436,7 @@ def build_cards(L, part, cut_z, wave=0., messy=0., swept=0., narrow=1.):
         for i in range(k0, n):
             pos[i] = pos[i - 1] - UP * rest[i - 1]
         prev = [p.copy() for p in pos]
-        gap = (.08 + .1 * layer) * R
+        gap = (.08 + .1 * layer * lift_k) * R
         touch = [False] * n
         for it in range(iters):
             for i in range(k0, n):   # verlet: its speed (damped, rubbing where it touches), gravity; not through the body
@@ -514,11 +516,25 @@ def build_cards(L, part, cut_z, wave=0., messy=0., swept=0., narrow=1.):
     uvl = bm.loops.layers.uv.new("UVMap")
 
     def card(pts, w0, slot, k_free=10 ** 6):
-        if cut_z is not None:   # a bob: cut at the jaw
-            k = next((i for i, p in enumerate(pts) if p.z < cut_z), len(pts))
+        if cut_z is not None:   # a bob: cut at the jaw - longer in front (an A line), each lock a little its own
+            fr = min(1., max(0., (-(pts[0] - O).y / R + .2) / .9))
+            cz = cut_z - .3 * R * fr + rnd.uniform(-.05, .05) * R
+            k = next((i for i, p in enumerate(pts) if p.z < cz), len(pts))
             pts = pts[:max(3, k + 1)]
+            m_ = len(pts)
+            for i in range(m_):   # (its end turned in under, toward the neck: curved, not a square wall)
+                f = smooth(.5, 1., i / max(1, m_ - 1))
+                d_ = Vector((O.x - pts[i].x, O.y - pts[i].y, 0))
+                if d_.length > 1e-6:
+                    pts[i] = pts[i] + d_.normalized() * (.2 * R * f ** 1.6) + UP * (.06 * R * f ** 2)
+                loc, nrm, fi_, dd = full.find_nearest(pts[i])
+                if loc is not None:
+                    nn = nrm.normalized(); sd_ = (pts[i] - loc).dot(nn)
+                    if sd_ < .04 * R:
+                        pts[i] = pts[i] + nn * (.04 * R - sd_)
         r0 = pts[0] - O
-        ks = min(k_free, next((i for i, p in enumerate(pts) if p.z < O.z - .25 * R or (p - O).length > 1.3 * R), len(pts)))
+        z_on = O.z - rnd.uniform(.12, .4) * R   # (each its own start: all at one height they made a step by the temple)
+        ks = min(k_free, next((i for i, p in enumerate(pts) if p.z < z_on or (p - O).length > 1.3 * R), len(pts)))
         pts = pts[max(0, ks - 2):]   # (from where it leaves the skull: on it the base is the hair - not by the ears' tops: high on a goblin)
         if len(pts) < 4:
             return
