@@ -149,10 +149,11 @@ def zmin_default(th):
     """the hairline's height over the head's middle round the head (th: 0 the face, ±pi the nape): high at the
     forehead, lower over the ears, down to the nape behind"""
     fb = abs(th) / math.pi
-    zf, zs, zb = .62 * R, .30 * R, -.55 * R
+    zf, zs, zb = (.38 if style in LOW_FRONT else .62) * R, (.04 if style in LOW_FRONT else .30) * R, -.55 * R
     return zf + (zs - zf) * min(1, fb / .5) if fb < .5 else zs + (zb - zs) * min(1, (fb - .5) / .25)
 
 
+LOW_FRONT = {"wavy", "half_up", "braids", "side_braid", "crown_braid", "braid_bun", "low_bun", "low_tails", "ponytail"}
 HL = None   # the hairline fitted by hand: [(th, height)] round the head, from its nodes
 
 
@@ -307,7 +308,7 @@ def material(name, im, cut, rough=.6):
 
 
 # ---------------------------------------------------------------- long hair, a bob: cards
-def build_cards(L, part, cut_z):
+def build_cards(L, part, cut_z, wave=0.):
     roots = []
     N = 2000   # (fewer roots, steps and points than the prototype's: a preview in about a minute, a lighter piece)
     for i in range(N):
@@ -456,7 +457,10 @@ def build_cards(L, part, cut_z):
             pts = pts[:max(3, k + 1)]
         r0 = pts[0] - O
         ph, amp = 2.2 * r0.x / R + 1.4 * r0.y / R, .06 * R   # (one sway for the whole hair: neighbours together)
-        pts = [p if p.z > zst else p + Vector((math.sin(ph + (zst - p.z) / (1.6 * R) * 3.14), 0, 0)) * amp * min(1., (zst - p.z) / R) for p in pts]
+        lam = 1.6 * R
+        if wave:   # (waves: S-locks, neighbours together, a little apart; growing down from the head)
+            ph, amp, lam = ph * .5 + .5 * rnd.random(), (.06 + .09 * wave) * R, .8 * R
+        pts = [p if p.z > zst else p + Vector((math.sin(ph + (zst - p.z) / lam * 3.14), 0, 0)) * amp * min(1., (zst - p.z) / R) for p in pts]
         left, right = [], []
         for i, p in enumerate(pts):
             t = (pts[min(i + 1, len(pts) - 1)] - pts[max(i - 1, 0)]).normalized()
@@ -1861,14 +1865,16 @@ def bomb_locks(P, N, Vv, locks, reach):
     return hgt, lum, cov
 
 
-def _beard_locks(ob, m, UVV, fade, skip):
+def _beard_locks(ob, m, UVV, fade, skip, name="beard", k=None, lw=(.085, .14), ll=(.4, .62), rmin=.13, relief=.05, T=1024, alpha=(.7, .9)):
     """the beard's hairs as locks laid on its surface itself (not through a tile on an unwrap: down a beard hanging
     to a point the hairs' unwrap is squeezed across many times - every lock smeared sideways into bands): pointed
     locks a constant size on it, rooted all over it, each down along the hairs' fall, its tip over the roots under it,
     strands in it; drawn into an unwrap of its own (no squeeze) as its colour, alpha (thinning to its ends: the locks'
-    middles only) and normal map, and as relief in its shape"""
+    middles only) and normal map, and as relief in its shape. The same for a hairstyle's smooth base (its own lock
+    sizes: lw, ll - half width, length - and rmin, x R; its v the way to where it is gathered)"""
     rng = np.random.default_rng(int(prm.get("seed", 1)) * 11 + 5)
-    k = LOCK_K.get(style, 1.) * float(prm.get("vol", 1.)) ** .3
+    if k is None:
+        k = LOCK_K.get(style, 1.) * float(prm.get("vol", 1.)) ** .3
     nv = len(m.vertices)
     Pv = np.array([v.co[:] for v in m.vertices], np.float32)
     Nv = np.array([v.normal[:] for v in m.vertices], np.float32)
@@ -1887,7 +1893,7 @@ def _beard_locks(ob, m, UVV, fade, skip):
     gl = np.linalg.norm(g, axis=1)
     D = np.where(gl[:, None] > 1e-6, g / np.maximum(gl, 1e-9)[:, None], down / np.maximum(np.linalg.norm(down, axis=1), 1e-9)[:, None])
     # roots: spread over it (darts: none nearer another than rmin)
-    rmin = .13 * R * k
+    rmin = rmin * R * k
     cand = rng.permutation(np.nonzero(beard_v)[0])
     taken, cells = [], {}
     for i in cand:
@@ -1899,10 +1905,10 @@ def _beard_locks(ob, m, UVV, fade, skip):
     locks = []
     for i in taken:
         n = Nv[i]; d = D[i]; e = np.cross(n, d); e /= max(1e-9, np.linalg.norm(e))
-        w = rng.uniform(.085, .14) * R * k
-        locks.append(dict(c=Pv[i], n=n, e=e, v=Vv[i], w=w, L=rng.uniform(.4, .62) * R * k, bend=rng.uniform(-.5, .5) * w,
+        w = rng.uniform(*lw) * R * k
+        locks.append(dict(c=Pv[i], n=n, e=e, v=Vv[i], w=w, L=rng.uniform(*ll) * R * k, bend=rng.uniform(-.5, .5) * w,
                           br=rng.uniform(.72, 1.), ph=rng.uniform(0, 6.28), hairs=rng.uniform(0, 1, 48) ** .7))
-    reach = .7 * R * k
+    reach = (max(ll) + max(lw)) * 1.05 * R * k
     # its own unwrap (the beard's faces; a joined moustache's keep theirs)
     bpy.ops.object.select_all(action="DESELECT")
     bpy.context.view_layer.objects.active = ob; ob.select_set(True)
@@ -1914,7 +1920,6 @@ def _beard_locks(ob, m, UVV, fade, skip):
     bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=.006)
     bpy.ops.object.mode_set(mode="OBJECT")
     # its texels: their place, normal, distance down the flow, fade (barycentric from the triangles)
-    T = 1024
     att = np.concatenate([Pv, Nv, Vv[:, None], Fv[:, None]], axis=1)
     buf = np.zeros((T, T, att.shape[1]), np.float32); got = np.zeros((T, T), bool)
     uvd = m.uv_layers.active.data
@@ -1957,9 +1962,9 @@ def _beard_locks(ob, m, UVV, fade, skip):
     img = np.zeros((T, T, 4), np.float32)
     img[..., :3] = (.15 + .85 * lum)[..., None] * COL[None, None, :]
     # (where it covers: whole; thinning to its ends, the locks' middles only - each there or not, no speckle)
-    img[..., 3] = np.clip((fd - .7 + .9 * cvr) * 4, 0, 1)
-    mat, _ = material("hair_beard", save("beard", img, True), True, .55)
-    normal_map(mat, hgt, "beard_normal", 3.)
+    img[..., 3] = np.clip((fd - alpha[0] + alpha[1] * cvr) * 4, 0, 1)
+    mat, _ = material(f"hair_{name}", save(name, img, True), True, .55)
+    normal_map(mat, hgt, f"{name}_normal", 3.)
     if len(m.materials):   # (slot 0 the beard's; a joined moustache's after it)
         m.materials[0] = mat
     else:
@@ -1970,7 +1975,7 @@ def _beard_locks(ob, m, UVV, fade, skip):
     np.add.at(acc, ed[:, 0], hv[ed[:, 1]]); np.add.at(acc, ed[:, 1], hv[ed[:, 0]])
     np.add.at(cnt, ed[:, 0], 1); np.add.at(cnt, ed[:, 1], 1)
     hv = np.where(cnt > 0, .5 * hv + .5 * acc / np.maximum(cnt, 1), hv)
-    dsp = (hv - .5) * .05 * R * k * Fv * beard_v
+    dsp = (hv - .5) * relief * R * k * Fv * beard_v
     m.vertices.foreach_set("co", (Pv + Nv * dsp[:, None]).ravel())
     m.update()
     print("locks %d" % len(locks), flush=True)
@@ -2450,6 +2455,419 @@ def build_wig(model, kind="hair"):
     return [wig, cap], cap
 
 
+# ---------------------------------------------------------------- hair gathered: braids, buns, tails (the user's references, 2026-11-22)
+# Over a smooth base - the hair combed from a middle parting to where it is gathered, its locks painted on its surface
+# (as a beard's) - braids, a bun, tails, wisps by the face; or long cards with waves, braids from the temples over them.
+def resample(pts, step, closed=False):
+    P = list(pts) + ([pts[0]] if closed else [])
+    cum = [0.]
+    for a, b in zip(P, P[1:]):
+        cum.append(cum[-1] + (b - a).length)
+    S = cum[-1]
+    n = max(2, int(round(S / step)))
+    out, j = [], 0
+    for i in range(n + (0 if closed else 1)):
+        s_ = S * i / n
+        while j < len(cum) - 2 and cum[j + 1] < s_:
+            j += 1
+        t = (s_ - cum[j]) / max(1e-12, cum[j + 1] - cum[j])
+        out.append(P[j].lerp(P[j + 1], t))
+    return out
+
+
+def scalp_at(th, z, out=0.):
+    """the scalp's point at an angle round the head's axis (0 the face, +90 its left) and a height over its middle
+    (x R), from outside (the ears left out), and its outward normal; out: raised off it"""
+    d = Vector((math.sin(th), -math.cos(th), 0))
+    c = Vector((O.x, O.y, O.z + z * R))
+    h = cast(c + d * (3 * R), -d, 3 * R, tree=bvh)
+    if not h:
+        return c + d * R, d
+    nn = h[1].normalized()
+    nn = nn if nn.dot(h[0] - O) > 0 else -nn
+    return h[0] + nn * out, nn
+
+
+def tube_e(bm, uvl, Q, ra, rb, axis, closed=False, M=10, vs=None, mat=0, caps=True, u_k=1.):
+    """a tube along Q, its section an ellipse: ra along axis (each point's), rb across it; its unwrap round it (u) and
+    along it (v, every vs of its length one tile)"""
+    vs = vs or R
+    n = len(Q); rows = []; s_ = 0.
+    for i, q in enumerate(Q):
+        if i:
+            s_ += (q - Q[i - 1]).length
+        t = ((Q[(i + 1) % n] - Q[i - 1]) if closed else (Q[min(n - 1, i + 1)] - Q[max(0, i - 1)])).normalized()
+        ea = axis[i] - t * axis[i].dot(t)
+        ea = ea.normalized() if ea.length > 1e-9 else t.orthogonal().normalized()
+        eb = t.cross(ea)
+        rows.append(([bm.verts.new(q + ea * (math.cos(a) * ra[i]) + eb * (math.sin(a) * rb[i])) for a in (j / M * 2 * math.pi for j in range(M))], s_))
+    for i in range(n if closed else n - 1):
+        r0, r1 = rows[i], rows[(i + 1) % n]
+        v0, v1 = r0[1] / vs, (r1[1] if i + 1 < n else rows[-1][1] + (Q[0] - Q[-1]).length) / vs
+        for j in range(M):
+            f = bm.faces.new((r0[0][j], r1[0][j], r1[0][(j + 1) % M], r0[0][(j + 1) % M]))
+            f.material_index = mat
+            for lp, uv in zip(f.loops, ((j / M * u_k, v0), (j / M * u_k, v1), ((j + 1) / M * u_k, v1), ((j + 1) / M * u_k, v0))):
+                lp[uvl].uv = uv
+    if caps and not closed:
+        for r, rev in ((rows[0][0], True), (rows[-1][0], False)):
+            f = bm.faces.new(list(reversed(r)) if rev else r)
+            f.material_index = mat
+            for lp in f.loops:
+                lp[uvl].uv = (.5 * u_k, 0.)
+    return rows
+
+
+def out_of(p):
+    """the body's outward way at a point (from its nearest skin)"""
+    loc, nrm, fi, d = full.find_nearest(p)
+    if loc is None:
+        return (p - O).normalized()
+    o = p - loc
+    return o.normalized() if o.length > 1e-7 else nrm.normalized()
+
+
+def braid(bm, uvl, path, w, closed=False, tassel=0., tie=True, outs=None):
+    """a plait of three locks along a path, w its half width: each lock goes side to side and over and under the others
+    (across sin t, out sin 2t, a third of a turn apart: where two cross one is over the other), flattened; an open one
+    narrows to a tie and ends in a tassel (its length); a closed one (round the head) is whole"""
+    A, Dp, a, b = .6, .7, .33, .21
+    P = resample(path, .1 * w, closed)
+    n = len(P)
+    cum = [0.]
+    for i in range(1, n):
+        cum.append(cum[-1] + (P[i] - P[i - 1]).length)
+    S = cum[-1] + ((P[0] - P[-1]).length if closed else 0.)
+    pitch = 2.4 * w
+    if closed:
+        pitch = S / max(3, round(S / pitch))
+    T_, O_, SD = [], [], []
+    if outs is not None:   # (the outward ways given at the path's own points: each new point takes its nearest's)
+        from mathutils.kdtree import KDTree
+        kp = KDTree(len(path))
+        for i, q in enumerate(path):
+            kp.insert(q, i)
+        kp.balance()
+    for i, p in enumerate(P):
+        t = ((P[(i + 1) % n] - P[i - 1]) if closed else (P[min(n - 1, i + 1)] - P[max(0, i - 1)])).normalized()
+        o = outs[kp.find(p)[1]] if outs is not None else out_of(p)
+        T_.append(t); O_.append(o)
+    for _ in range(6):   # (the outward way smoothed along it: from a lumpy skin it turned and the locks twisted)
+        O_ = [(O_[i - 1] + 2 * O_[i] + O_[(i + 1) % n]) if closed or 0 < i < n - 1 else O_[i] for i in range(n)]
+        O_ = [o.normalized() for o in O_]
+    for i in range(n):
+        o = O_[i] - T_[i] * O_[i].dot(T_[i]); O_[i] = o.normalized(); SD.append(T_[i].cross(O_[i]))
+
+    def tap(s_):   # (to its tie: narrower)
+        return 1. if closed else 1. - .45 * smooth(S - 2.6 * w, S, s_)
+    for k in range(3):
+        Q, ra, rb = [], [], []
+        for i in range(n):
+            ph = 2 * math.pi * cum[i] / pitch + 2 * math.pi * k / 3; tp = tap(cum[i])
+            Q.append(P[i] + SD[i] * (A * w * tp * math.sin(ph)) + O_[i] * (.5 * Dp * w * tp * math.sin(2 * ph)))
+            ra.append(a * w * tp); rb.append(b * w * tp)
+        tube_e(bm, uvl, Q, ra, rb, SD, closed, M=10, vs=1.2 * R, caps=not closed, u_k=.5)
+    if closed:
+        return
+    end, t_end = P[-1], T_[-1]
+    if tie:   # (a band round its end)
+        q = [end - t_end * (.1 * w) + t_end * (.35 * w * i / 4) for i in range(5)]
+        tube_e(bm, uvl, q, [.62 * w] * 5, [.62 * w] * 5, [SD[-1]] * 5, M=14, mat=1)
+    if tassel > 0:   # (its tassel: out of the band, swelling, to a point - on down its way, falling)
+        L_ = tassel; m_ = 14; q = [end + t_end * (.2 * w)]; d = t_end.copy()
+        for i in range(1, m_ + 1):
+            d = (d - UP * .12).normalized()
+            q.append(q[-1] + d * (L_ / m_))
+        rr = [w * (.55 + .25 * math.sin(math.pi * min(1., i / m_ / .5) / 2)) * (1 - (i / m_) ** 2.2) + .01 * w for i in range(m_ + 1)]
+        tube_e(bm, uvl, q, rr, [x * .8 for x in rr], [SD[-1]] * (m_ + 1), M=12, vs=1.2 * R, u_k=.5)
+
+
+def drape(root, d0, L, gap, n=26, front=1., iters=140):
+    """a hanging lock's line (a braid's, a tail's) from its root: its first link along d0, then a chain of fixed links
+    under gravity meeting the body (rubbing on it), pulled a little forward (front > 0: onto the chest) or back"""
+    rest = L / n
+    pos = [root.copy(), root + d0 * rest]
+    for i in range(2, n + 1):
+        pos.append(pos[-1] - UP * rest)
+    prev = [p.copy() for p in pos]
+    G = Vector((0, 0, -9.8)) * (H / 1.0); dt2 = (1 / 30) ** 2
+    for it in range(iters):
+        for i in range(2, n + 1):
+            v = (pos[i] - prev[i]) * .85
+            pull = FRONT * (1.2 * front * H) if pos[i].z < NK.z + .4 * R else Vector()
+            old = pos[i].copy(); prev[i] = old
+            new = old + v + (G + pull) * dt2
+            mv = new - old; ml = mv.length
+            if ml > 1e-9:
+                hit, hn, hi, hd = full.ray_cast(old, mv / ml, ml + gap)
+                if hit is not None:
+                    hn = hn.normalized(); hn = hn if hn.dot(mv) < 0 else -hn
+                    new = hit + hn * gap + (mv - hn * mv.dot(hn)) * .4
+            pos[i] = new
+        for c in range(3):
+            for i in range(2, n + 1):
+                d = pos[i] - pos[i - 1]; Lc = d.length
+                if Lc > 1e-9:
+                    pos[i] = pos[i - 1] + d * (rest / Lc)
+            for i in range(3, n + 1):   # (stiff: not bending much - a braid is)
+                d = pos[i] - pos[i - 2]; Lc = d.length; want = 1.9 * rest
+                if 1e-9 < Lc < want:
+                    pos[i] = pos[i] + d * ((want - Lc) / Lc * .5)
+            for i in range(2, n + 1):
+                loc, nrm, fi, dist = full.find_nearest(pos[i])
+                if loc is not None:
+                    nn = nrm.normalized(); side = (pos[i] - loc).dot(nn)
+                    if side < gap:
+                        pos[i] = pos[i] + nn * (gap - side)
+    for _ in range(12):
+        pos = [pos[0], pos[1]] + [pos[i] * .5 + (pos[i - 1] + pos[i + 1]) * .25 for i in range(2, n)] + [pos[n]]
+        for i in range(2, n + 1):
+            loc, nrm, fi, dist = full.find_nearest(pos[i])
+            if loc is not None:
+                nn = nrm.normalized(); side = (pos[i] - loc).dot(nn)
+                if side < gap:
+                    pos[i] = pos[i] + nn * (gap - side)
+    return pos
+
+
+def coil(c, nb, r0, turns=2.3, rise=.9):
+    """a bun's line: a spiral on the head round c (nb its way out), from its outside in, rising as it goes in"""
+    e1 = (UP - nb * nb.dot(UP)); e1 = e1.normalized() if e1.length > 1e-6 else X.copy()
+    e2 = nb.cross(e1)
+    pts = []
+    m_ = int(48 * turns)
+    for i in range(m_ + 1):
+        f = i / m_; ph = 2 * math.pi * turns * f
+        r = r0 * (1 - .62 * f)
+        pts.append(c + (e1 * math.cos(ph) + e2 * math.sin(ph)) * r + nb * (rise * r0 * f ** .8))
+    return pts
+
+
+def crown_loop(zf, zs, zb, out):
+    """a braid's line round the head: at zf over its middle at the forehead, zs over the ears, zb behind (x R)"""
+    pts, nrm = [], []
+    for i in range(96):
+        th = 2 * math.pi * i / 96
+        fb = abs(math.atan2(math.sin(th), math.cos(th))) / math.pi
+        z = zf + (zs - zf) * smooth(0, .5, fb) if fb < .5 else zs + (zb - zs) * smooth(.5, 1., fb)
+        p, nn = scalp_at(th, z, out)
+        pts.append(p); nrm.append(nn)
+    return pts, nrm
+
+
+def sleek_base(gathers, lift=.035, part=.9, name="sleek"):
+    """the hair combed smooth to where it is gathered: the scalp under the hairline raised a little (rounded off to its
+    edge, fuller round the gatherings), its locks long and fine, each from the middle parting out and on to the
+    nearest gathering (the way to it, the parting's: their sum's way - the hairs' flow)"""
+    G = np.array([g[:] for g in gathers], np.float32)
+
+    def to_g(p):
+        return float(np.min(np.linalg.norm(G - np.array(p[:], np.float32), axis=1)))
+    bm = bmesh.new(); bm.from_mesh(me); bm.transform(skin.matrix_world)
+    for lay in list(bm.verts.layers.deform.values()):
+        bm.verts.layers.deform.remove(lay)
+    keep = {v for v in bm.verts if hairline(v.co, by_ear)}
+    grown = set(keep)
+    for _ in range(4):
+        grown |= {e.other_vert(v) for v in grown for e in v.link_edges if not by_ear(e.other_vert(v).co)}
+    closed = set(grown)
+    for _ in range(4):
+        closed -= {v for v in closed if any(e.other_vert(v) not in closed for e in v.link_edges)}
+    keep |= closed
+    bmesh.ops.delete(bm, geom=[v for v in bm.verts if v not in keep], context="VERTS")
+    bmesh.ops.remove_doubles(bm, verts=bm.verts[:], dist=1e-5)
+    for lay in list(bm.loops.layers.uv.values()):
+        bm.loops.layers.uv.remove(lay)
+    bm.verts.ensure_lookup_table(); bm.normal_update()
+    dist = edge_dist(bm)
+    for v in bm.verts:
+        nn = v.normal.copy()
+        if nn.dot(v.co - O) < 0:
+            nn.negate()
+        g = to_g(v.co)
+        t = (.006 + (.014 + lift) * min(1., dist[v.index] / (.45 * R)) ** .7 + .06 * math.exp(-(g / (.45 * R)) ** 2)) * R
+        v.co += nn * t
+    for _ in range(4):
+        bmesh.ops.smooth_vert(bm, verts=[v for v in bm.verts if dist[v.index] > 0], factor=.5, use_axis_x=True, use_axis_y=True, use_axis_z=True)
+    push_out(bm, .02 * R)
+    bm.verts.ensure_lookup_table()
+    px = O.x
+    UVV = {}
+    for v in bm.verts:   # (the flow's distance: on to the gathering; out from the parting over the top in front)
+        rel = v.co - O
+        top = smooth(.1 * R, .7 * R, rel.z) * smooth(.4 * R, -.6 * R, rel.y)
+        UVV[v.index] = (0., -to_g(v.co) + part * top * abs(v.co.x - px))
+    fade = {v.index: min(1., dist[v.index] / (.03 * R)) for v in bm.verts}   # (whole to its edge: only the locks' tips there)
+    m = bpy.data.meshes.new("hair_" + name); bm.to_mesh(m)
+    solid = bm.copy()
+    bmesh.ops.delete(solid, geom=[f for f in solid.faces if min(fade[v.index] for v in f.verts) < .99], context="FACES")
+    mi = bpy.data.meshes.new(name + "_solid"); solid.to_mesh(mi); solid.free(); bm.free()
+    inner = bpy.data.objects.new(name + "_solid", mi); sc.collection.objects.link(inner)
+    ob = bpy.data.objects.new("hair_" + name, m); sc.collection.objects.link(ob)
+    uvl = m.uv_layers.new(name="UVMap")
+    for poly in m.polygons:
+        poly.use_smooth = True
+    _beard_locks(ob, m, UVV, fade, set(), name=name, k=1., lw=(.045, .07), ll=(.8, 1.2), rmin=.07, relief=.02, alpha=(.3, .6))
+    return ob, inner
+
+
+def strands_mat(name, seed):
+    """a lock's own hairs along it (a braid's locks, a tail, a bun): fine strands, their light"""
+    tile = strands_tile(256, 512, 150, 1.5, 3., seed, False)
+    cl = strands_tile(128, 256, 10, 8, 14, seed + 1, True)
+    cl2 = np.kron(cl, np.ones((2, 2), np.float32))
+    lum = (.3 + .7 * np.clip(tile * .7 + .3, 0, 1)) * np.clip(.75 + .35 * cl2, 0, 1.1)
+    img = np.zeros((512, 256, 3), np.float32); img[...] = np.clip(lum, 0, 1)[..., None] * COL[None, None, :]
+    mat, _ = material(name, save(name, img, False), False, .55)
+    normal_map(mat, tile * .5 + cl2 * .5, name + "_normal")
+    return mat
+
+
+def tie_mat():
+    """the bands: dark leather, its own colour (the editor leaves it as it is)"""
+    m = bpy.data.materials.new("hair_tie"); m.use_nodes = True
+    b = next(n for n in m.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
+    b.inputs["Base Color"].default_value = (.09, .05, .03, 1); b.inputs["Roughness"].default_value = .7
+    return m
+
+
+def locks_obj(name, build, seed):
+    """an object of tubes (braids, tails, buns) built by build(bm, uvl): the hair's strands, the bands' leather"""
+    bm = bmesh.new(); uvl = bm.loops.layers.uv.new("UVMap")
+    build(bm, uvl)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    mm = bpy.data.meshes.new(name); bm.to_mesh(mm); bm.free()
+    ob = bpy.data.objects.new(name, mm); sc.collection.objects.link(ob)
+    for poly in mm.polygons:
+        poly.use_smooth = True
+    mm.materials.append(strands_mat(name, seed)); mm.materials.append(tie_mat())
+    return ob
+
+
+def wisps(n=7, L=1.5, z0=.3, z1=0.):
+    """loose locks by the face: from the temples down past the cheeks, thin, swaying (hair cards)"""
+    bm = bmesh.new(); uvl = bm.loops.layers.uv.new("UVMap")
+    for sd in (1, -1):
+        for k in range(n):
+            th = sd * math.radians(62 + 26 * k / max(1, n - 1)); z = z0 + (z1 - z0) * k / max(1, n - 1)
+            p, nn = scalp_at(th, z, .05 * R)
+            pts = drape(p, (nn * .6 - UP).normalized(), L * R * (.8 + .4 * rnd.random()), .04 * R, n=14, front=.3, iters=80)
+            ph = rnd.random() * 6.28
+            pts = [q + X * (sd * .07 * R * math.sin(ph + i * 1.1) * min(1., 2 * i / len(pts))) for i, q in enumerate(pts)]   # (a loose wave)
+            left, right = [], []
+            for i, q in enumerate(pts):
+                t = (pts[min(i + 1, len(pts) - 1)] - pts[max(i - 1, 0)]).normalized()
+                side = t.cross(out_of(q)); side = side.normalized() if side.length > 1e-9 else X
+                w = .035 * R * (1 - .5 * (i / (len(pts) - 1)) ** 2)
+                left.append(bm.verts.new(q - side * w)); right.append(bm.verts.new(q + side * w))
+            slot = rnd.randrange(4); u0, u1 = slot / 4 + .005, (slot + 1) / 4 - .005
+            for i in range(len(pts) - 1):
+                f = bm.faces.new((left[i], right[i], right[i + 1], left[i + 1]))
+                v0, v1 = 1 - i / (len(pts) - 1), 1 - (i + 1) / (len(pts) - 1)
+                for lp, uv in zip(f.loops, ((u0, v0), (u1, v0), (u1, v1), (u0, v1))):
+                    lp[uvl].uv = uv
+    mm = bpy.data.meshes.new("hair_wisps"); bm.to_mesh(mm); bm.free()
+    ob = bpy.data.objects.new("hair_wisps", mm); sc.collection.objects.link(ob)
+    m_, _ = material("hair_wisps", save("wisps", strands_atlas(), True), True)
+    mm.materials.append(m_)
+    return ob
+
+
+def ear_root(sd, up=0., back=.15):
+    """a point on the hair behind an ear (sd: 1 its left): just over the hairline there, up more (x R)"""
+    th = sd * math.radians(102 + 60 * back)
+    return scalp_at(th, zmin_at(th) / R + .08 + up)
+
+
+GATHERED = {   # the gathered styles: the base's gatherings, then what is built on it
+    "braids": "two braids from behind the ears, down over the chest",
+    "side_braid": "one braid over the left shoulder",
+    "crown_braid": "a braid round the head",
+    "braid_bun": "a braid round the head, a braided bun on top",
+    "low_bun": "a braided bun at the nape, loose locks by the face",
+    "low_tails": "two short tails behind the ears, loose locks by the face",
+    "ponytail": "a low ponytail at the nape",
+}
+
+
+def build_gathered(st):
+    Lh = float(prm.get("length", .2)) * H
+    w = .3 * R   # (a braid's half width: a third of the face's)
+    objs = []
+    if st in ("braids", "side_braid"):
+        sides = (1, -1) if st == "braids" else (1,)
+        roots = [ear_root(sd, 0., .45) for sd in sides]   # (behind the ears, under them: not over the ear's root)
+        base, solid = sleek_base([r[0] for r in roots])
+
+        def build(bm, uvl):
+            for (r, nn), sd in zip(roots, sides):
+                d0 = (nn * .5 + FRONT * .8 - UP * .6 + X * (sd * .1)).normalized()
+                pts = drape(r + nn * (.6 * w), d0, Lh, 1.05 * w, front=1.)
+                braid(bm, uvl, pts, w * (1.15 if st == "side_braid" else 1.), tassel=.32 * Lh)
+        objs.append(locks_obj("hair_braids", build, 51))
+    elif st in ("crown_braid", "braid_bun"):
+        wc = .2 * R   # (the crown's half width)
+        zf = zmin_at(0.) / R + (.22 if st == "crown_braid" else .3)
+        loop, nrm = crown_loop(zf, .34 if st == "crown_braid" else .42, -.1 if st == "crown_braid" else .05, .04 * R + .8 * wc)
+        gath = loop[::4]
+        top = None
+        if st == "braid_bun":
+            h = cast(O, Vector((0, .3, 1)).normalized(), tree=bvh)   # (on the top of the head, a little back)
+            top = h[0] if h else O + UP * R
+            tn = (top - O).normalized()
+            gath = gath + [top]
+        base, solid = sleek_base(gath, part=.5)
+
+        def build(bm, uvl):
+            braid(bm, uvl, loop, wc, closed=True, outs=nrm)
+            if top is not None:
+                braid(bm, uvl, coil(top + tn * (.04 * R + .7 * wc), tn, .55 * R, 2.2, 1.3), wc * 1.05, tassel=0., tie=False)
+        objs.append(locks_obj("hair_braids", build, 52))
+    elif st == "low_bun":
+        c, nn = scalp_at(math.pi, -.55, 0.)
+        base, solid = sleek_base([c])
+
+        def build(bm, uvl):
+            braid(bm, uvl, coil(c + nn * (.5 * w), nn, .48 * R, 2.1, .9), w * .9, tassel=0., tie=False)
+        objs.append(locks_obj("hair_braids", build, 53))
+        objs.append(wisps())
+    elif st in ("low_tails", "ponytail"):
+        if st == "ponytail":
+            roots = [scalp_at(math.pi, -.45, 0.)]
+        else:
+            roots = [ear_root(sd, .25, .7) for sd in (1, -1)]
+        base, solid = sleek_base([r[0] for r in roots])
+        rp = (.3 if st == "ponytail" else .2) * R
+
+        def build(bm, uvl):
+            for r, nn in roots:
+                d0 = (nn - UP * .5).normalized()
+                pts = drape(r + nn * (.4 * rp), d0, Lh * (1. if st == "ponytail" else .45), rp, n=20, front=0. if st == "ponytail" else -.3)
+                m_ = len(pts)
+                rr = [rp * ((.75 if i < 2 else 1.) * (1 - (i / (m_ - 1)) ** 2.4) + .03) for i in range(m_)]
+                tube_e(bm, uvl, pts, rr, rr, [X] * m_, M=14, vs=1.2 * R, u_k=1.)
+                t0 = (pts[2] - pts[0]).normalized()
+                q = [pts[0] + t0 * (.15 * rp + .3 * rp * i / 4) for i in range(5)]   # (its band)
+                tube_e(bm, uvl, q, [.85 * rp] * 5, [.85 * rp] * 5, [X] * 5, M=14, mat=1)
+        objs.append(locks_obj("hair_tails", build, 54))
+        if st == "low_tails":
+            objs.append(wisps())
+    else:
+        fail(_t("ag.unknown_piece", st))
+    return [base] + objs, solid
+
+
+def temple_braids(bm, uvl, w, out, a1=180., z0=.38, z1=.08):
+    """braids from each temple back along the head's side over the ear to the back (half up: over the hair)"""
+    for sd in (1, -1):
+        pts, nrm = [], []
+        for i in range(25):
+            f = i / 24
+            q, nn = scalp_at(sd * math.radians(42 + (a1 - 42) * f), z0 + (z1 - z0) * f, out)
+            pts.append(q); nrm.append(nn)
+        braid(bm, uvl, pts, w, tassel=0., tie=a1 < 179., outs=nrm)
+
+
 # ---------------------------------------------------------------- the style
 if style.startswith("wig"):
     if not prm.get("model") or not Path(prm["model"]).is_file():
@@ -2481,9 +2899,14 @@ else:   # a hairstyle made here: its hairline's nodes (shown in the editor, move
         NODES_OUT[k] = h[0] if h else Vector((O.x, O.y, zz)) + d * R
 if job.get("piece") == "beard" or style.startswith("wig"):
     pass
-elif style in ("long", "bob"):
-    Lh = float(prm.get("length", .26 if style == "long" else .14)) * H * (1.2 if style == "long" else 2.0)
-    obs, mask_of = build_cards(Lh, float(prm.get("part", 0. if style == "long" else .3)), (E.z - 1.25 * R) if style == "bob" else None)
+elif style in ("long", "bob", "wavy", "half_up"):
+    Lh = float(prm.get("length", .26 if style != "bob" else .14)) * H * (2.0 if style == "bob" else 1.2)
+    obs, mask_of = build_cards(Lh, float(prm.get("part", .3 if style == "bob" else 0.)), (E.z - 1.25 * R) if style == "bob" else None,
+                               wave=1. if style in ("wavy", "half_up") else 0.)
+    if style == "half_up":   # (braids from the temples back over the hair)
+        obs.append(locks_obj("hair_braids", lambda bm, uvl: temple_braids(bm, uvl, .1 * R, .2 * R), 55))
+elif style in GATHERED:
+    obs, mask_of = build_gathered(style)
 elif style in SHORT:
     shell, solid = build_shell(SHORT[style])
     obs, mask_of = (build_mohawk(shell) if style == "mohawk" else [shell]), solid
