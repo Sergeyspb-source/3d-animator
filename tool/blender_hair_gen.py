@@ -131,6 +131,7 @@ for sd in (1, -1):
 core = {i for i in ear_v if thin(V[i])}
 core |= {j for i in core for j in nbr.get(i, ()) if abs(V[j].x - O.x) > .85 * R}
 core_tree = BVHTree.FromPolygons(V, [f for f in P if all(i in core for i in f)])
+ear_body = core | {i for i in ear_v if abs(V[i].x - O.x) > 1.0 * R}   # (an ear's own vertices, its tip out past the head too)
 
 
 def near_ear(p, r):
@@ -169,6 +170,19 @@ def zmin_at(th):
     t = (th - a) / max(1e-9, b - a)
     z0, z1, z2, z3 = HL[(k - 1) % m][1], HL[k][1], HL[(k + 1) % m][1], HL[(k + 2) % m][1]
     return .5 * (2 * z1 + (z2 - z0) * t + (2 * z0 - 5 * z1 + 4 * z2 - z3) * t * t + (3 * z1 - z0 - 3 * z2 + z3) * t ** 3)
+
+
+def ear_gap(p):
+    """how far a point is from an ear's own body (its thin shell and its root's ring): the hair goes round it there"""
+    loc, n, i, d = core_tree.find_nearest(p)
+    return d if loc is not None else 9 * R
+
+
+def hair_field(p):
+    """how far a point is inside the hairline (+ in, - out), smooth along the head, an ear left out round it: an edge
+    drawn by it is a line, not the skin mesh's vertices' staircase, and leaves no holes by the ears"""
+    rel = p - O
+    return min(rel.z - zmin_at(math.atan2(rel.x, -rel.y)), ear_gap(p) - .05 * R)
 
 
 def hairline(p, ears=near_ear):
@@ -572,40 +586,39 @@ def build_shell(cfg):
         fb = abs(math.atan2((p - O).x, -(p - O).y)) / math.pi
         return (f + (b - f) * smooth(.15, .75, fb)) * R if b is not None else None
 
-    def in_cut(p):
+    def field(p):
+        """how far inside the cut's line (+ in, - out), smooth along the head: its hairline, a straight cut round it, a
+        fringe over the forehead, a monk's bare top, a crop's sides, a mohawk's strip, the ears left out round them"""
         rel = p - O
-        if cfg.get("bald") and math.degrees((rel).angle(Vector((0, .1, 1)))) < cfg["bald"]:   # (a monk's: the top bare)
-            return False
-        if cfg.get("cut"):   # (over the cut, the ears left out: a fringe over the forehead; where the cut is none, the hairline)
+        th = math.atan2(rel.x, -rel.y)
+        if cfg.get("cut"):
             cz = cut_z(p)
-            if by_ear(p) or rel.z < -1.2 * R:
-                return False
             if cz is None:   # (a fringe only: the hairline, and over the forehead down to the cut)
-                return hairline(p, by_ear) or (rel.z > cfg["cut"][0] * R and abs(math.atan2(rel.x, -rel.y)) < math.radians(70))
-            return rel.z > cz
-        if not hairline(p, by_ear):
-            return False
-        if style == "crop":
-            return (p - O).z > (.15 - .35 * backness(p)) * R
-        if style == "mohawk":
-            return abs(p.x - O.x) < .3 * R
-        return True
+                v = max(rel.z - zmin_at(th), min(rel.z - cfg["cut"][0] * R, (math.radians(70) - abs(th)) * R))
+            else:
+                v = rel.z - cz
+        else:
+            v = rel.z - zmin_at(th)
+            if style == "crop":
+                v = min(v, rel.z - (.15 - .35 * backness(p)) * R)
+            if style == "mohawk":
+                v = min(v, .3 * R - abs(p.x - O.x))
+        if cfg.get("bald"):   # (a monk's: the top bare)
+            v = min(v, (rel.angle(Vector((0, .1, 1))) - math.radians(cfg["bald"])) * rel.length)
+        return min(v, ear_gap(p) - .05 * R, rel.z + 1.2 * R)
+
+    def in_cut(p):   # (a little past the line: its edge is the alpha's; not on an ear's own body)
+        return field(p) > -.1 * R and ear_gap(p) > .015 * R
     bm = bmesh.new(); bm.from_mesh(me); bm.transform(skin.matrix_world)
     for lay in list(bm.verts.layers.deform.values()):   # (the skin's weights not carried over: its groups are not the hair's)
         bm.verts.layers.deform.remove(lay)
-    keep = {v for v in bm.verts if in_cut(v.co)}
-    grown = set(keep)
-    for _ in range(4):
-        grown |= {e.other_vert(v) for v in grown for e in v.link_edges if not by_ear(e.other_vert(v).co)}
-    closed = set(grown)
-    for _ in range(4):
-        closed -= {v for v in closed if any(e.other_vert(v) not in closed for e in v.link_edges)}
-    keep |= closed
+    keep = {v for v in bm.verts if in_cut(v.co) and v.index not in ear_body}   # (bits of it were left on the ears' tips)
     bmesh.ops.delete(bm, geom=[v for v in bm.verts if v not in keep], context="VERTS")
     bmesh.ops.remove_doubles(bm, verts=bm.verts[:], dist=1e-5)
     for lay in list(bm.loops.layers.uv.values()):
         bm.loops.layers.uv.remove(lay)
     bm.verts.ensure_lookup_table(); bm.normal_update()
+    FLD = [field(v.co) for v in bm.verts]
     n = len(bm.verts)
     import heapq
     dist = [1e9] * n   # the way in from the cut's edge (along the skin)
@@ -627,7 +640,7 @@ def build_shell(cfg):
         top = min(1., max(0., (rel.z / R - .1) / .6))
         front = min(1., max(0., (-rel.y / R - .1) / .7)) * top
         t = R * (cfg["side"] + (cfg["T"] - cfg["side"]) * top + cfg["quiff"] * front ** 1.5)
-        return t * min(1., dist[i] / (cfg.get("edge", .6) * R)) ** .7   # (rounded off to the edge: no rim; a straight cut blunt)
+        return t * min(1., max(0., FLD[i] + .02 * R) / (cfg.get("edge", .6) * R)) ** .7   # (rounded off to its line: no rim; a straight cut blunt)
     hgt = [thick(v, i) for i, v in enumerate(bm.verts)]
     for v, h in zip(bm.verts, hgt):
         nn = v.normal.copy()
@@ -664,7 +677,8 @@ def build_shell(cfg):
         pol = math.acos(max(-1., min(1., d.dot(ax) / max(dl, 1e-12))))
         az = math.atan2(d.dot(ref2), d.dot(ref))
         UVV[v.index] = (az / (2 * math.pi) * 5., pol * 1.6 * R / S)   # (round it: five tiles - whole: no seam)
-    fade = {v.index: (min(1., dist[v.index] / (.45 * R)) if cfg["fade"] else min(1., dist[v.index] / (.06 * R))) for v in bm.verts}
+    # (its line drawn by the alpha: a crop's sides fading out wide; any other's crisp)
+    fade = {v.index: (smooth(-.01 * R, .45 * R, FLD[v.index]) if cfg["fade"] else smooth(-.015 * R, .015 * R, FLD[v.index])) for v in bm.verts}
     uvl = bm.loops.layers.uv.new("UVMap")
     vs = [w for _, w in UVV.values()]
     u0, v0, span = -2.5, min(vs), max(5., max(vs) - min(vs))   # (the texture one turn wide: its edges meet)
@@ -725,7 +739,10 @@ def build_shell(cfg):
                 val = l0 * fv[0] + l1 * fv[1] + l2 * fv[2]
                 sub = fade_img[y0:y1 + 1, x0:x1 + 1]
                 sub[inside] = np.maximum(sub[inside], val[inside])
-    img[..., 3] = np.maximum(fade_img ** 3, np.clip(fade_img * (fi * 1.6 - .2), 0, 1))
+    if cfg["fade"]:
+        img[..., 3] = np.maximum(fade_img ** 3, np.clip(fade_img * (fi * 1.6 - .2), 0, 1))
+    else:   # (a crisp line, the fine hairs only just ruffling it)
+        img[..., 3] = np.clip((fade_img - .5) * 10 + .5 + .6 * (fi - .5), 0, 1)
     m_shell, tnode = material("hair_shell", save("shell", img, True), True, .55)
     # the relief: fine hairs and clumps as a normal map over the same unwrap
     hgt_img = fi * .4 + cl * .6
@@ -758,6 +775,14 @@ def build_shell(cfg):
     for md in list(ob.modifiers):
         bpy.ops.object.modifier_apply(modifier=md.name)
     m.uv_layers.remove(m.uv_layers["tile"])
+    for v in m.vertices:   # (the grooves not into the skin: through a thin cut it showed in patches)
+        loc, nrm, fi_, d_ = full.find_nearest(v.co)
+        if loc is not None:
+            nn = nrm.normalized(); nn = nn if nn.dot(v.co - O) > 0 else -nn
+            sd_ = (v.co - loc).dot(nn)
+            if sd_ < .015 * R:
+                v.co += nn * (.015 * R - sd_)
+    m.update()
     return ob, inner
 
 
@@ -2002,7 +2027,7 @@ def _beard_locks(ob, m, UVV, fade, skip, name="beard", k=None, lw=(.085, .14), l
     img = np.zeros((T, T, 4), np.float32)
     img[..., :3] = (.15 + .85 * lum)[..., None] * COL[None, None, :]
     # (where it covers: whole; thinning to its ends, the locks' middles only - each there or not, no speckle)
-    img[..., 3] = np.clip((fd - alpha[0] + alpha[1] * cvr) * 4, 0, 1)
+    img[..., 3] = np.clip((fd - alpha[0] + alpha[1] * cvr) * (alpha[2] if len(alpha) > 2 else 4), 0, 1)   # (a base's: a crisp line - its locks spilled past it as a ragged fringe)
     mat, _ = material(f"hair_{name}", save(name, img, True), True, .55)
     normal_map(mat, hgt, f"{name}_normal", 3.)
     if len(m.materials):   # (slot 0 the beard's; a joined moustache's after it)
@@ -2709,13 +2734,11 @@ def sleek_base(gathers, lift=.035, part=.9, name="sleek"):
     bm = bmesh.new(); bm.from_mesh(me); bm.transform(skin.matrix_world)
     for lay in list(bm.verts.layers.deform.values()):
         bm.verts.layers.deform.remove(lay)
-    def over(p):   # (how far over the hairline, along the head: its line smooth through the polygons)
-        rel = p - O
-        return rel.z - zmin_at(math.atan2(rel.x, -rel.y))
-    keep = {v for v in bm.verts if over(v.co) > -.1 * R and not by_ear(v.co)}
+    over = hair_field
+    keep = {v for v in bm.verts if over(v.co) > -.1 * R and ear_gap(v.co) > .015 * R and v.index not in ear_body}
     grown = set(keep)
     for _ in range(4):
-        grown |= {e.other_vert(v) for v in grown for e in v.link_edges if not by_ear(e.other_vert(v).co)}
+        grown |= {e.other_vert(v) for v in grown for e in v.link_edges if ear_gap(e.other_vert(v).co) > .015 * R and e.other_vert(v).index not in ear_body}
     closed = set(grown)
     for _ in range(4):
         closed -= {v for v in closed if any(e.other_vert(v) not in closed for e in v.link_edges)}
@@ -2744,7 +2767,7 @@ def sleek_base(gathers, lift=.035, part=.9, name="sleek"):
         top = smooth(.1 * R, .7 * R, rel.z) * smooth(.4 * R, -.6 * R, rel.y)
         UVV[v.index] = (0., -to_g(v.co) + part * top * abs(v.co.x - px))
     # (whole over the hairline, only the locks' tips at it: the line drawn by the alpha, smooth)
-    fade = {v.index: min(1., dist[v.index] / (.03 * R)) * smooth(-.03 * R, .04 * R, over(v.co)) for v in bm.verts}
+    fade = {v.index: smooth(-.015 * R, .015 * R, over(v.co)) for v in bm.verts}   # (its line: crisp, where the field crosses it)
     m = bpy.data.meshes.new("hair_" + name); bm.to_mesh(m)
     solid = bm.copy()
     bmesh.ops.delete(solid, geom=[f for f in solid.faces if min(fade[v.index] for v in f.verts) < .99], context="FACES")
@@ -2754,7 +2777,7 @@ def sleek_base(gathers, lift=.035, part=.9, name="sleek"):
     uvl = m.uv_layers.new(name="UVMap")
     for poly in m.polygons:
         poly.use_smooth = True
-    _beard_locks(ob, m, UVV, fade, set(), name=name, k=1., lw=(.045, .07), ll=(.8, 1.2), rmin=.07, relief=.02, alpha=(.3, .6))
+    _beard_locks(ob, m, UVV, fade, set(), name=name, k=1., lw=(.045, .07), ll=(.8, 1.2), rmin=.07, relief=.02, alpha=(.575, .15, 10))
     return ob, inner
 
 
