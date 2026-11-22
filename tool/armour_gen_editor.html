@@ -4189,6 +4189,15 @@ const HAIR_STYLES = {   // after the reference pictures (an image model's, on th
   hair_long: { hair: 'hair_long', hair_style: 'long', hair_part: 'none', hair_len: 26, hair_vol: 140, hair_n: 320, hair_curl: 10, hair_line: 0, hair_flow: 'part', hair_lift: 20 },
   hair_back: { hair: 'hair_back', hair_style: 'back', hair_part: 'none', hair_len: 10, hair_vol: 140, hair_n: 260, hair_curl: 0, hair_line: 0, hair_flow: 'back', hair_lift: 55 },
   hair_mohawk: { hair: 'hair_mohawk', hair_style: 'mohawk', hair_part: 'none', hair_len: 8, hair_vol: 230, hair_n: 34, hair_curl: 0, hair_line: 0, hair_flow: 'up', hair_lift: 100 },
+  hair_wavy: { hair: 'hair_wavy', hair_style: 'wavy', hair_part: 'none', hair_len: 26, hair_vol: 140, hair_n: 300, hair_curl: 0, hair_line: 0, hair_flow: 'back', hair_lift: 30 },
+  hair_half_up: { hair: 'hair_half_up', hair_style: 'half_up', hair_part: 'none', hair_len: 26, hair_vol: 140, hair_n: 300, hair_curl: 0, hair_line: 0, hair_flow: 'back', hair_lift: 30 },
+  hair_braids: { hair: 'hair_braids', hair_style: 'braids', hair_part: 'none', hair_len: 20, hair_vol: 140, hair_n: 300, hair_curl: 0, hair_line: 0, hair_flow: 'back', hair_lift: 30 },
+  hair_side_braid: { hair: 'hair_side_braid', hair_style: 'side_braid', hair_part: 'none', hair_len: 20, hair_vol: 140, hair_n: 300, hair_curl: 0, hair_line: 0, hair_flow: 'back', hair_lift: 30 },
+  hair_crown_braid: { hair: 'hair_crown_braid', hair_style: 'crown_braid', hair_part: 'none', hair_len: 20, hair_vol: 140, hair_n: 300, hair_curl: 0, hair_line: 0, hair_flow: 'back', hair_lift: 30 },
+  hair_braid_bun: { hair: 'hair_braid_bun', hair_style: 'braid_bun', hair_part: 'none', hair_len: 20, hair_vol: 140, hair_n: 300, hair_curl: 0, hair_line: 0, hair_flow: 'back', hair_lift: 30 },
+  hair_low_bun: { hair: 'hair_low_bun', hair_style: 'low_bun', hair_part: 'none', hair_len: 20, hair_vol: 140, hair_n: 300, hair_curl: 0, hair_line: 0, hair_flow: 'back', hair_lift: 30 },
+  hair_low_tails: { hair: 'hair_low_tails', hair_style: 'low_tails', hair_part: 'none', hair_len: 20, hair_vol: 140, hair_n: 300, hair_curl: 0, hair_line: 0, hair_flow: 'back', hair_lift: 30 },
+  hair_ponytail: { hair: 'hair_ponytail', hair_style: 'ponytail', hair_part: 'none', hair_len: 20, hair_vol: 140, hair_n: 300, hair_curl: 0, hair_line: 0, hair_flow: 'back', hair_lift: 30 },
 };
 const BEARD_STYLES = {
   beard_stubble: { beard: 'beard_stubble', beard_style: 'stubble', beard_len: 0, beard_vol: 100, beard_n: 0, beard_curl: 0 },
@@ -6356,7 +6365,7 @@ function madeLook() {
   if (S.piece === 'hair' || S.piece === 'beard') {
     if ((S.piece === 'hair' ? S.p.hair_style : S.p.beard_style) === 'wig') return;   // (a wig, a beard from a model: its own texture's colours)
     const c = new THREE.Color(S.p.hair_color || '#3b2618');
-    helmetObj.traverse((o) => { if (o.isMesh) for (const m of [].concat(o.material)) { m.color.copy(c); m.needsUpdate = true; } });
+    helmetObj.traverse((o) => { if (o.isMesh) for (const m of [].concat(o.material)) { if (/^hair_tie/.test(m.name || '')) continue; m.color.copy(c); m.needsUpdate = true; } });
     return;
   }
   const specs = madeSpecs(), made = new Map(), size = new THREE.Box3().setFromObject(helmetObj).getSize(new V3()).length() / 2;

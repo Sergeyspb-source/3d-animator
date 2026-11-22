@@ -133,7 +133,7 @@ SHEATHS = ("scabbard", "dagger", "quiver", "quiver_hip")
 CLOTHS = ("cloth_fitted", "cloth_shirt", "cloth_aketon", "cloth_gambeson", "cloth_doublet", "cloth_voider", "cloth_vest", "cloth_braies", "cloth_braies_long",
           "cloth_coif")
 GLOVES = ("glove_plain_leather", "glove_reinforced_leather", "glove_mail_mitten", "glove_hourglass", "glove_plate_mitten", "glove_hybrid")
-HAIRS = ("hair_crop", "hair_short", "hair_bob", "hair_long", "hair_back", "hair_mohawk")
+HAIRS = ("hair_crop", "hair_short", "hair_bob", "hair_long", "hair_back", "hair_mohawk", "hair_wavy", "hair_half_up", "hair_braids", "hair_side_braid", "hair_crown_braid", "hair_braid_bun", "hair_low_bun", "hair_low_tails", "hair_ponytail")
 BEARDS = ("beard_stubble", "beard_short", "beard_full", "beard_long", "beard_goatee", "beard_mustache")
 HELMETS = ("kettle_hat", "open_bascinet", "barbute", "visored_bascinet", "sallet", "armet",
            "nasal_helm", "spangenhelm", "great_helm", "morion", "close_helm")   # (the last five: helmets_extra.py)

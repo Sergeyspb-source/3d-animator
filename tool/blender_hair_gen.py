@@ -149,7 +149,9 @@ def zmin_default(th):
     """the hairline's height over the head's middle round the head (th: 0 the face, ±pi the nape): high at the
     forehead, lower over the ears, down to the nape behind"""
     fb = abs(th) / math.pi
-    zf, zs, zb = (.38 if style in LOW_FRONT else .62) * R, (.04 if style in LOW_FRONT else .30) * R, -.55 * R
+    zf, zs, zb = (.42 if style in LOW_FRONT else .62) * R, (.04 if style in LOW_FRONT else .30) * R, -.55 * R
+    if style in LOW_FRONT and fb < .5:   # (a round arch over the forehead, down to the temples)
+        return zs + (zf - zs) * math.cos(fb / .5 * math.pi / 2)
     return zf + (zs - zf) * min(1, fb / .5) if fb < .5 else zs + (zb - zs) * min(1, (fb - .5) / .25)
 
 
@@ -458,8 +460,11 @@ def build_cards(L, part, cut_z, wave=0.):
         r0 = pts[0] - O
         ph, amp = 2.2 * r0.x / R + 1.4 * r0.y / R, .06 * R   # (one sway for the whole hair: neighbours together)
         lam = 1.6 * R
-        if wave:   # (waves: S-locks, neighbours together, a little apart; growing down from the head)
-            ph, amp, lam = ph * .5 + .5 * rnd.random(), (.06 + .09 * wave) * R, .8 * R
+        if wave:   # (waves in clumps: the cards rooted near each other one S - its phase, its length; all of them together
+            # read as a corrugated sheet, each its own as frizz)
+            cell = (round(math.atan2(r0.x, -r0.y) / .3), round(r0.z / (.45 * R)))
+            cr = random.Random(hash(cell) & 0xffffffff)
+            ph, amp, lam = cr.random() * 6.28 + .35 * rnd.random(), (.06 + .07 * wave) * R * (.8 + .4 * cr.random()), (.75 + .4 * cr.random()) * R
         pts = [p if p.z > zst else p + Vector((math.sin(ph + (zst - p.z) / lam * 3.14), 0, 0)) * amp * min(1., (zst - p.z) / R) for p in pts]
         left, right = [], []
         for i, p in enumerate(pts):
@@ -2594,7 +2599,7 @@ def drape(root, d0, L, gap, n=26, front=1., iters=140):
     for it in range(iters):
         for i in range(2, n + 1):
             v = (pos[i] - prev[i]) * .85
-            pull = FRONT * (1.2 * front * H) if pos[i].z < NK.z + .4 * R else Vector()
+            pull = FRONT * (2. * front * H) if pos[i].z < E.z - R else Vector()   # (from under the ears on: it chose the back over a shoulder)
             old = pos[i].copy(); prev[i] = old
             new = old + v + (G + pull) * dt2
             mv = new - old; ml = mv.length
@@ -2630,7 +2635,7 @@ def drape(root, d0, L, gap, n=26, front=1., iters=140):
     return pos
 
 
-def coil(c, nb, r0, turns=2.3, rise=.9):
+def coil(c, nb, r0, turns=2.3, rise=.9, lift=0.):
     """a bun's line: a spiral on the head round c (nb its way out), from its outside in, rising as it goes in"""
     e1 = (UP - nb * nb.dot(UP)); e1 = e1.normalized() if e1.length > 1e-6 else X.copy()
     e2 = nb.cross(e1)
@@ -2639,7 +2644,10 @@ def coil(c, nb, r0, turns=2.3, rise=.9):
     for i in range(m_ + 1):
         f = i / m_; ph = 2 * math.pi * turns * f
         r = r0 * (1 - .62 * f)
-        pts.append(c + (e1 * math.cos(ph) + e2 * math.sin(ph)) * r + nb * (rise * r0 * f ** .8))
+        q = c + (e1 * math.cos(ph) + e2 * math.sin(ph)) * r
+        h = cast(q + nb * (2 * R), -nb, 4 * R, tree=bvh)   # (down onto the head under it)
+        base = h[0] if h else q
+        pts.append(base + nb * (lift + rise * r0 * f ** .8))   # (each ring higher in: a bun's dome)
     return pts
 
 
@@ -2666,7 +2674,10 @@ def sleek_base(gathers, lift=.035, part=.9, name="sleek"):
     bm = bmesh.new(); bm.from_mesh(me); bm.transform(skin.matrix_world)
     for lay in list(bm.verts.layers.deform.values()):
         bm.verts.layers.deform.remove(lay)
-    keep = {v for v in bm.verts if hairline(v.co, by_ear)}
+    def over(p):   # (how far over the hairline, along the head: its line smooth through the polygons)
+        rel = p - O
+        return rel.z - zmin_at(math.atan2(rel.x, -rel.y))
+    keep = {v for v in bm.verts if over(v.co) > -.1 * R and not by_ear(v.co)}
     grown = set(keep)
     for _ in range(4):
         grown |= {e.other_vert(v) for v in grown for e in v.link_edges if not by_ear(e.other_vert(v).co)}
@@ -2685,7 +2696,7 @@ def sleek_base(gathers, lift=.035, part=.9, name="sleek"):
         if nn.dot(v.co - O) < 0:
             nn.negate()
         g = to_g(v.co)
-        t = (.006 + (.014 + lift) * min(1., dist[v.index] / (.45 * R)) ** .7 + .06 * math.exp(-(g / (.45 * R)) ** 2)) * R
+        t = (.006 + (.014 + lift) * smooth(-.02 * R, .45 * R, over(v.co)) ** .7 + .06 * math.exp(-(g / (.45 * R)) ** 2)) * R
         v.co += nn * t
     for _ in range(4):
         bmesh.ops.smooth_vert(bm, verts=[v for v in bm.verts if dist[v.index] > 0], factor=.5, use_axis_x=True, use_axis_y=True, use_axis_z=True)
@@ -2697,7 +2708,8 @@ def sleek_base(gathers, lift=.035, part=.9, name="sleek"):
         rel = v.co - O
         top = smooth(.1 * R, .7 * R, rel.z) * smooth(.4 * R, -.6 * R, rel.y)
         UVV[v.index] = (0., -to_g(v.co) + part * top * abs(v.co.x - px))
-    fade = {v.index: min(1., dist[v.index] / (.03 * R)) for v in bm.verts}   # (whole to its edge: only the locks' tips there)
+    # (whole over the hairline, only the locks' tips at it: the line drawn by the alpha, smooth)
+    fade = {v.index: min(1., dist[v.index] / (.03 * R)) * smooth(-.03 * R, .04 * R, over(v.co)) for v in bm.verts}
     m = bpy.data.meshes.new("hair_" + name); bm.to_mesh(m)
     solid = bm.copy()
     bmesh.ops.delete(solid, geom=[f for f in solid.faces if min(fade[v.index] for v in f.verts) < .99], context="FACES")
@@ -2744,34 +2756,20 @@ def locks_obj(name, build, seed):
     return ob
 
 
-def wisps(n=7, L=1.5, z0=.3, z1=0.):
-    """loose locks by the face: from the temples down past the cheeks, thin, swaying (hair cards)"""
-    bm = bmesh.new(); uvl = bm.loops.layers.uv.new("UVMap")
-    for sd in (1, -1):
-        for k in range(n):
-            th = sd * math.radians(62 + 26 * k / max(1, n - 1)); z = z0 + (z1 - z0) * k / max(1, n - 1)
-            p, nn = scalp_at(th, z, .05 * R)
-            pts = drape(p, (nn * .6 - UP).normalized(), L * R * (.8 + .4 * rnd.random()), .04 * R, n=14, front=.3, iters=80)
-            ph = rnd.random() * 6.28
-            pts = [q + X * (sd * .07 * R * math.sin(ph + i * 1.1) * min(1., 2 * i / len(pts))) for i, q in enumerate(pts)]   # (a loose wave)
-            left, right = [], []
-            for i, q in enumerate(pts):
-                t = (pts[min(i + 1, len(pts) - 1)] - pts[max(i - 1, 0)]).normalized()
-                side = t.cross(out_of(q)); side = side.normalized() if side.length > 1e-9 else X
-                w = .035 * R * (1 - .5 * (i / (len(pts) - 1)) ** 2)
-                left.append(bm.verts.new(q - side * w)); right.append(bm.verts.new(q + side * w))
-            slot = rnd.randrange(4); u0, u1 = slot / 4 + .005, (slot + 1) / 4 - .005
-            for i in range(len(pts) - 1):
-                f = bm.faces.new((left[i], right[i], right[i + 1], left[i + 1]))
-                v0, v1 = 1 - i / (len(pts) - 1), 1 - (i + 1) / (len(pts) - 1)
-                for lp, uv in zip(f.loops, ((u0, v0), (u1, v0), (u1, v1), (u0, v1))):
-                    lp[uvl].uv = uv
-    mm = bpy.data.meshes.new("hair_wisps"); bm.to_mesh(mm); bm.free()
-    ob = bpy.data.objects.new("hair_wisps", mm); sc.collection.objects.link(ob)
-    m_, _ = material("hair_wisps", save("wisps", strands_atlas(), True), True)
-    mm.materials.append(m_)
-    return ob
-
+def wisps(n=6, L=1.4, z0=.3, z1=.02):
+    """loose locks by the face: from the temples down past the cheeks, thin twisted strands waving a little"""
+    def build(bm, uvl):
+        for sd in (1, -1):
+            for k in range(n):
+                th = sd * math.radians(55 + 30 * k / max(1, n - 1)); z = z0 + (z1 - z0) * k / max(1, n - 1)
+                p, nn = scalp_at(th, z, .02 * R)
+                pts = drape(p, (nn * .5 - UP).normalized(), L * R * (.75 + .45 * rnd.random()), .03 * R, n=16, front=.2, iters=80)
+                ph = rnd.random() * 6.28; amp = (.04 + .04 * rnd.random()) * R
+                m_ = len(pts)
+                pts = [q + (X * (sd * math.sin(ph + i * .9)) + FRONT * (.5 * math.cos(ph + i * .9))) * amp * min(1., 2.5 * i / m_) for i, q in enumerate(pts)]
+                rr = [(.028 * R) * (1 - .8 * (i / (m_ - 1)) ** 1.5) for i in range(m_)]
+                tube_e(bm, uvl, pts, rr, [x * .7 for x in rr], [X] * m_, M=6, vs=.8 * R, u_k=.3)
+    return locks_obj("hair_wisps", build, 57)
 
 def ear_root(sd, up=0., back=.15):
     """a point on the hair behind an ear (sd: 1 its left): just over the hairline there, up more (x R)"""
@@ -2801,14 +2799,14 @@ def build_gathered(st):
 
         def build(bm, uvl):
             for (r, nn), sd in zip(roots, sides):
-                d0 = (nn * .5 + FRONT * .8 - UP * .6 + X * (sd * .1)).normalized()
+                d0 = (nn * .4 + FRONT * 1.1 - UP * .6 + X * (sd * .1)).normalized()   # (forward and down: over the shoulder's front)
                 pts = drape(r + nn * (.6 * w), d0, Lh, 1.05 * w, front=1.)
                 braid(bm, uvl, pts, w * (1.15 if st == "side_braid" else 1.), tassel=.32 * Lh)
         objs.append(locks_obj("hair_braids", build, 51))
     elif st in ("crown_braid", "braid_bun"):
-        wc = .2 * R   # (the crown's half width)
-        zf = zmin_at(0.) / R + (.22 if st == "crown_braid" else .3)
-        loop, nrm = crown_loop(zf, .34 if st == "crown_braid" else .42, -.1 if st == "crown_braid" else .05, .04 * R + .8 * wc)
+        wc = (.27 if st == "crown_braid" else .22) * R   # (the crown's half width: thick, as the reference's)
+        zf = zmin_at(0.) / R + (.5 if st == "crown_braid" else .3)   # (behind the hairline: the hair combed up into it)
+        loop, nrm = crown_loop(zf, .38 if st == "crown_braid" else .42, -.12 if st == "crown_braid" else .05, .04 * R + .8 * wc)
         gath = loop[::4]
         top = None
         if st == "braid_bun":
@@ -2821,14 +2819,14 @@ def build_gathered(st):
         def build(bm, uvl):
             braid(bm, uvl, loop, wc, closed=True, outs=nrm)
             if top is not None:
-                braid(bm, uvl, coil(top + tn * (.04 * R + .7 * wc), tn, .55 * R, 2.2, 1.3), wc * 1.05, tassel=0., tie=False)
+                braid(bm, uvl, coil(top, tn, .5 * R, 2.6, .45, .04 * R + .7 * wc), wc, tassel=0., tie=False)   # (a round bun, not a tower)
         objs.append(locks_obj("hair_braids", build, 52))
     elif st == "low_bun":
         c, nn = scalp_at(math.pi, -.55, 0.)
         base, solid = sleek_base([c])
 
         def build(bm, uvl):
-            braid(bm, uvl, coil(c + nn * (.5 * w), nn, .48 * R, 2.1, .9), w * .9, tassel=0., tie=False)
+            braid(bm, uvl, coil(c, nn, .48 * R, 2.1, .9, .5 * w), w * .9, tassel=0., tie=False)
         objs.append(locks_obj("hair_braids", build, 53))
         objs.append(wisps())
     elif st in ("low_tails", "ponytail"):
@@ -2904,7 +2902,7 @@ elif style in ("long", "bob", "wavy", "half_up"):
     obs, mask_of = build_cards(Lh, float(prm.get("part", .3 if style == "bob" else 0.)), (E.z - 1.25 * R) if style == "bob" else None,
                                wave=1. if style in ("wavy", "half_up") else 0.)
     if style == "half_up":   # (braids from the temples back over the hair)
-        obs.append(locks_obj("hair_braids", lambda bm, uvl: temple_braids(bm, uvl, .1 * R, .2 * R), 55))
+        obs.append(locks_obj("hair_braids", lambda bm, uvl: temple_braids(bm, uvl, .11 * R, .36 * R), 55))   # (over the hair's outer layer)
 elif style in GATHERED:
     obs, mask_of = build_gathered(style)
 elif style in SHORT:
