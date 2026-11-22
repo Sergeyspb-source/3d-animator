@@ -216,32 +216,40 @@ def save(name, arr, alpha, colour=True):
 
 
 def strands_atlas(TW=512, TH=1024):
-    """four cards' strands side by side: along v (0 its root .. 1 its end), ragged ends, alpha"""
-    img = np.zeros((TH, TW, 4), np.float32)
-    lum = np.full((TH, TW), .8, np.float32)
+    """four cards' locks side by side, each along v (its root at v = 1, its tip at 0): many fine strands, more of them
+    in its middle, each its own length (ragged tips), lighter to their ends; a soft body only near its root (it was
+    upside down: the solid body at the tips - each lock ended in a square cut, a plank - and the ragged ends at the root)"""
+    A = np.zeros((TH, TW), np.float32)
+    lum = np.full((TH, TW), .4, np.float32)
+    cw = TW // 4
+    yy = np.arange(TH, dtype=np.float32)   # (from its root down)
     for k in range(4):
-        x0 = k * TW // 4
-        cw = TW // 4   # (a soft solid middle under the strands: the card reads as a lock, not a few hairs)
-        xs_ = np.arange(cw); env = np.clip(1 - np.abs((xs_ + .5) / cw * 2 - 1) ** 2 * 1.4, 0, 1) * .75
-        yy = np.arange(TH)[:, None]; tip = np.clip((TH * .78 - yy) / (TH * .12), 0, 1)
-        img[:, x0:x0 + cw, 3] = np.maximum(img[:, x0:x0 + cw, 3], env[None, :] * tip)
-        for s in range(130):
-            cx = x0 + 4 + rnd.random() * (TW // 4 - 8)
-            w = .6 + rnd.random() * 1.4
-            end = TH * (.7 + .3 * rnd.random())
-            br = .7 + .6 * rnd.random()
-            sway = rnd.random() * 6.28
-            ys = np.arange(int(end))
-            xs = cx + 2.5 * np.sin(ys / TH * 6 + sway)
+        x0 = k * cw
+        u = (np.arange(cw) + .5) / cw * 2 - 1
+        body = (np.exp(-(u / .42) ** 2)[None, :] * np.clip(1 - yy[:, None] / (TH * .5), 0, 1) ** .7 * .85
+                * np.clip((yy[:, None] - TH * .02) / (TH * .1), 0, 1))   # (coming in at the root: the card starts off the base)
+        A[:, x0:x0 + cw] = body
+        lum[:, x0:x0 + cw] = .45 + .2 * body
+        for s_ in range(170):
+            cx = x0 + min(cw - 4., max(3., cw / 2 + rnd.gauss(0, cw * .22)))
+            w = .55 + rnd.random() * .9
+            Ls = TH * (.4 + .6 * rnd.random() ** .55)
+            br = .65 + .5 * rnd.random()
+            sway, amp = rnd.random() * 6.28, 1 + 2.5 * rnd.random()
+            y0_ = int(TH * .1 * rnd.random() ** 1.5)   # (each its own start: no straight line where the card begins)
+            ys = np.arange(y0_, int(Ls))
+            xs = cx + amp * np.sin(ys / TH * 5 + sway) + (x0 + cw / 2 - cx) * .3 * ys / TH   # (closing in a little to the tip)
+            tipfade = np.clip((Ls - ys) / (TH * .07), 0, 1) * np.clip((ys - y0_) / (TH * .03), 0, 1)
             for dx in range(-2, 3):
-                xi = np.clip((xs + dx).astype(int), x0, x0 + TW // 4 - 1)
-                al = np.exp(-((xs + dx - xi - .5) ** 2 + dx * dx) / (w * w)) * np.clip((end - ys) / 60, 0, 1)
-                img[ys, xi, 3] = np.maximum(img[ys, xi, 3], al)
-                m = al > .05
-                lum[ys[m], xi[m]] = np.minimum(1.0, br)
-    img[..., :3] = lum[..., None] * COL[None, None, :]
+                xi = np.clip((xs + dx).astype(int), x0, x0 + cw - 1)
+                al = np.exp(-((xs + dx - xi - .5) ** 2 + dx * dx) / (w * w)) * tipfade
+                A[ys, xi] = np.maximum(A[ys, xi], al)
+                m_ = al > .3
+                lum[ys[m_], xi[m_]] = np.minimum(1., br * (.8 + .35 * ys[m_] / TH))
+    img = np.zeros((TH, TW, 4), np.float32)
+    img[..., 3] = A[::-1]
+    img[..., :3] = lum[::-1][..., None] * COL[None, None, :]
     return img
-
 
 def strands_tile(TW, TH, n, wmin, wmax, seed, clump):
     """a tiling height of strands along v (fine hairs, or wide clumps)"""
@@ -339,8 +347,18 @@ def build_cards(L, part, cut_z, wave=0., messy=0., swept=0., narrow=1.):
         t = min(1., max(0., (a - z) / (a - b)))
         return t * t * (3 - 2 * t)
 
+    face_half = 0.   # (the face's own half width, its cheeks', from outside)
+    z = E.z + .3 * R
+    while z > E.z - 1.3 * R:
+        for sd in (1, -1):
+            h = cast(Vector((O.x + sd * 3 * R, O.y - .45 * R, z)), -X * sd, 3 * R, tree=bvh)
+            if h:
+                face_half = max(face_half, abs(h[0].x - O.x))
+        z -= .1 * R
+    face_half = min(face_half, 1.2 * R)
+
     def keep_x(q):   # how far from the middle hair in front of the face and the chest stays (smooth with the height)
-        return R * (.9 + .3 * swept + .4 * _ramp((q - O).z, -.8 * R, -2.2 * R))
+        return max(R * (.9 + .3 * swept + .4 * _ramp((q - O).z, -.8 * R, -2.2 * R)), face_half + .12 * R)
 
     def in_front(q):
         rel = q - O
@@ -366,9 +384,12 @@ def build_cards(L, part, cut_z, wave=0., messy=0., swept=0., narrow=1.):
             return loc + nn * gap
         return p
 
+    def lay_gap(q, layer):   # (its height over the skin: low by the hairline, its layer's further in)
+        return (.025 + (.035 + .1 * layer) * smooth(0., .45 * R, hair_field(q))) * R
+
     def guide(root, n, layer):
         p = root.copy(); pts = [p.copy()]
-        gap = (.06 + .1 * layer) * R
+        gap = lay_gap(p, layer)
         Ls = L * (.85 + .3 * rnd.random()) * (1 if layer < 2 else 1.05)
         d = flow(p, n); x0 = abs(p.x - O.x)
         ds = Ls / 30
@@ -381,6 +402,7 @@ def build_cards(L, part, cut_z, wave=0., messy=0., swept=0., narrow=1.):
             want = flow(p, nrm.normalized() if nrm.dot(p - O) > 0 else -nrm.normalized()) if on_head and loc is not None else -UP
             d = (d * .6 + want * .4).normalized()
             q = p + d * ds
+            gap = max(gap, lay_gap(q, layer))   # (rising off the skin as it goes in from the hairline, never back down)
             if on_head:
                 loc, nrm, i, dist = bvh.find_nearest(q)
                 if loc is not None:
@@ -462,16 +484,26 @@ def build_cards(L, part, cut_z, wave=0., messy=0., swept=0., narrow=1.):
                     nn = nrm.normalized(); side = (pos[i] - loc).dot(nn)
                     if side < gap:
                         pos[i] = pos[i] + nn * (gap - side)
+        for i in range(k0, n):   # (off the face in the end too: the smoothing brought locks back over it)
+            if in_front(pos[i]):
+                dx = pos[i].x - O.x
+                kx = keep_x(pos[i])
+                if abs(dx) < kx:
+                    pos[i].x = O.x + math.copysign(kx, dx if abs(dx) > 1e-6 else 1)
         return pos
 
     bm = bmesh.new()
     uvl = bm.loops.layers.uv.new("UVMap")
 
-    def card(pts, w0, slot):
+    def card(pts, w0, slot, k_free=10 ** 6):
         if cut_z is not None:   # a bob: cut at the jaw
             k = next((i for i, p in enumerate(pts) if p.z < cut_z), len(pts))
             pts = pts[:max(3, k + 1)]
         r0 = pts[0] - O
+        ks = min(k_free, next((i for i, p in enumerate(pts) if p.z < O.z - .25 * R or (p - O).length > 1.3 * R), len(pts)))
+        pts = pts[max(0, ks - 2):]   # (from where it leaves the skull: on it the base is the hair - not by the ears' tops: high on a goblin)
+        if len(pts) < 4:
+            return
         ph, amp = 2.2 * r0.x / R + 1.4 * r0.y / R, .06 * R   # (one sway for the whole hair: neighbours together)
         lam = 1.6 * R
         if wave:   # (waves in clumps: the cards rooted near each other one S - its phase, its length; all of them together
@@ -484,7 +516,7 @@ def build_cards(L, part, cut_z, wave=0., messy=0., swept=0., narrow=1.):
             mr = random.Random(hash((round(r0.x / (.2 * R)), round(r0.y / (.2 * R)), round(r0.z / (.2 * R)))) & 0xffffffff)
             dv = Vector((mr.uniform(-1, 1), mr.uniform(-1, 1), mr.uniform(-.2, .5))) * (messy * .14 * R)
             pts = [p + dv * (i / (len(pts) - 1)) ** 1.5 for i, p in enumerate(pts)]
-        left, right = [], []
+        left, right, mid = [], [], []
         for i, p in enumerate(pts):
             t = (pts[min(i + 1, len(pts) - 1)] - pts[max(i - 1, 0)]).normalized()
             out = (p - O) if p.z > NK.z else Vector((p.x - O.x, p.y - O.y, 0))
@@ -499,19 +531,22 @@ def build_cards(L, part, cut_z, wave=0., messy=0., swept=0., narrow=1.):
             w = w0 * (1 + .8 * min(1., below)) * (1 - .55 * (i / (len(pts) - 1)) ** 2)
             o = out.normalized() * (.02 * R)
             left.append(bm.verts.new(p - side * w / 2 + o)); right.append(bm.verts.new(p + side * w / 2 + o))
+            mid.append(bm.verts.new(p + o + out.normalized() * (.16 * w)))
         u0, u1 = slot / 4 + .005, (slot + 1) / 4 - .005
+        um = .5 * (u0 + u1)
         for i in range(len(pts) - 1):
-            f = bm.faces.new((left[i], right[i], right[i + 1], left[i + 1]))
             v0, v1 = 1 - i / (len(pts) - 1), 1 - (i + 1) / (len(pts) - 1)
-            for lp, uv in zip(f.loops, ((u0, v0), (u1, v0), (u1, v1), (u0, v1))):
-                lp[uvl].uv = uv
+            for (a_, b_, ua, ub) in ((left, mid, u0, um), (mid, right, um, u1)):
+                f = bm.faces.new((a_[i], b_[i], b_[i + 1], a_[i + 1]))
+                for lp, uv in zip(f.loops, ((ua, v0), (ub, v0), (ub, v1), (ua, v1))):
+                    lp[uvl].uv = uv
     n_cards = 0
     for layer, every, w in ((0, 3, .7), (1, 2, .6), (2, 3, .56)):
         for k, (r0, n) in enumerate(roots):
             if k % every:
                 continue
-            pts, kf = guide(r0 + n * ((.04 + .08 * layer) * R), n, layer)
-            card(settle(pts, kf, layer), w * narrow * R * (.8 + .4 * rnd.random()), rnd.randrange(4))
+            pts, kf = guide(r0 + n * ((.01 + (.03 + .08 * layer) * smooth(0., .45 * R, hair_field(r0))) * R), n, layer)
+            card(settle(pts, kf, layer), w * narrow * R * (.8 + .4 * rnd.random()), rnd.randrange(4), kf)
             n_cards += 1
     print("cards", n_cards, flush=True)
     cm = bpy.data.meshes.new("hair_cards"); bm.to_mesh(cm); bm.free()
@@ -520,19 +555,10 @@ def build_cards(L, part, cut_z, wave=0., messy=0., swept=0., narrow=1.):
     im = save("strands", atlas, True)
     m_cards, _ = material("hair_strands", im, True)
     cm.materials.append(m_cards)
-    # the cap: the scalp, a little off it, darker (the hair's depth), its strands from the parting down
-    cap = scalp_shell(hairline, lambda v: .05 * R, "hair_cap")
-    for f in cap.data.polygons:
-        f.use_smooth = True
-    uvc = cap.data.uv_layers.new(name="UVMap")
-    for poly in cap.data.polygons:
-        for li in poly.loop_indices:
-            c = cap.data.vertices[cap.data.loops[li].vertex_index].co - O
-            uvc.data[li].uv = ((.02 + .2 * ((-c.y / (1.5 * R)) % 1.0)), .2 + .5 * math.atan2(abs(c.x - (px - O.x)), c.z) / math.pi)
-    dark = atlas.copy(); dark[..., :3] *= .38; dark[..., 3] = 1   # (the hair's depth: dark, no light patch on the crown)
-    m_cap, _ = material("hair_cap", save("cap", dark, False), False, .8)
-    cap.data.materials.append(m_cap)
-    return [cards, cap], cap
+    # the hair on the skull: the smooth base, its locks from the parting down and out, on to a ring under the head
+    ring = [Vector((O.x + 1.2 * R * math.sin(a), O.y - 1.2 * R * math.cos(a), O.z - 3.5 * R)) for a in (k * math.pi / 8 for k in range(16))]
+    top, solid = sleek_base(ring, lift=.05, part=1.1, name="top", px=px)
+    return [cards, top], solid
 
 
 def scalp_shell(region, lift, name, close=0):
@@ -2723,7 +2749,7 @@ def crown_loop(zf, zs, zb, out):
     return pts, nrm
 
 
-def sleek_base(gathers, lift=.035, part=.9, name="sleek"):
+def sleek_base(gathers, lift=.035, part=.9, name="sleek", px=None):
     """the hair combed smooth to where it is gathered: the scalp under the hairline raised a little (rounded off to its
     edge, fuller round the gatherings), its locks long and fine, each from the middle parting out and on to the
     nearest gathering (the way to it, the parting's: their sum's way - the hairs' flow)"""
@@ -2760,7 +2786,7 @@ def sleek_base(gathers, lift=.035, part=.9, name="sleek"):
         bmesh.ops.smooth_vert(bm, verts=[v for v in bm.verts if dist[v.index] > 0], factor=.5, use_axis_x=True, use_axis_y=True, use_axis_z=True)
     push_out(bm, .02 * R)
     bm.verts.ensure_lookup_table()
-    px = O.x
+    px = O.x if px is None else px   # (the parting: the middle, or to a side)
     UVV = {}
     for v in bm.verts:   # (the flow's distance: on to the gathering; out from the parting over the top in front)
         rel = v.co - O
