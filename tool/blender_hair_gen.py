@@ -6,7 +6,8 @@ and put on it (a MADE piece, as blender_footwear_gen.py).
 job.json: {"style": long | bob | back | crop | short | mohawk, "params": {"length": share of the height, "color":
            linear rgb, "seed"}, "out": piece.glb, "work": a folder, "character": rigged.glb, "names": {naming: {joint:
            bone}}, "mask": mask.json, "uv_out": (made for the character, not a style's preview: its colour in the
-           texture; a preview's is grey, the editor tints it)}
+           texture; a preview's is grey, the editor tints it), "template": the user's default beard outlines (over
+           tool/beard_template.json), "learn": a template file the nodes fitted by hand go into (only that is done)}
 
 Two ways, after what games do (and what the user chose from the prototypes):
 - long hair, a bob: hair cards - strips with a strands texture (alpha) laid along strands. Each strand grows from
@@ -1096,13 +1097,16 @@ def node_denorm(F, rec):
 
 
 def load_template(F, st):
-    """this style's default nodes on this face (none for a style made by hand without them)"""
+    """this style's default nodes on this face: the user's own (job's «template»: «Remember as the default» in the editor)
+    over the toolkit's (tool/beard_template.json); a style with none of its own takes another's"""
     TPL.clear(); MUST_TPL.clear()
-    try:
-        tp = json.loads(TPL_FILE.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return
-    rec = tp.get(st) or tp.get(TPL_FROM.get(st, ""), {})
+    srcs = []
+    for f in (job.get("template"), TPL_FILE):
+        try:
+            srcs.append(json.loads(Path(f).read_text(encoding="utf-8")) if f else {})
+        except (OSError, ValueError):
+            srcs.append({})
+    rec = next((src[k] for k in (st, TPL_FROM.get(st)) for src in srcs if k and isinstance(src.get(k), dict)), {})
     for k, r in rec.items():
         if isinstance(r, list) and len(r) == 4:
             (MUST_TPL if k.startswith("must") else TPL)[k] = node_denorm(F, r)
@@ -1407,8 +1411,7 @@ def build_beard(st):
     if job.get("learn"):   # (the nodes fitted by hand kept as the default: only that)
         learn_template(F, st, job["learn"])
         sys.exit(0)
-    if st != "mustache":
-        load_template(F, st)
+    load_template(F, st)
     vol = float(prm.get("vol", 1.))
     Lh = float(prm.get("length", .05)) * H * cfg["hang"]
     obs = []

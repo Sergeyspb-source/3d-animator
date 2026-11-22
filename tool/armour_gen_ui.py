@@ -707,6 +707,39 @@ def _under(rigged: Path, req) -> list:
     return sorted(out)
 
 
+def beard_template(cfg) -> Path:
+    """The user's own default beard outlines («Remember as the default»), over the toolkit's tool/beard_template.json."""
+    return Path(cfg["export_dir"]) / "beard_template.json"
+
+
+def contour_learn(cfg, req) -> dict:
+    """«Remember as the default»: a beard's outline nodes as fitted by hand become its style's default for every
+    character, kept by the face's measures (blender_hair_gen.py's learn: the mouth's width, the chin, the eyes, the
+    head's half width) in <export>/beard_template.json. {ok, log}."""
+    rigged, style = Path(req["rigged"]), req.get("style")
+    if style not in BEARDS:
+        return {"ok": False, "log": _t("ag.unknown_piece", style)}
+    nodes = req.get("nodes") if isinstance(req.get("nodes"), dict) else {}
+    hp = _beard_params({**(req.get("params") or {}), "beard": style, "beard_nodes": {style: nodes}})
+    if not hp.get("nodes"):
+        return {"ok": False, "log": _t("ag.contour_learn_none")}
+    d = Path(cfg["work_dir"]) / "helmets" / LM._slug(LM._stem(rigged))
+    d.mkdir(parents=True, exist_ok=True)
+    job = {"style": style[len("beard_"):], "params": hp, "out": str(d / "learn.glb"), "work": str(d), "character": str(rigged),
+           "piece": "beard", "names": {n: LM.bone_names(n) for n in ("mixamo", "godot")}, "face": _face_marks(rigged),
+           "learn": str(beard_template(cfg))}
+    (d / "learn.job.json").write_text(json.dumps(job, ensure_ascii=False), encoding="utf-8")
+    blender = cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe"
+    r = subprocess.run([blender, "-b", "--factory-startup", "-P", str(ROOT / "blender_hair_gen.py"), "--", str(d / "learn.job.json")],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300,
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    (d / "learn.log").write_text(r.stdout + r.stderr, encoding="utf-8")
+    if not any(x.startswith("tmpl learnt") for x in r.stdout.splitlines()):
+        bad = next((x[len("ARMOUR_GEN_FAIL "):] for x in r.stdout.splitlines() if x.startswith("ARMOUR_GEN_FAIL")), None)
+        return {"ok": False, "log": _t("ag.failed") + (bad or (r.stdout + r.stderr)[-1500:])}
+    return {"ok": True, "log": _t("ag.contour_learnt", style[len("beard_"):])}
+
+
 def made_preview(cfg, req) -> dict:
     """A piece the generators make (MADE: a helmet, elbows), of a style, made for the character to look at while it is
     chosen (as «Generate» makes it, 5-20 s): work/helmets/<character>/<style>_<the parameters>.glb with its mask, made
@@ -732,11 +765,14 @@ def made_preview(cfg, req) -> dict:
     d = Path(cfg["work_dir"]) / "helmets" / LM._slug(LM._stem(rigged))
     d.mkdir(parents=True, exist_ok=True)
     glb, mask = d / f"{style}{tag}.glb", d / f"{style}{tag}.mask.json"
+    tpl = [f for f in (beard_template(cfg), ROOT / "beard_template.json") if f.exists()] if piece == "beard" else []   # (a beard's default outline)
     if not (glb.exists() and mask.exists() and glb.stat().st_mtime > max(rigged.stat().st_mtime, (ROOT / script).stat().st_mtime,
-                                                                       wig.stat().st_mtime if wig is not None else 0)):
+                                                                       wig.stat().st_mtime if wig is not None else 0,
+                                                                       *(f.stat().st_mtime for f in tpl))):
         job = {"style": style[len(prefix):], "params": hp, "sides": sides, "out": str(glb), "work": str(d), "character": str(rigged), "piece": piece,
                "names": {n: LM.bone_names(n) for n in ("mixamo", "godot")}, "mask": str(mask), "under": under,
-               "face": _face_marks(rigged) if piece == "beard" else {}}   # (a beard by the face's markup: the mouth, the lips)
+               "face": _face_marks(rigged) if piece == "beard" else {},   # (a beard by the face's markup: the mouth, the lips)
+               "template": str(beard_template(cfg)) if piece == "beard" else ""}
         (d / f"{style}{tag}.job.json").write_text(json.dumps(job, ensure_ascii=False), encoding="utf-8")
         blender = cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe"
         r = subprocess.run([blender, "-b", "--factory-startup", "-P", str(ROOT / script), "--", str(d / f"{style}{tag}.job.json")],
@@ -802,6 +838,7 @@ def generate(cfg, req) -> dict:
         job.update(style=style[len(made[2]):], params=made[3](params))
         if piece == "beard":
             job["face"] = _face_marks(rigged)
+            job["template"] = str(beard_template(cfg))   # (its default outline: the user's own over the toolkit's)
         if wig is not None:
             job["params"]["model"] = str(wig)
         if isinstance(params.get("made_look"), list):   # another material than the generator's (the editor's specs by slot)
@@ -1081,6 +1118,14 @@ def handle(cfg, text):
         except Exception as e:  # noqa: BLE001
             res = {"ok": False, "log": _t("lm.error", e)}
         WF.status(cfg, rigged, f"_remove_{item}").write_text(
+            json.dumps({"id": req.get("id"), **res}, ensure_ascii=False), encoding="utf-8")
+        return res["log"], None
+    if req.get("action") == "contour_learn":   # answered in <stem>_contour_learn.wear.json
+        try:
+            res = contour_learn(cfg, req)
+        except Exception as e:  # noqa: BLE001
+            res = {"ok": False, "log": _t("lm.error", e)}
+        WF.status(cfg, Path(req["rigged"]), "_contour_learn").write_text(
             json.dumps({"id": req.get("id"), **res}, ensure_ascii=False), encoding="utf-8")
         return res["log"], None
     if req.get("action") == "made_preview":   # answered in <stem>_helmet_<style>.wear.json

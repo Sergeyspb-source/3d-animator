@@ -5937,7 +5937,7 @@ function buildPanel() {
     (gi === HAIR_GI ? `<div class="note" id="r_wigs" style="margin:2px 0 6px">${'{{js:ag.hair_models_note}}'.replace('{0}', DATA.hair_models_dir || '')}</div><div class="row" id="r_hairc"><span class="note">{{js:ag.hair_colour}}</span><span class="seg" id="hairCols">${HAIR_COLOURS.map((c) => `<button data-hc="${c}" style="background:${c};width:22px;min-width:22px" title="${c}">&nbsp;</button>`).join('')}</span><input type="color" id="i_hairc"></div>` +
       `<div id="r_must"><div class="note">{{js:ag.must_mode}}</div><div class="row" style="margin:2px 0 4px"><span class="seg" id="mustSeg">` +
       ['merge', 'over', 'none'].map((m) => `<button data-must="${m}">${'{{js:ag.must_merge}}|{{js:ag.must_over}}|{{js:ag.must_none}}'.split('|')[['merge', 'over', 'none'].indexOf(m)]}</button>`).join('') + `</span></div></div>` +
-      `<div id="r_contour"><div class="row" style="margin:4px 0 2px"><span class="seg"><button id="b_contour" title="{{js:ag.contour_info}}">{{js:ag.contour}}</button><button id="b_creset">{{js:ag.contour_reset}}</button></span>` +
+      `<div id="r_contour"><div class="row" style="margin:4px 0 2px"><span class="seg"><button id="b_contour" title="{{js:ag.contour_info}}">{{js:ag.contour}}</button><button id="b_creset">{{js:ag.contour_reset}}</button><button id="b_clearn" title="{{js:ag.contour_learn_info}}">{{js:ag.contour_learn}}</button></span>` +
       `<label class="chk" style="margin-left:8px"><input type="checkbox" id="i_csym" checked> {{js:ag.contour_sym}}</label></div><div class="note" id="contourNote">{{js:ag.contour_info}}</div></div>` : '') +
     (gi === GOR_GI ? `<label class="chk" id="r_bevor" title="{{js:ag.bevor_info}}"><input type="checkbox" id="i_bevor"> {{js:ag.bevor}}</label>` : '') +
     (gi === HELD_GI ? `<label class="chk" id="r_w_magnet" title="{{js:ag.w_magnet_info}}"><input type="checkbox" id="i_w_magnet"> {{js:ag.w_magnet}}</label>` +
@@ -6016,6 +6016,7 @@ function buildPanel() {
   $('mustSeg').addEventListener('click', (e) => { const m = e.target.dataset.must; if (m) { S.p.beard_must = m; changed('must'); } });
   $('remade').addEventListener('click', () => { madeForce = true; changed('made'); });
   $('i_csym').addEventListener('change', (e) => { CONTOUR.sym = e.target.checked; });
+  $('b_clearn').addEventListener('click', contourLearn);
   $('b_creset').addEventListener('click', () => { const key = S.piece + '_nodes'; if (S.p[key]) { S.p[key] = { ...S.p[key] }; delete S.p[key][S.p[S.piece]]; } CONTOUR.nodes = null; changed('contour'); });
   $('i_hairc').addEventListener('input', (e) => { S.p.hair_color = e.target.value; changed('look'); });
   $('matSeg').addEventListener('click', (e) => { const m = e.target.dataset.mat; if (m === undefined) return;
@@ -6106,6 +6107,7 @@ function syncPanel() {
   $('i_hairc').value = S.p.hair_color || '#3b2618';
   if ($('r_wigs')) $('r_wigs').textContent = (S.piece === 'beard' ? '{{js:ag.beard_models_note}}' : '{{js:ag.hair_models_note}}').replace('{0}', (S.piece === 'beard' ? DATA.beard_models_dir : DATA.hair_models_dir) || '');
   if ($('r_contour')) $('r_contour').hidden = !contourPiece();   // (fitting by hand: a beard, a hairstyle made here)
+  if ($('b_clearn')) $('b_clearn').hidden = S.piece !== 'beard';   // (a beard's nodes kept as its style's default)
   if ($('r_must')) {   // (a beard's moustache: into it, over it, none - a beard with one)
     $('r_must').hidden = !(S.piece === 'beard' && ['short', 'full', 'long', 'goatee'].includes(S.p.beard_style));
     for (const b of $('mustSeg').children) b.classList.toggle('on', b.dataset.must === (S.p.beard_must || 'merge'));
@@ -6529,6 +6531,16 @@ window.agContour = () => {   // (the tests: each node's place on the screen, in 
   return Object.fromEntries(Object.entries(CONTOUR.group.visible ? CONTOUR.nodes || {} : {}).map(([k, p]) => { const q = p.clone().project(camera); return [k, [(q.x + 1) / 2 * rc.width + rc.left, (1 - q.y) / 2 * rc.height + rc.top]]; }));
 };
 controls.addEventListener('end', () => { if (CONTOUR.group.visible && !CONTOUR.drag) contourDraw(false); });
+// «Remember as the default»: the nodes as they are now (shown, or as last moved) become the style's default for every
+// character (armour_gen_ui.contour_learn: kept by the face's measures in export/beard_template.json)
+async function contourLearn() {
+  if (S.piece !== 'beard' || busy) return;
+  const st = S.p.beard, N = CONTOUR.group.visible && CONTOUR.nodes ? CONTOUR.nodes : null;
+  const nodes = N ? Object.fromEntries(Object.entries(N).map(([k, v]) => [k, [+v.x.toFixed(5), +v.y.toFixed(5), +v.z.toFixed(5)]])) : contourUser();
+  if (!nodes) { $('status').textContent = '{{js:ag.contour_learn_none}}'; return; }
+  const js = await send('contour_learn', { piece: 'beard', style: st, params: S.p, nodes }, '{{js:ag.contour_learning}}', '_contour_learn');
+  if (js && js.ok) madeCache.clear();   // (the previews made by the old default)
+}
 function contourToggle(on) {
   CONTOUR.on = on;
   if (on && pose !== 'rest') { pose = 'rest'; for (const b of $('poses').children) b.classList.toggle('on', b.dataset.p === 'rest'); applyPose(); }   // (the nodes are on the skin at rest)
