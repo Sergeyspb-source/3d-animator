@@ -867,7 +867,7 @@ if job.get("mask"):   # what of the body the piece hides (the game takes it away
     if mj.get("skin_mask") is not None:   # (hair, a beard: the editor's own - the skin under their base)
         keys = {tuple(int(c) for c in x) for x in mj["skin_mask"]}
     else:
-        keys = {tuple(x) for x in body_mask(body, [obj], cover=30, erode=1)}   # only what it really covers: no holes beside a strap or at a rim
+        keys = {tuple(x) for x in body_mask(body, [obj], cover=30, erode=int(job.get("mask_erode", 1)))}   # only what it really covers: no holes beside a strap or at a rim (a garment: more, job mask_erode)
     head_b = arm.data.bones.get(names.get("head", ""))
     if job.get("style") == "coif" and head_b:
         # the hair goes under a coif (a bag round the head, the hair may be sculpted on the skin): on the head what it
