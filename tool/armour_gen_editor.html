@@ -2332,21 +2332,22 @@ function hangStrip(acc, A, E, w, L, th, under, mat, role, face, waves = 0, flare
   };
   solid(acc, rows, cols, false, P, mat, role, (i, j) => [(cols[j] + 1) * w / LOOK.U, rows[i] * L / LOOK.U], () => face);
 }
-// a tube through points (a rope, a cord, a drawstring): r its radius (a number or per point)
-function tubeAlong(acc, pts, r, mat, role, face, n = 8, closed = false) {
-  const m = pts.length, rings = [], along = [0];
+// a tube through points (a rope, a cord, a drawstring): r its radius, face its weights' face (each a number or per point);
+// flat: its section squashed across (sideways of a level tube: a fold lying on a back)
+function tubeAlong(acc, pts, r, mat, role, face, n = 8, closed = false, flat = 1) {
+  const m = pts.length, rings = [], along = [0], faceOf = (i) => (Array.isArray(face) ? face[i] : face);
   for (let i = 1; i < m; i++) along.push(along[i - 1] + pts[i].distanceTo(pts[i - 1]));
   for (let i = 0; i < m; i++) {
     const T = (closed ? pts[(i + 1) % m] : pts[Math.min(m - 1, i + 1)]).clone().sub(closed ? pts[(i - 1 + m) % m] : pts[Math.max(0, i - 1)]).normalize();
     const e1 = new V3().crossVectors(T, Math.abs(T.y) < .9 ? UP : FRONT).normalize(), e2 = new V3().crossVectors(T, e1);
     const rr = Array.isArray(r) ? r[i] : r;
-    rings.push(Array.from({ length: n }, (_, j) => acc.vert(pts[i].clone().addScaledVector(e1, rr * Math.cos(j / n * TAU)).addScaledVector(e2, rr * Math.sin(j / n * TAU)), j / n * TAU * rr / LOOK.U, along[i] / LOOK.U, face)));
+    rings.push(Array.from({ length: n }, (_, j) => acc.vert(pts[i].clone().addScaledVector(e1, flat * rr * Math.cos(j / n * TAU)).addScaledVector(e2, rr * Math.sin(j / n * TAU)), j / n * TAU * rr / LOOK.U, along[i] / LOOK.U, faceOf(i))));
   }
   for (let i = 0; i < (closed ? m : m - 1); i++) for (let j = 0; j < n; j++) {
     const a = rings[i], b = rings[(i + 1) % m], j2 = (j + 1) % n; acc.face([a[j], a[j2], b[j2], b[j]], mat, role);
   }
-  if (!closed) for (const [ring, rev] of [[rings[0], true], [rings[m - 1], false]]) {
-    const c = acc.vert(ring.map((k) => new V3(acc.v[3 * k], acc.v[3 * k + 1], acc.v[3 * k + 2])).reduce((s, x) => s.add(x), new V3()).multiplyScalar(1 / n), .5, .5, face);
+  if (!closed) for (const [ring, rev, fi] of [[rings[0], true, 0], [rings[m - 1], false, m - 1]]) {
+    const c = acc.vert(ring.map((k) => new V3(acc.v[3 * k], acc.v[3 * k + 1], acc.v[3 * k + 2])).reduce((s, x) => s.add(x), new V3()).multiplyScalar(1 / n), .5, .5, faceOf(fi));
     for (let j = 0; j < n; j++) { const f = [c, ring[j], ring[(j + 1) % n]]; acc.face(rev ? f.reverse() : f, mat, role); }
   }
 }
@@ -2697,9 +2698,12 @@ function hood(p) {
   // the hood down: a cowl round the back of the neck on the capelet's top edge (thicker behind), its bag lying on the back
   const cowl = Math.max(0, p.hd_cowl ?? 1), back = (j) => Math.max(0, -Math.cos(ths[j]));
   if (cowl > 0) {
-    const js = cols.filter((j) => Math.cos(ths[j]) < .55), top = js.map((j) => base[0][j]), rr = js.map((j) => (.008 + .015 * back(j) ** 1.5) * H * cowl);
-    const pts = top.map((b, k) => b.X.clone().addScaledVector(b.d, thm + rr[k] * .7).add(new V3(0, rr[k] * .4, 0)));
-    tubeAlong(acc, pts, rr, PLATE, 'plate', top[js.length >> 1].f, 12);
+    // (behind the neck only, thinning to nothing behind the ears; each point with the weights of the capelet's edge
+    // under it - one face's for all, the neck's, it went with the head and stood up off the capelet by the ear in a run)
+    const js = cols.filter((j) => Math.cos(ths[j]) < -.05), top = js.map((j) => base[0][j]), rr = js.map((j) => (.002 + .02 * smooth(.05, .6, back(j))) * H * cowl);
+    // (a fold lying on the capelet's edge and down the back, squashed against it: a round roll stood up behind the head)
+    const pts = top.map((b, k) => b.X.clone().addScaledVector(b.d, thm + rr[k] * .5).add(new V3(0, -rr[k] * .25, 0)));
+    tubeAlong(acc, pts, rr, PLATE, 'plate', top.map((b) => ({ f: b.f, X: b.X })), 12, false, .5);
     // the hood's bag: from under the cowl down the back to a point, lying on the capelet
     const jb = js.filter((j) => back(j) > .82), iMax = Math.min(nv - 1, Math.round(nv * .9));
     if (jb.length > 3) solid(acc, lin(0, iMax, 10), jb.map((_, k) => k), false, (ii, k, sd) => {
