@@ -102,6 +102,9 @@ static func wear(character: Node, piece: PackedScene, mask := "", layer := -1.0)
 				_grip(skel).point(hold.substr(0, 1), Vector3(float(pt[0]), float(pt[1]), float(pt[2])) / 1000.0, true)
 	inst.free()
 	var kind := piece.resource_path.get_file().get_basename().trim_prefix("wear_").trim_prefix("proc_").get_slice("_", 0)
+	for mi in out:   # brows, lashes: fine hairs on the face - no shadows (a card's whole shape fell on the cheek)
+		if kind in ["brows", "lashes"] or String(mi.name).begins_with("brows") or String(mi.name).begins_with("lashes"):
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	if layered and (LAYER.has(kind) or layer >= 0.0):   # (a weapon, a shield, a quiver: in a hand or on a strap, not in the layers)
 		for mi in out:
 			if not mi.has_meta("sf3d_hold"):
@@ -1165,6 +1168,10 @@ static func _hide_pieces(skel: Node) -> void:
 			mi.mesh = full
 			continue
 		var am := ArrayMesh.new()
+		for b in full.get_blend_shape_count():   # (its shape keys kept: brows, lashes move with the face)
+			am.add_blend_shape(full.get_blend_shape_name(b))
+		if full is ArrayMesh:
+			am.blend_shape_mode = (full as ArrayMesh).blend_shape_mode
 		for s in full.get_surface_count():
 			var arrays := full.surface_get_arrays(s)
 			var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
@@ -1182,7 +1189,7 @@ static func _hide_pieces(skel: Node) -> void:
 			if keep.is_empty():   # (a surface all out: one degenerate triangle keeps the surface, its material's place)
 				keep = PackedInt32Array([idx[0], idx[0], idx[0]])
 			arrays[Mesh.ARRAY_INDEX] = keep
-			am.add_surface_from_arrays(full.surface_get_primitive_type(s), arrays)
+			am.add_surface_from_arrays(full.surface_get_primitive_type(s), arrays, full.surface_get_blend_shape_arrays(s))
 			am.surface_set_material(s, full.surface_get_material(s))
 		mi.mesh = am
 

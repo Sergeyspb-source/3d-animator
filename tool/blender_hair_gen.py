@@ -1166,7 +1166,7 @@ def b2gl(p):
 
 
 NODES_IN = {k: gl2b(v) for k, v in (prm.get("nodes") or {}).items() if isinstance(v, (list, tuple)) and len(v) == 3}
-NODES_OUT, LOOP = {}, []
+NODES_OUT, LOOP, LOOPS_OUT = {}, [], []
 # the default outline: nodes fitted by hand (the user's, on a character) kept by the face's measures, put on another face by
 # them - each style's own (a goatee's jaw under the chin, a full beard's sideburns by the ear's top...); a style with
 # none of its own takes another's
@@ -2984,6 +2984,676 @@ def temple_braids(bm, uvl, w, out, a1=180., z0=.38, z1=.08):
         braid(bm, uvl, pts, w, tassel=0., tie=a1 < 179., outs=nrm)
 
 
+# ---------------------------------------------------------------- brows and lashes: the face's own hair
+# Both move with the face: they carry its shape keys by the same names (a brow the skin's under it; a lash its lid's -
+# the eyelid shell's turn, or the skin's margin under its root), so the editor, lip sync, the emotions and Godot (which
+# drive blend shapes by name on every mesh of the character) move them with it. Weighted to the head; they hide nothing.
+from mathutils.interpolate import poly_3d_calc   # noqa: E402
+
+FACE_HAIR = ("brows", "lashes")
+EYE_C = {sd: W @ bone(k).head_local for sd, k in (("L", "eye_L"), ("R", "eye_R")) if bone(k)}
+
+
+def eye_ball(sd):
+    """an eye's centre (its bone's head: the ball's centre) and its ball's radius (its mesh; else a share of the head's)"""
+    c = EYE_C.get(sd)
+    ob = bpy.data.objects.get(f"Eye_{sd}")
+    if ob is not None and ob.type == "MESH" and len(ob.data.vertices):
+        vs = [ob.matrix_world @ v.co for v in ob.data.vertices]
+        if c is None:
+            c = sum(vs, Vector()) / len(vs)
+        return c, .5 * (max(v.x for v in vs) - min(v.x for v in vs))
+    return c, .2 * R
+
+
+def lid_ang(c, p):   # (a point's elevation about the ball's centre in its side plane: as the eyelid shells turn)
+    return math.atan2(p.z - c.z, c.y - p.y)
+
+
+def lid_turn(c, p, d):   # (p turned down by d about the ball's lateral axis: the shells' blink)
+    q = p - c
+    rho, ph = math.hypot(q.y, q.z), math.atan2(q.z, -q.y) - d
+    return c + Vector((q.x, -rho * math.cos(ph), rho * math.sin(ph)))
+
+
+def wrap(a):
+    return (a + math.pi) % (2 * math.pi) - math.pi
+
+
+def along_x(pts, f, x):   # (f of a line's points, between them by x)
+    sp_ = sorted(pts, key=lambda p: p.x)
+    if x <= sp_[0].x:
+        return f(sp_[0])
+    for a_, b_ in zip(sp_, sp_[1:]):
+        if x <= b_.x:
+            t = (x - a_.x) / ((b_.x - a_.x) or 1e-9)
+            return f(a_) * (1 - t) + f(b_) * t
+    return f(sp_[-1])
+
+
+_OPEN = {}
+
+
+def shells_tree(sd):
+    """the eyelid shells of an eye (EyeLid_<side>, built with the eyes: blender_eye_insert.lid_shells) as a tree to cast
+    rays at, or None"""
+    ob = bpy.data.objects.get(f"EyeLid_{sd}")
+    if ob is None or ob.type != "MESH" or len(ob.data.vertices) < 20:
+        return None
+    M = ob.matrix_world
+    return BVHTree.FromPolygons([M @ v.co for v in ob.data.vertices], [list(f.vertices) for f in ob.data.polygons])
+
+
+def eye_opening(sd):
+    """the eye's opening as one sees it, found from the ball's centre: a ray out through it meets nothing, one into a lid
+    does - the skin, or an eyelid shell (where the character has them: the skin's cut is wider, hidden under them; where
+    the skin hangs lower than a shell's edge it is the lid) - near, within a few radii. Per column round the ball (its
+    azimuth) the upper and the lower lid's margin - the first ray up, down from an open one meeting a lid - from the
+    inner corner (by the nose) to the outer.
+    -> dict(c, r, up, lo: [points on the margins, inner to outer], inner, outer, top, shells) or None (no eye cut)"""
+    if sd in _OPEN:
+        return _OPEN[sd]
+    c, r = eye_ball(sd)
+    _OPEN[sd] = None
+    if c is None:
+        return None
+    shells = shells_tree(sd)
+    r0, reach = .97 * r, 2.6 * r   # (from just inside the ball: skin tucked in under it is not a lid)
+
+    def ray(th, ph):
+        d = Vector((math.sin(th) * math.cos(ph), -math.cos(th) * math.cos(ph), math.sin(ph)))
+        hs = [h for h in (full.ray_cast(c + d * r0, d, reach - r0), shells.ray_cast(c + d * r0, d, reach - r0) if shells else (None,) * 4)
+              if h[0] is not None]
+        return min(hs, key=lambda h: h[3])[0] if hs else None
+
+    def edge(th, ph0, sgn):   # (from an open ray up or down to the first meeting the skin: its place there)
+        a, b, p = ph0, None, ph0
+        while abs(p) < 1.45:
+            p += sgn * .06
+            if ray(th, p) is not None:
+                b = p
+                break
+            a = p
+        if b is None:
+            return None
+        for _ in range(9):
+            m_ = .5 * (a + b)
+            if ray(th, m_) is not None:
+                b = m_
+            else:
+                a = m_
+        return ray(th, b)
+
+    NC = 49
+    cols = []
+    for i in range(NC):
+        th = math.radians(-78 + 156 * i / (NC - 1))
+        ph0 = next((p for p in (0., .08, -.08, .16, -.16, .26, -.26, .36, -.36) if ray(th, p) is None), None)
+        u_, l_ = (edge(th, ph0, 1), edge(th, ph0, -1)) if ph0 is not None else (None, None)
+        ok = u_ is not None and l_ is not None and (u_ - c).length < 2.3 * r and (l_ - c).length < 2.3 * r
+        cols.append((u_, l_) if ok else None)
+    near = [i for i in range(NC) if cols[i] is not None]
+    if not near:
+        return None
+    mid = min(near, key=lambda i: abs(i - NC // 2))   # (the run of open columns round the front: the opening)
+    i0 = i1 = mid
+    while i0 > 0 and cols[i0 - 1] is not None:
+        i0 -= 1
+    while i1 < NC - 1 and cols[i1 + 1] is not None:
+        i1 += 1
+    if i1 - i0 < 4:
+        return None
+    up = [cols[i][0] for i in range(i0, i1 + 1)]
+    lo = [cols[i][1] for i in range(i0, i1 + 1)]
+    if abs(up[0].x - O.x) > abs(up[-1].x - O.x):   # (the inner corner first: nearer the face's middle)
+        up, lo = up[::-1], lo[::-1]
+    ends = ((up[0] + lo[0]) / 2, (up[-1] + lo[-1]) / 2)   # (where it closes)
+
+    def smoothed(pts):   # (the rays' steps off the mesh's faces smoothed out, back on the skin)
+        for _ in range(3):
+            pts = [pts[0]] + [pts[i] * .5 + (pts[i - 1] + pts[i + 1]) * .25 for i in range(1, len(pts) - 1)] + [pts[-1]]
+        return pts
+    up, lo = smoothed([ends[0]] + up + [ends[1]]), smoothed([ends[0]] + lo + [ends[1]])
+    _OPEN[sd] = dict(c=c, r=r, up=up, lo=lo, inner=ends[0], outer=ends[1], top=max(up, key=lambda p: p.z), shells=shells is not None)
+    return _OPEN[sd]
+
+
+_SKEYS = []
+
+
+def skin_keys():
+    """the skin's shape keys as moves in the world (numpy: key, vertex, xyz) and their names (the face's: the brows,
+    the blinks, the mouth...)"""
+    if not _SKEYS:
+        names, D = [], None
+        sk = me.shape_keys
+        if sk is not None and len(sk.key_blocks) > 1:
+            n = len(me.vertices)
+            base = np.empty(n * 3, np.float32)
+            sk.key_blocks[0].data.foreach_get("co", base)
+            M3 = np.array(skin.matrix_world.to_3x3(), np.float32)
+            arr = []
+            for kb in sk.key_blocks[1:]:
+                a_ = np.empty(n * 3, np.float32)
+                kb.data.foreach_get("co", a_)
+                d_ = (a_ - base).reshape(-1, 3) @ M3.T
+                if np.abs(d_).max() > 1e-7:
+                    names.append(kb.name)
+                    arr.append(d_)
+            D = np.stack(arr) if arr else None
+        _SKEYS.extend([names, D])
+    return _SKEYS
+
+
+def skin_moves(p):
+    """each key's move of the skin at a point on (or by) it: its nearest face's, between that face's corners -> (key, xyz)"""
+    names, D = skin_keys()
+    if D is None:
+        return None
+    loc, nrm, fi, dist = full.find_nearest(p)
+    if loc is None:
+        return None
+    vs = P[fi]
+    w = poly_3d_calc([V[i] for i in vs], loc)
+    return sum(D[:, i, :] * float(wt) for i, wt in zip(vs, w))
+
+
+def strokes_img(TW, TH, strokes, ss=2):
+    """fine hairs drawn as soft lines (supersampled): each (its points in pixels - x, y up from the bottom row -, its half
+    widths along it, its alpha along it, its light) -> alpha, light (rows bottom up)"""
+    A = np.zeros((TH * ss, TW * ss), np.float32)
+    Lm = np.zeros((TH * ss, TW * ss), np.float32)
+    xs, ys, rs_, als, lus = [], [], [], [], []
+    for pts, wd, al, lu in strokes:
+        pts = np.asarray(pts, np.float32) * ss
+        seg = np.hypot(*np.diff(pts, axis=0).T)
+        cum = np.concatenate([[0.], np.cumsum(seg)])
+        tot = float(cum[-1])
+        if tot < 1e-3:
+            continue
+        n = max(2, int(tot * 1.5))
+        s = np.linspace(0., tot, n)
+        f = s / tot
+        xs.append(np.interp(s, cum, pts[:, 0]))
+        ys.append(np.interp(s, cum, pts[:, 1]))
+        rs_.append(np.interp(f, np.linspace(0., 1., len(wd)), np.asarray(wd, np.float32)) * ss)
+        als.append(np.interp(f, np.linspace(0., 1., len(al)), np.asarray(al, np.float32)))
+        lus.append(np.full(n, lu, np.float32))
+    if not xs:
+        return np.zeros((TH, TW), np.float32), np.zeros((TH, TW), np.float32)
+    x, y, rr = np.concatenate(xs), np.concatenate(ys), np.concatenate(rs_)
+    a, lu = np.concatenate(als), np.concatenate(lus)
+    xi0, yi0 = np.round(x).astype(int), np.round(y).astype(int)
+    K = int(np.ceil(rr.max())) + 1
+    H_, W_ = A.shape
+    for dy in range(-K, K + 1):
+        for dx in range(-K, K + 1):
+            xi, yi = xi0 + dx, yi0 + dy
+            cov = np.clip(rr + .5 - np.hypot(xi - x, yi - y), 0., 1.) * a
+            ok = (cov > 0) & (xi >= 0) & (xi < W_) & (yi >= 0) & (yi < H_)
+            if ok.any():
+                np.maximum.at(A, (yi[ok], xi[ok]), cov[ok])
+                np.maximum.at(Lm, (yi[ok], xi[ok]), np.where(cov > .3, lu, 0.)[ok])
+    return A.reshape(TH, ss, TW, ss).mean(axis=(1, 3)), Lm.reshape(TH, ss, TW, ss).max(axis=(1, 3))
+
+
+def blend_mat(name, im, rough=.55):
+    """the image's colour, its alpha blended (glTF's BLEND): fine hairs - cut by the alpha they went to nothing in the
+    distance (the mip-maps' alpha under the cut)"""
+    m, t = material(name, im, False, rough)
+    b = next(n for n in m.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
+    m.node_tree.links.new(t.outputs["Alpha"], b.inputs["Alpha"])
+    try:   # (matt: a glossy band of fine hairs caught the light - pale brows)
+        b.inputs["Specular IOR Level"].default_value = .08
+    except KeyError:
+        pass
+    for attr, val in (("surface_render_method", "BLENDED"), ("blend_method", "BLEND")):
+        if hasattr(m, attr):
+            try:
+                setattr(m, attr, val)
+            except TypeError:
+                pass
+    return m
+
+
+def face_obj(name, verts, faces, uvs, mat, keys):
+    """a mesh of the face's hair: its vertices (world), quads, a uv a vertex, its material, its shape keys {name:
+    positions} (at 0: rest)"""
+    m_ = bpy.data.meshes.new(name)
+    m_.from_pydata([tuple(v) for v in verts], [], faces)
+    uvl = m_.uv_layers.new(name="UVMap")
+    for poly in m_.polygons:
+        poly.use_smooth = True
+        for li in poly.loop_indices:
+            uvl.data[li].uv = uvs[m_.loops[li].vertex_index]
+    m_.materials.append(mat)
+    ob = bpy.data.objects.new(name, m_)
+    sc.collection.objects.link(ob)
+    if keys:
+        ob.shape_key_add(name="Basis")
+        for kname, pos in keys.items():
+            kb = ob.shape_key_add(name=kname, from_mix=False)
+            for i, p in enumerate(pos):
+                kb.data[i].co = p
+            kb.value = 0.
+    return ob
+
+
+# -------- lashes: a ribbon along each lid's margin, the lashes in its texture
+LASHES = {   # L: the upper ones' length (x the ball's radius), n: lashes an eye, layers (ribbons), lower: the lower ones'
+    # share of that length (0: none), curl: how far they turn up (the lower ones down), w: their thickness
+    "natural": dict(L=.8, n=210, layers=1, lower=.45, curl=.6, w=1.2),
+    "short": dict(L=.48, n=170, layers=1, lower=0., curl=.4, w=1.1),
+    "long": dict(L=1.0, n=240, layers=2, lower=.5, curl=.75, w=1.3),
+    "thick": dict(L=.82, n=300, layers=2, lower=.55, curl=.6, w=1.6)}
+
+
+def lash_atlas(st):
+    """four rows of lashes (upper A, B; lower A, B), each from the root (its bottom) to the tips: tapered, a little
+    bent, in clumps meeting at their tips, leaning to the outer corner (u: the inner corner 0, the outer 1)"""
+    TW, RH = 1024, 128
+    rs = random.Random(int(prm.get("seed", 1)) * 13 + 5)
+    sp = LASHES[st]
+    strokes = []
+    for row in range(4):
+        lower = row >= 2
+        n, k, y0 = int(sp["n"] * (.6 if lower else 1.)), 0, row * RH + 3
+        while k < n:
+            m = min(n - k, rs.choice((2, 3, 3, 4)))   # (a clump)
+            cx = rs.random() * TW
+            tipx = cx + rs.uniform(-6, 6) + 16 * cx / TW
+            Lc = (RH - 8) * rs.uniform(.75, 1.)
+            for _ in range(m):
+                rx, L_, tx = cx + rs.uniform(-6, 6), Lc * rs.uniform(.8, 1.), tipx + rs.uniform(-2.5, 2.5)
+                t = np.linspace(0, 1, 9)
+                pts = np.stack([rx + (tx - rx) * t ** 1.5, y0 + L_ * t], 1)
+                strokes.append((pts, sp["w"] * np.array([1.3, 1.1, .7, .22]) * (.85 if lower else 1.), [1., .95, .8, .45], rs.uniform(.6, 1.)))
+            k += m
+    A, Lm = strokes_img(TW, 4 * RH, strokes)
+    img = np.zeros((4 * RH, TW, 4), np.float32)
+    img[..., 3] = A
+    img[..., :3] = ((.35 + .45 * Lm)[..., None] * COL[None, None, :])
+    return img
+
+
+def shell_turns(sd, c, r):
+    """the eyelid shells' turn in each of their keys (radians, + down): the upper's, the lower's (EyeLid_<side>, built
+    with the eyes: blender_eye_insert.lid_shells) - or None"""
+    ob = bpy.data.objects.get(f"EyeLid_{sd}")
+    if ob is None or ob.type != "MESH" or not ob.data.shape_keys:
+        return None
+    kb = ob.data.shape_keys.key_blocks
+    M = ob.matrix_world
+    bas = [M @ v.co for v in kb[0].data]
+    out = {}
+    for k in kb[1:]:
+        ks = [M @ v.co for v in k.data]
+        du = sorted(wrap(lid_ang(c, bas[i]) - lid_ang(c, ks[i])) for i in range(len(bas)) if bas[i].z > c.z + .1 * r)
+        dl = sorted(wrap(lid_ang(c, bas[i]) - lid_ang(c, ks[i])) for i in range(len(bas)) if bas[i].z < c.z - .1 * r)
+        out[k.name] = (du[len(du) // 2] if du else 0., dl[len(dl) // 2] if dl else 0.)
+    return out
+
+
+def build_lashes(st):
+    sp = LASHES[st]
+    Lk = max(.2, float(prm.get("length", 1.)))   # (the slider: x the style's length)
+    verts, faces, uvs, cols = [], [], [], []   # (cols: side, lid, its root, its vertices)
+    NU, NV = 26, 6
+    found = {}
+    for sd in ("L", "R"):
+        op = eye_opening(sd)
+        if op is None:
+            continue
+        found[sd] = op
+        c, r = op["c"], op["r"]
+        lat = X * (1 if op["outer"].x > op["inner"].x else -1)   # (out to the outer corner)
+        for lid, marg, row0, Lf in (("up", op["up"], 0, 1.), ("lo", op["lo"], 2, sp["lower"])):
+            if Lf <= 0:
+                continue
+            arc = [0.]
+            for a_, b_ in zip(marg, marg[1:]):
+                arc.append(arc[-1] + (b_ - a_).length)
+
+            def at(s):   # (the margin's point at a share of its length)
+                t = s * arc[-1]
+                for i in range(len(arc) - 1):
+                    if arc[i + 1] >= t:
+                        return marg[i].lerp(marg[i + 1], (t - arc[i]) / max(arc[i + 1] - arc[i], 1e-9))
+                return marg[-1].copy()
+            s0, s1 = (.05, .97) if lid == "up" else (.2, .93)
+            sgn = 1 if lid == "up" else -1
+            for layer in range(sp["layers"]):
+                base = len(verts)
+                for i in range(NU + 1):
+                    s = s0 + (s1 - s0) * i / NU
+                    m = at(s)
+                    o = (m - c).normalized()
+                    prof = ((.35 + .65 * smooth(0., .6, s)) * (1 - .3 * smooth(.85, 1., s))) if lid == "up" else (.5 + .5 * smooth(.2, .7, s))
+                    Lc = sp["L"] * Lk * Lf * r * prof * (1 - .12 * layer)
+                    # out of the lid forward - over the eye a little, as seen from the front -, curling up (the lower
+                    # ones down), the outer ones leaning out
+                    d0 = (o * .3 + FRONT * 1. - UP * (.18 * sgn) + lat * (.35 * s * s)).normalized()
+                    up_ = UP * sgn
+                    up_ = (up_ - d0 * up_.dot(d0)).normalized()
+                    root = m + o * ((.02 - .03 * layer) * r)
+                    curl = sp["curl"] * (1 + .25 * layer) * (1 if lid == "up" else .5)
+                    col = []
+                    for j in range(NV):
+                        t = j / (NV - 1)
+                        col.append(len(verts))
+                        verts.append(root + (d0 * t + up_ * (curl * t * t)) * Lc)
+                        uvs.append((.02 + .96 * i / NU, (row0 + layer + .03 + .94 * t) / 4))
+                    cols.append((sd, lid, m, col))
+                for i in range(NU):
+                    for j in range(NV - 1):
+                        a = base + i * NV + j
+                        faces.append((a, a + NV, a + NV + 1, a + 1))
+    if not verts:
+        fail(_t("ag.lashes_no_eyes"))
+    # the keys: each column turned with its lid (about the ball's lateral axis), as far as its root goes
+    keys = {}
+    for sd, op in found.items():
+        c, r = op["c"], op["r"]
+        sc_ = [cl for cl in cols if cl[0] == sd]
+        turns = shell_turns(sd, c, r)
+        moves = {}   # key -> [(turn, shift)] a column
+        if turns:   # (the shells: the upper lid down to the lower's margin, as the shell closes over it; the lower as its shell)
+            blink = next((v for k, v in turns.items() if k.startswith("eyeBlink")), None)
+            rise = max(0., -blink[1]) if blink else 0.
+            ang = lambda p: lid_ang(c, p)   # noqa: E731
+            for kname, (tu, tl) in turns.items():
+                ks = []
+                for _, lid, m, _ in sc_:
+                    if lid == "up":
+                        need = max(0., along_x(op["up"], ang, m.x) - along_x(op["lo"], ang, m.x) - rise)
+                        ks.append((need * (tu / blink[0]) if blink and abs(blink[0]) > 1e-6 else 0., Vector()))
+                    else:
+                        ks.append((tl, Vector()))
+                moves[kname] = ks
+        else:   # (no shells: the skin's own margin under each root moves; the column turned as far and carried on)
+            names, D = skin_keys()
+            mv = [skin_moves(m) for _, _, m, _ in sc_]
+            for ki, kname in enumerate(names):
+                if not any(x is not None and np.abs(x[ki]).max() > 1e-3 * r for x in mv):
+                    continue
+                ks = []
+                for (_, _, m, _), x in zip(sc_, mv):
+                    m2 = m + Vector(x[ki]) if x is not None else m
+                    d = wrap(lid_ang(c, m) - lid_ang(c, m2))
+                    ks.append((d, m2 - lid_turn(c, m, d)))
+                moves[kname] = ks
+        for kname, ks in moves.items():
+            pos = keys.setdefault(kname, [v.copy() for v in verts])
+            for (_, _, m, col), (d, sh) in zip(sc_, ks):
+                for vi in col:
+                    pos[vi] = lid_turn(c, verts[vi], d) + sh
+    im = save("lashes", lash_atlas(st), True)
+    ob = face_obj("lashes", verts, faces, uvs, blend_mat("lashes", im, .75), keys)
+    print("lashes", len(cols), "columns, keys", sorted(keys), flush=True)
+    return [ob], ob
+
+
+# -------- brows: a band along each brow on the skin, the brow (its outline, its hairs) in its texture
+BROWS = {   # the outline's nodes in the eye's measures - X: out from the ball's centre (to the outer corner), Z: up from
+    # it, in the ball's radii (a human's: the brow from over the inner corner to past the outer, its lower edge 1.5-2
+    # radii up) -; n: hairs a brow, hl: their length (x the brow's width there), fill: its body's tint under the hairs,
+    # gap: off the skin (x the ball's radius), wild: unruly hairs
+    "natural": dict(nodes=dict(head_top=(-1.5, 2.0), arch_top=(.55, 2.42), tail=(1.95, 1.72), arch_bot=(.5, 1.84), head_bot=(-1.45, 1.42)),
+                    n=1500, hl=.36, fill=.34, gap=.05, wild=0.),
+    "thin": dict(nodes=dict(head_top=(-1.4, 1.86), arch_top=(.6, 2.4), tail=(1.9, 1.78), arch_bot=(.6, 2.1), head_bot=(-1.38, 1.56)),
+                 n=950, hl=.5, fill=.28, gap=.04, wild=0.),
+    "arched": dict(nodes=dict(head_top=(-1.45, 1.9), arch_top=(.4, 2.62), tail=(1.9, 1.6), arch_bot=(.38, 2.02), head_bot=(-1.42, 1.4)),
+                   n=1450, hl=.38, fill=.34, gap=.05, wild=0.),
+    "straight": dict(nodes=dict(head_top=(-1.5, 2.02), arch_top=(.7, 2.2), tail=(1.95, 1.84), arch_bot=(.7, 1.62), head_bot=(-1.45, 1.46)),
+                     n=1500, hl=.36, fill=.34, gap=.05, wild=0.),
+    "thick": dict(nodes=dict(head_top=(-1.55, 2.1), arch_top=(.55, 2.56), tail=(2.0, 1.7), arch_bot=(.5, 1.66), head_bot=(-1.5, 1.3)),
+                  n=2100, hl=.34, fill=.42, gap=.06, wild=.15),
+    "bushy": dict(nodes=dict(head_top=(-1.6, 2.2), arch_top=(.55, 2.72), tail=(2.05, 1.66), arch_bot=(.5, 1.6), head_bot=(-1.55, 1.24)),
+                  n=1900, hl=.5, fill=.36, gap=.12, wild=1.)}
+BROW_LOOP = ["head_top", "arch_top", "tail", "arch_bot", "head_bot"]
+BROWS_TPL_FILE = HERE / "brows_template.json"
+
+
+def brow_frame(sd):
+    """an eye's measures for its brow: the ball's centre, its radius, which way is out (+1: +x)"""
+    c, r = eye_ball(sd)
+    return None if c is None else (c, r, 1 if c.x > O.x else -1)
+
+
+def on_face(x, z):   # (the skin's point there seen from the front)
+    h = cast(Vector((x, O.y - 3 * R, z)), -FRONT, 6 * R, tree=bvh)
+    return h[0] if h else Vector((x, O.y - R, z))
+
+
+def brow_node(sd, X_, Z_):
+    c, r, s_ = brow_frame(sd)
+    return on_face(c.x + s_ * X_ * r, c.z + Z_ * r)
+
+
+def ridge_dz(sd, X_, Z_):
+    """how far up from Z the brow's ridge is at X (the face's most forward there, 1-3 radii over the eye; ball radii) -
+    a brow lies on it: under it, on a deep-set eye, the skin folded over it frowning"""
+    c, r, s_ = brow_frame(sd)
+    x, best = c.x + s_ * X_ * r, None
+    for k in range(45):
+        z = c.z + (1. + 2.2 * k / 44) * r
+        h = cast(Vector((x, O.y - 3 * R, z)), -FRONT, 6 * R, tree=bvh)
+        if h and (best is None or h[0].y < best[0] - 1e-4 * r):
+            best = (h[0].y, z)
+    return (best[1] - c.z) / r - Z_ if best else 0.
+
+
+def brows_template(st):
+    """this style's brow nodes on this face fitted by hand once (the job's «template», the user's; over the toolkit's)"""
+    srcs = []
+    for f in (job.get("template"), BROWS_TPL_FILE):
+        try:
+            srcs.append(json.loads(Path(f).read_text(encoding="utf-8")) if f else {})
+        except (OSError, ValueError):
+            srcs.append({})
+    rec = next((src["brows_" + st] for src in srcs if isinstance(src.get("brows_" + st), dict)), {})
+    return {f"{k}_{sd}": brow_node(sd, r_[1], r_[2]) for k, r_ in rec.items() if isinstance(r_, list) and len(r_) == 3 and r_[0] == "e"
+            for sd in ("L", "R") if brow_frame(sd) is not None}
+
+
+def learn_brows(st, path):
+    """the brows' nodes fitted by hand kept as this style's default, in the eyes' measures (the two sides as one)"""
+    pth = Path(path)
+    try:
+        tp = json.loads(pth.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        tp = {}
+    acc = {}
+    for key, p in NODES_IN.items():
+        k, sd = key[:-2], key[-1:]
+        fr = brow_frame(sd) if key[-2:] in ("_L", "_R") and k in BROW_LOOP else None
+        if fr is None:
+            continue
+        c, r, s_ = fr
+        acc.setdefault(k, []).append(((p.x - c.x) * s_ / r, (p.z - c.z) / r))
+    rec = {k: ["e", round(sum(a for a, _ in v) / len(v), 4), round(sum(b for _, b in v) / len(v), 4)] for k, v in sorted(acc.items())}
+    if not rec:
+        fail(_t("ag.contour_learn_none"))
+    tp["brows_" + st] = rec
+    write_template(pth, tp)
+    print("tmpl learnt brows", st, len(rec), flush=True)
+
+
+def frac_line(pts, n):   # (n points along a line, evenly by its length)
+    arc = [0.]
+    for a_, b_ in zip(pts, pts[1:]):
+        arc.append(arc[-1] + (b_ - a_).length)
+    out = []
+    for k in range(n):
+        t, i = arc[-1] * k / (n - 1), 0
+        while i < len(arc) - 2 and arc[i + 1] < t:
+            i += 1
+        out.append(pts[i].lerp(pts[i + 1], (t - arc[i]) / max(arc[i + 1] - arc[i], 1e-9)))
+    return out
+
+
+def skin_pt(p):   # (the skin's nearest point and its normal - out of the head: a model's faces may be wound inward)
+    h = bvh.find_nearest(p)
+    if h[0] is None:
+        return p, -FRONT
+    n_ = h[1].normalized()
+    return h[0], (n_ if n_.dot(h[0] - O) >= 0 else -n_)
+
+
+def outer_pt(p):   # (the skin's outer surface over p, from outside: a model's inner layers under it not taken)
+    d = (p - O).normalized()
+    h = bvh.ray_cast(p + d * (.4 * R), -d, .8 * R)
+    if h[0] is None:
+        return skin_pt(p)
+    n_ = h[1].normalized()
+    return h[0], (n_ if n_.dot(d) >= 0 else -n_)
+
+
+def poly_mask(TW, TH, poly):
+    """pixels inside a polygon (pixels' centres; rows bottom up)"""
+    yy, xx = np.mgrid[0:TH, 0:TW].astype(np.float32) + .5
+    ins = np.zeros((TH, TW), bool)
+    for (x1, y1), (x2, y2) in zip(poly, poly[1:] + poly[:1]):
+        if abs(y2 - y1) < 1e-9:
+            continue
+        cr = ((y1 > yy) != (y2 > yy)) & (xx < x1 + (yy - y1) * (x2 - x1) / (y2 - y1))
+        ins ^= cr
+    return ins
+
+
+def blur(a, k):   # (a box blur k pixels each way, twice)
+    for _ in range(2):
+        c_ = np.cumsum(np.pad(a, ((k + 1, k), (0, 0)), mode="edge"), axis=0)
+        a = (c_[2 * k + 1:] - c_[:-2 * k - 1]) / (2 * k + 1)
+        c_ = np.cumsum(np.pad(a, ((0, 0), (k + 1, k)), mode="edge"), axis=1)
+        a = (c_[:, 2 * k + 1:] - c_[:, :-2 * k - 1]) / (2 * k + 1)
+    return a
+
+
+def build_brows(st):
+    sp = BROWS[st]
+    vol = max(.3, float(prm.get("vol", 1.)))   # (the slider: x its width)
+    given = {**brows_template(st), **NODES_IN}
+    rs = random.Random(int(prm.get("seed", 1)) * 17 + 11)
+    sides = []
+    for sd in ("L", "R"):
+        if brow_frame(sd) is None:
+            continue
+        nd, N_ = {}, sp["nodes"]
+        # (by default each part - its head, its arch, its tail - up or down onto the brow's ridge, so far)
+        lift = {}
+        for part, ks in (("head", ("head_top", "head_bot")), ("arch", ("arch_top", "arch_bot")), ("tail", ("tail",))):
+            X_ = sum(N_[k][0] for k in ks) / len(ks)
+            lift.update({k: .7 * min(.8, max(-.4, ridge_dz(sd, X_, sum(N_[k][1] for k in ks) / len(ks)))) for k in ks})
+        for k, (X_, Z_) in N_.items():
+            key = f"{k}_{sd}"
+            nd[k] = given[key] if key in given else brow_node(sd, X_, Z_ + lift[k])
+            NODES_OUT[key] = nd[k]
+        sides.append((sd, nd))
+    if not sides:
+        fail(_t("ag.lashes_no_eyes"))
+    LOOPS_OUT[:] = [[f"{k}_{sd}" for k in BROW_LOOP] for sd, _ in sides]
+    TW, M, NV = 1024, 56, 11   # (fine: on a bumpy brow ridge a coarse band went under the skin between its vertices)
+    bands = []
+    for sd, nd in sides:
+        r = eye_ball(sd)[1]
+        ring = [outer_pt(p)[0] for p in catmull_closed3([nd[k] for k in BROW_LOOP], 12)]   # (as the editor draws it)
+        upper, lower = frac_line(ring[0:25], M), frac_line(ring[24:49][::-1], M)   # (head_top -> tail; head_bot -> tail)
+        spine = [(a + b) / 2 for a, b in zip(upper, lower)]
+        hw = [(a - b).length / 2 * vol for a, b in zip(upper, lower)]
+        Ls = sum((b - a).length for a, b in zip(spine, spine[1:]))
+        t0, t1 = (spine[0] - spine[1]).normalized(), (spine[-1] - spine[-2]).normalized()
+        line = ([outer_pt(spine[0] + t0 * (.12 * Ls * k / 4))[0] for k in range(4, 0, -1)] + spine
+                + [outer_pt(spine[-1] + t1 * (.08 * Ls * k / 4))[0] for k in range(1, 5)])   # (a margin past each end)
+        hw = [hw[0]] * 4 + hw + [hw[-1] * .5] * 4
+        arc = [0.]
+        for a_, b_ in zip(line, line[1:]):
+            arc.append(arc[-1] + (b_ - a_).length)
+        Hb = 1.6 * max(hw)
+        frames = []
+        for k, p in enumerate(line):
+            n_ = outer_pt(p)[1]
+            t_ = (line[min(k + 1, len(line) - 1)] - line[max(k - 1, 0)]).normalized()
+            b_ = n_.cross(t_).normalized()
+            frames.append(b_ if b_.z >= 0 else -b_)
+        THs = int(min(512, max(64, math.ceil(TW * 2 * Hb / arc[-1] / 8) * 8)))
+        bands.append(dict(sd=sd, r=r, ring=ring, line=line, hw=hw, arc=arc, Hb=Hb, frames=frames, THs=THs, nk=len(line)))
+    THa = sum(b["THs"] for b in bands)
+    img = np.zeros((THa, TW, 4), np.float32)
+    verts, faces, uvs = [], [], []
+    y_off = 0
+    for b in bands:
+        line, arc, Hb, fr, THs, r = b["line"], b["arc"], b["Hb"], b["frames"], b["THs"], b["r"]
+        U = [a / arc[-1] for a in arc]
+        gap = (sp["gap"] + .04) * r
+        base = len(verts)
+        for k, p in enumerate(line):
+            for j in range(NV):
+                v = -1 + 2 * j / (NV - 1)
+                q, n_ = outer_pt(p + fr[k] * (v * Hb))
+                verts.append(q + n_ * gap)
+                uvs.append((U[k], (y_off + (v + 1) / 2 * THs) / THa))
+        for k in range(len(line) - 1):
+            for j in range(NV - 1):
+                a = base + k * NV + j
+                faces.append((a, a + NV, a + NV + 1, a + 1))
+        # the outline in its band's pixels: along (by the nearest point of its line), across (off it: the band's up)
+
+        def to_px(p):
+            k = min(range(len(line)), key=lambda i: (line[i] - p).length)
+            return (U[k] * TW, ((p - line[k]).dot(fr[k]) * vol / Hb + 1) / 2 * THs)
+        poly = [to_px(p) for p in b["ring"]]
+        D = blur(poly_mask(TW, THs, poly).astype(np.float32), 2)
+        yc = THs / 2
+        kh, kt = 4, len(line) - 5   # (the brow's own head and tail: past the margins)
+
+        def hw_px(x):
+            k = min(range(len(line)), key=lambda i: abs(U[i] * TW - x))
+            return max(1.5, b["hw"][k] / Hb * THs / 2)
+        strokes, n, tries = [], 0, 0
+        N = int(sp["n"] * vol ** .5)
+        while n < N and tries < N * 40:
+            tries += 1
+            x, y = rs.random() * TW, rs.random() * THs
+            if rs.random() > D[min(THs - 1, int(y)), min(TW - 1, int(x))] ** 1.5:
+                continue
+            n += 1
+            un = min(1., max(0., (x / TW - U[kh]) / max(U[kt] - U[kh], 1e-6)))
+            hwp = hw_px(x)
+            rel = min(1.2, max(-1.2, (y - yc) / hwp))
+            head, tail = 1 - smooth(.04, .22, un), smooth(.7, 1., un)
+            # at its head up; then the lower ones up to the tail, the upper ones down to it (meeting in the middle); flat
+            # at the tail
+            ang = head * (76 + 8 * rel) + (1 - head) * (32 - 44 * (rel + 1) / 2) * (1 - .7 * tail)
+            ang = math.radians(ang + rs.gauss(0, 5 + 18 * sp["wild"]))
+            L_ = sp["hl"] * 2 * hwp * rs.uniform(.6, 1.1) * (.6 if head > .5 else 1.) * (1 + .6 * sp["wild"] * rs.random())
+            d = np.array([math.cos(ang), math.sin(ang)])
+            pp = np.array([-d[1], d[0]])
+            t = np.linspace(0, 1, 7)[:, None]
+            pts = np.array([x, y]) + d * (L_ * t) + pp * (-.18 * rel * L_ * t * t)   # (bent in to the middle)
+            strokes.append((pts, np.array([.95, .75, .48, .18]) * (1 + .3 * sp["wild"]), [.95, .9, .7, .3], rs.uniform(.45, 1.)))
+        Ah, Lh = strokes_img(TW, THs, strokes)
+        Af = D * sp["fill"]
+        A = 1 - (1 - Af) * (1 - Ah)
+        lum = (Af * (1 - Ah) * .5 + Ah * (.45 + .5 * Lh)) / np.maximum(A, 1e-4)
+        img[y_off:y_off + THs, :, 3] = A
+        img[y_off:y_off + THs, :, :3] = lum[..., None] * COL[None, None, :]
+        y_off += THs
+    # the keys: the skin's under each vertex (its brows' keys, the blinks', the frowns'...)
+    keys = {}
+    names, Dk = skin_keys()
+    if Dk is not None:
+        mv = [skin_moves(p) for p in verts]
+        r = max(b["r"] for b in bands)
+        for ki, kname in enumerate(names):
+            if any(x is not None and np.abs(x[ki]).max() > 2e-3 * r for x in mv):
+                keys[kname] = [p + Vector(x[ki]) if x is not None else p.copy() for p, x in zip(verts, mv)]
+    im = save("brows", img, True)
+    ob = face_obj("brows", verts, faces, uvs, blend_mat("brows", im, .9), keys)
+    print("brows", [b["sd"] for b in bands], "texture", TW, THa, "keys", sorted(keys), flush=True)
+    return [ob], ob
+
+
 # ---------------------------------------------------------------- the style
 if style.startswith("wig"):
     if not prm.get("model") or not Path(prm["model"]).is_file():
@@ -2995,6 +3665,17 @@ elif job.get("piece") == "beard":
     obs, mask_of = build_beard(style)
     if job.get("debug"):
         bpy.ops.wm.save_as_mainfile(filepath=str(WORK / f"{STEM}_debug.blend"))
+elif job.get("piece") == "brows":   # (the brows: their outline's nodes shown in the editor, moved there by hand)
+    if style not in BROWS:
+        fail(_t("ag.unknown_piece", style))
+    if job.get("learn"):   # (the nodes fitted by hand kept as the default: only that)
+        learn_brows(style, job["learn"])
+        sys.exit(0)
+    obs, mask_of = build_brows(style)
+elif job.get("piece") == "lashes":
+    if style not in LASHES:
+        fail(_t("ag.unknown_piece", style))
+    obs, mask_of = build_lashes(style)
 else:   # a hairstyle made here: its hairline's nodes (shown in the editor, moved there by hand)
     HAIR_ANG = {"front": 0, "temple_L": 40, "ear_L": 90, "back_L": 135, "nape": 180, "back_R": -135, "ear_R": -90, "temple_R": -40}
     LOOP[:] = ["front", "temple_L", "ear_L", "back_L", "nape", "back_R", "ear_R", "temple_R"]
@@ -3013,7 +3694,7 @@ else:   # a hairstyle made here: its hairline's nodes (shown in the editor, move
         d = Vector((math.sin(th), -math.cos(th), 0))
         h = cast(Vector((O.x, O.y, zz)) + d * (3 * R), -d, 3 * R, tree=bvh)
         NODES_OUT[k] = h[0] if h else Vector((O.x, O.y, zz)) + d * R
-if job.get("piece") == "beard" or style.startswith("wig"):
+if job.get("piece") in ("beard", *FACE_HAIR) or style.startswith("wig"):
     pass
 elif style in ("long", "bob", "wavy", "half_up", "wavy_short", "shaggy", "warrior", "top_knot"):
     Lh = float(prm.get("length", .26 if style != "bob" else .14)) * H * (2.0 if style == "bob" else 1.2)
@@ -3099,8 +3780,9 @@ def bake_ao(objs, rays=10, reach=.7):
             pass
 
 
-bake_ao(obs)
-print("ao baked", flush=True)
+if job.get("piece") not in FACE_HAIR:   # (brows, lashes: fine hairs on the skin - nothing over them)
+    bake_ao(obs)
+    print("ao baked", flush=True)
 
 # ---------------------------------------------------------------- weights: the head's; below the jaw the neck's and the chest's
 groups = [names["head"], names.get("neck", names["head"]), names.get("spine2", names.get("neck", names["head"]))]
@@ -3112,6 +3794,8 @@ JAW = names.get("jaw") if names.get("jaw") in arm.data.bones else None
 
 
 def weights(z):
+    if job.get("piece") in FACE_HAIR:   # (the brows, the lashes: the head's; the face's keys move them)
+        return [(groups[0], 1.)]
     if job.get("piece") == "beard":   # (a beard: the head's; below the mouth the jaw's - it moves with the chin)
         k = min(1., max(0., (E.z - 1.25 * R - z) / (.5 * R))) if JAW else 0.
         return [(groups[0], 1 - .7 * k)] + ([(JAW, .7 * k)] if JAW else [])
@@ -3131,7 +3815,7 @@ if job.get("mask"):
     from body_mask import body_mask
     # (a beard hides nothing: it lies on the face with its gap, and where it is open - round the mouth - the hidden
     # lips and chin showed as a hole into the head)
-    keys = {tuple(x) for x in body_mask(body, [mask_of], erode=2)} if job.get("piece") != "beard" else set()
+    keys = {tuple(x) for x in body_mask(body, [mask_of], erode=2)} if job.get("piece") not in ("beard", *FACE_HAIR) else set()
     for i in ear_v:   # (the ears never: long hair closes round them, the mask took them - their tips went)
         c = me.vertices[i].co
         keys.discard((round(c.x * 1000), round(c.z * 1000), round(-c.y * 1000)))
@@ -3145,7 +3829,7 @@ bpy.context.view_layer.objects.active = obs[0]
 if len(obs) > 1:
     bpy.ops.object.join()
 obj = bpy.context.view_layer.objects.active
-obj.name = f"{'beard' if job.get('piece') == 'beard' else 'hair'}_{style}"
+obj.name = f"{job.get('piece') if job.get('piece') in ('beard', *FACE_HAIR) else 'hair'}_{style}"
 mod = obj.modifiers.new("Armature", "ARMATURE")
 mod.object = arm
 obj.parent = arm
@@ -3160,9 +3844,10 @@ bpy.context.view_layer.objects.active = arm
 if NODES_OUT:   # (the outline's nodes, for the editor: shown on the skin, moved by hand)
     Path(job["out"]).with_suffix(".nodes.json").write_text(json.dumps(
         {"nodes": {k: b2gl(v) for k, v in NODES_OUT.items()}, "loop": LOOP, "mid": round(O.x if not FM else FM.get("mouth_c", O).x, 5),
-         "loops": [lp for lp in (list(LOOP), ["must_L", "must_top_L", "must_ct", "must_top_R", "must_R", "must_lo_R", "must_bot_R", "must_cb", "must_bot_L", "must_lo_L"])
+         "loops": [lp for lp in (LOOPS_OUT or (list(LOOP), ["must_L", "must_top_L", "must_ct", "must_top_R", "must_R", "must_lo_R", "must_bot_R", "must_cb", "must_bot_L", "must_lo_L"]))
                    if len(lp) > 2 and all(k in NODES_OUT for k in lp)]}), encoding="utf-8")
 _vc = {"export_vertex_color": "ACTIVE"} if "export_vertex_color" in bpy.ops.export_scene.gltf.get_rna_type().properties.keys() else {"export_colors": True}
 bpy.ops.export_scene.gltf(filepath=job["out"], export_format="GLB", use_selection=True, export_skins=True,
-                          export_animations=False, export_influence_nb=4, **_vc)   # (its shadows: the vertices' colour)
+                          export_animations=False, export_influence_nb=4, export_morph=True, export_morph_normal=False,
+                          **_vc)   # (its shadows: the vertices' colour; the brows', the lashes' face keys)
 print("ARMOUR_GEN_OK " + json.dumps({"vertices": len(obj.data.vertices), "bones": groups, "style": style, "uvtex": {}}), flush=True)

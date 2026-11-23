@@ -19,7 +19,7 @@ import re
 from pathlib import Path
 
 CATS = ("armor", "clothes", "weapons")
-CLOTHES = {"undercloth", "trousers", "skirt", "tabard", "cloak", "hair", "beard"}
+CLOTHES = {"undercloth", "trousers", "skirt", "tabard", "cloak", "hair", "beard", "brows", "lashes"}
 WEAPONS = {"weapon", "shield", "sheath"}
 SUFFIXES = (".glb", ".src.glb", ".mask.json", ".fit.json")
 SURFACE_STYLES = ("mail", "scales", "lamellar", "brigandine", "splints", "quilt")   # a surface that names the piece over its material

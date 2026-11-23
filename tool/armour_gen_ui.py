@@ -123,6 +123,14 @@ PIECES = {"bracer": ("forearm", "hand", "forearm", ("Spine", "Hips", "Chest", "U
           "beard": ("neck", "head", "head", (), "head", "neck", (0, 0, 0, 0),
                     dict(beard="beard_short", beard_style="short", beard_len=2.5, beard_vol=100, beard_n=220, beard_curl=10,
                          hair_color="#3b2618", material="cloth", surface="plain", trim="", straps=0, rigidity=1, wear=.05, gap=1, thickness=2, cell=3)),
+          # the face's own hair: brows (a band on the skin with the brow in its texture), lashes (ribbons along the lids'
+          # margins); both carry the face's keys (they move with the brows, blink with the lids)
+          "brows": ("neck", "head", "head", (), "head", "neck", (0, 0, 0, 0),
+                    dict(brows="brows_natural", brow_style="natural", brow_vol=100, hair_color="#3b2618", material="cloth", surface="plain",
+                         trim="", straps=0, rigidity=1, wear=.05, gap=1, thickness=2, cell=3)),
+          "lashes": ("neck", "head", "head", (), "head", "neck", (0, 0, 0, 0),
+                     dict(lashes="lashes_natural", lash_style="natural", lash_len=100, hair_color="#1b1512", material="cloth", surface="plain",
+                          trim="", straps=0, rigidity=1, wear=.05, gap=1, thickness=2, cell=3)),
           # at the belt: a scabbard on a hip (rigid on the hips), a quiver on the back (on the chest's bone)
           "sheath": ("hips", "spine1", "hips", (), "hips", "held", (0, 0, 0, 0),
                      dict(sheath="scabbard", material="leather", trim="steel", tint="#4a2c18", cloth="#6b4a2a", straps=0, rigidity=1))}
@@ -135,6 +143,8 @@ CLOTHS = ("cloth_fitted", "cloth_shirt", "cloth_aketon", "cloth_gambeson", "clot
 GLOVES = ("glove_plain_leather", "glove_reinforced_leather", "glove_mail_mitten", "glove_hourglass", "glove_plate_mitten", "glove_hybrid")
 HAIRS = ("hair_crop", "hair_short", "hair_bob", "hair_long", "hair_back", "hair_mohawk", "hair_wavy", "hair_half_up", "hair_braids", "hair_side_braid", "hair_crown_braid", "hair_braid_bun", "hair_low_bun", "hair_low_tails", "hair_ponytail", "hair_wavy_short", "hair_warrior", "hair_top_knot", "hair_shaggy", "hair_bowl", "hair_tonsure", "hair_caesar")
 BEARDS = ("beard_stubble", "beard_short", "beard_full", "beard_long", "beard_goatee", "beard_mustache")
+BROWS = ("brows_natural", "brows_thin", "brows_arched", "brows_straight", "brows_thick", "brows_bushy")
+LASHES = ("lashes_natural", "lashes_short", "lashes_long", "lashes_thick")
 HELMETS = ("kettle_hat", "open_bascinet", "barbute", "visored_bascinet", "sallet", "armet",
            "nasal_helm", "spangenhelm", "great_helm", "morion", "close_helm")   # (the last five: helmets_extra.py)
 FOOTWEAR = ("foot_leather_shoe", "foot_ankle_boot", "foot_mail_foot", "foot_round_sabaton", "foot_pointed_sabaton", "foot_hybrid_boot")
@@ -204,6 +214,23 @@ def _beard_params(params) -> dict:
     return out
 
 
+def _brow_params(params) -> dict:
+    """the editor's brow parameters as blender_hair_gen.py's: their width (x the style's), their colour, their outline
+    fitted by hand"""
+    hp = {k: v for k, v in _hair_params(params).items() if k != "nodes"}
+    out = {**hp, "vol": float(params.get("brow_vol", 100)) / 100}
+    nodes = (params.get("brows_nodes") or {}).get(params.get("brows")) if isinstance(params.get("brows_nodes"), dict) else None
+    if isinstance(nodes, dict):   # (the outline's nodes on the skin, glTF's axes)
+        out["nodes"] = {str(k): [float(x) for x in v][:3] for k, v in nodes.items() if isinstance(v, (list, tuple)) and len(v) >= 3}
+    return out
+
+
+def _lash_params(params) -> dict:
+    """the editor's lash parameters as blender_hair_gen.py's: their length (x the style's), their colour"""
+    hp = {k: v for k, v in _hair_params(params).items() if k != "nodes"}
+    return {**hp, "length": float(params.get("lash_len", 100)) / 100}
+
+
 def _hair_params(params) -> dict:
     """The editor's hair parameters as blender_hair_gen.py's: its length (a share of the height), its colour (linear), its
     parting (a share of the head's half width to a side)"""
@@ -236,7 +263,10 @@ MADE = {"helmet": ("blender_helmet_gen.py", HELMETS, "", _helmet_params,
         # hair: cards with gravity (long, a bob), a shell unwrapped along the hair's way (short cuts, the mohawk's base)
         "hair": ("blender_hair_gen.py", HAIRS, "hair_", _hair_params, {k: ("length", "part") for k in HAIRS}),
         # a beard: made by the generator only from a model (beard_models); its own styles the editor builds
-        "beard": ("blender_hair_gen.py", BEARDS, "beard_", _beard_params, {k: ("length", "vol") for k in BEARDS})}
+        "beard": ("blender_hair_gen.py", BEARDS, "beard_", _beard_params, {k: ("length", "vol") for k in BEARDS}),
+        # the face's own hair: brows on the skin, lashes along the lids (blender_hair_gen.py build_brows, build_lashes)
+        "brows": ("blender_hair_gen.py", BROWS, "brows_", _brow_params, {k: ("vol",) for k in BROWS}),
+        "lashes": ("blender_hair_gen.py", LASHES, "lashes_", _lash_params, {k: ("length",) for k in LASHES})}
 # «from» / «to» labels: a limb's along it, a torso piece's bottom and top, trousers' waist and leg length
 T_LABELS = {"limb": ("ag.from", "ag.to", "ag.from_info"), "torso": ("ag.bottom", "ag.top", "ag.bottom_info"),
             "cuirass": ("ag.bottom", "ag.neck_top", "ag.bottom_info"), "pauldron": ("ag.pauldron_from", "ag.sp_reach", "ag.pauldron_info"),
@@ -257,7 +287,7 @@ CHOICES = {"opening_labels": ("none", "left", "right", "back", "front"), "closur
            "style_labels": ("leather", "steel", "mail", "splints", "covered", "plate_mail", "lamellar", "brigandine", "tights", "wool", "leather_tr",
                             "mail_chausses", "plate_cuisses", "hidden_plate", "plate_and_mail", "compact", "extended", "carrier",
                             "short_mail", "wrap_mail", "carrier_mail", "lames", *HELMETS, *ELBOWS, *POLEYNS, "cod_plate", "cod_leather", "cod_cloth", "rondel_plain", "rondel_spike", "rondel_fluted", "ailette_square", "ailette_shield", "hauberk_long", "haubergeon", "coif_short", "coif_long", *FOOTWEAR, *GLOVES, *CLOTHS,
-                            *(f"weapon_{w}" for w in WEAPONS), *(f"weapon_bow_{b}" for b in BOWS), *(f"shield_{x}" for x in SHIELDS), *(f"sheath_{x}" for x in SHEATHS), *HAIRS, *BEARDS),
+                            *(f"weapon_{w}" for w in WEAPONS), *(f"weapon_bow_{b}" for b in BOWS), *(f"shield_{x}" for x in SHIELDS), *(f"sheath_{x}" for x in SHEATHS), *HAIRS, *BEARDS, *BROWS, *LASHES),
            "thigh_labels": ("none", "mail", "plate", "panels", "plate_mail"), "knee_labels": ("none", "patch", "cop")}
 
 
@@ -720,10 +750,10 @@ def contour_learn(cfg, req) -> dict:
     each node's angle round the head and its height between the neck, the eyes and the top) in
     <export>/beard_template.json, hair_template.json. {ok, log}."""
     rigged, style, piece = Path(req["rigged"]), req.get("style"), req.get("piece", "beard")
-    if piece not in ("beard", "hair") or style not in (BEARDS if piece == "beard" else HAIRS):
+    if piece not in ("beard", "hair", "brows") or style not in {"beard": BEARDS, "hair": HAIRS, "brows": BROWS}[piece]:
         return {"ok": False, "log": _t("ag.unknown_piece", style)}
     nodes = req.get("nodes") if isinstance(req.get("nodes"), dict) else {}
-    to_job = _beard_params if piece == "beard" else _hair_params
+    to_job = {"beard": _beard_params, "hair": _hair_params, "brows": _brow_params}[piece]
     hp = to_job({**(req.get("params") or {}), piece: style, f"{piece}_nodes": {style: nodes}})
     if not hp.get("nodes"):
         return {"ok": False, "log": _t("ag.contour_learn_none")}
@@ -741,7 +771,7 @@ def contour_learn(cfg, req) -> dict:
     if not any(x.startswith("tmpl learnt") for x in r.stdout.splitlines()):
         bad = next((x[len("ARMOUR_GEN_FAIL "):] for x in r.stdout.splitlines() if x.startswith("ARMOUR_GEN_FAIL")), None)
         return {"ok": False, "log": _t("ag.failed") + (bad or (r.stdout + r.stderr)[-1500:])}
-    return {"ok": True, "log": _t("ag.contour_learnt" if piece == "beard" else "ag.contour_learnt_hair", style[len(piece) + 1:])}
+    return {"ok": True, "log": _t({"beard": "ag.contour_learnt", "hair": "ag.contour_learnt_hair", "brows": "ag.contour_learnt_brows"}[piece], style[len(piece) + 1:])}
 
 
 def made_preview(cfg, req) -> dict:
@@ -769,14 +799,14 @@ def made_preview(cfg, req) -> dict:
     d = Path(cfg["work_dir"]) / "helmets" / LM._slug(LM._stem(rigged))
     d.mkdir(parents=True, exist_ok=True)
     glb, mask = d / f"{style}{tag}.glb", d / f"{style}{tag}.mask.json"
-    tpl = [f for f in (beard_template(cfg, piece), ROOT / f"{piece}_template.json") if f.exists()] if piece in ("beard", "hair") else []   # (a beard's default outline, a hairline)
+    tpl = [f for f in (beard_template(cfg, piece), ROOT / f"{piece}_template.json") if f.exists()] if piece in ("beard", "hair", "brows") else []   # (a beard's default outline, a hairline, the brows')
     if not (glb.exists() and mask.exists() and glb.stat().st_mtime > max(rigged.stat().st_mtime, (ROOT / script).stat().st_mtime,
                                                                        wig.stat().st_mtime if wig is not None else 0,
                                                                        *(f.stat().st_mtime for f in tpl))):
         job = {"style": style[len(prefix):], "params": hp, "sides": sides, "out": str(glb), "work": str(d), "character": str(rigged), "piece": piece,
                "names": {n: LM.bone_names(n) for n in ("mixamo", "godot")}, "mask": str(mask), "under": under,
                "face": _face_marks(rigged) if piece == "beard" else {},   # (a beard by the face's markup: the mouth, the lips)
-               "template": str(beard_template(cfg, piece)) if piece in ("beard", "hair") else ""}
+               "template": str(beard_template(cfg, piece)) if piece in ("beard", "hair", "brows") else ""}
         (d / f"{style}{tag}.job.json").write_text(json.dumps(job, ensure_ascii=False), encoding="utf-8")
         blender = cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe"
         r = subprocess.run([blender, "-b", "--factory-startup", "-P", str(ROOT / script), "--", str(d / f"{style}{tag}.job.json")],
@@ -842,7 +872,7 @@ def generate(cfg, req) -> dict:
         job.update(style=style[len(made[2]):], params=made[3](params))
         if piece == "beard":
             job["face"] = _face_marks(rigged)
-        if piece in ("beard", "hair"):   # (its default outline, hairline: the user's own over the toolkit's)
+        if piece in ("beard", "hair", "brows"):   # (its default outline, hairline: the user's own over the toolkit's)
             job["template"] = str(beard_template(cfg, piece))
         if wig is not None:
             job["params"]["model"] = str(wig)
