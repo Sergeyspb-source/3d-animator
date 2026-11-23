@@ -2550,7 +2550,7 @@ function beltPiece(p) {
   const st = String(p.belt || 'belt_buckle').replace(/^belt_/, ''), { limb } = limbOf('cuirass', 'C'), H = HEIGHT, mid = garbFront(limb);
   if (!PB.hips) return [];
   const tw = (p.bl_at ?? 22) / 100, bw = (st === 'sash' ? .028 : st === 'rope' ? .006 : .012) * H * (p.bl_width ?? 100) / 100;
-  const W = waistRing(limb, tw, Math.max(.004 * H, bw) / limb.len, MM(1.5));
+  const W = waistRing(limb, tw, Math.max(.004 * H, bw) / limb.len, MM(3));
   const acc = new Acc(); acc.w = weigher('torso', PB.hips, .1);   // (as the skin under it: held to the hips, the belly bent through it)
   const out = [{ side: 'C', acc, R: median(W.top) }];
   const under = (a) => (y) => { const t = (y - limb.a.y) / (limb.u.y * limb.len), o = limb.axis(t), d = limb.out(a); const h = layerHit(o, d, .6 * H, ['Arm', 'Hand']); return { o, d, r: (h ? h.r : W.rAt(a)) + MM(3) }; };
@@ -2575,38 +2575,41 @@ function beltPiece(p) {
     const A = C.clone().addScaledVector(E, hw * 1.4).addScaledVector(nB, 3 * bt).addScaledVector(UP, -bw * .6);
     hangStrip(acc, A, E.clone(), bw * .9, .07 * H, th, under(mid + D_(8)), LEATHER, 'strap', f);
   }
-  // what hangs on it: each a rigid thing on the hips' bone, from the belt's lower edge
-  const hang = (a, drop = 0) => { const n = limb.out(a).setY(0).normalize(), C = limb.axis(tw - bw / limb.len).addScaledVector(limb.out(a), W.rAt(a) + MM(9)); C.y -= drop;
+  // what hangs on it: from the belt's lower edge
+  const hang = (a, drop = 0) => { const n = limb.out(a).setY(0).normalize(), C = limb.axis(tw - bw / limb.len).addScaledVector(limb.out(a), W.rAt(a) + .011 * H); C.y -= drop;
     return { C, A: new V3(0, -1, 0), E: new V3().crossVectors(new V3(0, -1, 0), n).normalize(), S: n }; };
-  const rig = rigidAcc(PB.hips);
-  if (p.bl_pouch) garbBag(rig, hang(mid + D_(52)), .075 * H, .08 * H, .028 * H, true, PLATE, 'plate', H);
+  // what hangs on it: on the hips, half with the thigh on its side (a leg swung out pushes a pouch aside, as it does a real one)
+  const hipI = boneNames.indexOf(PB.hips.name), legI = (s) => (PB['upleg_' + s] ? boneNames.indexOf(PB['upleg_' + s].name) : hipI);
+  const thingAcc = (a) => { const acc2 = new Acc(), X = limb.axis(tw).addScaledVector(limb.out(a), 1), s = X.x >= limb.a.x ? 'L' : 'R', w = [[hipI, legI(s), hipI, hipI], [.55, .45, 0, 0]]; acc2.w = () => w; return acc2; };
+  const things = [], thing = (a) => { const acc2 = thingAcc(a); things.push(acc2); return acc2; };
+  if (p.bl_pouch) garbBag(thing(mid + D_(76)), hang(mid + D_(76)), .075 * H, .08 * H, .028 * H, true, PLATE, 'plate', H);
   if (p.bl_purse) {   // a purse gathered on a drawstring, hanging from a loop
-    const F = hang(mid + D_(p.bl_pouch ? 98 : 55), .01 * H), { lathe } = itemMesh(rig, F);
+    const ap = mid + D_(p.bl_pouch ? 112 : 88), F = hang(ap, .01 * H), rig = thing(ap), { lathe } = itemMesh(rig, F);
     lathe([[-.012 * H, .003 * H], [0, .006 * H], [.006 * H, .01 * H], [.02 * H, .024 * H], [.036 * H, .026 * H], [.05 * H, .018 * H], [.056 * H, .001 * H]], PLATE, 'plate', 14);
     lathe([[.002 * H, .0095 * H], [.006 * H, .0095 * H]], LEATHER, 'strap', 14);   // the drawstring round its neck
   }
   if (p.bl_rag) {   // a rag tucked in at the side, hanging (the second cloth)
     const a = mid - D_(22), F = hang(a);
-    hangStrip(rig, F.C.clone().addScaledVector(F.S, MM(2)), F.E, .028 * H, .16 * H, MM(1.5), under(a), CLOTH, 'quilt', W.faceAt(a), 1, .25);
+    hangStrip(thing(a), F.C.clone().addScaledVector(F.S, MM(2)), F.E, .028 * H, .16 * H, MM(1.5), under(a), CLOTH, 'quilt', W.faceAt(a), 1, .25);
   }
   if (p.bl_coil) {   // a coil of rope on the hip: loops on a cord through the belt
-    const F = hang(mid - D_(p.bl_satchel ? 112 : 70), .005 * H), r = .004 * H, R2 = .045 * H;
+    const ac = mid - D_(p.bl_satchel ? 125 : 80), F = hang(ac, .005 * H), r = .004 * H, R2 = .045 * H, rig = thing(ac);
     for (let k = 0; k < 3; k++) {
       const pts = lin(0, TAU, 25).slice(0, 24).map((u) => F.C.clone().addScaledVector(F.A, R2 + Math.cos(u) * R2 * (1 - .06 * k)).addScaledVector(F.E, Math.sin(u) * R2 * .8).addScaledVector(F.S, R2 * .15 + k * 1.8 * r + .3 * r * Math.sin(3 * u)));
       tubeAlong(rig, pts, r, CLOTH, 'quilt', -1, 6, true);
     }
   }
   if (p.bl_satchel) {   // a satchel at the hip on a strap over the other shoulder
-    const sAcc = new Acc(); sAcc.w = weigher('torso', PB.spine2 || PB.spine1, .25);
-    const tPit = torsoPit(limb), C = limb.axis(tPit), aS = mid - D_(70);
+    const sAcc = new Acc(); sAcc.w = weigher('torso', PB.spine2 || PB.spine1, .05);   // (the strap as the skin under it)
+    const tPit = torsoPit(limb), C = limb.axis(tPit), aS = mid - D_(84);
     const af = (X) => { const d = X.clone().sub(C), l = d.length(), f = Math.asin(Math.max(-1, Math.min(1, d.dot(limb.u) / l))); d.addScaledVector(limb.u, -d.dot(limb.u)); return [limb.angOf(d.normalize()), f]; };
     const [a0, f0] = af(limb.axis(tw - .02).addScaledVector(limb.out(aS), W.rAt(aS) + .01 * H)), [a1, f1] = af(limb.axis(tw - .02).addScaledVector(limb.out(aS - D_(55)), W.rAt(aS - D_(55)) + .01 * H));
     bodyStrap(sAcc, limb, C, [[a0, f0], [mid - D_(25), D_(-12)], [mid + D_(25), D_(22)], [mid + D_(80), D_(52)], [mid + D_(135), D_(35)], [mid + D_(190), D_(0)], [a1 + TAU, f1]],
       .008 * H, MM(2.5), MM(2), LEATHER, 'strap');
     out.push({ side: 'C', acc: sAcc, R: median(W.top) });
-    garbBag(rig, hang(aS, -.005 * H), .1 * H, .085 * H, .03 * H, true, PLATE, 'plate', H);
+    garbBag(thing(aS), hang(aS, -.005 * H), .1 * H, .085 * H, .03 * H, true, PLATE, 'plate', H);
   }
-  out.push({ side: 'C', acc: rig, R: median(W.top) });
+  for (const a2 of things) out.push({ side: 'C', acc: a2, R: median(W.top) });
   return out;
 }
 
@@ -2634,7 +2637,7 @@ function hood(p) {
   const len = (p.hd_len ?? 10) / 100 * H, pnt = (p.hd_point ?? 3) / 100 * H;
   const Hd = joint('head'), nu = (Hd ? Hd.clone().sub(N).normalize() : UP.clone()).add(UP).normalize();
   const onNeckFoot = (X) => X.clone().sub(N).dot(nu) <= 0 && X.y <= N.y + .005 * H;
-  const rCap = C.distanceTo(aL) + .09 * H, xOut = Math.abs(aL.x - C.x) + .075 * H, yMin = Math.min(aL.y, aR.y) - .02 * H;
+  const rCap = C.distanceTo(aL) + .065 * H, xOut = Math.abs(aL.x - C.x) + .045 * H, yMin = Math.min(aL.y, aR.y) - .02 * H;   // (to the arm's root: over the deltoid an arm raised came through)
   const f0 = new Array(NT).fill(0), f1 = new Array(NT).fill(NE - 1);
   for (let j = 0; j < NT; j++) {
     let i = 0; while (i < NE - 1 && (Pt(i, j).y > N.y - .01 * H || !onNeckFoot(Pt(i, j)))) i++;
@@ -2654,24 +2657,43 @@ function hood(p) {
   }
   const circ = (a) => blur([a], 4, false)[0];
   const s0 = circ(f0), s1 = circ(f1);
-  const nv = 18, gap = MM(3) + p.gap * .02 * H, thm = Math.max(MM(2), p.thickness * .02 * H), U = LOOK.U;
+  const nv = 18, gap = MM(6) + p.gap * .02 * H, thm = Math.max(MM(2), p.thickness * .02 * H), U = LOOK.U;
   const fiOf = (i, j) => s0[j] + (s1[j] - s0[j]) * i / (nv - 1);
   const base = Array.from({ length: nv }, (_, i) => Array.from({ length: NT }, (_, j) => {
     const fi = fiOf(i, j), d = dir(ths[j], E0 + (E1 - E0) * fi / (NE - 1));
     // a little flare out to the hem (cloth stands off the shoulders' ends), never into what is under it
-    const X = C.clone().addScaledVector(d, at(sm, fi, j) + gap + .012 * H * (i / (nv - 1)) ** 2), c = clearanceAt(bodyGeo, X);
+    // (and more air round the shoulders: an arm raised swells the deltoid, lifts the chest's edge by the armpit - they came through the cloth)
+    const P0 = C.clone().addScaledVector(d, at(sm, fi, j)), tip = smooth(.15 * H, .04 * H, Math.min(P0.distanceTo(aL), P0.distanceTo(aR)));
+    const X = C.clone().addScaledVector(d, at(sm, fi, j) + gap + .012 * H * (i / (nv - 1)) ** 2 + MM(14) * tip), c = clearanceAt(bodyGeo, X);
     if (c && c.d < gap) X.addScaledVector(c.n, gap - c.d);
     const w = castOuter(C, d, .6 * H), r = X.clone().sub(C).dot(d);
     if (w && w.distance < r + 2 * thm) X.addScaledVector(d, Math.max(w.distance - 2 * thm, at(raw, fi, j)) - r);
     return { X, d, f: face[j][Math.round(fi)] };
   }));
-  const acc = new Acc(); acc.w = weigher('cloak', chest, .3);
+  // weights: as the skin under it (held to the chest, the shoulders came through it as an arm was raised); over a
+  // shoulder, by nearness to the upper arm, partly with it as a cloak's shoulder is (arms raised overhead, the cloth
+  // behind the shoulders stayed and the shoulder blades' edges came through)
+  const acc = new Acc(), wSkin = weigher('cloak', chest, .03), H2 = HEIGHT;
+  const arms = ['L', 'R'].filter((s) => PB['arm_' + s] && joint('forearm_' + s)).map((s) => [joint('arm_' + s), joint('forearm_' + s), boneNames.indexOf(PB['arm_' + s].name)]);
+  acc.w = (q) => {
+    if (!q || typeof q !== 'object') return wSkin(q);
+    const [bi, bw] = wSkin(q.f), m = new Map(); let wa = 0, ab = -1;
+    for (const [A, B, b] of arms) {
+      const ab2 = B.clone().sub(A), t = Math.max(0, Math.min(1, q.X.clone().sub(A).dot(ab2) / ab2.lengthSq())), d = q.X.distanceTo(A.clone().addScaledVector(ab2, t));
+      const w = .6 * (1 - smooth(.045 * H2, .1 * H2, d)); if (w > wa) { wa = w; ab = b; }
+    }
+    bi.forEach((b, k) => m.set(b, (m.get(b) || 0) + bw[k] * (1 - wa)));
+    if (ab >= 0) m.set(ab, (m.get(ab) || 0) + wa);
+    const top = [...m.entries()].sort((x, y) => y[1] - x[1]).slice(0, 4), tot = top.reduce((z, x) => z + x[1], 0) || 1;
+    while (top.length < 4) top.push([bi[0], 0]);
+    return [top.map((x) => x[0]), top.map((x) => x[1] / tot)];
+  };
   const vAt = base.map(() => new Array(NT).fill(0)), uAt = base.map(() => new Array(NT).fill(0));
   for (let i = 1; i < nv; i++) for (let j = 0; j < NT; j++) vAt[i][j] = vAt[i - 1][j] + base[i][j].X.distanceTo(base[i - 1][j].X);
   for (let i = 0; i < nv; i++) for (let j = 1; j < NT; j++) uAt[i][j] = uAt[i][j - 1] + base[i][j].X.distanceTo(base[i][j - 1].X);
   const cols = Array.from({ length: NT }, (_, k) => k), rows = Array.from({ length: nv }, (_, i) => i);
   solid(acc, rows, cols, false, (i, j, sd) => base[i][j].X.clone().addScaledVector(base[i][j].d, sd * thm), PLATE, 'plate',
-    (i, j) => [uAt[i][j] / U, -vAt[i][j] / U], (i, j) => base[i][j].f);
+    (i, j) => [uAt[i][j] / U, -vAt[i][j] / U], (i, j) => ({ f: base[i][j].f, X: base[i][j].X }));
   // the hood down: a cowl round the back of the neck on the capelet's top edge (thicker behind), its bag lying on the back
   const cowl = Math.max(0, p.hd_cowl ?? 1), back = (j) => Math.max(0, -Math.cos(ths[j]));
   if (cowl > 0) {
