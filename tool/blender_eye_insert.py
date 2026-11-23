@@ -362,6 +362,216 @@ for side, sv in solved.items():
 bpy.data.objects.remove(kit, do_unlink=True)
 
 
+# ------------------------------------------------------------------ the openings' edges smooth (the user: no ragged lids)
+def smooth_rims():
+    """The skin's edge round each eye opening smooth, its painted frill gone. A model made elsewhere often has its eye
+    in a pit with thin lid flaps over it, their edges in teeth, a strap across the ball, a frill of painted lashes along
+    them. Per eye, near the opening: straps one face wide and skin just over the ball well inside the opening (as its
+    centre sees it) dropped; the opening's edge (welded: the file
+    splits vertices along the unwrap's seams) relaxed along itself without shrinking (Taubin), the skin within a few rings
+    of it smoothed, nothing left inside the ball; the texture in a band along the edge eased to the skin's colour just
+    outside it (lashes are a piece of their own now). Shape keys keep their moves. -> {side: counts}"""
+    import numpy as np
+    from collections import Counter
+    me_ = face.data
+    M = face.matrix_world
+    M3i = M.inverted().to_3x3()
+    rep_out = {}
+    bm = bmesh.new(); bm.from_mesh(me_)
+
+    def welded():
+        bm.verts.ensure_lookup_table(); bm.faces.ensure_lookup_table()
+        W_ = [M @ v.co for v in bm.verts]
+        first = {}
+        rep = [first.setdefault((round(p.x * 2e5), round(p.y * 2e5), round(p.z * 2e5)), i) for i, p in enumerate(W_)]
+        fw = [[rep[v.index] for v in f.verts] for f in bm.faces]
+        ec = Counter(frozenset((a, b)) for vs in fw for a, b in zip(vs, vs[1:] + vs[:1]) if a != b)
+        return W_, rep, fw, ec
+
+    for side, sv in solved.items():
+        c, r = sv["centre"], sv["r_ball"]
+        near = lambda p, k=2.0: math.hypot(p.x - c.x, p.z - c.z) < k * r and p.y < c.y + 0.6 * r   # noqa: E731
+        # straps one face wide (two of its edges open) near the opening go
+        W_, rep, fw, ec = welded()
+        kill = [bm.faces[i] for i, vs in enumerate(fw) if near(sum((W_[k] for k in vs), Vector()) / len(vs), 1.7)
+                and sum(1 for a, b in zip(vs, vs[1:] + vs[:1]) if a != b and ec[frozenset((a, b))] == 1) >= 2]
+        # skin in front of the ball within the opening as the ball's centre sees it (by the markup's outline, in its
+        # angles): a lid flap's strap across the eye, a frill hanging over it
+        ang = lambda d: (math.atan2(d.x, -d.y), math.atan2(d.z, math.hypot(d.x, d.y)))   # noqa: E731
+        a0 = ang(sum((q - c for q in sv["curve"]), Vector()) / len(sv["curve"]))
+        apoly = [tuple(m_ + 0.8 * (x_ - m_) for x_, m_ in zip(ang(q - c), a0)) for q in sv["curve"]]   # (well inside it: the lids' own edges stay)
+        for i, vs in enumerate(fw):
+            q = sum((W_[k] for k in vs), Vector()) / len(vs) - c
+            if q.length < 1.3 * r and q.y < 0.3 * r and inside(apoly, *ang(q)):
+                kill.append(bm.faces[i])
+        kill = list(set(kill))
+        if kill:
+            bmesh.ops.delete(bm, geom=kill, context="FACES")
+            bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context="VERTS")
+        # the edge relaxed along itself, the skin by it smoothed
+        W_, rep, fw, ec = welded()
+        members = {}
+        for i, k in enumerate(rep):
+            members.setdefault(k, []).append(i)
+        nb, bnb = {}, {}
+        for e, n in ec.items():
+            a, b = tuple(e)
+            nb.setdefault(a, set()).add(b); nb.setdefault(b, set()).add(a)
+            if n == 1:
+                bnb.setdefault(a, set()).add(b); bnb.setdefault(b, set()).add(a)
+        P = {k: W_[k].copy() for k in members}
+        P0 = {k: v.copy() for k, v in P.items()}
+        ring = [k for k in bnb if near(P[k]) and len(bnb[k]) == 2]
+        rs = set(ring)
+        for _ in range(40):
+            for lam in (0.5, -0.53):
+                Q = {k: P[k] + ((P[a] + P[b]) * 0.5 - P[k]) * lam for k in ring for a, b in [tuple(bnb[k])]}
+                P.update(Q)
+        depth, front_ = {k: 0 for k in ring}, list(ring)
+        for d in (1, 2, 3):
+            nxt = []
+            for k in front_:
+                for j in nb.get(k, ()):
+                    if j not in depth and near(P[j], 2.2):
+                        depth[j] = d; nxt.append(j)
+            front_ = nxt
+        inner = [k for k, d in depth.items() if d > 0]
+        for _ in range(8):
+            Q = {}
+            for k in inner:
+                ns = nb[k]
+                f_ = (0.5, 0.35, 0.2)[depth[k] - 1]
+                Q[k] = P[k] + (sum((P[j] for j in ns), Vector()) / len(ns) - P[k]) * f_
+            P.update(Q)
+        for k in list(depth):   # (nothing inside the ball)
+            q = P[k] - c
+            if q.length < 1.03 * r:
+                P[k] = c + q.normalized() * (1.03 * r)
+        shapes = list(bm.verts.layers.shape.values())
+        moved = 0
+        for k in depth:
+            dl = M3i @ (P[k] - P0[k])
+            if dl.length < 1e-9:
+                continue
+            moved += 1
+            for i in members[k]:
+                v = bm.verts[i]
+                v.co += dl
+                for lay in shapes:
+                    v[lay] += dl
+        rep_out[side] = {"dropped": len(kill), "edge": len(ring), "moved": moved}
+    bm.to_mesh(me_); bm.free(); me_.update()
+    # the texture: in the band (0 .. 0.3 r from the edge) the painted frill eased to the skin's colour beside it
+    # (0.32 .. 0.55 r out), per image
+    me_.calc_loop_triangles()
+    uvl = me_.uv_layers.active
+    if uvl is None:
+        return rep_out
+    W_ = [M @ v.co for v in me_.vertices]
+    first = {}
+    rep = [first.setdefault((round(p.x * 2e5), round(p.y * 2e5), round(p.z * 2e5)), i) for i, p in enumerate(W_)]
+    imgs = {}   # image -> RGBA array
+
+    def img_of(mi):
+        mat = me_.materials[mi] if mi < len(me_.materials) else None
+        bp = base_pixels(mat)
+        if bp is None:
+            return None
+        node = bp[3]
+        im = node.image
+        if im.name not in imgs:
+            a_ = np.empty(im.size[0] * im.size[1] * 4, dtype=np.float32)
+            im.pixels.foreach_get(a_)
+            imgs[im.name] = (im, a_.reshape(im.size[1], im.size[0], 4))
+        return imgs[im.name][1]
+    for side, o in rep_out.items():
+        sv = solved[side]
+        c, r = sv["centre"], sv["r_ball"]
+        wt = [i for i, p in enumerate(W_) if math.hypot(p.x - c.x, p.z - c.z) < 2.4 * r]
+        # its distance to the opening's edge as it is now (the mesh's open edges by it, welded)
+        ec = Counter()
+        for t in me_.polygons:
+            vs = [rep[i] for i in t.vertices]
+            for a, b in zip(vs, vs[1:] + vs[:1]):
+                if a != b:
+                    ec[frozenset((a, b))] += 1
+        edge_pts = [W_[k] for e, n in ec.items() if n == 1 for k in e
+                    if math.hypot(W_[k].x - c.x, W_[k].z - c.z) < 2.0 * r and W_[k].y < c.y + 0.6 * r]
+        if len(edge_pts) < 8 or not wt:
+            continue
+        from mathutils.kdtree import KDTree
+        kd = KDTree(len(edge_pts))
+        for i, p in enumerate(edge_pts):
+            kd.insert(p, i)
+        kd.balance()
+        d_of = {i: kd.find(W_[i])[2] for i in wt}
+        band, outer = 0.3 * r, (0.32 * r, 0.55 * r)   # (the skin right by the band: further out it was paler - a halo)
+        # the skin's colour just outside the band (per image: the median of its texels there)
+        samples = {}
+        for t in me_.loop_triangles:
+            ds = [d_of.get(v) for v in t.vertices]
+            if any(d is None for d in ds) or not all(outer[0] < d < outer[1] for d in ds):
+                continue
+            arr = img_of(t.material_index)
+            if arr is None:
+                continue
+            uv = sum((uvl.data[li].uv for li in t.loops), Vector((0, 0))) / 3
+            h_, w_ = arr.shape[:2]
+            samples.setdefault(t.material_index, []).append(arr[int(min(h_ - 1, max(0, (uv.y % 1.0) * h_))), int(min(w_ - 1, max(0, (uv.x % 1.0) * w_))), :3].copy())
+        painted = 0
+        for t in me_.loop_triangles:
+            ds = [d_of.get(v) for v in t.vertices]
+            if any(d is None for d in ds) or min(ds) > band:
+                continue
+            arr = img_of(t.material_index)
+            sm = samples.get(t.material_index) or [s for ss in samples.values() for s in ss]
+            if arr is None or len(sm) < 5:
+                continue
+            col = np.median(np.array(sm), axis=0)
+            h_, w_ = arr.shape[:2]
+            uv = [Vector((uvl.data[li].uv.x * w_, uvl.data[li].uv.y * h_)) for li in t.loops]
+            wv = [1.0 - min(1.0, max(0.0, (d - 0.1 * r) / (band - 0.1 * r))) for d in ds]   # (1 at the edge, 0 at the band's end)
+            x0, x1 = int(max(0, math.floor(min(p.x for p in uv)))), int(min(w_ - 1, math.ceil(max(p.x for p in uv))))
+            y0, y1 = int(max(0, math.floor(min(p.y for p in uv)))), int(min(h_ - 1, math.ceil(max(p.y for p in uv))))
+            if x1 < x0 or y1 < y0 or (x1 - x0) * (y1 - y0) > 250000:
+                continue
+            yy, xx = np.mgrid[y0:y1 + 1, x0:x1 + 1].astype(np.float32) + 0.5
+            (ax, ay), (bx, by), (cx_, cy_) = [(p.x, p.y) for p in uv]
+            den = (by - cy_) * (ax - cx_) + (cx_ - bx) * (ay - cy_)
+            if abs(den) < 1e-9:
+                continue
+            l1 = ((by - cy_) * (xx - cx_) + (cx_ - bx) * (yy - cy_)) / den
+            l2 = ((cy_ - ay) * (xx - cx_) + (ax - cx_) * (yy - cy_)) / den
+            l3 = 1 - l1 - l2
+            ins = (l1 >= -0.02) & (l2 >= -0.02) & (l3 >= -0.02)
+            if not ins.any():
+                continue
+            k_ = np.clip(l1 * wv[0] + l2 * wv[1] + l3 * wv[2], 0, 1) * 0.8 * ins
+            sub = arr[y0:y1 + 1, x0:x1 + 1, :3]
+            arr[y0:y1 + 1, x0:x1 + 1, :3] = sub * (1 - k_[..., None]) + col[None, None, :] * k_[..., None]
+            painted += 1
+        rep_out[side]["painted"] = painted
+    for name, (im, arr) in imgs.items():   # (a new packed image in the old one's place: the export takes it)
+        new = bpy.data.images.new(im.name + "_rims", im.size[0], im.size[1], alpha=True)
+        new.pixels.foreach_set(arr.ravel())
+        new.pack()
+        try:
+            new.colorspace_settings.name = im.colorspace_settings.name
+        except TypeError:
+            pass
+        for m in bpy.data.materials:
+            if m.use_nodes:
+                for n in m.node_tree.nodes:
+                    if n.type == "TEX_IMAGE" and n.image == im:
+                        n.image = new
+    _px_cache.clear()
+    return rep_out
+
+
+if face is not None and job.get("smooth_rims", True):
+    report["smooth_rims"] = smooth_rims()
+
+
 # ------------------------------------------------------------------ eyelid keys (ARKit names; lipsync.py drives them)
 def lid_keys():
     """eyeBlink / eyeSquint / eyeWide per side. The lid skin turns about the ball centre on the lateral axis, so it
@@ -598,11 +808,13 @@ def lid_shells():
         me = bpy.data.meshes.new(f"EyeLid_{side}")
         bm.to_mesh(me); bm.free()
         ob = bpy.data.objects.new(me.name, me); bpy.context.scene.collection.objects.link(ob)
-        for name_, f_ in (("eyelid_skin", 1.0), ("eyelid_rim", 0.45)):
+        # (a lid in the brow's shadow, matt: a pale glossy shell beside the ball read as the eye's white - its lashes
+        # seemed to cross the eye)
+        for name_, f_ in (("eyelid_skin", 0.8), ("eyelid_rim", 0.4)):
             m = bpy.data.materials.new(f"{name_}_{side}"); m.use_nodes = True
             bs = next(n for n in m.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
             bs.inputs["Base Color"].default_value = (col[0] * f_, col[1] * f_, col[2] * f_, 1.0)
-            bs.inputs["Roughness"].default_value = 0.6
+            bs.inputs["Roughness"].default_value = 0.78
             me.materials.append(m)
         g = ob.vertex_groups.new(name=job["head_bone"])
         g.add(list(range(len(me.vertices))), 1.0, "REPLACE")
