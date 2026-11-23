@@ -3,7 +3,8 @@ vendor/blender_armour/Footwear to the character's feet and put on them.
 
     blender -b -P blender_footwear_gen.py -- job.json
 
-job.json: {"style": leather_shoe | ankle_boot | mail_foot | round_sabaton | pointed_sabaton | hybrid_boot,
+job.json: {"style": leather_shoe | ankle_boot | mail_foot | round_sabaton | pointed_sabaton | hybrid_boot | turnshoe | work_boot | sandal
+           (the last three: footwear_extra.py),
            "sides": ["L", "R"], "params": {"gap": air round the foot, a share of its size}, "out": piece.glb,
            "work": a folder (the generator's textures), "character": rigged.glb, "names": {naming: {joint: bone}},
            "mask": mask.json}
@@ -141,12 +142,13 @@ last = importlib.import_module("footwear_last")
 pair = importlib.import_module("footwear_pair")
 make_materials = importlib.import_module("kettle_hat_details").make_materials
 prepare_meshes = importlib.import_module("generate_kettle_hat").prepare_meshes
-p = cat.validate_config(style, {})
+import footwear_extra as FX   # (everyday ones beside the generator's six: turnshoes, work boots, sandals)
+p = FX.config(cat, style) if style in FX.STYLES else cat.validate_config(style, {})
 bpy.ops.object.select_all(action="DESELECT")   # their mesh preparation unwraps whatever is selected
 col = bpy.data.collections.new("Footwear")
 bpy.context.scene.collection.children.link(col)
 mats = make_materials(Path(job.get("work") or Path(job["out"]).parent) / f"{Path(job['out']).stem}_tex")
-importlib.import_module("footwear_builders").build(style, p, mats, col)
+(FX if style in FX.STYLES else importlib.import_module("footwear_builders")).build(style, p, mats, col)
 prepare_meshes([o for o in col.objects if o.type in {"MESH", "CURVE"} and o.name != "FootMail_Rings"])
 right = [o for o in col.objects if o.type == "MESH"]
 pair.canonical_meshes(right, p)   # the ankle at the origin, the sole's bottom at -ankle_height

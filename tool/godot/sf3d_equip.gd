@@ -28,7 +28,9 @@ const DEPTH_MAX := 0.045   # of the height, the top layer's push (a step of ~0.5
 const LAYER := {"undercloth": 0.5, "trousers": 1.0, "footwear": 1.5, "brayette": 2.0, "bracer": 3.0, "rerebrace": 3.0,
 	"greave": 3.0, "cuisse": 3.0, "tassets": 3.0, "glove": 3.2, "codpiece": 2.5, "fauld": 2.8, "culet": 2.8,
 	"elbow": 3.5, "gorget": 4.5, "pelerine": 3.9, "rondel": 5.2, "ailette": 5.6, "hauberk": 2.4, "coif": 3.8,
-	"poleyn": 3.5, "cuirass": 4.0, "pauldron": 5.0, "helmet": 5.0, "tabard": 6.0, "skirt": 6.0, "cloak": 7.0}
+	"poleyn": 3.5, "cuirass": 4.0, "pauldron": 5.0, "helmet": 5.0, "tabard": 6.0, "skirt": 6.0, "cloak": 7.0,
+	# everyday clothes: wraps under the breeches, a tunic over the trousers, a vest, an apron, a belt, a hooded capelet
+	"wraps": 0.9, "tunic": 1.2, "vest": 2.2, "apron": 2.6, "belt": 2.9, "hood": 4.2}
 static var _layer_shaders := {}   # cull mode -> Shader
 
 

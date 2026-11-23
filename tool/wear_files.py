@@ -2,7 +2,8 @@
 
 export/character/<model>/ keeps the model, its skeleton and face; its pieces go into folders by what they are:
     armor/    the plates, mail, helmets, gloves, shoes (and pieces fitted in «Броня»)
-    clothes/  clothes under the armour, trousers, a skirt, a tabard, a cloak
+    clothes/  clothes under the armour, trousers, a skirt, a tabard, a cloak, everyday clothes (a tunic, a vest, an apron,
+              a belt, a hooded capelet, leg wraps), hair
     weapons/  weapons, shields, scabbards and quivers
 each as <item>.glb (the game's), <item>.mask.json (what of the body it hides), <item>.src.glb and <item>.fit.json (the
 editors': the piece as made and its settings). <item> is <part>_<style>, «_2», «_3»… for another of the same: short,
@@ -19,7 +20,8 @@ import re
 from pathlib import Path
 
 CATS = ("armor", "clothes", "weapons")
-CLOTHES = {"undercloth", "trousers", "skirt", "tabard", "cloak", "hair", "beard", "brows", "lashes"}
+CLOTHES = {"undercloth", "trousers", "skirt", "tabard", "cloak", "hair", "beard", "brows", "lashes",
+           "tunic", "vest", "apron", "belt", "hood", "wraps"}   # (the last six: everyday clothes)
 WEAPONS = {"weapon", "shield", "sheath"}
 SUFFIXES = (".glb", ".src.glb", ".mask.json", ".fit.json")
 SURFACE_STYLES = ("mail", "scales", "lamellar", "brigandine", "splints", "quilt")   # a surface that names the piece over its material
@@ -58,7 +60,10 @@ def path(rigged, item: str, suffix: str, kind=None, make=False) -> Path:
 LAYER = {"undercloth": .5, "trousers": 1, "footwear": 1.5, "brayette": 2, "bracer": 3, "rerebrace": 3, "greave": 3,
          "cuisse": 3, "tassets": 3, "glove": 3.2, "codpiece": 2.5, "fauld": 2.8, "culet": 2.8, "elbow": 3.5,
          "gorget": 4.5, "pelerine": 3.9, "rondel": 5.2, "ailette": 5.6, "hauberk": 2.4, "coif": 3.8, "poleyn": 3.5,
-         "cuirass": 4, "pauldron": 5, "helmet": 5, "tabard": 6, "skirt": 6, "cloak": 7}
+         "cuirass": 4, "pauldron": 5, "helmet": 5, "tabard": 6, "skirt": 6, "cloak": 7,
+         # everyday clothes: wraps under the breeches' cuffs, a tunic's hem over the trousers, a vest over it, an apron, a belt
+         # over the apron, a hooded capelet over all
+         "wraps": .9, "tunic": 1.2, "vest": 2.2, "apron": 2.6, "belt": 2.9, "hood": 4.2}
 
 
 def kind_of(item: str) -> str:
@@ -139,7 +144,8 @@ def style_of(kind: str, params: dict, style=None) -> str:
            "codpiece": re.sub(r"^cod_", "", str(p.get("codpiece") or "")),
            "rondel": re.sub(r"^rondel_", "", str(p.get("rondel") or "")), "ailette": re.sub(r"^ailette_", "", str(p.get("ailette") or "")),
            "hauberk": re.sub(r"^hauberk_", "", str(p.get("hauberk") or "")), "coif": re.sub(r"^coif_", "", str(p.get("coif") or "")),
-           "undercloth": p.get("cloth_style"), "sheath": p.get("sheath")}.get(kind)
+           "undercloth": p.get("cloth_style"), "sheath": p.get("sheath"),
+           **{k: re.sub(rf"^{k}_", "", str(p.get(k) or "")) for k in ("tunic", "vest", "apron", "belt", "hood", "wraps")}}.get(kind)
     if own:
         return slug(own)
     if style:

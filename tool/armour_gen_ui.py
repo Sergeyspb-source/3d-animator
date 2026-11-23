@@ -102,6 +102,27 @@ PIECES = {"bracer": ("forearm", "hand", "forearm", ("Spine", "Hips", "Chest", "U
           "undercloth": ("hips", "neck", "spine1", (), "torso", "cloth", (0, 0, 0, 0),
                          dict(cloth_style="shirt", cloth_quilt=False, quilt_lines=False, material="cloth", cloth="#d2c6aa", gap=4, thickness=2, straps=0,
                               surface="plain", rigidity=0)),
+          # everyday clothes of townsfolk and craftsmen, each its own layer (armour_gen_editor tunic, vest, apron, belt, hood,
+          # wraps): a shirt or tunic over the trousers, a wool vest over it, an apron, a belt with what hangs on it, a short
+          # hooded capelet over all, linen wraps round the shins under the breeches' cuffs
+          "tunic": ("hips", "neck", "spine1", (), "torso", "cloth", (0, 0, 0, 0),
+                    dict(tunic="tunic_shirt", material="cloth", cloth="#d6c9a8", weave="plain", tn_hem=55, tn_sleeve=100, tn_ease=9, tn_ragged=0,
+                         gap=4, thickness=2, straps=0, surface="plain", rigidity=0, trim="", cell=4)),
+          "vest": ("hips", "neck", "spine1", (), "torso", "cloth", (0, 0, 0, 0),
+                   dict(vest="vest_embroidered", material="cloth", cloth="#7a3426", weave="herring", trim="embroidery", thread="#c9903a", tn_hem=45,
+                        tn_ease=14, vs_gap=34, gap=3, thickness=4, straps=0, surface="plain", rigidity=0, cell=4)),
+          "apron": ("hips", "neck", "spine1", (), "torso", "cloth", (0, 0, 0, 0),
+                    dict(apron="apron_smith", material="cloth", cloth="#a8936e", weave="plain", tint="#5a3a22", ap_len=85, ap_width=62, ap_bib=72,
+                         ap_bibw=40, ap_pockets=1, ap_tools=True, gap=3, thickness=4, straps=0, surface="plain", rigidity=0, trim="", cell=4)),
+          "belt": ("hips", "neck", "hips", (), "torso", "cloth", (0, 0, 0, 0),
+                   dict(belt="belt_buckle", material="leather", tint="#5f3a20", cloth2="#c9b48e", bl_at=22, bl_width=100, bl_pouch=True, bl_purse=False,
+                        bl_satchel=False, bl_rag=False, bl_coil=False, gap=2, thickness=3, straps=0, surface="plain", rigidity=1, trim="")),
+          "hood": ("spine2", "head", "neck", (), "torso", "cloth", (0, 0, 0, 0),
+                   dict(hood="hood_capelet", material="cloth", cloth="#8a4428", weave="herring", tint="#5a3a22", hd_len=10, hd_point=2, hd_cowl=1,
+                        gap=2, thickness=3, straps=0, surface="plain", rigidity=.3, trim="", cell=4)),
+          "wraps": ("leg", "foot", "leg", ("Arm", "Hand"), "leg", "cloth", (0, 0, 0, 0),
+                    dict(wraps="wraps_cross", material="cloth", cloth="#d2c6a6", cloth2="#b3a07a", weave="plain", wr_from=6, wr_to=88, wr_turns=4,
+                         gap=2.5, thickness=2.5, straps=0, surface="plain", rigidity=.2, trim="", cell=3)),
           # held: a weapon in the hand (rigid on the hand's bone, its grip in the fist), a shield on the forearm
           "weapon": ("forearm", "hand", "hand", (), "hand", "held", (0, 0, 0, 0),
                      dict(weapon="sword", material="steel", trim="steel", tint="#4a2c18", cloth="#6b4a2a", straps=0, rigidity=1)),
@@ -140,6 +161,13 @@ SHIELDS = ("round", "kite", "heater", "tower", "scutum")
 SHEATHS = ("scabbard", "dagger", "quiver", "quiver_hip")
 CLOTHS = ("cloth_fitted", "cloth_shirt", "cloth_aketon", "cloth_gambeson", "cloth_doublet", "cloth_voider", "cloth_vest", "cloth_braies", "cloth_braies_long",
           "cloth_coif")
+TUNICS = ("tunic_shirt", "tunic_short", "tunic_sleeveless", "tunic_long", "tunic_rolled")   # (everyday clothes: armour_gen_editor TUNICS...)
+VESTS = ("vest_embroidered", "vest_buttons")
+APRONS = ("apron_smith", "apron_leather", "apron_potter", "apron_waist")
+BELTS = ("belt_buckle", "belt_sash", "belt_rope")
+HOODS = ("hood_capelet", "hood_pointed")
+WRAPS = ("wraps_cross", "wraps_short")
+GARB_STYLES = (*TUNICS, *VESTS, *APRONS, *BELTS, *HOODS, *WRAPS, "breeches", "long_trousers", "short_wide")
 GLOVES = ("glove_plain_leather", "glove_reinforced_leather", "glove_mail_mitten", "glove_hourglass", "glove_plate_mitten", "glove_hybrid")
 HAIRS = ("hair_crop", "hair_short", "hair_bob", "hair_long", "hair_back", "hair_mohawk", "hair_wavy", "hair_half_up", "hair_braids", "hair_side_braid", "hair_crown_braid", "hair_braid_bun", "hair_low_bun", "hair_low_tails", "hair_ponytail", "hair_wavy_short", "hair_warrior", "hair_top_knot", "hair_shaggy", "hair_bowl", "hair_tonsure", "hair_caesar")
 BEARDS = ("beard_stubble", "beard_short", "beard_full", "beard_long", "beard_goatee", "beard_mustache")
@@ -147,7 +175,8 @@ BROWS = ("brows_natural", "brows_thin", "brows_arched", "brows_straight", "brows
 LASHES = ("lashes_natural", "lashes_short", "lashes_long", "lashes_thick")
 HELMETS = ("kettle_hat", "open_bascinet", "barbute", "visored_bascinet", "sallet", "armet",
            "nasal_helm", "spangenhelm", "great_helm", "morion", "close_helm")   # (the last five: helmets_extra.py)
-FOOTWEAR = ("foot_leather_shoe", "foot_ankle_boot", "foot_mail_foot", "foot_round_sabaton", "foot_pointed_sabaton", "foot_hybrid_boot")
+FOOTWEAR = ("foot_leather_shoe", "foot_ankle_boot", "foot_mail_foot", "foot_round_sabaton", "foot_pointed_sabaton", "foot_hybrid_boot",
+            "foot_turnshoe", "foot_work_boot", "foot_sandal")   # (the last three: footwear_extra.py)
 ELBOWS = ("elbow_leather", "elbow_mail", "elbow_early_plate", "elbow_winged_plate", "elbow_articulated_plate", "elbow_plate_mail_hybrid")
 POLEYNS = tuple("poleyn_" + x[len("elbow_"):] for x in ELBOWS)
 
@@ -286,7 +315,7 @@ CHOICES = {"opening_labels": ("none", "left", "right", "back", "front"), "closur
            "shoulder_labels": ("straps", "yoke", "none"),
            "style_labels": ("leather", "steel", "mail", "splints", "covered", "plate_mail", "lamellar", "brigandine", "tights", "wool", "leather_tr",
                             "mail_chausses", "plate_cuisses", "hidden_plate", "plate_and_mail", "compact", "extended", "carrier",
-                            "short_mail", "wrap_mail", "carrier_mail", "lames", *HELMETS, *ELBOWS, *POLEYNS, "cod_plate", "cod_leather", "cod_cloth", "rondel_plain", "rondel_spike", "rondel_fluted", "ailette_square", "ailette_shield", "hauberk_long", "haubergeon", "coif_short", "coif_long", *FOOTWEAR, *GLOVES, *CLOTHS,
+                            "short_mail", "wrap_mail", "carrier_mail", "lames", *HELMETS, *ELBOWS, *POLEYNS, "cod_plate", "cod_leather", "cod_cloth", "rondel_plain", "rondel_spike", "rondel_fluted", "ailette_square", "ailette_shield", "hauberk_long", "haubergeon", "coif_short", "coif_long", *FOOTWEAR, *GLOVES, *CLOTHS, *GARB_STYLES,
                             *(f"weapon_{w}" for w in WEAPONS), *(f"weapon_bow_{b}" for b in BOWS), *(f"shield_{x}" for x in SHIELDS), *(f"sheath_{x}" for x in SHEATHS), *HAIRS, *BEARDS, *BROWS, *LASHES),
            "thigh_labels": ("none", "mail", "plate", "panels", "plate_mail"), "knee_labels": ("none", "patch", "cop")}
 
@@ -800,7 +829,8 @@ def made_preview(cfg, req) -> dict:
     d.mkdir(parents=True, exist_ok=True)
     glb, mask = d / f"{style}{tag}.glb", d / f"{style}{tag}.mask.json"
     tpl = [f for f in (beard_template(cfg, piece), ROOT / f"{piece}_template.json") if f.exists()] if piece in ("beard", "hair", "brows") else []   # (a beard's default outline, a hairline, the brows')
-    if not (glb.exists() and mask.exists() and glb.stat().st_mtime > max(rigged.stat().st_mtime, (ROOT / script).stat().st_mtime,
+    extra = [ROOT / "footwear_extra.py"] if piece == "footwear" else []   # (its everyday styles' builders)
+    if not (glb.exists() and mask.exists() and glb.stat().st_mtime > max(rigged.stat().st_mtime, (ROOT / script).stat().st_mtime, *(f.stat().st_mtime for f in extra),
                                                                        wig.stat().st_mtime if wig is not None else 0,
                                                                        *(f.stat().st_mtime for f in tpl))):
         job = {"style": style[len(prefix):], "params": hp, "sides": sides, "out": str(glb), "work": str(d), "character": str(rigged), "piece": piece,
@@ -863,7 +893,9 @@ def generate(cfg, req) -> dict:
            "uv_prev": str(uv_dir(rigged, item, piece))}   # (its unwrap kept there: the same mesh unwrapped as before)
     if piece == "undercloth":
         job["style"] = params.get("cloth_style")
-    if PIECES[piece][5] in ("held", "cloak"):   # held, not worn (the fingers round a grip stay); a cloak swings off the body
+    # held, not worn (the fingers round a grip stay); a cloak swings off the body; a belt, an apron, a hooded capelet go
+    # over a shirt (the skin hidden under them would open holes as they move off it: a strap, a hanging apron, a cape)
+    if PIECES[piece][5] in ("held", "cloak") or piece in ("belt", "apron", "hood"):
         job.pop("mask")
         (work / "mask.json").unlink(missing_ok=True)
     if made:
