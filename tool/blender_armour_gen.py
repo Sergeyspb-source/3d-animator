@@ -868,6 +868,9 @@ if job.get("mask"):   # what of the body the piece hides (the game takes it away
         keys = {tuple(int(c) for c in x) for x in mj["skin_mask"]}
     else:
         keys = {tuple(x) for x in body_mask(body, [obj], cover=30, erode=int(job.get("mask_erode", 1)))}   # only what it really covers: no holes beside a strap or at a rim (a garment: more, job mask_erode)
+    if mj.get("mask_free"):   # (a sleeve's end: the arm inside it left - the editor's clothPiece; within a thousandth: the import moves it)
+        free = {(x + i, y + j, z + k) for x, y, z in (tuple(int(c) for c in q) for q in mj["mask_free"]) for i in (-1, 0, 1) for j in (-1, 0, 1) for k in (-1, 0, 1)}
+        keys -= free
     head_b = arm.data.bones.get(names.get("head", ""))
     if job.get("style") == "coif" and head_b:
         # the hair goes under a coif (a bag round the head, the hair may be sculpted on the skin): on the head what it
