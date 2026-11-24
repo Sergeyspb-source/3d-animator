@@ -273,6 +273,8 @@
  "ag.head_gap_info": "Between the head and the helmet, a share of the head's half depth. The generator builds the helmet in its own proportions with the head's and scales it to it; the ears are hidden.",
  "ag.head_keep": "Skin inside at the rim, mm",
  "ag.head_keep_info": "Under a helmet the head is hidden whole, the eyes, teeth and tongue too, except what is seen through a slit and under the rim. Round what is seen this much skin stays (mm on a man 1.75 m tall), so that a turning head shows no hollow under the rim. Ears left outside are not touched.",
+ "ag.limb_keep": "Skin inside at the rim, mm",
+ "ag.limb_keep_info": "Greaves and bracers are their own smooth tube round the whole slice of the leg or arm («Relief»: how much of the skin's own shape on it), the limb hidden in it. Skin stays only where it is seen - by the knee, the elbow, the wrist, the ankle, in the gap under the straps - and this much round that (mm on a man 1.75 m tall), so that a bending joint opens no hollow at the rim.",
  "ag.held_group": "Weapon and shield",
  "ag.visor_angle": "Visor raised",
  "ag.w_grip": "Grip length",

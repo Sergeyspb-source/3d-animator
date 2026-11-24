@@ -511,6 +511,78 @@ def head_cover(body, pieces, keys, poke_keys, centre, rings=1, shell=None, ear_k
     return [list(x) for x in sorted(hide)] + [[*k, *d] for k, d in sorted(moved.items())]   # (a hidden one moves too: its triangles with the others)
 
 
+def limb_cover(body, pieces, band, arm, share=.5, slip=25):
+    """What a bracer, a greave hides (2026-11-24): they are their own smooth tube round the limb (the editor's
+    Profile.tube, close to it), the limb's skin in it hidden but for what is seen past the piece - by a rim, in the gap
+    under the straps - and `band` round that (a bending elbow, knee, wrist, ankle opens the rim that far). Seen: a ray
+    from the skin (800 ways round its normal) gets out past the piece and past the skin moving with the bones the piece
+    is on (each side's: the forearms', the shins'), going out from that bone's line and not within `slip` degrees of it:
+    inside a tube the rays along it slip through the thin gap over the skin out of its ends, and rays into the limb went
+    through its skin that moves partly with the next bone out of the straps' gap (counted, nothing was hidden); the
+    limb's own skin hides. arm: the skeleton.
+    body, pieces: as body_mask. Returns body_mask's list."""
+    from mathutils.kdtree import KDTree
+    carried = {}
+    for o in pieces:
+        names = [g.name for g in o.vertex_groups]
+        for v in o.data.vertices:
+            for g in v.groups:
+                if g.weight > .05:
+                    carried[names[g.group]] = carried.get(names[g.group], 0.0) + g.weight
+    if not carried:
+        return []
+    top = max(carried.values())
+    mains = {b_ for b_, w in carried.items() if w >= .5 * top}   # (each side's bone the piece is on)
+    Wa, axes = arm.matrix_world, []
+    for b_ in mains:
+        bo = arm.data.bones.get(b_)
+        if bo is not None:
+            a0, a1 = Wa @ bo.head_local, Wa @ bo.tail_local
+            if (a1 - a0).length > 1e-6:
+                axes.append((a0, (a1 - a0).normalized()))
+    lo = Vector((min(min((o.matrix_world @ v.co)[i] for v in o.data.vertices) for o in pieces) for i in range(3)))
+    hi = Vector((max(max((o.matrix_world @ v.co)[i] for v in o.data.vertices) for o in pieces) for i in range(3)))
+    size = (hi - lo).length
+    m = band + .05 * size
+    tree, occ = _bvh(pieces), _bvh_fixed(body, set(carried), share=.5)   # (the limb's own skin, all of it: rays through it are no way out)
+    e, near, along = 1e-3 * size, .5 * size, math.cos(math.radians(slip))
+    dirs = _hemisphere(800)
+    key_of = lambda c: (round(c.x * 1000), round(c.z * 1000), round(-c.y * 1000))  # noqa: E731
+    hid_pts, seen_pts = [], []
+    for o in body:
+        names = [g.name for g in o.vertex_groups]
+        W, N = o.matrix_world, o.matrix_world.to_3x3().inverted().transposed()
+        for v in o.data.vertices:
+            p = W @ v.co
+            if not (lo.x - m <= p.x <= hi.x + m and lo.y - m <= p.y <= hi.y + m and lo.z - m <= p.z <= hi.z + m):
+                continue
+            tot = sum(g.weight for g in v.groups)
+            k = key_of(v.co)
+            if tot > 1e-9 and sum(g.weight for g in v.groups if names[g.group] in carried) / tot >= share and axes:
+                a0, u = min(axes, key=lambda ax: (p - ax[0] - ax[1] * (p - ax[0]).dot(ax[1])).length)   # (the nearest bone's line)
+                rad = p - a0 - u * (p - a0).dot(u)
+                rad = rad.normalized() if rad.length > 1e-9 else Vector((0, 0, 1))
+                n = (N @ v.normal).normalized()
+                if n.dot(rad) < 0:   # (a Tripo mesh's normals may point in: out from the bone's line instead)
+                    n = -n
+                q = p + n * e
+                if not any(d.dot(n) > .05 and d.dot(rad) > 0 and abs(d.dot(u)) < along and tree.ray_cast(q, d)[0] is None and occ.ray_cast(q, d, near)[0] is None
+                           for d in dirs):
+                    hid_pts.append((k, p))
+                    continue
+            seen_pts.append((k, p))
+    hide = {k for k, _ in hid_pts}
+    if band > 0 and seen_pts and hid_pts:
+        kd = KDTree(len(seen_pts))
+        for i, (_, q) in enumerate(seen_pts):
+            kd.insert(q, i)
+        kd.balance()
+        for k, q in hid_pts:
+            if kd.find(q)[2] < band:
+                hide.discard(k)
+    return [list(x) for x in sorted(hide)]
+
+
 if __name__ == "__main__":   # a piece put on before masks were made: blender -b -P body_mask.py -- rigged.glb piece.glb out.json
     import json
     import sys

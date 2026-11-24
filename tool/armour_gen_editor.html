@@ -760,9 +760,47 @@ class Profile {   // the skin around an axis: distances from it, rows along, the
       return -1;
     }));
   }
-  shell(gap, relief) {   // smoothed by relief, never under the skin, the gap out
+  // a greave's, a bracer's own smooth tube (2026-11-24, the user: the plates were a stocking over the goblin's calf): at
+  // each row the slice's convex hull (the grooves between the muscles filled), smoothed along the limb (a muscle's
+  // bulge a smooth swell) and a little round, never inside what a row needs; the gap out. Close to the limb (an ellipse
+  // round the slice left a wide gap before the shin, the hidden shin seen deep in it from above); the limb inside it is
+  // hidden: blender_armour_gen, body_mask.limb_cover
+  tube(gap) {
+    const R = this.R, NA = this.NA, n = this.ts.length, A = (j) => j / NA * TAU;
+    const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    const hullR = (rs) => {   // the row's convex hull as a distance from the axis at each angle (null: too little of it)
+      const pts = rs.map((s, j) => (Number.isFinite(s) ? [s * Math.cos(A(j)), s * Math.sin(A(j))] : null)).filter(Boolean);
+      if (pts.length < 6) return null;
+      pts.sort((p, q) => p[0] - q[0] || p[1] - q[1]);
+      const lo = [], up = [];
+      for (const p of pts) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); }
+      for (let i = pts.length - 1; i >= 0; i--) { const p = pts[i]; while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); }
+      const H = lo.slice(0, -1).concat(up.slice(0, -1));
+      return Array.from({ length: NA }, (_, j) => {
+        const c = Math.cos(A(j)), s = Math.sin(A(j));
+        let best = 0;
+        for (let k = 0; k < H.length; k++) {
+          const [x1, y1] = H[k], [x2, y2] = H[(k + 1) % H.length], ex = x2 - x1, ey = y2 - y1, den = c * ey - s * ex;
+          if (Math.abs(den) < 1e-12) continue;
+          const t = (x1 * ey - y1 * ex) / den, u = (x1 * s - y1 * c) / den;   // (t along the ray, u along the hull's edge)
+          if (t > 0 && u >= -1e-9 && u <= 1 + 1e-9) best = Math.max(best, t);
+        }
+        return best;
+      });
+    };
+    let G = this.skin.map(hullR);
+    const good = G.map((g, i) => (g ? i : -1)).filter((i) => i >= 0);
+    if (!good.length) return this.skin.map((rs) => rs.map((s) => s + gap * R));
+    G = G.map((g, i) => g || G[good.reduce((b, k) => (Math.abs(k - i) < Math.abs(b - i) ? k : b))]);
+    const along = (g, w) => g.map((_, i) => g[0].map((__, j) => { let s = 0, c = 0; for (let d = -w; d <= w; d++) { s += g[Math.min(n - 1, Math.max(0, i + d))][j]; c++; } return s / c; }));
+    let T = along(G, 5).map((r, i) => r.map((x, j) => Math.max(x, G[i][j])));
+    T = along(T, 2).map((r, i) => r.map((x, j) => Math.max(x, G[i][j])));
+    return T.map((r, i) => r.map((x, j) => Math.max(G[i][j], (r[(j + NA - 1) % NA] + 2 * x + r[(j + 1) % NA]) / 4) + gap * R));
+  }
+  shell(gap, relief, tube) {   // smoothed by relief, never under the skin, the gap out; tube: round its own smooth tube (relief: how much of the skin's shape on it)
     const R = this.R, smooth = blur(this.skin, Math.round(4 + 20 * (1 - relief)));
     let inner = this.skin.map((rs, i) => rs.map((s, j) => Math.max(relief * s + (1 - relief) * smooth[i][j] + gap * R, s + .5 * gap * R)));
+    if (tube) { const T = this.tube(gap); inner = inner.map((rx, i) => rx.map((x, j) => T[i][j] + (x - T[i][j]) * relief)); }
     inner = blur(inner, 1);
     this.inner = inner.map((rx, i) => rx.map((x, j) => Math.max(x, this.skin[i][j] + .5 * gap * R)));
     // under a piece worn over it (a greave over the trousers, a cuirass over their waist): its outside (the piece's
@@ -6197,7 +6235,7 @@ function buildPiece(kind, sides, p) {
     // over pieces worn under it (a sleeve): the outermost of the surfaces round the limb, not the skin under them
     const under = [...WORN.values()].some((w) => w.on && layerOf(w) && !isOuter(w));
     const { limb } = limbOf(kind, side), P = profile(kind + side, limb, tA, tB, { foreign: P0.foreign, limbOnly: true, ...(under ? { over: 1.6 } : {}) });
-    P.shell(p.gap, p.relief);
+    P.shell(p.gap, p.relief, kind === 'bracer' || kind === 'greave');   // (a bracer, a greave: their own smooth tube, the limb hidden in it)
     const acc = new Acc(); acc.w = weigher(fam, PB[P0.joints[2] + '_' + side], p.rigidity);
     const mid = look(limb, side), R = P.R, thick = p.thickness * R;
     // a greave's bottom level with the floor, not square to the shin (it leans forward and out, and the edge went
@@ -7187,6 +7225,7 @@ const SPEC = [
     ['gap', 0, 30, 1, '{{js:ag.gap}}', '', 'rad'],
     ['thickness', 2, 30, 1, '{{js:ag.thickness}}', '', 'rad'],
     ['relief', 0, 1, .05, '{{js:ag.relief}}', '{{js:ag.relief_info}}', '', () => !['glove', 'undercloth', ...GARB].includes(S.piece)],
+    ['limb_keep', 0, 60, 5, '{{js:ag.limb_keep}}', '{{js:ag.limb_keep_info}}', '', isP('bracer', 'greave')],
     ['top_cut', 0, 30, 1, '{{js:ag.top_cut}}', '{{js:ag.top_cut_info}}', 'pc', isLimb],
     ['bottom_cut', 0, 30, 1, '{{js:ag.bottom_cut}}', '{{js:ag.bottom_cut_info}}', 'pc', isLimb],
     ['neckline', 0, 25, 1, '{{js:ag.neckline}}', '{{js:ag.neckline_info}}', 'pc', isP('cuirass')],
@@ -7377,7 +7416,7 @@ const DEFAULTS = Object.assign({ gap: 8, thickness: 12, relief: .35, step: 5, ri
   overlap: 40, cell: 5, anatomy: 0, splits: 4, flare: .3, loose: .3, folds: .3, cuffs: false, waist: .9, low_surface: 'same', split: 55,
   two_plates: false, spaulders: 0, sp_start: 30, sp_reach: 45, sp_span: 260, neckline: 8, armhole: 40, point: 0, ridge: 0, cap: 1.6, trim: '', hammer: .5, arm_share: .7, mail_under: false, hem: 15, sleeves: 30, top_cut: 0, bottom_cut: 0, splints: 6, stitch: false,
   closure: 'across', hinges: false, opening: 'none', shoulders: 'straps', yoke: 70, thigh: 'none', knee: 'none', fly: false, wrap: false,
-  front_panel: false, hem_band: false, made_mat: '', helmet: 'barbute', head_gap: 7, head_keep: 20, visor_angle: 0, cheek_angle: 0, tail: 100, brim: 100,
+  front_panel: false, hem_band: false, made_mat: '', helmet: 'barbute', head_gap: 7, head_keep: 20, limb_keep: 20, visor_angle: 0, cheek_angle: 0, tail: 100, brim: 100,
   strap: 0, strap_fwd: 0, elbow: 'elbow_winged_plate', poleyn: 'poleyn_winged_plate', made_slide: 0, made_twist: 0, made_size: 100, codpiece: 'cod_plate', cod_size: 100, cod_proj: 100, cod_top: 0, cod_belt: false, gorget_lames: 4, gorget_low: 40, gorget_high: 60, bevor: false, bevor_high: 100, w_magnet: true, rondel: 'rondel_plain', ailette: 'ailette_square', pel_len: 11, pel_point: 4, pel_lift: 0, pel_gap: .4, hauberk: 'hauberk_long', hb_hem: 90, hb_sleeve: 100, hb_slits: 45, hb_ease: 5, coif: 'coif_short', coif_cape: 5, limb_gap: 8, wing: 100, footwear: 'foot_ankle_boot', foot_gap: 6, foot_keep: 20, foot_spring: 10, foot_width: 100, glove: 'plain_leather', cuff: 14,
   cloth_style: 'shirt', cloth_quilt: false, quilt_lines: false, pinches: [], paints: [],
   weapon: 'sword', shield: 'round', w_len: 100, w_width: 100, w_guard: 100, w_grip: 100, w_grip_r: 100, w_head: 100, grip_along: 0, grip_out: 0,
@@ -9268,7 +9307,9 @@ function payload() {   // every part in one mesh: positions (glTF axes), faces (
     // locks pass by)
     skin_mask: ['hair', 'beard'].includes(S.piece) ? [...new Set(parts.flatMap((x) => (x.mask ? [...x.mask] : [])))].map((k) => k.split(',').map(Number)) : null,
     // a sleeve's: the arm inside its end left (clothPiece CUFF_FREE)
-    mask_free: parts.flatMap((x) => x.maskFree || []).map((k) => k.split(',').map(Number)) };
+    mask_free: parts.flatMap((x) => x.maskFree || []).map((k) => k.split(',').map(Number)),
+    // a bracer, a greave: the limb in its tube hidden but for this much skin round what is seen (mm on a man 1.75 m tall)
+    limb_keep: ['bracer', 'greave'].includes(S.piece) ? (S.p.limb_keep ?? 20) : null };
 }
 let busy = false;
 // one request at a time: they go through the one hidden field of the app's page, a second one sent at once would take

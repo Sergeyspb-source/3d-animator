@@ -868,6 +868,10 @@ if job.get("mask"):   # what of the body the piece hides (the game takes it away
     from body_mask import body_mask, held, where
     if mj.get("skin_mask") is not None:   # (hair, a beard: the editor's own - the skin under their base)
         keys = {tuple(int(c) for c in x) for x in mj["skin_mask"]}
+    elif mj.get("limb_keep") is not None and kind in ("bracer", "greave"):   # (their own smooth tube: the limb in it hidden but for
+        from body_mask import limb_cover                                    # what is seen and a band round it, body_mask.limb_cover)
+        zs = [(o.matrix_world @ v.co).z for o in body for v in o.data.vertices]
+        keys = {tuple(x) for x in limb_cover(body, [obj], float(mj["limb_keep"]) / 1750 * (max(zs) - min(zs)), arm)}
     else:
         keys = {tuple(x) for x in body_mask(body, [obj], cover=30, erode=int(job.get("mask_erode", 1)))}   # only what it really covers: no holes beside a strap or at a rim (a garment: more, job mask_erode)
     if mj.get("mask_free"):   # (a sleeve's end: the arm inside it left - the editor's clothPiece; within a thousandth: the import moves it)
