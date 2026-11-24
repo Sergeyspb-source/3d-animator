@@ -363,6 +363,31 @@ const isOuter = (w) => (w.layer != null || layerMine() != null ? layerOfW(w) > (
 // what the rays meet: the character's skin and the pieces put on under the new one (their rest pose, their weights);
 // the ones over it apart (outerGeo): the new piece stays under them
 let outerGeo = null, bodyFor = null, SKIN_TRIS = Infinity, SKIN_VERTS = Infinity;   // bodyGeo's triangles (vertices) from these on are the worn pieces'
+// a belt pulled tight over clothes (the user: «a belt over clothes must cinch them at the waist»): it lies on the
+// character's own outermost (its skin, a top modelled on it) and the cloth's own thickness (CINCH_LAYER a layer), not on
+// the loose outside of a shirt; the cloth under it is pressed in under it - made under it (clothPiece) and on screen
+// (cinchShown: the ones worn, made before it). TRI_KIND: [first triangle, kind] of each worn piece in bodyGeo; cinchGeo:
+// the bands of the belts worn over the new piece (their pouches hang outside, not a wall)
+const SOFT_KINDS = ['undercloth', 'trousers', 'tunic', 'vest'], CINCHERS = ['belt'];
+const CINCH_LAYER = 2.5, CINCH_SLOPE = .6;   // mm a layer of cloth pressed under a belt; how fast it comes out of it above and below (across per along)
+const CINCH_GATHER = 10, CINCH_REACH = 75, CINCH_FOLDS = 9;   // (more were finer than the cloth's own triangles there: lost between them)   // mm the folds gathered by a belt stand out at its edges, mm they reach up and down; how many round
+let TRI_KIND = [], cinchGeo = null;
+const kindOfTri = (f) => { let k = null; for (const [from, kind] of TRI_KIND) { if (f >= from) k = kind; else break; } return k; };
+// a worn belt's band (and buckle): its triangles about its height (bl_at, bl_width), in the world at rest
+function beltBand(w, meshes) {
+  const sv = DATA.saved.find((y) => y.item === w.item), pr = (sv && sv.params) || {}, { limb } = limbOf('cuirass', 'C');
+  const tw = (pr.bl_at ?? 22) / 100, hw = 1.3 * .012 * HEIGHT * (pr.bl_width ?? 100) / 100 / limb.len, out = [], v = new V3();   // (the band's half width and its buckle's: a pouch below it is not a wall)
+  for (const o of meshes) {
+    o.updateMatrixWorld(true);
+    const P = o.geometry.attributes.position, idx = o.userData.pieceIndex || (o.geometry.index ? o.geometry.index.array : null); if (!idx) continue;
+    const W = Array.from({ length: P.count }, (_, i) => v.fromBufferAttribute(P, i).applyMatrix4(o.matrixWorld).clone());
+    for (let k = 0; k < idx.length; k += 3) {
+      const c = W[idx[k]].clone().add(W[idx[k + 1]]).add(W[idx[k + 2]]).multiplyScalar(1 / 3), t = c.clone().sub(limb.a).dot(limb.u) / limb.len;
+      if (Math.abs(t - tw) < hw) for (let q = 0; q < 3; q++) out.push(...W[idx[k + q]].toArray());
+    }
+  }
+  return out;
+}
 function buildBody() {
   const pos = [], idx = [], vb = [], vw = [], id = new Map(boneNames.map((n, i) => [n, i])), v = new V3();
   const on = [...WORN.values()].filter((w) => w.on && layerOf(w)), meshes = [...charMeshes, ...on.filter((w) => !isOuter(w)).flatMap((w) => w.meshes)];   // (a cloth one over it: neither)
@@ -376,9 +401,14 @@ function buildBody() {
   }
   outerGeo = op.length ? new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(op, 3)) : null;
   if (outerGeo) outerGeo.computeBoundsTree();
-  SKIN_TRIS = SKIN_VERTS = Infinity;
+  const cp = SOFT_KINDS.includes(S.piece) ? [...WORN.entries()].filter(([, w]) => w.on && layerOf(w) && isOuter(w) && CINCHERS.includes(w.piece)).flatMap(([item, w]) => beltBand({ item }, w.meshes)) : [];
+  cinchGeo = cp.length ? new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(cp, 3)) : null;
+  if (cinchGeo) cinchGeo.computeBoundsTree();
+  const kindOfMesh = new Map(on.flatMap((w) => w.meshes.map((m) => [m, w.piece])));
+  SKIN_TRIS = SKIN_VERTS = Infinity; TRI_KIND = [];
   for (const o of meshes) {
     if (!charMeshes.includes(o) && SKIN_TRIS === Infinity) { SKIN_TRIS = idx.length / 3; SKIN_VERTS = pos.length / 3; }   // (the pieces' after the skin's)
+    if (kindOfMesh.has(o)) TRI_KIND.push([idx.length / 3, kindOfMesh.get(o)]);
     o.updateMatrixWorld(true);
     const g = o.geometry, P = g.attributes.position, si = g.attributes.skinIndex, sw = g.attributes.skinWeight;
     const bmap = o.skeleton.bones.map((b) => id.get(b.name) ?? 0), base = pos.length / 3;
@@ -476,6 +506,7 @@ function hideBody() {
     o.geometry.setIndex(keep);
   }
   hideUnder();
+  cinchShown();
 }
 // a lower layer's part that came out through a helmet is not shown (the user's rule, as the game's depth rule but by
 // the shapes at rest; only under a helmet - a closed shell round the head: hidden elsewhere, a codpiece under the
@@ -2095,7 +2126,45 @@ function mainPart(S) {
   S._main = { pos, w, tris, keys: S.lks ? keys : S.keys, lks };
   return S._main;
 }
-function normalsOf(pos, tris) {
+// S's triangles cut where f(point, its part) = 0, kept where it is >= 0 (metres): the new points on the edges crossed,
+// their weights blended, no keys (not the body's: nothing of it hidden by them); onCut: the points on the cut. The
+// cloth's cut edges on their lines exactly (by whole triangles a staircase: over a bust a vest's front edge crumpled,
+// the skin between the steps hidden and bare)
+function clipSkin(S, f, partOf, key, disp = null) {
+  const memo = S._clip || (S._clip = new Map()); if (key && memo.has(key)) return memo.get(key);
+  const n0 = S.pos.length, pt0 = Array.from({ length: n0 }, (_, i) => partOf(i, S)), fv = S.pos.map((P, i) => f(P, pt0[i]));
+  const pos = [], w = [], lks = [], part = [], onCut = [], dp = [], map = new Int32Array(n0).fill(-1), mid = new Map(), tris = [];
+  const old = (i) => { if (map[i] < 0) { map[i] = pos.length; pos.push(S.pos[i]); w.push(S.w[i]); lks.push(S.lks ? S.lks[i] : []); part.push(pt0[i]); onCut.push(0); if (disp) dp.push(disp[i].clone()); } return map[i]; };
+  const mixW = (A, B, x) => {
+    const m = new Map(); A[0].forEach((b, k) => m.set(b, (m.get(b) || 0) + A[1][k] * (1 - x))); B[0].forEach((b, k) => m.set(b, (m.get(b) || 0) + B[1][k] * x));
+    const top = [...m.entries()].sort((p, q) => q[1] - p[1]).slice(0, 4); while (top.length < 4) top.push([top[0][0], 0]);
+    const tot = top.reduce((z, q) => z + q[1], 0) || 1; return [top.map((q) => q[0]), top.map((q) => q[1] / tot)];
+  };
+  const cross = (a, b) => {   // a in, b out; (close to a: a itself on the cut - no slivers)
+    const x = fv[a] / (fv[a] - fv[b]);
+    if (x < .15) { const k = old(a); onCut[k] = 1; return k; }
+    const kk = a + ',' + b;
+    if (!mid.has(kk)) { mid.set(kk, pos.length); pos.push(S.pos[a].clone().lerp(S.pos[b], x)); w.push(mixW(S.w[a], S.w[b], x)); lks.push([]); part.push(pt0[a]); onCut.push(1); if (disp) dp.push(disp[a].clone().lerp(disp[b], x)); }
+    return mid.get(kk);
+  };
+  for (const t of S.tris) {
+    const ins = t.map((i) => fv[i] >= 0), k3 = ins.filter(Boolean).length;
+    if (k3 === 3) { tris.push(t.map(old)); continue; }
+    if (!k3) continue;
+    const poly = [];
+    for (let k = 0; k < 3; k++) {
+      const a = t[k], b = t[(k + 1) % 3];
+      if (ins[k]) poly.push(old(a));
+      if (ins[k] !== ins[(k + 1) % 3]) poly.push(ins[k] ? cross(a, b) : cross(b, a));
+    }
+    for (let k = 1; k + 1 < poly.length; k++) { const tr = [poly[0], poly[k], poly[k + 1]]; if (tr[0] !== tr[1] && tr[1] !== tr[2] && tr[0] !== tr[2]) tris.push(tr); }
+  }
+  const res = { pos, w, tris, keys: new Set(lks.flat()), lks, part, onCut: Uint8Array.from(onCut), cutF: f, disp: disp ? dp : null };
+  if (key) memo.set(key, res);
+  return res;
+}
+function normalsOf(pos, tris) { return normalsOfMesh(pos, tris); }
+function normalsOfMesh(pos, tris) {
   const n = pos.map(() => new V3()), e1 = new V3(), e2 = new V3(), fn = new V3();
   for (const [a, b, c] of tris) { fn.crossVectors(e1.subVectors(pos[b], pos[a]), e2.subVectors(pos[c], pos[a])); n[a].add(fn); n[b].add(fn); n[c].add(fn); }
   return n.map((x) => x.normalize());
@@ -2152,11 +2221,24 @@ function coif(p) {
 const SKIN_FILL = 30, SKIN_SINK = 40, SKIN_BALL = 30;   // mm: no hollow filled deeper; no bump cut deeper; the smoothing's reach
 // o (a hauberk): {mat, role, uv(p, n, i)}, over: out over the pieces worn under it (their outermost close on it)
 function skinCloth(p, parts, keep, o = {}) {
-  const S = o.mainOnly ? mainPart(bodySkin(new Set(parts), keep)) : bodySkin(new Set(parts), keep);
+  // (o.cut: the skin past the cut too - made whole over it, the cloth cut at the end; cut first, its edge was an open
+  // edge all along: the normals tilted there, the hollows filled round it, it lagged and curled - a vest's front edge
+  // 5 to 16 degrees off the skin's cut, the skin between hidden and bare, its border in spikes)
+  let S = o.mainOnly ? mainPart(bodySkin(new Set(parts), keep)) : bodySkin(new Set(parts), keep);
   if (!S.tris.length) return [];
   const n = S.pos.length, nb = Array.from({ length: n }, () => new Set());
   for (const [a, b, c] of S.tris) { nb[a].add(b).add(c); nb[b].add(a).add(c); nb[c].add(a).add(b); }
-  const NB = nb.map((x) => [...x]), raw = S.pos.map((v) => v.clone()), pos = S.pos.map((v) => v.clone());
+  const NB = nb.map((x) => [...x]), raw = S.pos.map((v) => v.clone());
+  let pos = S.pos.map((v) => v.clone());
+  const fv = o.cut ? S.pos.map((P, i) => o.cut(P, o.partOf(i, S))) : null;
+  // the normals turned out as the skin's own: smoothed, a nipple's many small triangles folded over one another, its
+  // normals turned in - pushed «out» along them the cloth went 4 cm into the bust there and the top under it came through
+  const NR = normalsOfMesh(raw, S.tris);
+  const normalsOf = (P, T, R = null) => {   // (R: the skin's places of another mesh - the cut one)
+    const N = normalsOfMesh(P, T), ref = R ? normalsOfMesh(R, T) : NR; if (P === raw) return N;
+    for (let i = 0; i < N.length; i++) if (N[i].dot(ref[i]) < 0) N[i].negate();
+    return N;
+  };
   const k = 1 - (p.relief ?? .1), m = new V3(), avg = (i, P) => { m.set(0, 0, 0); for (const j of NB[i]) m.add(P[j]); return m.multiplyScalar(1 / NB[i].length); };
   // the skin within SKIN_BALL of each point, each point by its share of the skin's area: smoothing in the body's own
   // size, not by neighbours (a nipple sculpted in many small triangles is many rings wide: neighbours' smoothing kept it)
@@ -2189,7 +2271,8 @@ function skinCloth(p, parts, keep, o = {}) {
   let dist = null;
   if (o.edge) {
     dist = new Float64Array(n).fill(Infinity); const q = [], inQ = new Uint8Array(n), lim = 2 * MM(o.edge);
-    for (let i = 0; i < n; i++) if (rim[i]) { dist[i] = 0; q.push(i); inQ[i] = 1; }
+    for (let i = 0; i < n; i++) if (rim[i] && !(fv && fv[i] < 0)) { dist[i] = 0; q.push(i); inQ[i] = 1; }
+    if (fv) for (const [a, b] of [...ec.keys()].map((kk) => kk.split(',').map(Number))) if ((fv[a] >= 0) !== (fv[b] >= 0)) for (const x of [a, b]) if (Math.abs(fv[x]) < dist[x]) { dist[x] = Math.abs(fv[x]); if (!inQ[x]) { q.push(x); inQ[x] = 1; } }
     for (let h = 0; h < q.length; h++) {
       const i = q[h]; inQ[i] = 0;
       for (const j of NB[i]) { const d = dist[i] + raw[i].distanceTo(raw[j]); if (d < dist[j] && d < lim) { dist[j] = d; if (!inQ[j]) { inQ[j] = 1; q.push(j); } } }
@@ -2256,8 +2339,14 @@ function skinCloth(p, parts, keep, o = {}) {
     const N = normalsOf(pos, S.tris);
     for (let i = 0; i < n; i++) { const f = o.fold(pos[i], i, S, N[i]); if (f > 0) pos[i].addScaledVector(N[i], f); }
   }
-  if (o.snapRim) for (let i = 0; i < n; i++) if (rim[i]) { const q2 = o.snapRim(pos[i], i, S); if (q2) pos[i].copy(q2); }   // (its cut edges onto their lines: no staircase)
-  const H = { pos, n: normalsOf(pos, S.tris), w: S.w, tris: S.tris };
+  let rimC = rim;
+  if (o.cut) {   // now cut: on the skin's cut line, the cloth's place there between its two ends' (no staircase, no curl)
+    S = clipSkin(S, o.cut, o.partOf, null, pos); pos = S.disp;
+    const ec2 = new Map(); for (const t of S.tris) for (const [x, y] of [[t[0], t[1]], [t[1], t[2]], [t[2], t[0]]]) { const kk = x < y ? x + ',' + y : y + ',' + x; ec2.set(kk, (ec2.get(kk) || 0) + 1); }
+    rimC = new Uint8Array(pos.length); for (const [kk, c] of ec2) if (c === 1) for (const x of kk.split(',')) rimC[+x] = 1;
+  }
+  if (o.snapRim) for (let i = 0; i < pos.length; i++) if (rimC[i]) { const q2 = o.snapRim(pos[i], i, S); if (q2) pos[i].copy(q2); }   // (its cut edges onto their lines: no staircase)
+  const H = { pos, n: normalsOf(pos, S.tris, S.pos), w: S.w, tris: S.tris };
   const R = .02 * HEIGHT, gap = MM(1) + p.gap * R, thick = MM(1.2) + p.thickness * R, acc = new Acc();
   acc.w = (q) => q.direct;
   const sh = shellOf(acc, H, S.tris.map((_, t) => t), gap, thick, o.mat ?? PLATE, o.role || 'plate', (i) => ({ direct: S.w[i] }), null, 8, o.uv ? (q, nn, i) => o.uv(q, nn, i, S) : null);   // (8: the cut's staircase smoothed)
@@ -2296,6 +2385,26 @@ function undercloth(p) {
   return GARMENTS[st] ? garment(p, GARMENTS[st]) : [];
 }
 
+// the neckline of everyday clothes (a shirt, a vest, a hooded capelet): round the neck at its base, NECK_CUT x the neck's
+// own radius from its line (by the skin's weights it went up and down the neck in steps - a shirt's band and a vest's
+// border zigzagged there; from the neck joint down a capelet stood up the neck to the chin where that joint is high).
+// neckF(v) < 0 on the neck's side of it
+function neckLine() {
+  const NJ = joint('neck'), HJ2 = joint('head'), H = HEIGHT;
+  let neckR = 0;
+  if (NJ && HJ2) {
+    const nu = HJ2.clone().sub(NJ).normalize(), mid = NJ.clone().lerp(HJ2, .35), sideA = new V3(1, 0, 0).addScaledVector(nu, -nu.x).normalize(), sideB = nu.clone().cross(sideA);
+    const rs = Array.from({ length: 12 }, (_, j) => { const d = sideA.clone().multiplyScalar(Math.cos(j / 12 * TAU)).addScaledVector(sideB, Math.sin(j / 12 * TAU)), h = cast(mid, d, .2 * H); return h ? h.distance : null; }).filter((x) => x != null).sort((x, y) => x - y);
+    neckR = rs.length ? rs[rs.length >> 1] : 0;
+  }
+  const neckF = (v) => {
+    if (!neckR) return 1;
+    const u = HJ2.clone().sub(NJ), L = u.length(); u.normalize();
+    const s2 = v.clone().sub(NJ).dot(u); if (s2 < -.04 * H) return 1;
+    return v.distanceTo(NJ.clone().addScaledVector(u, Math.min(L, s2))) - NECK_CUT * neckR;
+  };
+  return { NJ, HJ2, neckR, neckF };
+}
 // ------------------------------------------------------------------ everyday clothes of townsfolk and craftsmen (the
 // user's reference sheets: a tailor, a smith, a leatherworker, a potter, a carpenter, a pedlar in a T-pose): shirts and
 // tunics, a wool vest, aprons, a belt with what hangs on it, a short hooded capelet, leg wraps. Each its own kind and
@@ -2309,6 +2418,96 @@ const garbFront = (limb) => limb.angOf(FRONT.clone().addScaledVector(limb.u, -FR
 const jagAt = (x, n, seed = 17) => { const y = ((x % 1) + 1) % 1 * n, i = Math.floor(y), f = y - i; return (.35 + .65 * hash(i, 3, seed)) * (1 - Math.abs(2 * f - 1)); };
 // the outermost of what lies on the body along a ray from inside it: the skin, then the pieces worn on it, each within
 // 4% of the height of the one before (not an arm's or the head's skin past them): {r, face}
+// the same, a belt's: over clothes (SOFT_KINDS) pulled tight - on the character's own outermost and the cloth's
+// thickness (CINCH_LAYER a layer); over what is hard (armour) on its outside
+function tightHit(o, d, far, foreign = ['Arm', 'Hand', 'Head']) {
+  const all = castAll(o, d, far).filter((h) => skinOf(h, foreign) <= .5);
+  if (!all.length) return null;
+  let k = 0; while (k + 1 < all.length && all[k + 1].distance - all[k].distance < .04 * HEIGHT) k++;
+  let own = 0, soft = 0, hard = 0;
+  for (let q = 0; q <= k; q++) { const h = all[q], kind = kindOfTri(h.faceIndex); if (!kind) own = Math.max(own, h.distance); else if (SOFT_KINDS.includes(kind)) soft++; else hard = Math.max(hard, h.distance); }
+  return { r: Math.min(all[k].distance, Math.max(own + Math.ceil(soft / 2) * MM(CINCH_LAYER), hard)), face: all[k].faceIndex };
+}
+// cloth pressed in under a belt: wallG the belt's inside (a BVH), clothG the cloth's (its outside found from out of it);
+// at each height and way round the cloth's outside no farther out than the wall there, coming out of it at a slant
+// above and below (CINCH_SLOPE: gathered under it, not cut off at its edges); each of pts (world, changed in place) moved
+// in by as much as the cloth's outside there - its thickness kept - never into what is under it (floor(o, d): the
+// radius of what is under it from o along d); above and below it gathered in folds (CINCH_GATHER out at its edges, gone
+// CINCH_REACH away; a shirt fitted at the waist pressed by a millimetre looked not belted at all). Returns the most any moved
+function cinchPoints(pts, clothG, wallG, floor) {
+  const { limb } = limbOf('cuirass', 'C'), H = HEIGHT, NA = 72, far = .6 * H, dt = .01;
+  let tLo = Infinity, tHi = -Infinity;
+  const pa = wallG.attributes.position;
+  for (let i = 0; i < pa.count; i++) { const t = (pa.getX(i) - limb.a.x) * limb.u.x + (pa.getY(i) - limb.a.y) * limb.u.y + (pa.getZ(i) - limb.a.z) * limb.u.z; tLo = Math.min(tLo, t / limb.len); tHi = Math.max(tHi, t / limb.len); }
+  if (!(tHi > tLo)) return 0;
+  const T0 = tLo - .2, NR = Math.round((tHi + .2 - T0) / dt) + 1, ts = Array.from({ length: NR }, (_, i) => T0 + i * dt);
+  const wall = ts.map((t) => Array.from({ length: NA }, (_, j) => { const h = castOn(wallG, limb.axis(t), limb.out(j / NA * TAU), far); return h ? h.distance - MM(.8) : Infinity; }));
+  const sl = CINCH_SLOPE * dt * limb.len;
+  for (let i = 1; i < NR; i++) for (let j = 0; j < NA; j++) wall[i][j] = Math.min(wall[i][j], wall[i - 1][j] + sl);
+  for (let i = NR - 2; i >= 0; i--) for (let j = 0; j < NA; j++) wall[i][j] = Math.min(wall[i][j], wall[i + 1][j] + sl);
+  // (no farther than its inside reaches what is under it: pressed onto a briefs' waistband its two faces met - dark patches)
+  const press = ts.map((t, i) => Array.from({ length: NA }, (_, j) => {
+    if (wall[i][j] === Infinity) return 0;
+    const d = limb.out(j / NA * TAU), o = limb.axis(t), h = castOn(clothG, o.clone().addScaledVector(d, far), d.clone().negate(), far);
+    if (!h) return 0;
+    const m = far - h.distance - wall[i][j]; if (m <= 0) return 0;
+    const hi = castOn(clothG, o, d, far); return Math.max(0, Math.min(m, (hi ? hi.distance : far - h.distance) - floor(o, d) - MM(.5)));
+  }));
+  const at = (t, a) => { const x = (t - T0) / dt; if (x < 0 || x > NR - 1) return 0; const i = Math.min(NR - 2, Math.floor(x)), f = x - i, y = ((a / TAU) % 1 + 1) % 1 * NA, j = Math.floor(y) % NA, g = y - Math.floor(y), j1 = (j + 1) % NA;
+    return (press[i][j] * (1 - g) + press[i][j1] * g) * (1 - f) + (press[i + 1][j] * (1 - g) + press[i + 1][j1] * g) * f; };
+  // the band's own rows (the wall's middle third in height: the buckle's frame reaches past it)
+  const tc = (tLo + tHi) / 2, half = (tHi - tLo) / 2 * limb.len, reach = MM(CINCH_REACH);
+  const covered = (a) => { const j = Math.round(((a / TAU) % 1 + 1) % 1 * NA) % NA, i = Math.round((tc - T0) / dt); return wall[Math.max(0, Math.min(NR - 1, i))][j] < Infinity; };
+  let most = 0;
+  for (const P of pts) {
+    const d = P.clone().sub(limb.a), tt = d.dot(limb.u); d.addScaledVector(limb.u, -tt);
+    const r = d.length(); if (r < 1e-6) continue; d.multiplyScalar(1 / r);
+    const a = limb.angOf(d), m = at(tt / limb.len, a), off = Math.abs(tt - tc * limb.len) - half;
+    let rn = r;
+    if (m > 1e-5) rn = r - m;
+    if (off > 0 && off < reach && covered(a)) {   // the folds: out only, each its own height, those below between those above
+      const k = tt > tc * limb.len ? 0 : .5, f = Math.max(0, Math.sin((a * CINCH_FOLDS / 2 + k * Math.PI / 2 + .3 * Math.sin(a * 3)))) ** 2;
+      rn += MM(CINCH_GATHER) * smooth(0, MM(12), off) * (1 - off / reach) ** 1.4 * f * (.6 + .4 * hash(Math.round(a * CINCH_FOLDS / TAU * 2), 5, 31));   // (out of it from under its edge)
+    }
+    if (rn === r) continue;
+    P.copy(limb.axis(tt / limb.len).addScaledVector(d, rn)); most = Math.max(most, Math.abs(r - rn));
+  }
+  return most;
+}
+// the character's own outermost from o along d (its skin, a top modelled on it: not the pieces worn)
+function ownR(o, d, far = .6 * HEIGHT) {
+  const all = castAll(o, d, far).filter((h) => !kindOfTri(h.faceIndex));
+  if (!all.length) return 0;
+  let k = 0; while (k + 1 < all.length && all[k + 1].distance - all[k].distance < .04 * HEIGHT) k++;
+  return all[k].distance;
+}
+// on screen: the soft pieces worn (made before the belt: «Rebuild by layers» makes them so) pressed in under the belts
+// worn over them and the belt being made - as they will be made
+function cinchShown() {
+  for (const e of WORN.values()) for (const o of e.meshes) if (o.userData.cinch0) { o.geometry.attributes.position.array.set(o.userData.cinch0); o.geometry.attributes.position.needsUpdate = true; o.userData.cinch0 = null; }
+  const on = DATA.worn.filter((w) => { const e = WORN.get(w.item); return e && e.on; });
+  const walls = on.filter((w) => CINCHERS.includes(w.piece)).map((w) => ({ L: layerOfW(w), pts: beltBand(w, WORN.get(w.item).meshes) }));
+  if (!S.idle && CINCHERS.includes(S.piece) && !showResult && parts.length && parts[0].cinch) walls.push({ L: LAYER[S.piece], pts: Array.from(accGeo([parts[0].acc]).toNonIndexed().attributes.position.array) });
+  if (!walls.length) return;
+  for (const w of on.filter((x) => SOFT_KINDS.includes(x.piece))) {
+    const over = walls.filter((x) => x.L > layerOfW(w) && x.pts.length);
+    if (!over.length) continue;
+    const wallG = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(over.flatMap((x) => x.pts), 3)); wallG.computeBoundsTree();
+    for (const o of WORN.get(w.item).meshes) {
+      o.updateMatrixWorld(true);
+      const P = o.geometry.attributes.position, M = o.matrixWorld, Mi = M.clone().invert();
+      const pts = Array.from({ length: P.count }, (_, i) => new V3().fromBufferAttribute(P, i).applyMatrix4(M));
+      const cg = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(pts.flatMap((p) => p.toArray()), 3));
+      const idx = o.userData.pieceIndex || (o.geometry.index ? o.geometry.index.array : null); if (!idx) continue;
+      cg.setIndex(Array.from(idx)); cg.computeBoundsTree();
+      const before = P.array.slice();
+      if (cinchPoints(pts, cg, wallG, (q, d) => ownR(q, d)) <= 0) continue;
+      o.userData.cinch0 = before;
+      pts.forEach((p, i) => { p.applyMatrix4(Mi); P.setXYZ(i, p.x, p.y, p.z); });
+      P.needsUpdate = true; o.geometry.computeBoundingSphere();
+    }
+  }
+}
 function layerHit(o, d, far, foreign = ['Arm', 'Hand', 'Head']) {
   const all = castAll(o, d, far).filter((h) => skinOf(h, foreign) <= .5);
   if (!all.length) return null;
@@ -2385,9 +2584,9 @@ function snugRow(row, k = 3) {
   for (let it = 0; it < 2; it++) r = r.map((x, j) => { let m = 0; for (let d = -k; d <= k; d++) m += r[(j + d + n) % n]; return Math.max(row[j], m / (2 * k + 1)); });
   return r;
 }
-function waistRing(limb, t, w, gap) {
+function waistRing(limb, t, w, gap, tight = false) {   // (tight: a belt's - over clothes on their thickness, pressing them in)
   const NA = 72, ts = [t - w, t, t + w].map((x) => x);
-  const hits = ts.map((tt) => Array.from({ length: NA }, (_, j) => layerHit(limb.axis(tt), limb.out(j / NA * TAU), .6 * HEIGHT, ['Arm', 'Hand'])));
+  const hits = ts.map((tt) => Array.from({ length: NA }, (_, j) => (tight ? tightHit : layerHit)(limb.axis(tt), limb.out(j / NA * TAU), .6 * HEIGHT, ['Arm', 'Hand'])));
   const near = hits.flat().filter(Boolean).map((h) => h.r), r0 = near.length ? median(near) : .1 * HEIGHT;
   const rows = hits.map((row) => snugRow(row.map((h) => (h ? h.r : r0))).map((x) => x + gap));
   const top = rows[0].map((_, j) => Math.max(rows[0][j], rows[1][j], rows[2][j]));   // (a band does not dip between its edges)
@@ -2399,6 +2598,39 @@ function waistRing(limb, t, w, gap) {
   const rows2 = [rows[0], rows[1].map((x, j) => Math.max(x, .5 * (rows[0][j] + rows[2][j]))), rows[2]];
   const rowAt = (i, a) => { const x = (((a / TAU) % 1) + 1) % 1 * NA, j = Math.floor(x) % NA, f = x - Math.floor(x); return rows2[i][j] * (1 - f) + rows2[i][(j + 1) % NA] * f; };
   return { ts, top, face, rAt, rowAt, faceAt: (a) => face(Math.round((((a / TAU) % 1) + 1) % 1 * NA)) };
+}
+// what is built (accs) as one geometry with its BVH: a piece's own parts to lie over
+function accGeo(accs) {
+  const pos = [], idx = [];
+  for (const a of accs) { const o = pos.length / 3; pos.push(...a.v); for (const f of a.f) for (let k = 1; k + 1 < f.length; k++) idx.push(o + f[0], o + f[k], o + f[k + 1]); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeBoundsTree(); return g;
+}
+// a buckle on a waist ring at angle a: a frame of four bars square to the band there, its tongue (bw: the band's half
+// width, th: its thickness)
+function ringBuckle(acc, limb, W, a, bw, th) {
+  // (on the band's face as it is tilted there: square to the axis, by the hips its lower bar stood off the band)
+  const at = (i) => limb.axis(W.ts[i]).addScaledVector(limb.out(a), W.rowAt(i, a) + th), P0 = at(0), P2 = at(2), Up = P2.clone().sub(P0).normalize();
+  const nB = limb.out(a).addScaledVector(Up, -limb.out(a).dot(Up)).normalize(), E = new V3().crossVectors(Up, nB).normalize();
+  const C = P0.clone().add(P2).multiplyScalar(.5); C.addScaledVector(nB, Math.max(0, at(1).sub(C).dot(nB)));
+  const hw = bw * 1.35, bt = MM(BUCKLE_T), f = W.faceAt(a);
+  for (const s2 of [-1, 1]) { box(acc, C.clone().addScaledVector(E, s2 * hw).addScaledVector(nB, bt), [E, Up, nB], bt, bw * 1.25, bt * 1.2, DETAIL, 'buckle', f);
+    box(acc, C.clone().addScaledVector(Up, s2 * bw * 1.25).addScaledVector(nB, bt), [E, Up, nB], hw, bt, bt * 1.2, DETAIL, 'buckle', f); }
+  box(acc, C.clone().addScaledVector(nB, 2.2 * bt), [E, Up, nB], hw * .8, bt * .6, bt * .6, DETAIL, 'buckle', f);   // the tongue
+}
+// a waist ring laid over what geometry g has there too (a piece's own parts: an apron's skirt and bib)
+function ringOver(W, limb, g, gap) {
+  const NA = 72, far = .6 * HEIGHT, cols = Array.from({ length: NA }, (_, j) => j / NA * TAU);
+  const own = (t, a) => { const d = limb.out(a), h = castOn(g, limb.axis(t).addScaledVector(d, far), d.clone().negate(), far); return h ? far - h.distance + gap : 0; };
+  const rows = W.ts.map((t, i) => cols.map((a) => Math.max(W.rowAt(i, a), own(t, a))));
+  // (and over what is between its edges: the skirt's top edge between them came out over the band)
+  cols.forEach((a, j) => {
+    let ex = 0;
+    for (let k = 1; k < 8; k++) { const x = k / 8, t = W.ts[0] + (W.ts[2] - W.ts[0]) * x; ex = Math.max(ex, own(t, a) - (rows[0][j] * (1 - x) + rows[2][j] * x)); }
+    if (ex > 0) { rows[0][j] += ex; rows[2][j] += ex; }
+    rows[1][j] = Math.max(rows[1][j], .5 * (rows[0][j] + rows[2][j]));
+  });
+  const at = (row, a) => { const x = (((a / TAU) % 1) + 1) % 1 * NA, j = Math.floor(x) % NA, f = x - Math.floor(x); return row[j] * (1 - f) + row[(j + 1) % NA] * f; };
+  return { ...W, rowAt: (i, a) => at(rows[i], a), rAt: (a) => Math.max(...rows.map((r) => at(r, a))) };
 }
 // a flat band round the body on a waistRing (closed): slot mat, its role; th thick
 function ringBand(acc, limb, W, mat, role, th) {
@@ -2527,12 +2759,13 @@ function clothSkirt(acc, cols, closed, t0, o) {
 }
 // a band along a line of points on a cloth (an embroidered border): pts [{P, n, w}] in order, inward(k) the way into the
 // cloth there; bw wide, its pattern tile once across it and a tile a band's width along it
-function lineBand(acc, pts, inward, bw, lift, th, mat, role) {
+function lineBand(acc, pts, inward, bw, lift, th, mat, role, onSurf = null) {   // onSurf(Q, n): Q laid on the surface under it
   if (pts.length < 2) return;
   const len = [0]; for (let k = 1; k < pts.length; k++) len.push(len[k - 1] + pts[k].P.distanceTo(pts[k - 1].P));
-  const rows = pts.map((_, k) => k);
-  solid(acc, rows, [0, 1], false, (k, j, s) => pts[k].P.clone().addScaledVector(inward(k), j * bw).addScaledVector(pts[k].n, lift + s * th), mat, role,
-    (k, j) => [j, len[k] / bw], (k) => ({ direct: pts[k].w }));
+  const rows = pts.map((_, k) => k), cols = onSurf ? lin(0, 1, 5) : [0, 1];   // (across it: on a surface, in steps that follow it)
+  const at = (k, j) => { const Q = pts[k].P.clone().addScaledVector(inward(k), cols[j] * bw); return onSurf && j ? onSurf(Q, pts[k].n) : Q; };
+  solid(acc, rows, cols, false, (k, j, s) => at(k, j).addScaledVector(pts[k].n, lift + s * th), mat, role,
+    (k, j) => [cols[j], len[k] / bw], (k) => ({ direct: pts[k].w }));
 }
 // one cloth in several UV maps (round the torso, round each arm), each wrapping round: a face across a map's wrap or
 // between two maps had the texture's whole width across it (a smeared stripe: the cloth looked sewn of pieces). Each
@@ -2566,6 +2799,8 @@ const CLOTH_EDGE = 40, CLOTH_SINK = -2;   // (minus: out off the skin by so much
 // a long sleeve ends so far down the forearm (its end by the keep, a line: at the hand's own skin the edge was where
 // its weights change, ragged - snapped to its line, the last row stretched into a bell)
 const CUFF_AT = .88;
+const MASK_CONE = 30;   // degrees: a shirt's or vest's skin hidden only where the cloth is over it along its normal and so far round it
+const NECK_CUT = 1.45;   // a shirt's or vest's neckline: so many times the neck's radius from its line (at its base)
 const CUFF_FREE = 50;   // mm of the arm inside a sleeve's end left unhidden (the user: the arm going on into it, not a doll's)
 const CLOTH_SINK_IN = -2;   // mm: away from its edges no deeper either (sunk 40 into a goblin's shoulders, they came through as the arms rose; the field is smooth: over the muscles, not into each)
 const CLOTH_BALL = 55;   // mm: its smoothing's reach (SKIN_BALL's: each of a goblin's muscles showed through)
@@ -2586,23 +2821,32 @@ function clothPiece(p, o) {
     for (const [kk, c] of ec) if (c === 1) for (const v of kk.split(',')) { const t = torsoT(S0.pos[+v]); if (t < .45) bt.push(t); }
     bt.sort((x, y) => x - y); if (bt.length) tcut = Math.max(tcut, bt[Math.floor(.97 * (bt.length - 1))] + .015);
   }
-  const tFront = fronts.length ? Math.max(...fronts.map(torsoT)) : .9;
+  const { NJ, HJ2, neckR, neckF } = neckLine();
+  const fr2 = fronts.filter((v) => neckF(v) > 0), tFront = fr2.length ? Math.max(...fr2.map(torsoT)) : fronts.length ? Math.max(...fronts.map(torsoT)) : .9;   // (below the neckline)
   const slitW = (t) => D(2.5) + D(5) * smooth(tFront - o.slit, tFront + .02, t);
   const vW = (t) => (o.front || 0) + D(o.vNeck || 0) * smooth(tFront - .32, tFront, t);
+  // the torso's cut (kept where >= 0, metres): the bottom edge, a vest's opening (a V to the neck), a shirt's slit - the
+  // skin's triangles cut on it (clipSkin); the keep takes the triangles across it
+  const cutF = (v, part) => {
+    if (part !== 'torso' && part !== 'neck') return 1;
+    if (part === 'neck') return Math.min(-MM(1), neckF(v));
+    const d = v.clone().sub(tl.a), tt = d.dot(tl.u), t = tt / tl.len; d.addScaledVector(tl.u, -tt);
+    const R = Math.max(d.length(), MM(20)), r = Math.abs(relF(v));
+    let f = Math.min((t - tcut) * tl.len, neckF(v));
+    if (o.front || o.vNeck) f = Math.min(f, (r - vW(t)) * R);
+    if (o.slit) f = Math.min(f, Math.max((r - slitW(t)) * R, (tFront - o.slit - t) * tl.len));
+    return f;
+  };
   const keep = (v, part) => {
-    if (part === 'torso') {
-      const t = torsoT(v); if (t <= tcut) return false;
-      const r = Math.abs(relF(v));
-      if ((o.front || o.vNeck) && r < vW(t)) return false;   // a vest's opening, a V to the neck
-      if (o.slit && t > tFront - o.slit && r < slitW(t)) return false;   // a shirt's slit
-      return true;
-    }
+    if (part === 'torso') return cutF(v, part) > -MM(40);
+    // (the neck's base too: the neckline cut across it where the torso's skin ends short of it)
+    if (part === 'neck') return !!neckR && v.clone().sub(NJ).dot(HJ2.clone().sub(NJ)) < .45 * HJ2.distanceToSquared(NJ);
     // (a whole sleeve: all of the upper arm - the elbow's point, weighted to it but past the joint, was a hole)
     if (part === 'upper_arm') return sl > 0 && (sl > .55 || along(v, sideOf(v), 'arm', 'forearm') <= sl / .5);
     if (part === 'forearm') return sl > .5 && along(v, sideOf(v), 'forearm', 'hand') <= (sl - .5) / .5 * CUFF_AT;
     return false;
   };
-  keep.key = 'cloth' + [Math.round(sl * 40), Math.round((o.front || 0) * 100), o.vNeck || 0, Math.round((o.slit || 0) * 100), Math.round(tcut * 1000)].join('_');
+  keep.key = 'clothc' + [Math.round(sl * 40), Math.round((o.front || 0) * 100), o.vNeck || 0, Math.round((o.slit || 0) * 100), Math.round(tcut * 1000)].join('_');
   // the UVs: round the torso's axis (its seam behind) or an arm's (under it), along them, in the weave's unit
   const armAx = {};
   for (const s of 'LR') if (joint('arm_' + s) && joint('hand_' + s)) armAx[s] = new Limb(joint('arm_' + s), joint('hand_' + s));
@@ -2661,14 +2905,9 @@ function clothPiece(p, o) {
   // level, a sleeve's end to its place along the arm
   const snapRim = (P, i, S2) => {
     const part = partOf(i, S2);
-    if (part === 'torso') {
-      const t = torsoT(P), r = relF(P), d = P.clone().sub(tl.a), tt = d.dot(tl.u); d.addScaledVector(tl.u, -tt);
-      const rad = d.length(); let to = null;
-      if ((o.front || o.vNeck) && t > tcut + .03 && Math.abs(r) < vW(t) + D(12)) to = vW(t);
-      else if (o.slit && t > tFront - o.slit - .02 && Math.abs(r) < slitW(t) + D(8)) to = slitW(t);
-      if (to !== null) return tl.axis(tt / tl.len).addScaledVector(tl.out(fr + Math.sign(r || 1) * to), rad);
-      if (t < tcut + .04) return P.clone().addScaledVector(tl.u, (tcut + .003 - t) * tl.len);
-      return null;
+    if (part === 'torso') {   // (the opening and the slit: cut on their lines - clipSkin)
+      const t = torsoT(P);
+      return t < tcut + .04 ? P.clone().addScaledVector(tl.u, (tcut + .003 - t) * tl.len) : null;
     }
     const sd = sideOf(P);
     const snapAlong = (a, b, c) => { const A = joint(a + '_' + sd), B = joint(b + '_' + sd); if (!A || !B) return null; const al = along(P, sd, a, b); return al > c - .15 ? P.clone().addScaledVector(B.clone().sub(A), c - al) : null; };
@@ -2676,10 +2915,25 @@ function clothPiece(p, o) {
     if (part === 'upper_arm' && sl > 0 && sl <= .55) return snapAlong('arm', 'forearm', sl / .5);
     return null;
   };
-  const out = skinCloth(q, ['torso', 'upper_arm', 'forearm'], keep, { mat: PLATE, role: 'plate', uv, over: true, rim: true, fold, edge: CLOTH_EDGE, sinkEdge: CLOTH_SINK, sinkIn: CLOTH_SINK_IN, ball: CLOTH_BALL,
-    mainOnly: true, ownAll: true, snapRim });
+  const out = skinCloth(q, ['torso', 'upper_arm', 'forearm', 'neck'], keep, { mat: PLATE, role: 'plate', uv, over: true, rim: true, fold, edge: CLOTH_EDGE, sinkEdge: CLOTH_SINK, sinkIn: CLOTH_SINK_IN, ball: CLOTH_BALL,
+    mainOnly: true, ownAll: true, snapRim, cut: cutF, partOf });
   const sh0 = out[0], rim = sh0 && sh0.rim;
   if (!rim || !rim.loops || !rim.loops.length) return out;
+  { // the skin hidden only where the cloth covers it - along its normal and 30 degrees round it (as the bake's mask,
+    // body_mask cover=30): by an edge standing off the body (a vest's lapel over the collarbone) the skin under it is
+    // seen aslant - hidden, a hole through the body there
+    const cg = new THREE.BufferGeometry(), cp = new Float32Array(3 * rim.H.pos.length);
+    rim.H.pos.forEach((v, i) => cp.set([v.x, v.y, v.z], 3 * i));
+    cg.setAttribute('position', new THREE.BufferAttribute(cp, 3)); cg.setIndex(rim.S.tris.flat()); cg.computeBoundsTree();
+    const NS = normalsOfMesh(rim.S.pos, rim.S.tris), far = .1 * H, c30 = Math.cos(D(MASK_CONE)), s30 = Math.sin(D(MASK_CONE)), seen = new Set();
+    rim.S.pos.forEach((P, i) => {
+      if (!rim.S.lks[i] || !rim.S.lks[i].length) return;
+      const n = NS[i], t1 = (Math.abs(n.y) < .9 ? new V3(0, 1, 0) : new V3(1, 0, 0)).cross(n).normalize(), t2 = n.clone().cross(t1), O = P.clone().addScaledVector(n, MM(.5));
+      const dirs = [n, ...[t1, t1.clone().negate(), t2, t2.clone().negate()].map((t) => n.clone().multiplyScalar(c30).addScaledVector(t, s30))];
+      if (dirs.some((d) => !castOn(cg, O, d, far))) for (const k of rim.S.lks[i]) seen.add(k);
+    });
+    if (seen.size) sh0.mask = new Set([...sh0.mask].filter((k) => !seen.has(k)));
+  }
   if (sl > 0) {   // (and all of the arm past it: the bake's mask took a few points by the wrist - holes)
     const allArm = (v, part) => ['upper_arm', 'forearm', 'hand'].includes(part); allArm.key = 'arm_all';
     const SA = bodySkin(new Set(['upper_arm', 'forearm', 'hand']), allArm), free = new Set();
@@ -2699,7 +2953,10 @@ function clothPiece(p, o) {
   // main edge's run low on the body that is not its front edges (from one front corner round the back to the other)
   const lowest = rim.loops.map((l) => [l, Math.min(...l.map((i) => torsoT(HH.pos[i])))]).sort((x, y) => x[1] - y[1])[0];
   const loop = lowest[0], tMin = lowest[1], opened = !!(o.front || o.vNeck);
-  const low = loop.map((i) => { const P = HH.pos[i], t = torsoT(P); return !opened || (t < tMin + .3 && Math.abs(relF(P)) > vW(t) + D(6)); });
+  // (a front edge's point: on the opening's cut, by the skin's place - the skirt's front edges then go on from the
+  // body's, not 6 degrees out: a step at the waist)
+  const onFront = (P) => { const t = torsoT(P), d = P.clone().sub(tl.a); d.addScaledVector(tl.u, -d.dot(tl.u)); return t > tcut + .01 && Math.abs(Math.abs(relF(P)) - vW(t)) * d.length() < MM(1.5); };
+  const low = loop.map((i) => { const t = torsoT(HH.pos[i]); return !opened || (t < tMin + .3 && !onFront(S.pos[i])); });
   let closed = low.every(Boolean), run = loop;
   if (!closed) {   // the longest run of low points round the loop
     let best = [0, 0], st = 0;
@@ -2768,18 +3025,37 @@ function clothPiece(p, o) {
     const inRun = new Set(grid ? run : []), nb = new Map();
     for (const [a, b, c] of S.tris) for (const [x, y] of [[a, b], [b, c], [c, a]]) { (nb.get(x) || nb.set(x, new Set()).get(x)).add(y); (nb.get(y) || nb.set(y, new Set()).get(y)).add(x); }
     const rimSet = new Set(rim.loops.flat());
+    // (the band's inner edge laid on the cloth: straight across from its edge it went under it over a bust's curve)
+    const og = new THREE.BufferGeometry(), op = new Float32Array(3 * S.pos.length);
+    S.pos.forEach((_, i) => { const k = rim.sh.ids.get(i); if (k !== undefined) { const v = vx(rim.sh.out[k]); op.set([v.x, v.y, v.z], 3 * i); } });
+    og.setAttribute('position', new THREE.BufferAttribute(op, 3)); og.setIndex(S.tris.flat()); og.computeBoundsTree();
+    const onSurf = (Q, nn) => { const h = castOn(og, Q.clone().addScaledVector(nn, MM(15)), nn.clone().negate(), MM(30)); return h ? h.point.clone() : Q; };
     const segs = []; let cur = [];
     for (const i of loop) { if (inRun.has(i) || !rim.sh.ids.has(i)) { if (cur.length > 2) segs.push(cur); cur = []; } else cur.push(i); }
     if (cur.length > 2) segs.push(cur);
     for (const seg of segs) {
-      const pts = seg.map((i) => ({ P: vx(rim.sh.out[rim.sh.ids.get(i)]), n: nOf(i), w: S.w[i], i }));
-      const inward = (k) => {
-        const i = pts[k].i, inner = [...(nb.get(i) || [])].filter((j) => !rimSet.has(j));
-        const m = inner.length ? inner.reduce((z, j) => z.add(HH.pos[j]), new V3()).multiplyScalar(1 / inner.length) : HH.pos[i].clone();
-        const T = pts[Math.min(pts.length - 1, k + 1)].P.clone().sub(pts[Math.max(0, k - 1)].P).normalize(), n = pts[k].n;
-        let w = n.clone().cross(T).normalize(); if (w.dot(m.sub(HH.pos[i])) < 0) w.negate(); return w;
-      };
-      lineBand(acc, pts, inward, bw, lift, bth, TRIM, 'trim');
+      const all = seg.map((i) => ({ P: vx(rim.sh.out[rim.sh.ids.get(i)]), n: nOf(i), w: S.w[i], i }));
+      // split where the edge turns sharply (the V's top into the neckline: the band folded over itself there, in lumps)
+      const dirAt = (k, d) => all[Math.max(0, Math.min(all.length - 1, k + d))].P.clone().sub(all[k].P);
+      const pieces = [[]];
+      all.forEach((q, k) => {
+        const a2 = dirAt(k, -2).negate(), b2 = dirAt(k, 2);
+        pieces.at(-1).push(q);
+        if (k > 1 && k < all.length - 2 && a2.lengthSq() > 1e-12 && b2.lengthSq() > 1e-12 && a2.angleTo(b2) > D_(45)) pieces.push([q]);
+      });
+      for (const pts of pieces) {
+        if (pts.length < 3) continue;
+        const W = pts.map((q, k) => {
+          const i = q.i, inner = [...(nb.get(i) || [])].filter((j) => !rimSet.has(j));
+          const m = inner.length ? inner.reduce((z, j) => z.add(HH.pos[j]), new V3()).multiplyScalar(1 / inner.length) : HH.pos[i].clone();
+          const T = pts[Math.min(pts.length - 1, k + 1)].P.clone().sub(pts[Math.max(0, k - 1)].P).normalize(), n = q.n;
+          const w = n.clone().cross(T).normalize(); if (w.dot(m.sub(HH.pos[i])) < 0) w.negate(); return w;
+        });
+        // (its way in smoothed along it: by a ragged edge it turned point by point, the band's inner edge crossed itself)
+        let Wz = W;
+        for (let it = 0; it < 4; it++) Wz = Wz.map((w, k) => { const v = w.clone().add(Wz[Math.max(0, k - 1)]).add(Wz[Math.min(Wz.length - 1, k + 1)]); return v.addScaledVector(pts[k].n, -v.dot(pts[k].n)).normalize(); });
+        lineBand(acc, pts, (k) => Wz[k], bw, lift, bth, TRIM, 'trim', onSurf);
+      }
     }
     if (grid) {   // the skirt's two front edges and its hem
       const R = grid.length - 1, Ncol = grid[0].length, gp = (g) => ({ P: vx(g.o), n: vx(g.o).sub(vx(g.n)).normalize(), w: g.w });
@@ -2790,6 +3066,11 @@ function clothPiece(p, o) {
       const hemPts = grid[R].map(gp);
       lineBand(acc, hemPts, (k) => vx(grid[R - 1][k].o).sub(vx(grid[R][k].o)).normalize(), bw, lift * 1.5, bth, TRIM, 'trim');
     }
+  }
+  if (cinchGeo) {   // under a belt worn over it: pressed in under it, gathered above and below (cinchPoints), on what is under it
+    const accs = out.map((x) => x.acc), pts = accs.map((a) => Array.from({ length: a.v.length / 3 }, (_, i) => new V3(a.v[3 * i], a.v[3 * i + 1], a.v[3 * i + 2])));
+    cinchPoints(pts.flat(), accGeo(accs), cinchGeo, (o2, d) => { const h = layerHit(o2, d, .6 * H, ['Arm', 'Hand']); return h ? h.r : 0; });
+    accs.forEach((a, k) => pts[k].forEach((P, i) => { a.v[3 * i] = P.x; a.v[3 * i + 1] = P.y; a.v[3 * i + 2] = P.z; }));
   }
   return out;
 }
@@ -2820,7 +3101,17 @@ const APRONS = {
 function garbTool(acc, F, kind, H) {
   const { lathe, box } = itemMesh(acc, F);
   const k = { hammer: .8, mallet: .85, chisel: .8, knife: .8, awl: .7, square: .9, rule: .9 }[kind] || 1, s = H * .011 * k;
-  if (kind === 'hammer') { lathe([[-3 * s, .55 * s], [5 * s, .55 * s], [5.6 * s, .45 * s]], WOOD, 'wood', 8); box(5.2 * s, 6.6 * s, -2.6 * s, 1.8 * s, -.75 * s, .75 * s, DETAIL, 'buckle'); }
+  if (kind === 'hammer') {   // (the user: «a metal part in front, of what?» - a flat box of steel across the handle's top read as a bar)
+    lathe([[-3 * s, .5 * s], [4.4 * s, .55 * s], [6.6 * s, .5 * s], [6.9 * s, .42 * s]], WOOD, 'wood', 8);   // the handle, its end through the head
+    // the head: forged, square across, a round domed face on one end, a wedge (the peen) on the other - a hammer's outline
+    // from the front, along the apron (turned out of it, its face end seen square on: a block again)
+    const ax = F.E.clone().applyAxisAngle(F.A, .15).normalize(), C = F.C.clone().addScaledVector(F.A, 5.9 * s);
+    const hm = itemMesh(acc, { C, A: ax, E: F.A.clone(), S: ax.clone().cross(F.A).normalize() });
+    const sq = (a, e, d) => [[a, -e, -d], [a, e, -d], [a, e, d], [a, -e, d]];
+    hm.loft([sq(-.75 * s, .7 * s, .7 * s), sq(.75 * s, .7 * s, .7 * s)], DETAIL, 'buckle');   // the eye's block
+    hm.lathe([[.7 * s, .66 * s], [2.1 * s, .62 * s], [2.35 * s, .5 * s], [2.45 * s, .25 * s]], DETAIL, 'buckle', 12);   // the face
+    hm.loft([sq(-.7 * s, .68 * s, .68 * s), sq(-1.6 * s, .6 * s, .45 * s), sq(-2.5 * s, .55 * s, .08 * s)], DETAIL, 'buckle');   // the peen
+  }
   if (kind === 'mallet') { lathe([[-3 * s, .5 * s], [4.5 * s, .5 * s]], WOOD, 'wood', 8); box(4.3 * s, 6.5 * s, -2 * s, 2 * s, -1.1 * s, 1.1 * s, WOOD, 'wood'); }
   if (kind === 'chisel') { lathe([[-2 * s, .25 * s], [0, .3 * s], [.2 * s, .5 * s], [3.2 * s, .5 * s], [3.6 * s, .3 * s]], WOOD, 'wood', 8); lathe([[-.2 * s, .45 * s], [.3 * s, .45 * s]], DETAIL, 'buckle', 8); }
   if (kind === 'knife') { lathe([[0, .35 * s], [3 * s, .4 * s], [3.4 * s, .2 * s]], WOOD, 'wood', 8); box(-1.5 * s, 0, -.5 * s, .5 * s, -.08 * s, .08 * s, DETAIL, 'buckle'); }
@@ -2867,7 +3158,7 @@ function apron(p) {
   const hemT = crotchT(limb) - (p.ap_len ?? 70) / 100 * thighShare(limb);
   const q = { ...p, surface: 'plain', stitch: leather, trim: '', mail_under: false, cuffs: false, wrap: false, front_panel: false, hem_band: false, ragged: 0 };
   const out = buildPiece('tassets', ['C'], { ...q, t0: hemT, t1: waistT + .02, splits: A.split ? 1 : 0, sector: 2 * half, flare: .06, folds: leather ? .02 : .1,
-    relief: .95, rigidity: .1, slits: [], straps: A.belt === 'leather' ? 1 : 0, buckle: true, strap_width: .28, gapMax: .9 });
+    relief: .95, rigidity: .1, slits: [], straps: 0, buckle: false, strap_width: .28, gapMax: .9 });
   const skPart = out.find((x) => x.skirt), sk = skPart && skPart.skirt;
   if (!sk) return out;
   prepShell(sk);
@@ -2887,7 +3178,19 @@ function apron(p) {
     garbSash(acc, limb, W, mid + D_(40), CLOTH, 'quilt', MM(3), under);
     parts.push({ side: 'C', acc, R: sk.R });
   }
-  if (!A.bib || (p.ap_bib ?? 70) <= 0) return parts;
+  // its waist strap (a leather one): as the belt - each edge on what is under it, tilted as the body is there (the user:
+  // «the strap at an angle but still far from the skin» - the tassets' ring at the skirt's radius stood off the body
+  // round the back), over the skirt's top and the bib's bottom in front; buckled at the side
+  const waistStrap = (own) => {
+    if (A.belt !== 'leather') return;
+    const sAcc = new Acc(); sAcc.w = weigher('torso', PB.hips, .1);
+    const bw = .01 * H, th = MM(2.5);
+    const W = ringOver(waistRing(limb, waistT, bw / limb.len, MM(1.2)), limb, accGeo(own), MM(1.2));
+    ringBand(sAcc, limb, W, LEATHER, 'strap', th);
+    ringBuckle(sAcc, limb, W, mid + D_(80), bw, th);
+    parts.push({ side: 'C', acc: sAcc, R: sk.R });
+  };
+  if (!A.bib || (p.ap_bib ?? 70) <= 0) { waistStrap([skPart.acc]); return parts; }
   // the bib: from under the belt up the chest, taut
   const tTop = Math.max(waistT + .12, (p.ap_bib ?? 70) / 100), hb = D_(Math.max(15, Math.min(70, p.ap_bibw ?? 38)));
   const layered = [...WORN.values()].some((w) => w.on && layerOf(w) && !isOuter(w));
@@ -2912,6 +3215,7 @@ function apron(p) {
   surface(acc, bib, { ...q, surface: 'plain', stitch: leather });
   if (A.lace) for (const sg of [1, -1]) laceAt(acc, bib, mid + sg * (hb - D_(9)), mid + sg * (hb - D_(3)), bib.ta + .05, bib.tb - .05, (t, a) => bib.outer(t, a) + MM(.4));
   parts.push({ side: 'C', acc, R: P.R });
+  waistStrap([skPart.acc, acc]);
   if (A.straps) {   // one strap from the bib's top corner up round the back of the neck to the other: the bib hangs on it
     // (round the neck itself, close on it - from the chest's rays it lay low on the back, off the body; from the
     // corners up the chest straight, on what is worn there)
@@ -2960,9 +3264,9 @@ function beltPiece(p) {
   const st = String(p.belt || 'belt_buckle').replace(/^belt_/, ''), { limb } = limbOf('cuirass', 'C'), H = HEIGHT, mid = garbFront(limb);
   if (!PB.hips) return [];
   const tw = (p.bl_at ?? 22) / 100, bw = (st === 'sash' ? .028 : st === 'rope' ? .006 : .012) * H * (p.bl_width ?? 100) / 100;
-  const W = waistRing(limb, tw, Math.max(.004 * H, bw) / limb.len, MM(1.2));   // (pulled tight: on what is under it)
+  const W = waistRing(limb, tw, Math.max(.004 * H, bw) / limb.len, MM(1.2), true);   // (pulled tight: on what is under it, clothes pressed in)
   const acc = new Acc(); acc.w = weigher('torso', PB.hips, .1);   // (as the skin under it: held to the hips, the belly bent through it)
-  const out = [{ side: 'C', acc, R: median(W.top) }];
+  const out = [{ side: 'C', acc, R: median(W.top), cinch: true }];
   const under = (a) => (y) => { const t = (y - limb.a.y) / (limb.u.y * limb.len), o = limb.axis(t), d = limb.out(a); const h = layerHit(o, d, .6 * H, ['Arm', 'Hand']); return { o, d, r: (h ? h.r : W.rAt(a)) + MM(3) }; };
   if (st === 'sash') garbSash(acc, limb, W, mid + D_(35), CLOTH, 'quilt', MM(3), under(mid + D_(35)));
   else if (st === 'rope') {   // a rope round, a knot in front, its two ends hanging
@@ -2977,11 +3281,7 @@ function beltPiece(p) {
   } else {   // leather: the band, a buckle in front, its end through it hanging down
     const th = MM(2.5);
     ringBand(acc, limb, W, LEATHER, 'strap', th);
-    const nB = limb.out(mid).setY(0).normalize(), E = new V3().crossVectors(UP, nB).normalize(), C = limb.axis(tw).addScaledVector(limb.out(mid), W.rAt(mid) + th);
-    const hw = bw * 1.35, bt = MM(BUCKLE_T), f = W.faceAt(mid);
-    for (const s2 of [-1, 1]) { box(acc, C.clone().addScaledVector(E, s2 * hw).addScaledVector(nB, bt), [E, UP, nB], bt, bw * 1.25, bt * 1.2, DETAIL, 'buckle', f);
-      box(acc, C.clone().addScaledVector(UP, s2 * bw * 1.25).addScaledVector(nB, bt), [E, UP, nB], hw, bt, bt * 1.2, DETAIL, 'buckle', f); }
-    box(acc, C.clone().addScaledVector(nB, 2.2 * bt), [E, UP, nB], hw * .8, bt * .6, bt * .6, DETAIL, 'buckle', f);   // the tongue
+    ringBuckle(acc, limb, W, mid, bw, th);
     // its end: out of the buckle along the band to the side, on it, under a keeper
     const ce = lin(mid + D_(3), mid + D_(26), 10), te = [W.ts[1] - (W.ts[1] - W.ts[0]) * .8, W.ts[1], W.ts[1] + (W.ts[2] - W.ts[1]) * .8];
     solid(acc, te, ce, false, (i, j, s2) => limb.axis(te[i]).addScaledVector(limb.out(ce[j]), W.rAt(ce[j]) + th + MM(.3) + s2 * th * .9), LEATHER, 'strap',
@@ -2990,7 +3290,9 @@ function beltPiece(p) {
     box(acc, limb.axis(tw).addScaledVector(limb.out(ak), W.rAt(ak) + th * 1.4), [EK, UP, nK], MM(3), bw * 1.2, th * 1.5, LEATHER, 'strap', W.faceAt(ak));
   }
   // what hangs on it: from the belt's lower edge
-  const hang = (a, drop = 0) => { const n = limb.out(a).setY(0).normalize(), C = limb.axis(tw - bw / limb.len).addScaledVector(limb.out(a), W.rAt(a) + .011 * H); C.y -= drop;
+  // (over clothes: out over their outside below the belt, not the belt's pressed radius - a pouch in the shirt)
+  const hang = (a, drop = 0) => { const n = limb.out(a).setY(0).normalize(), lh = layerHit(limb.axis(tw - 2 * bw / limb.len), limb.out(a), .6 * H, ['Arm', 'Hand']);
+    const C = limb.axis(tw - bw / limb.len).addScaledVector(limb.out(a), Math.max(W.rAt(a), lh ? lh.r : 0) + .011 * H); C.y -= drop;
     return { C, A: new V3(0, -1, 0), E: new V3().crossVectors(new V3(0, -1, 0), n).normalize(), S: n }; };
   // what hangs on it: on the hips, half with the thigh on its side (a leg swung out pushes a pouch aside, as it does a real one)
   const hipI = boneNames.indexOf(PB.hips.name), legI = (s) => (PB['upleg_' + s] ? boneNames.indexOf(PB['upleg_' + s].name) : hipI);
@@ -3053,9 +3355,11 @@ function hood(p) {
   const onNeckFoot = (X) => X.clone().sub(N).dot(nu) <= 0 && X.y <= N.y + .005 * H;
   const rCap = C.distanceTo(aL) + .065 * H, xOut = Math.abs(aL.x - C.x) + .045 * H, yMin = Math.min(aL.y, aR.y) - .02 * H;   // (to the arm's root: over the deltoid an arm raised came through)
   const f0 = new Array(NT).fill(0), f1 = new Array(NT).fill(NE - 1);
+  const { neckF } = neckLine();
   for (let j = 0; j < NT; j++) {
-    let i = 0; while (i < NE - 1 && (Pt(i, j).y > N.y - .01 * H || !onNeckFoot(Pt(i, j)))) i++;
-    while (i > 0 && onNeckFoot(Pt(i - 1, j)) && Math.abs(rawS[i - 1][j] - rawS[i][j]) < .015 * H) i--;
+    // (from the neckline at the neck's base, as a shirt's: from the neck joint down it stood up the neck to the chin where
+    // that joint is high - the user: «an extra piece of clothing on the neck»)
+    let i = 0; while (i < NE - 1 && (!onNeckFoot(Pt(i, j)) || neckF(Pt(i, j)) < 0)) i++;
     f0[j] = i;
     const L = len + pnt * Math.max(0, Math.cos(ths[j])) ** 6;   // (the front edges come down to points)
     let sAcc = 0, prev = Pt(i, j), q = i + .25, qL = -1, qM = -1;
@@ -6728,7 +7032,7 @@ Object.assign(STYLES, {
     glove_plate_mitten: { glove: 'plate_mitten', material: 'steel', hammer: .12, cuff: 24, flare: .9, gap: 3, thickness: 7, straps: 1, strap_width: 14, buckle: true, rim: 6 },
     glove_hybrid: { glove: 'hybrid', material: 'steel', hammer: .12, cuff: 22, flare: .5, gap: 3, thickness: 7, straps: 1, strap_width: 18, buckle: true },
   },
-  footwear: Object.fromEntries(['leather_shoe', 'ankle_boot', 'mail_foot', 'round_sabaton', 'pointed_sabaton', 'hybrid_boot', 'turnshoe', 'work_boot', 'sandal'].map((k) => ['foot_' + k, { footwear: 'foot_' + k }])),
+  footwear: Object.fromEntries(['leather_shoe', 'ankle_boot', 'mail_foot', 'round_sabaton', 'pointed_sabaton', 'hybrid_boot', 'turnshoe', 'work_boot', 'sandal', 'tall_boot'].map((k) => ['foot_' + k, { footwear: 'foot_' + k }])),
   weapon: {
     weapon_sword: { weapon: 'sword', w_two: 0, material: 'steel', trim: 'steel', w_len: 100, w_width: 100, w_head: 100, grip_tilt: 15 },
     weapon_dagger: { weapon: 'dagger', w_two: 0, material: 'steel', trim: 'brass', w_len: 100, w_width: 100, grip_tilt: 15 },
@@ -7348,7 +7652,8 @@ function rebuildNow() {
     parts.forEach((part, pi) => { for (const m of meshesOf(part.acc)) { m.userData.part = pi; pieceGroup.add(m); } });
     paintAll();
     const pms = parts.filter((x) => x.mask);   // (gloves: each hand's)
-    if (pms.length) { previewMask = pms.length > 1 ? new Set(pms.flatMap((x) => [...x.mask])) : pms[0].mask; hideBody(); }   // (thin cloth on the skin: the skin under it would show through its smoothed bumps)
+    if (pms.length) { previewMask = pms.length > 1 ? new Set(pms.flatMap((x) => [...x.mask])) : pms[0].mask; hideBody(); }
+    else if (parts.some((x) => x.cinch)) cinchShown();   // (a belt: the shirt worn pressed under it)   // (thin cloth on the skin: the skin under it would show through its smoothed bumps)
     if (parts.length) {
       const nv = parts.reduce((s, x) => s + x.acc.v.length / 3, 0);
       info = '{{js:ag.info_line}}'.replace('{0}', nv.toLocaleString()).replace('{1}', (performance.now() - t).toFixed(0));
@@ -7421,7 +7726,7 @@ async function madePreview(piece, sides) {
   const style = S.p[piece];
   // (placed by hand - along, turned, sized - not here: the preview moved so at once, Blender makes it so on «Generate»)
   const live = ['elbow', 'poleyn'].includes(piece) ? { made_slide: 0, made_twist: 0, made_size: 100, limb_gap: MADE_GAP0 } : {};   // (its gap too: out from the limb's axis here)
-  const under = piece === 'helmet' ? [...WORN.entries()].filter(([, w]) => w.on && layerOf(w)).map(([k]) => k) : [];   // (a coif under it: measured with the head)
+  const under = piece === 'helmet' || piece === 'footwear' ? [...WORN.entries()].filter(([, w]) => w.on && layerOf(w)).map(([k]) => k) : [];   // (a coif under it: measured with the head; trousers under a tall boot)
   const js = await send('made_preview', { piece, style, sides, params: { ...S.p, ...live }, under }, '{{js:ag.helmet_making}}', '_helmet_' + style);
   if (!js || !js.ok) return null;
   const gltf = await new GLTFLoader().loadAsync(fileUrl(js.preview.glb) + '?v=' + js.preview.v);
@@ -9013,7 +9318,10 @@ function staleList() {
     const lx = LAYER[x.piece] || 0, rx = regionsOf(x.piece, x.params);
     const paramsOf = (w) => (DATA.saved.find((y) => y.item === w.item) || {}).params;
     const under = DATA.worn.filter((w) => w.item !== x.item && !HELD.includes(w.piece) && (LAYER[w.piece] || 0) < lx && meet(rx, regionsOf(w.piece, paramsOf(w))));
-    if (under.some((w) => out.some((y) => y.item === w.item) || madeAt(w.item) > madeAt(x.item) + 1 || !(x.under || []).includes(w.item))) out.push(x);
+    // (and a soft one without a belt now worn over it: to be made pressed under it)
+    const belts = SOFT_KINDS.includes(x.piece) ? DATA.worn.filter((w) => w.item !== x.item && CINCHERS.includes(w.piece) && (WORN.get(w.item) || {}).on && (LAYER[w.piece] || 0) > lx) : [];
+    if (under.some((w) => out.some((y) => y.item === w.item) || madeAt(w.item) > madeAt(x.item) + 1 || !(x.under || []).includes(w.item))
+      || belts.some((w) => !(x.under || []).includes(w.item))) out.push(x);
   }
   return out;
 }
