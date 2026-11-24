@@ -86,6 +86,16 @@ def layer_of(fit: Path):
     return float(v) if isinstance(v, (int, float)) else None
 
 
+def open_shoe(glb: Path) -> bool:
+    """Footwear that does not close round the foot (sandals: straps): nothing worn under it is hidden by it (the
+    fitting room's rule for closed shells - a helmet, a boot - would open holes between its straps)."""
+    try:
+        pr = json.loads(Path(glb).with_suffix(".fit.json").read_text(encoding="utf-8")).get("procedural") or {}
+    except (OSError, ValueError):
+        return False
+    return pr.get("piece") == "footwear" and (pr.get("params") or {}).get("footwear") == "foot_sandal"
+
+
 def items_in(char_dir) -> list:
     """Every piece in a character's folders: [(item, its .glb or None, its .fit.json or None)], by name."""
     d, out = Path(char_dir), {}

@@ -773,7 +773,7 @@ def _layer_hide(cfg, pieces, proj: Path) -> None:
     if out.exists() and (proj / "under.key").exists() and (proj / "under.key").read_text() == key:
         return
     job = proj / "under_job.json"
-    job.write_text(json.dumps({"pieces": [{"item": p.name[:-4], "glb": str(p), "layer": v, "kind": WF.kind_of(p.name[:-4])} for p, v in lay],
+    job.write_text(json.dumps({"pieces": [{"item": p.name[:-4], "glb": str(p), "layer": v, "kind": WF.kind_of(p.name[:-4]), "open": WF.open_shoe(p)} for p, v in lay],
                                "out": str(out)}), encoding="utf-8")
     r = subprocess.run([cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe", "-b", "--factory-startup", "-P",
                         str(ROOT / "blender_layer_hide.py"), "--", str(job)], capture_output=True, text=True,

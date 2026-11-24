@@ -162,11 +162,12 @@ SHEATHS = ("scabbard", "dagger", "quiver", "quiver_hip")
 CLOTHS = ("cloth_fitted", "cloth_shirt", "cloth_aketon", "cloth_gambeson", "cloth_doublet", "cloth_voider", "cloth_vest", "cloth_braies", "cloth_braies_long",
           "cloth_coif")
 TUNICS = ("tunic_shirt", "tunic_short", "tunic_sleeveless", "tunic_long", "tunic_rolled")   # (everyday clothes: armour_gen_editor TUNICS...)
-VESTS = ("vest_embroidered", "vest_buttons")
+VESTS = ("vest_embroidered", "vest_buttons", "vest_long")
 APRONS = ("apron_smith", "apron_leather", "apron_potter", "apron_waist")
 BELTS = ("belt_buckle", "belt_sash", "belt_rope")
 HOODS = ("hood_capelet", "hood_pointed")
-WRAPS = ("wraps_cross", "wraps_short")
+WRAPS = ("wraps_cross", "wraps_short", "wraps_arm")
+STYLE_LAYER = {"wraps_arm": 1.4}   # a style worn on another layer than its kind's (the editor's STYLE_LAYER): forearm wraps over a sleeve
 GARB_STYLES = (*TUNICS, *VESTS, *APRONS, *BELTS, *HOODS, *WRAPS, "breeches", "long_trousers", "short_wide")
 GLOVES = ("glove_plain_leather", "glove_reinforced_leather", "glove_mail_mitten", "glove_hourglass", "glove_plate_mitten", "glove_hybrid")
 HAIRS = ("hair_crop", "hair_short", "hair_bob", "hair_long", "hair_back", "hair_mohawk", "hair_wavy", "hair_half_up", "hair_braids", "hair_side_braid", "hair_crown_braid", "hair_braid_bun", "hair_low_bun", "hair_low_tails", "hair_ponytail", "hair_wavy_short", "hair_warrior", "hair_top_knot", "hair_shaggy", "hair_bowl", "hair_tonsure", "hair_caesar")
@@ -176,7 +177,7 @@ LASHES = ("lashes_natural", "lashes_short", "lashes_long", "lashes_thick")
 HELMETS = ("kettle_hat", "open_bascinet", "barbute", "visored_bascinet", "sallet", "armet",
            "nasal_helm", "spangenhelm", "great_helm", "morion", "close_helm")   # (the last five: helmets_extra.py)
 FOOTWEAR = ("foot_leather_shoe", "foot_ankle_boot", "foot_mail_foot", "foot_round_sabaton", "foot_pointed_sabaton", "foot_hybrid_boot",
-            "foot_turnshoe", "foot_work_boot", "foot_sandal")   # (the last three: footwear_extra.py)
+            "foot_turnshoe", "foot_work_boot", "foot_sandal", "foot_tall_boot")   # (the last four: footwear_extra.py)
 ELBOWS = ("elbow_leather", "elbow_mail", "elbow_early_plate", "elbow_winged_plate", "elbow_articulated_plate", "elbow_plate_mail_hybrid")
 POLEYNS = tuple("poleyn_" + x[len("elbow_"):] for x in ELBOWS)
 
@@ -366,7 +367,7 @@ def worn(rigged: Path) -> list:
     by their layers)."""
     return [{"item": f.name[:-4], "glb": f.resolve().as_posix(), "v": int(f.stat().st_mtime), "piece": _kind(f),
              "mask": f.with_suffix(".mask.json").resolve().as_posix() if f.with_suffix(".mask.json").exists() else None,
-             "layer": WF.layer_of(f.with_suffix(".fit.json"))}
+             "layer": WF.layer_of(f.with_suffix(".fit.json")), "open": WF.open_shoe(f)}
             for f in WF.pieces(rigged)]
 
 
@@ -770,6 +771,34 @@ def _under(rigged: Path, req) -> list:
     return sorted(out)
 
 
+def _under_legs(rigged: Path, req) -> list:
+    """The GLBs of what is worn on the shins under a tall boot - trousers, leg wraps, braies - among the pieces the
+    editor has on under it (req «under»), by what each was made as (its .fit.json): the shaft goes over them."""
+    home, out = Path(rigged).parent, []
+    for item in req.get("under") or []:
+        item = re.sub(r"[^A-Za-z0-9_-]+", "_", str(item))
+        for cat in WF.CATS:
+            g, fit = home / cat / f"{item}.glb", home / cat / f"{item}.fit.json"
+            if not (g.is_file() and fit.is_file()):
+                continue
+            try:
+                pr = json.loads(fit.read_text(encoding="utf-8")).get("procedural") or {}
+            except (OSError, ValueError):
+                continue
+            if pr.get("piece") in ("trousers", "wraps") or (pr.get("piece") == "undercloth" and str((pr.get("params") or {}).get("cloth_style", "")).startswith("braies")):
+                out.append(str(g))
+    return sorted(out)
+
+
+def _made_under(rigged: Path, piece, style, req) -> list:
+    """What a made piece is measured over: a helmet over a coif, a tall boot over trousers."""
+    if piece == "helmet":
+        return _under(rigged, req)
+    if piece == "footwear" and style == "foot_tall_boot":
+        return _under_legs(rigged, req)
+    return []
+
+
 def beard_template(cfg, piece="beard") -> Path:
     """The user's own default beard outlines or hairlines («Remember as the default»), over the toolkit's
     tool/beard_template.json, tool/hair_template.json."""
@@ -826,8 +855,8 @@ def made_preview(cfg, req) -> dict:
         tag += "_m" + hp["must"]
     if hp.get("nodes"):   # (an outline fitted by hand)
         tag += "_n" + hashlib.md5(json.dumps(hp["nodes"], sort_keys=True).encode()).hexdigest()[:8]
-    under = _under(rigged, req) if piece == "helmet" else []
-    if under:   # (over a coif: another helmet; the coif made again, another again)
+    under = _made_under(rigged, piece, style, req)
+    if under:   # (over a coif: another helmet; the coif made again, another again; a tall boot over trousers)
         tag += "_u" + hashlib.md5("|".join(f"{u}{int(Path(u).stat().st_mtime)}" for u in under).encode()).hexdigest()[:6]
     d = Path(cfg["work_dir"]) / "helmets" / LM._slug(LM._stem(rigged))
     d.mkdir(parents=True, exist_ok=True)
@@ -897,8 +926,8 @@ def generate(cfg, req) -> dict:
            "uv_prev": str(uv_dir(rigged, item, piece))}   # (its unwrap kept there: the same mesh unwrapped as before)
     if piece == "undercloth":
         job["style"] = params.get("cloth_style")
-    if piece in ("tunic", "vest"):   # (a sleeve's cuff, an armhole move off the skin as a wrist turns, a fist closes: the
-        job["mask_erode"] = 5          # skin hidden up to their very edge showed as holes there - more of it given back)
+    if piece in ("tunic", "vest") or params.get(piece) == "wraps_arm":   # (a sleeve's cuff, an armhole move off the skin as a
+        job["mask_erode"] = 5          # wrist turns, a fist closes: the skin hidden up to their very edge showed as holes there - more of it given back)
     # held, not worn (the fingers round a grip stay); a cloak swings off the body; a belt, an apron, a hooded capelet go
     # over a shirt (the skin hidden under them would open holes as they move off it: a strap, a hanging apron, a cape)
     if PIECES[piece][5] in ("held", "cloak") or piece in ("belt", "apron", "hood"):
@@ -916,8 +945,8 @@ def generate(cfg, req) -> dict:
             job["params"]["model"] = str(wig)
         if isinstance(params.get("made_look"), list):   # another material than the generator's (the editor's specs by slot)
             job["look"] = params["made_look"]
-        if piece == "helmet":
-            job["under"] = _under(rigged, req)
+        if piece in ("helmet", "footwear"):
+            job["under"] = _made_under(rigged, piece, style, req)
     (work / "job.json").write_text(json.dumps(job, ensure_ascii=False, indent=1), encoding="utf-8")
     blender = cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe"
     t = datetime.now()
@@ -944,6 +973,8 @@ def generate(cfg, req) -> dict:
     # the editor's list of pieces: a fit.json and a source next to the result (marked: it is changed here, not there)
     shutil.copy2(work / "piece.glb", WF.path(rigged, item, ".src.glb", piece))
     layer = WF.layer_of(WF.path(rigged, item, ".fit.json", piece))   # (set by hand: kept when the piece is made again)
+    if layer is None:   # (a style on its own layer: forearm wraps over the sleeves - the fitting room and SF3DEquip read it there)
+        layer = STYLE_LAYER.get(str(params.get(piece) or ""))
     WF.path(rigged, item, ".fit.json", piece).write_text(json.dumps(
         {"item": item, "src": f"{item}.src.glb", "saved": datetime.now().isoformat(timespec="seconds"),
          "procedural": {"piece": piece, "sides": sides, "params": params, "style": req.get("style")},

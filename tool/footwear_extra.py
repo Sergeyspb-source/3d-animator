@@ -2,10 +2,14 @@
 (vendor/blender_armour/Footwear), built on its last (footwear_last: the same measured form, so blender_footwear_gen
 fits them to the feet as it fits the others): townsfolk's soft turnshoes with a lace tied round the ankle and a seam
 over the instep, a craftsman's rough laced work boot on a thick sole with a welt, sandals - a sole and straps over the
-toes, the instep, round the ankle and up the heel, the foot itself left bare.
+toes, the instep, round the ankle and up the heel, the foot itself left bare; a mage's (a traveller's) tall pull-on
+boot to below the knee, no laces, two straps buckled round it (the ankle, the top), its top hemmed.
 
     STYLES: style -> (the vendor variant its proportions start from, its own settings)
+    TALL: style -> how far up the shin its top comes (a share of the way from the ankle to the knee, measured on the
+        character: blender_footwear_gen sets the shaft's height by it, over what is worn on the shins - job «under»)
     config(cat, style) -> the validated settings (footwear_catalog.validate_config of that variant)
+    tall(last, p, height) -> the shaft's height set past the vendor's bounds, the last's profile carried up to it
     build(style, p, mats, collection) -> builds the right shoe in the generator's frame (the ankle at the origin, the toe
     -Y, up +Z, the sole's bottom at -ankle_height: footwear_pair.canonical_meshes moves it there after)
 """
@@ -15,12 +19,28 @@ from mathutils import Vector
 
 STYLES = {"turnshoe": ("leather_shoe", {"shaft_height": .100}),
           "work_boot": ("ankle_boot", {"shaft_height": .160, "sole_thickness": .011, "leather_thickness": .0032}),
-          "sandal": ("leather_shoe", {"shaft_height": .100, "sole_thickness": .011})}
+          "sandal": ("leather_shoe", {"shaft_height": .100, "sole_thickness": .011}),
+          "tall_boot": ("ankle_boot", {"shaft_height": .210, "sole_thickness": .011, "leather_thickness": .0032})}
+TALL = {"tall_boot": .74}
 
 
 def config(cat, style):
     base, extra = STYLES[style]
     return cat.validate_config(base, dict(extra))
+
+
+def tall(last, p, height):
+    """A shaft taller than the vendor's last (its profile ends at .21 m): the last's top round carried straight up in
+    rows 2 cm apart (the upper is made of rings at the profile's heights: one long band from .21 up would stay straight
+    over the calf, the shaft fitted round the leg only at its two ends), the shaft's height set to height."""
+    top = last.PROFILE[-1]
+    if top[0] < height + .03:
+        z, rows = top[0], []
+        while z < height + .03:
+            z = round(z + .02, 3)
+            rows.append((z, *top[1:]))
+        last.PROFILE = tuple(last.PROFILE) + tuple(rows)
+    p["shaft_height"] = height
 
 
 def _ring(last, p, z, lift=0.0, n=64):
@@ -58,6 +78,14 @@ def build(style, p, mats, collection):
         tube("Welt", _ring(last, p, p["sole_thickness"] + .002, .0018), .0024, mats["leather"], collection, True)
         tube("Top_Roll", _ring(last, p, p["shaft_height"] - .004, .0012), .0028, mats["leather"], collection, True)
         ankle_strap(p, p["shaft_height"] - .03, mats, collection, "Boot_Strap")
+    elif style == "tall_boot":   # a pull-on boot to below the knee: no laces (the throat closed), a welt, the top hemmed,
+        # a strap buckled round the ankle and one round the top (the concept sheet's apprentice mage)
+        last.sole(p, mats, collection)
+        last.upper(p, mats, collection, laced=False)
+        tube("Welt", _ring(last, p, p["sole_thickness"] + .002, .0018), .0024, mats["leather"], collection, True)
+        tube("Top_Roll", _ring(last, p, p["shaft_height"] - .004, .0012), .0030, mats["leather"], collection, True)
+        ankle_strap(p, .092, mats, collection, "Ankle_Strap")
+        ankle_strap(p, p["shaft_height"] - .035, mats, collection, "Top_Strap")
     elif style == "sandal":   # a sole and straps, the foot bare
         last.sole(p, mats, collection)
 

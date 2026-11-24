@@ -4,14 +4,14 @@ vendor/blender_armour/Footwear to the character's feet and put on them.
     blender -b -P blender_footwear_gen.py -- job.json
 
 job.json: {"style": leather_shoe | ankle_boot | mail_foot | round_sabaton | pointed_sabaton | hybrid_boot | turnshoe | work_boot | sandal
-           (the last three: footwear_extra.py),
+           | tall_boot (the last four: footwear_extra.py),
            "sides": ["L", "R"], "params": {"gap": air round the foot, a share of its size, "hide": the foot hidden in a
            closed shoe (1, the default; sandals never), "keep": the skin kept inside below the shaft's rim, a share of
            the body's height (.0114: 2 cm of a man; or "keep_mm": millimetres on a man 1.75 m tall), "width": the shoe's
            width against the last's own (1), "spring" / "spring_mm": the toe's tip lifted off the ground on a man's shoe
            (.010 m / 10 mm)}, "out": piece.glb,
            "work": a folder (the generator's textures), "character": rigged.glb, "names": {naming: {joint: bone}},
-           "mask": mask.json}
+           "mask": mask.json, "under": [the GLBs worn on the shins under a tall boot: trousers, wraps]}
 
 The generator builds a man's right shoe, in metres, on one last: the ankle joint at the origin, the toe -Y, up +Z, the
 sole's bottom at -ankle_height; at the sole the last reaches .206 forward of the ankle and .064 back, .050 to either
@@ -87,6 +87,25 @@ for o in body:
     polys += [tuple(k + i for i in f.vertices) for f in o.data.polygons]
 tree = BVHTree.FromPolygons(verts, polys)
 H = max(v.z for v in verts) - min(v.z for v in verts)
+# what is worn on the shins under a tall boot (trousers, wraps: job «under»): the shaft is fitted round them as round the
+# leg (made on the skin alone, loose trousers came out through it); at rest, as the body is measured
+uverts = []
+if style in ("tall_boot",):
+    for g in job.get("under") or []:
+        had = set(bpy.data.objects)
+        try:
+            bpy.ops.import_scene.gltf(filepath=g)
+        except Exception as e:  # noqa: BLE001
+            print("UNDER_SKIPPED", g, e, flush=True)
+            continue
+        new = [o for o in bpy.data.objects if o not in had]
+        for o in new:
+            if o.type == "ARMATURE":
+                o.data.pose_position = "REST"
+        bpy.context.view_layer.update()
+        uverts += [o.matrix_world @ v.co for o in new if o.type == "MESH" for v in o.data.vertices]
+        for o in new:
+            bpy.data.objects.remove(o, do_unlink=True)
 gap = float(prm.get("gap", .06))
 hide = bool(prm.get("hide", 1)) and style != "sandal"   # (a sandal leaves the foot bare)
 # the skin kept inside below the rim (world): the editor's in millimetres on a man 1.75 m tall, or a share of the height
@@ -139,7 +158,7 @@ def leg_round(f, z):
     q = A + (K - A) * ((z - A.z) / (K.z - A.z))
     band, reach = .012 * (K - A).length, .3 * (K - A).length
     for grow in (1, 2, 4):   # (a shin's sparse rows: a thin slice held too few of them)
-        sl = [v for v in verts if abs(v.z - z) < band * grow and Vector((v.x - q.x, v.y - q.y, 0)).length < reach]
+        sl = [v for v in (verts + uverts if uverts else verts) if abs(v.z - z) < band * grow and Vector((v.x - q.x, v.y - q.y, 0)).length < reach]
         if len(sl) >= 12:
             break
     else:
@@ -165,6 +184,9 @@ make_materials = importlib.import_module("kettle_hat_details").make_materials
 prepare_meshes = importlib.import_module("generate_kettle_hat").prepare_meshes
 import footwear_extra as FX   # (everyday ones beside the generator's six: turnshoes, work boots, sandals)
 p = FX.config(cat, style) if style in FX.STYLES else cat.validate_config(style, {})
+if style in FX.TALL:   # (a tall boot's top: a share of the way up the shin from the ankle to the knee, in the frame's heights)
+    tops = [FX.TALL[style] * (f["K"].z - f["A"].z) * p["ankle_height"] / max(1e-6, f["A"].z - f["ground"]) for f in feet.values()]
+    FX.tall(last, p, p["ankle_height"] + sum(tops) / len(tops))
 p["hidden_foot"] = hide   # (a turnshoe's throat closed over a hidden foot: footwear_extra)
 bpy.ops.object.select_all(action="DESELECT")   # their mesh preparation unwraps whatever is selected
 col = bpy.data.collections.new("Footwear")
@@ -297,6 +319,67 @@ def widen(obs, f, origin, sx, sy, sz, share=None):
             v.co.x = c + (v.co.x - c) * k
 
 
+def push_out(obs, f, pts, clear):
+    """A tall boot over trousers (pts: what is worn under it, world): nowhere inside them. Round the shin's line (the
+    ankle to the knee, on down to the ground) in bins along it and round it: how far the trousers reach out against the
+    boot's inner wall there (its leather's nearest), the shortfall smoothed over the bins, every part of the boot moved
+    out by it (straps, the welt with the leather: what lies on what stays on it). Below the ankle the boot keeps the
+    last's own form, not the leg's: a trouser's hem round the ankle came out through it there."""
+    A, K = f["A"], f["K"]
+    ax = (K - A).normalized()
+    e1 = f["fdir"] - ax * f["fdir"].dot(ax)
+    e1.normalize()
+    e2 = ax.cross(e1)
+    wall = [o for o in obs if o.name.startswith(("Leather_Upper", "Inner_Lining"))]
+    ws = [o.matrix_world @ v.co for o in wall for v in o.data.vertices]
+    if not ws:
+        return
+    t0, t1 = min((q - A).dot(ax) for q in ws), max((q - A).dot(ax) for q in ws)
+    NT, NA = 40, 36
+
+    def at(q):
+        d = q - A
+        t = d.dot(ax)
+        r = d - ax * t
+        return (t - t0) / max(1e-6, t1 - t0) * NT - .5, (math.atan2(r.dot(e2), r.dot(e1)) + math.pi) / math.tau * NA - .5, r.length
+    inner, outer = [[None] * NA for _ in range(NT)], [[0.] * NA for _ in range(NT)]
+    for q in ws:
+        x, y, r = at(q)
+        i, j = int(round(x)), int(round(y)) % NA
+        if 0 <= i < NT:
+            inner[i][j] = r if inner[i][j] is None else min(inner[i][j], r)
+    for q in pts:
+        x, y, r = at(q)
+        i, j = int(round(x)), int(round(y)) % NA
+        if 0 <= i < NT and inner[i][j] is not None and r < 1.6 * inner[i][j]:   # (the trousers round this leg, not the other)
+            outer[i][j] = max(outer[i][j], r)
+    need = [[max(0., outer[i][j] + clear - inner[i][j]) if inner[i][j] is not None and outer[i][j] > 0 else 0. for j in range(NA)] for i in range(NT)]
+    for _ in range(3):   # (smoothed, never below what was found: no lumps, nothing left inside)
+        sm = [[(2 * need[i][j] + need[i][(j + 1) % NA] + need[i][(j - 1) % NA] + need[max(0, i - 1)][j] + need[min(NT - 1, i + 1)][j]) / 6 for j in range(NA)] for i in range(NT)]
+        need = [[max(sm[i][j], need[i][j] * .85) for j in range(NA)] for i in range(NT)]
+    moved = 0.
+
+    def get(x, y):
+        x = clamp(x, 0, NT - 1.001)
+        i, u = int(x), x - int(x)
+        j, v = int(math.floor(y)) % NA, y - math.floor(y)
+        j1 = (j + 1) % NA
+        return (need[i][j] * (1 - v) + need[i][j1] * v) * (1 - u) + (need[min(NT - 1, i + 1)][j] * (1 - v) + need[min(NT - 1, i + 1)][j1] * v) * u
+    for o in obs:
+        mi = o.matrix_world.inverted()
+        for v in o.data.vertices:
+            q = o.matrix_world @ v.co
+            x, y, r = at(q)
+            n = get(x, y)
+            if n > 0 and r > 1e-6:
+                d = q - A
+                rr = d - ax * d.dot(ax)
+                v.co = mi @ (q + rr.normalized() * n)
+                moved = max(moved, n)
+        o.data.update()
+    print("TALL_PUSH", round(moved, 4), flush=True)
+
+
 # ---------------------------------------------------------------- each side: mirrored for the left, fitted, weighted
 parts, info = [], {}
 for s in sides:
@@ -388,6 +471,8 @@ for s in sides:
         ob.data.transform(M)
         ob.data.update()
         parts.append((s, ob))
+    if uverts:   # (a tall boot over trousers: nowhere inside them)
+        push_out(obs, f, uverts, .003 * H / 1.75 + gap * f["half_w"] * .5)
     info[s] = {"length": round(f["toe"] - f["heel"], 2), "half_width": round(f["half_w"], 2), "ankle": round(f["A"].z - f["ground"], 2),
                "scale": [round(sx, 1), round(sy, 1), round(sz, 1)],
                "hidden_to": round((p["shaft_height"] - ah) * sz - keep, 3) if hide else None}   # (along the shin from the ankle)
