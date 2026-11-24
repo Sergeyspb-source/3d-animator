@@ -27,6 +27,23 @@ def _bvh(objs):
     return BVHTree.FromPolygons(verts, polys)
 
 
+def _bvh_fixed(objs, bones, share=.9, skip=()):
+    """A BVH of the faces all of whose vertices move mostly (share) with the bones, none of them in skip (keys)."""
+    verts, polys = [], []
+    for o in objs:
+        gn = [g.name for g in o.vertex_groups]
+        ok = []
+        for v in o.data.vertices:
+            tot = sum(g.weight for g in v.groups)
+            on = sum(g.weight for g in v.groups if gn[g.group] in bones)
+            c = v.co
+            ok.append(tot > 1e-9 and on / tot >= share and (round(c.x * 1000), round(c.z * 1000), round(-c.y * 1000)) not in skip)
+        base = len(verts)
+        verts += [o.matrix_world @ v.co for v in o.data.vertices]
+        polys += [tuple(base + i for i in p.vertices) for p in o.data.polygons if all(ok[i] for i in p.vertices)]
+    return BVHTree.FromPolygons(verts, polys)
+
+
 def _cone(n, deg):
     """n and four directions turned deg from it (to its sides): a vertex the piece covers sees it along all of them."""
     t = n.orthogonal().normalized()
@@ -252,7 +269,13 @@ def _hemisphere(count=192):
     return out
 
 
-def head_cover(body, pieces, keys, poke_keys, centre, rings=1, shell=None, ear_keys=(), press=0.0, radii=(1, 1, 1), root=.1):
+POKE_NEAR = .12    # the head's skin out past a helmet's shell counts as through it this near to it (a share of the head's half depth)
+BAND_FIXED = .35   # round the skin seen that moves with the helmet: this share of the band (the seen test's rays are
+                   # few: under a brim, aslant, a sliver of the skull it judged unseen showed as a crack)
+
+
+def head_cover(body, pieces, keys, poke_keys, centre, rings=1, shell=None, ear_keys=(), press=0.0, radii=(1, 1, 1), root=.1,
+               inner=(), band=0.0, fixed=(), band_fixed=None):
     """What a helmet does to the head. keys: what it may hide (under it, over the brow); poke_keys: what is taken off where
     it comes out through the shell (the head behind the face, over the brow); ear_keys: the ears; press: how far off the
     skull an ear may stay; radii: the head's half sizes (x, y, z) round centre; root: how far along the ear, from where
@@ -260,9 +283,19 @@ def head_cover(body, pieces, keys, poke_keys, centre, rings=1, shell=None, ear_k
     side's ear vertices comes in along its line to the head's middle, its height over the skull eased to at most `press`. Kept is all the skin that can be seen: a ray from it reaches the open past the
     helmet and the body - through an eye slit, under a rim - so no hole shows there. Hidden is what is closed in and what
     still comes out. `rings` of closed-in vertices next to the kept are given back; crumbs cut off from the rest go.
-    shell: a BVH of the helmet without its straps. Returns body_mask's list, and [x, y, z, dx, dy, dz] for each vertex
+    shell: a BVH of the helmet without its straps. inner: the face's own parts (eyes, teeth, gums, tongue, the mouth's
+    bag): hidden too where no ray from them gets out past the helmet and the head (a closed helmet: all of them; through
+    an eye slit the eyes stay). band: the skin (and parts) within this of what stays seen and moves otherwise than the
+    helmet (not mostly with `fixed`, the head's bones: the neck under the rim) is given back, the poking out excepted: the
+    head turns on the neck, the rim moves off the neck and the skin a little way in under it is seen then (from below,
+    under the rim: a hollow head); round what is seen and moves with it (an eye slit, under a brim) BAND_FIXED of it. Returns body_mask's list, and [x, y, z, dx, dy, dz] for each vertex
     moved (where it is, how far: glTF axes, thousandths): readers of the hidden ones take the entries of three."""
-    tree, body_tree = _bvh(pieces), _bvh(body)
+    tree = _bvh(pieces)
+    # what may hide the skin from a camera: the head itself and its parts, what moves with the helmet (`fixed`); not the
+    # neck, the shoulders - at rest they stood between the nape and a camera behind, the head bowed and the nape under the
+    # brim was seen: hidden, a hollow there
+    # (nor the ears: laid against the head under the shell or cut off there, they hide nothing then)
+    body_tree = _bvh(list(body) + list(inner)) if not fixed else _bvh_fixed(list(body) + list(inner), set(fixed), skip=set(ear_keys))
     wall = shell or tree
     ear_keys = set(ear_keys)
     poke_keys = set(poke_keys) | ear_keys
@@ -272,7 +305,7 @@ def head_cover(body, pieces, keys, poke_keys, centre, rings=1, shell=None, ear_k
     hi = Vector((max(max((o.matrix_world @ v.co)[i] for v in o.data.vertices) for o in pieces) for i in range(3)))
     size = (hi - lo).length
     e, near = 1e-3 * size, .25 * size   # (the body further off than that - the chest under the chin - hides nothing from a camera)
-    dirs = _hemisphere()
+    dirs = _hemisphere(800)   # (192 missed a narrow way out: between a brim and the nape, seen when the head bows)
     key_of = lambda c: (round(c.x * 1000), round(c.z * 1000), round(-c.y * 1000))  # noqa: E731
     through = lambda p: wall.ray_cast(p, (centre - p).normalized(), (centre - p).length)[0] is not None  # noqa: E731
 
@@ -364,8 +397,13 @@ def head_cover(body, pieces, keys, poke_keys, centre, rings=1, shell=None, ear_k
             p, n = W @ v.co, (N @ v.normal).normalized()
             q = p + n * e
             st = "hide"
-            if k in ear_set and wall.ray_cast(q, (centre - p).normalized(), (centre - p).length)[0] is not None:
-                st = "out"
+            if k in ear_set:
+                h = wall.ray_cast(q, (centre - p).normalized(), (centre - p).length)
+                # out through the shell: an ear anywhere past it; the head (a skull's bump) only close to it - skin far
+                # under a brim, the shell between it and the head's middle, is not through the metal (a kettle hat: the
+                # nape hidden, a hollow seen there as the head bowed)
+                if h[0] is not None and (k in ear_keys or h[3] < POKE_NEAR * radii[1]):
+                    st = "out"
             if st == "hide":
                 for d in dirs:
                     if d.dot(n) > .05 and tree.ray_cast(q, d)[0] is None and body_tree.ray_cast(q, d, near)[0] is None:
@@ -427,6 +465,49 @@ def head_cover(body, pieces, keys, poke_keys, centre, rings=1, shell=None, ear_k
                 for b in bits:
                     if len(b) < .01 * big:   # (crumbs only: a face parted by the hidden skin keeps both halves)
                         hide |= {ks[i] for i in b}
+    # ---- the face's own parts: hidden whole where all of them is closed in (every way out from each vertex meets the
+    # helmet or the head; their normals are not trusted - a Tripo mesh is wound inward - so all ways round are tried).
+    # A part seen anywhere stays whole: an eye turns, a jaw opens - its back, its teeth would come out as holes
+    allways = dirs + [-d for d in dirs]
+    for o in inner:
+        W = o.matrix_world
+        seen = sum(1 for v in o.data.vertices
+                   if not all(tree.ray_cast(W @ v.co + d * e, d)[0] is not None or body_tree.ray_cast(W @ v.co + d * e, d, near)[0] is not None
+                              for d in allways))
+        print("HEAD_COVER inner", o.name, seen, "of", len(o.data.vertices), "seen", flush=True)
+        if seen == 0:
+            hide |= {key_of(v.co) for v in o.data.vertices}
+    # ---- given back within `band` of what stays seen (not what came out through the shell)
+    if band > 0:
+        from mathutils.kdtree import KDTree
+        fixed = set(fixed)
+        seen_pts, hid_pts = [], []
+        for o in list(body) + list(inner):
+            W = o.matrix_world
+            gn = [g.name for g in o.vertex_groups]
+            for v in o.data.vertices:
+                k = key_of(v.co)
+                if k in hide:
+                    hid_pts.append((k, W @ v.co))
+                    continue
+                tot = sum(g.weight for g in v.groups)
+                on = sum(g.weight for g in v.groups if gn[g.group] in fixed)
+                moving = not fixed or tot <= 1e-9 or on / tot < .9   # (moves with the neck, not with the helmet)
+                seen_pts.append((k, W @ v.co, band if moving else (BAND_FIXED if band_fixed is None else band_fixed) * band))
+        if seen_pts:
+            kd = KDTree(len(seen_pts))
+            for i, (_, q, _) in enumerate(seen_pts):
+                kd.insert(q, i)
+            kd.balance()
+            back = set()
+            for k, q in hid_pts:
+                if k in out or k in still:
+                    continue
+                for _, i, dist in kd.find_range(q, band):
+                    if dist < seen_pts[i][2]:
+                        back.add(k)
+                        break
+            hide -= back
     return [list(x) for x in sorted(hide)] + [[*k, *d] for k, d in sorted(moved.items())]   # (a hidden one moves too: its triangles with the others)
 
 

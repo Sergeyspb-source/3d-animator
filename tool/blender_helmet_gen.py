@@ -6,7 +6,9 @@ vendor/blender_armour (KettleHat, HelmetVariants) to the character's head and pu
 job.json: {"style": kettle_hat | open_bascinet | barbute | visored_bascinet | sallet | armet | (helmets_extra) nasal_helm |
                     spangenhelm | great_helm | morion | close_helm,
            "params": {"gap": air over the head, a share of its half depth, "visor_angle", "cheek_angle" (degrees),
-                      "tail": a sallet's tail, "brim": a kettle hat's brim, shares of their usual size},
+                      "tail": a sallet's tail, "brim": a kettle hat's brim, shares of their usual size,
+                      "keep_mm": the skin kept round what is seen (under the rim, round the openings), mm on a man
+                      1.75 m tall (20)},
            "out": piece.glb, "work": a folder (the generators' textures),
            "character": rigged.glb, "names": {naming: {joint: bone}}, "mask": mask.json,
            "under": [the GLBs of what is worn on the head under it: a coif - measured with the head]}
@@ -18,9 +20,12 @@ brow), scaled as one piece to it (its eye slits at the eyes, a kettle hat's brim
 drawn up so it ends at the chin, not on the shoulders (a goblin's face is short and its neck shorter than a man's),
 and an aventail hangs round the neck down to the shoulders' top, closing in to the neck (it covers the neck, it does
 not fall on the chest). It moves with the head (an aventail's lower rings more and more with the neck). What it hides
-goes into the mask (body_mask.head_cover): only skin that cannot be seen; an ear meeting the shell is laid against the
-head, under it (its vertices' moves are in the mask too).
-In front of the face the shell comes forward over what it would cut (the nose): a bump (clear_face).
+goes into the mask (body_mask.head_cover): only skin that cannot be seen, and the face's own parts closed in (eyes,
+teeth, tongue, the mouth: a closed helmet hides the head whole), less a band of `keep_mm` round what is seen (the
+head turning on the neck shows the skin a little way in under the rim); an ear meeting the shell is laid against the
+head, under it (its vertices' moves are in the mask too); an ear left out (a brim over it, a cut-out) stays.
+Where the skull comes into the shell (a goblin's egg-shaped head, wider behind than the helmet's ellipse) the shell goes
+out round it (clear_head); in front of the face it comes forward over what it would cut (the nose): a bump (clear_face).
 Prints ARMOUR_GEN_OK {json} (as blender_armour_gen.py).
 """
 import importlib
@@ -414,6 +419,97 @@ def clear_face():
     return moved
 
 
+def clear_head():
+    """Where the skull comes into the shell or too near it (a goblin's head is an egg, wider behind than the ellipse the
+    helmet is made on: a kettle hat's brim cut the back of the head, the crown the occiput), the shell goes out round
+    it, smoothly: looked at across from the head's upright axis at each height and every way round, the shell's inside
+    at least `clear` off the skin; what needs more than .3 of the head's half depth (an ear standing out: it is laid
+    under the shell) is left. Everything but the aventail moves out across by what its place (height, way round)
+    needs: a brim, a plate at one height, moves whole there and stays flat (moved out from the head's middle it waved);
+    the thickness, the rivets, the straps' ends go with it."""
+    t_h = wall_tree()
+    clear = max(.05 * half_d, .6 * gap)
+    # the skin without the ears (they go under the shell; round their roots the brim went out in lumps)
+    from body_mask import ears, where_thin
+    ek = {tuple(x) for x in ears(body, head_bones, centre, half_w, J.z, E.z + top, out=1.0)}
+    ball = lambda q: ((q.x - centre.x) / half_w) ** 2 + ((q.y - centre.y) / half_d) ** 2 + ((q.z - centre.z) / top) ** 2  # noqa: E731
+    ek |= {tuple(x) for x in where_thin(body, head_bones, lambda q: q.y > centre.y - .3 * half_d and q.z > E.z - .3 * top and ball(q) > 1.15 ** 2, .3 * half_w)}
+    sv, sf = [], []
+    for o in body:
+        kk = [(round(v.co.x * 1000), round(v.co.z * 1000), round(-v.co.y * 1000)) for v in o.data.vertices]
+        b0 = len(sv)
+        sv += [o.matrix_world @ v.co for v in o.data.vertices]
+        sf += [tuple(b0 + i for i in f.vertices) for f in o.data.polygons if not any(kk[i] in ek for i in f.vertices)]
+    skull = BVHTree.FromPolygons(sv, sf)
+
+    def skin_at(org, d, far):   # (as hit(): the skin, then what is worn on it there)
+        h = skull.ray_cast(org, d, far)
+        if h[0] is None:
+            return None
+        r_ = h[3]
+        if treeU is not None:
+            t_ = 0.0
+            for _ in range(8):
+                q = treeU.ray_cast(org + d * (t_ + 1e-4), d, far)
+                if q[0] is None:
+                    break
+                t_ += 1e-4 + q[3]
+                if t_ > r_ + .06 * H:
+                    break
+                r_ = max(r_, t_)
+        return r_
+    NA, NZ = 96, 40
+    z0, z1 = chin, E.z + top + gap
+    zs = [z0 + (z1 - z0) * j / (NZ - 1) for j in range(NZ)]
+    D = np.zeros((NZ, NA))
+    for j, z in enumerate(zs):
+        org = Vector((centre.x, centre.y, z))
+        for i in range(NA):
+            az = math.tau * i / NA
+            d = Vector((math.sin(az), -math.cos(az), 0))
+            sk = skin_at(org, d, 3 * half_d)
+            sh = t_h.ray_cast(org, d, 3 * half_d)
+            if sk is None or sh[0] is None:
+                continue
+            need = sk + clear - sh[3]
+            if 0 < need < .3 * half_d:
+                D[j, i] = need
+    if D.max() <= 0:
+        return 0.0
+    need = D.copy()
+    r = 4
+    wide = D.copy()
+    k = np.ones(2 * r + 1) / (2 * r + 1)
+    for _ in range(8):   # smoothed round (wrapping) and up, never below what each place needs
+        pad = np.concatenate([wide[:, -r:], wide, wide[:, :r]], axis=1)
+        pad = np.pad(pad, ((r, r), (0, 0)), mode="edge")
+        pad = np.apply_along_axis(lambda m: np.convolve(m, k, mode="same"), 0, pad)
+        pad = np.apply_along_axis(lambda m: np.convolve(m, k, mode="same"), 1, pad)
+        wide = np.maximum(pad[r:-r, r:-r], need)
+    moved = 0.0
+    for o in parts:
+        if o.name.startswith("Aventail_Rings"):
+            continue
+        for v in o.data.vertices:
+            rel = Vector((v.co.x - centre.x, v.co.y - centre.y, 0))
+            if rel.length < 1e-9:
+                continue
+            u = rel.normalized()
+            az = math.atan2(u.x, -u.y) % math.tau
+            fj = clamp((v.co.z - z0) / (z1 - z0), 0, 1) * (NZ - 1.001)
+            fi = az / math.tau * NA
+            i0, j0 = int(fi) % NA, int(fj)
+            a_, b_ = fi - int(fi), fj - j0
+            i1 = (i0 + 1) % NA
+            dd = (wide[j0, i0] * (1 - a_) + wide[j0, i1] * a_) * (1 - b_) + (wide[j0 + 1, i0] * (1 - a_) + wide[j0 + 1, i1] * a_) * b_
+            if dd > 0:
+                v.co += u * dd
+                moved = max(moved, dd)
+        o.data.update()
+    return moved
+
+
+head_moved = clear_head()
 face_moved = clear_face()
 shell_tree = wall_tree()   # (for what comes out through it: the mask)
 
@@ -472,8 +568,14 @@ if job.get("mask"):   # what it hides, the ears too
     # bump, hair; not the face: a nose is met by clear_face)
     poke = {tuple(x) for x in where(body, head_bones, lambda q: q.z > E.z + .25 * top or q.y > centre.y - .15 * half_d)}
     # an ear that meets the shell goes under it, laid against the head (within the gap the helmet leaves)
+    # the face's own parts closed in go too (a closed helmet: the eyes, teeth, tongue, the mouth's bag), and the skin a
+    # little way in under the rim and round the openings stays (`keep`: mm on a man 1.75 m tall; the head turning on the
+    # neck shows it from below)
+    inner = [o for o in bpy.data.objects if o.type == "MESH" and o.name.startswith(PARTS) and not o.name.startswith("Icosphere")]
+    band = float(prm.get("keep_mm", 20)) / 1750 * H
     keys = head_cover(body, [obj], keys, poke, centre, shell=shell_tree, ear_keys=ear_keys, press=.5 * max(gap, .04 * half_d),
-                      radii=(half_w, half_d, top), root=.35 * half_w)
+                      radii=(half_w, half_d, top), root=.35 * half_w, inner=inner, band=band, fixed=head_bones,
+                      band_fixed=prm.get("band_fixed"))   # (a test's: body_mask.BAND_FIXED otherwise)
     Path(job["mask"]).write_text(json.dumps(keys), encoding="utf-8")
 
 for o in list(bpy.data.objects):   # the skeleton and the helmet only
@@ -486,7 +588,7 @@ bpy.context.view_layer.objects.active = arm
 bpy.ops.export_scene.gltf(filepath=job["out"], export_format="GLB", use_selection=True, export_skins=True,
                           export_animations=False, export_influence_nb=4)
 print("ARMOUR_GEN_OK " + json.dumps({"vertices": len(obj.data.vertices), "bones": [head_b.name] + ([neck_b.name] if neck_b else []),
-                                     "radius": round(half_d, 4), "sides": [], "scale": round(s, 4), "squeeze": round(squeeze, 3), "face_moved": round(face_moved, 4),
+                                     "radius": round(half_d, 4), "sides": [], "scale": round(s, 4), "squeeze": round(squeeze, 3), "face_moved": round(face_moved, 4), "head_moved": round(head_moved, 4),
                                      "head": {"half_width": round(half_w, 3), "half_depth": round(half_d, 3), "eyes_to_top": round(top, 3),
                                               "chin": round(chin, 3), "shoulder": round(shoulder, 3), "neck": round(neck_r, 3)},
                                      "build": {k: (round(v, 4) if isinstance(v, float) else v) for k, v in p.items()}, "uvtex": UVTEX}), flush=True)

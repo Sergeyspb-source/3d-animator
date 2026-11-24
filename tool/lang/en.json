@@ -271,6 +271,8 @@
  "ag.helmet_group": "Helmet",
  "ag.head_gap": "Air over the head",
  "ag.head_gap_info": "Between the head and the helmet, a share of the head's half depth. The generator builds the helmet in its own proportions with the head's and scales it to it; the ears are hidden.",
+ "ag.head_keep": "Skin inside at the rim, mm",
+ "ag.head_keep_info": "Under a helmet the head is hidden whole, the eyes, teeth and tongue too, except what is seen through a slit and under the rim. Round what is seen this much skin stays (mm on a man 1.75 m tall), so that a turning head shows no hollow under the rim. Ears left outside are not touched.",
  "ag.held_group": "Weapon and shield",
  "ag.visor_angle": "Visor raised",
  "ag.w_grip": "Grip length",

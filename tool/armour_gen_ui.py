@@ -186,7 +186,7 @@ def _helmet_params(params) -> dict:
     return {"gap": float(params.get("head_gap", 7)) / 100, "visor_angle": float(params.get("visor_angle", 0)),
             "cheek_angle": float(params.get("cheek_angle", 0)), "tail": float(params.get("tail", 100)) / 100,
             "brim": float(params.get("brim", 100)) / 100, "strap": float(params.get("strap", 0)) / 100,
-            "strap_fwd": float(params.get("strap_fwd", 0)) / 100}
+            "strap_fwd": float(params.get("strap_fwd", 0)) / 100, "keep_mm": float(params.get("head_keep", 20))}
 
 
 def _elbow_params(params) -> dict:
@@ -283,10 +283,11 @@ def _hair_params(params) -> dict:
 # pieces the generators make: piece -> (the Blender script, its styles (the editor's keys), the style key's prefix in
 # them, the editor's parameters -> the script's, the parameters a style's preview depends on besides the gap)
 MADE = {"helmet": ("blender_helmet_gen.py", HELMETS, "", _helmet_params,
-                   {"visored_bascinet": ("visor_angle",), "armet": ("visor_angle", "cheek_angle"), "sallet": ("tail", "strap", "strap_fwd"),
-                    "kettle_hat": ("brim", "strap", "strap_fwd"), "barbute": ("strap", "strap_fwd"), "open_bascinet": ("strap", "strap_fwd"),
-                    "close_helm": ("visor_angle", "cheek_angle"), "nasal_helm": ("strap", "strap_fwd"), "spangenhelm": ("strap", "strap_fwd"),
-                    "morion": ("strap", "strap_fwd")}),
+_HELMET_OWN = {"visored_bascinet": ("visor_angle",), "armet": ("visor_angle", "cheek_angle"), "sallet": ("tail", "strap", "strap_fwd"),
+               "kettle_hat": ("brim", "strap", "strap_fwd"), "barbute": ("strap", "strap_fwd"), "open_bascinet": ("strap", "strap_fwd"),
+               "close_helm": ("visor_angle", "cheek_angle"), "nasal_helm": ("strap", "strap_fwd"), "spangenhelm": ("strap", "strap_fwd"),
+               "morion": ("strap", "strap_fwd")}
+                   {k: (*_HELMET_OWN.get(k, ()), "keep_mm") for k in HELMETS}),   # (the skin kept round what is seen: every one's)
         "elbow": ("blender_elbow_gen.py", ELBOWS, "elbow_", _elbow_params,
                   {k: ("wing",) for k in ("elbow_winged_plate", "elbow_articulated_plate", "elbow_plate_mail_hybrid")}),
         "footwear": ("blender_footwear_gen.py", FOOTWEAR, "foot_", _foot_params, {k: ("keep_mm", "spring_mm", "width") for k in FOOTWEAR}),
