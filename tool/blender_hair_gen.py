@@ -3239,41 +3239,56 @@ def face_obj(name, verts, faces, uvs, mat, keys):
     return ob
 
 
-# -------- lashes: a ribbon along each lid's margin, the lashes in its texture
-LASHES = {   # L: the upper ones' length (x the ball's radius), n: lashes an eye, layers (ribbons), lower: the lower ones'
-    # share of that length (0: none), curl: how far they turn up (the lower ones down), w: their thickness
-    "natural": dict(L=.8, n=210, layers=1, lower=.45, curl=.6, w=1.2),
-    "short": dict(L=.48, n=170, layers=1, lower=0., curl=.4, w=1.1),
-    "long": dict(L=1.0, n=240, layers=2, lower=.5, curl=.75, w=1.3),
-    "thick": dict(L=.82, n=300, layers=2, lower=.55, curl=.6, w=1.6)}
+# -------- lashes: tapered clumps rooted along each lid's margin - the eyelid shell's edge where the character has the
+# shells (EyeLid_<side>: parts of spheres just over the ball, the lid's own smooth edge; the lashes turn with it as it
+# blinks), else the skin's cut round the eye as seen from the ball. Geometry of their own, opaque: a ribbon with the
+# lashes painted in its alpha read as grey fur, see-through here and not there (blended, sorted against the eye and the
+# lids), the lashes in it hard to make out
+LASHES = {   # L: the upper ones' length (x the ball's radius), n: clumps along an upper lid in a row, layers: rows of them
+    # (the second between the first's, shorter), lower: the lower ones' share of the length (0: none), curl: how far
+    # they turn up (the lower ones down), w: their thickness
+    "natural": dict(L=.8, n=40, layers=2, lower=.45, curl=.6, w=1.),
+    "short": dict(L=.48, n=36, layers=1, lower=0., curl=.4, w=.9),
+    "long": dict(L=1.0, n=44, layers=2, lower=.5, curl=.75, w=1.05),
+    "thick": dict(L=.82, n=52, layers=2, lower=.55, curl=.6, w=1.35)}
 
 
-def lash_atlas(st):
-    """four rows of lashes (upper A, B; lower A, B), each from the root (its bottom) to the tips: tapered, a little
-    bent, in clumps meeting at their tips, leaning to the outer corner (u: the inner corner 0, the outer 1)"""
-    TW, RH = 1024, 128
-    rs = random.Random(int(prm.get("seed", 1)) * 13 + 5)
-    sp = LASHES[st]
-    strokes = []
-    for row in range(4):
-        lower = row >= 2
-        n, k, y0 = int(sp["n"] * (.6 if lower else 1.)), 0, row * RH + 3
-        while k < n:
-            m = min(n - k, rs.choice((2, 3, 3, 4)))   # (a clump)
-            cx = rs.random() * TW
-            tipx = cx + rs.uniform(-6, 6) + 16 * cx / TW
-            Lc = (RH - 8) * rs.uniform(.75, 1.)
-            for _ in range(m):
-                rx, L_, tx = cx + rs.uniform(-6, 6), Lc * rs.uniform(.8, 1.), tipx + rs.uniform(-2.5, 2.5)
-                t = np.linspace(0, 1, 9)
-                pts = np.stack([rx + (tx - rx) * t ** 1.5, y0 + L_ * t], 1)
-                strokes.append((pts, sp["w"] * np.array([1.3, 1.1, .7, .22]) * (.85 if lower else 1.), [1., .95, .8, .45], rs.uniform(.6, 1.)))
-            k += m
-    A, Lm = strokes_img(TW, 4 * RH, strokes)
-    img = np.zeros((4 * RH, TW, 4), np.float32)
-    img[..., 3] = A
-    img[..., :3] = ((.35 + .45 * Lm)[..., None] * COL[None, None, :])
-    return img
+def shell_edges(sd, c):
+    """the eyelid shells' edges (EyeLid_<side>, built in columns round the ball, each column's points at one azimuth):
+    per column the upper shell's lowest point and the lower shell's highest -> (up, lo) from the inner corner, or None.
+    By the rim's faces (the shells' edge rows, their material eyelid_rim): up a column lower's second row, its edge, the
+    upper's edge, its second row; else across the opening - the column's widest step in elevation"""
+    ob = bpy.data.objects.get(f"EyeLid_{sd}")
+    if ob is None or ob.type != "MESH" or len(ob.data.vertices) < 20:
+        return None
+    M = ob.matrix_world
+    rim = {i for poly in ob.data.polygons if poly.material_index < len(ob.material_slots)
+           and getattr(ob.material_slots[poly.material_index].material, "name", "").startswith("eyelid_rim") for i in poly.vertices}
+    cols_ = {}
+    for v in ob.data.vertices:
+        p = M @ v.co
+        q = p - c
+        if q.length < 1e-9:
+            continue
+        k = round(math.degrees(math.asin(max(-1., min(1., q.x / q.length)))) * 4)   # (its column: the azimuth, to a quarter degree)
+        cols_.setdefault(k, []).append((lid_ang(c, p), p, v.index in rim))
+    up, lo = [], []
+    for k in sorted(cols_):
+        e = sorted(cols_[k], key=lambda x: x[0])
+        r_ = sorted({round(x[0], 5): x for x in e if x[2]}.values(), key=lambda x: x[0])
+        if len(r_) == 4:
+            lo.append(r_[1][1]); up.append(r_[2][1])
+            continue
+        e = sorted({round(x[0], 5): x for x in e}.values(), key=lambda x: x[0])
+        if len(e) < 4:
+            continue
+        g = max(range(len(e) - 1), key=lambda i: e[i + 1][0] - e[i][0])
+        lo.append(e[g][1]); up.append(e[g + 1][1])
+    if len(up) < 5:
+        return None
+    if abs(up[0].x - O.x) > abs(up[-1].x - O.x):   # (the inner corner first: nearer the face's middle)
+        up, lo = up[::-1], lo[::-1]
+    return up, lo
 
 
 def shell_turns(sd, c, r):
@@ -3297,80 +3312,119 @@ def shell_turns(sd, c, r):
 def build_lashes(st):
     sp = LASHES[st]
     Lk = max(.2, float(prm.get("length", 1.)))   # (the slider: x the style's length)
+    rs = random.Random(int(prm.get("seed", 1)) * 13 + 5)
     verts, faces, uvs, cols = [], [], [], []   # (cols: side, lid, its root, its vertices)
-    NU, NV = 26, 6
+    NV = 6
     found = {}
     for sd in ("L", "R"):
-        op = eye_opening(sd)
-        if op is None:
+        c, r = eye_ball(sd)
+        if c is None:
             continue
-        found[sd] = op
-        c, r = op["c"], op["r"]
-        lat = X * (1 if op["outer"].x > op["inner"].x else -1)   # (out to the outer corner)
-        for lid, marg, row0, Lf in (("up", op["up"], 0, 1.), ("lo", op["lo"], 2, sp["lower"])):
+        sh, op = shell_edges(sd, c), eye_opening(sd)
+        if sh is None and op is None:
+            continue
+        found[sd] = dict(c=c, r=r, shells=sh is not None)
+        # (the upper ones on the upper shell's edge; the lower ones on the lower lid's edge as one sees it - the skin
+        # there is often higher than the lower shell's edge, hidden under it: from the shell they came out of the cheek)
+        up_m, lo_m = (sh[0] if sh else op["up"]), (op["lo"] if op else sh[1])
+        lat = X * (1 if up_m[-1].x > up_m[0].x else -1)   # (out to the outer corner)
+        for lid, marg, Lf in (("up", up_m, 1.), ("lo", lo_m, sp["lower"])):
             if Lf <= 0:
                 continue
+            for _ in range(2):   # (the shell's columns, the rays' steps: a little smoothed along it)
+                marg = [marg[0]] + [marg[i] * .5 + (marg[i - 1] + marg[i + 1]) * .25 for i in range(1, len(marg) - 1)] + [marg[-1]]
             arc = [0.]
             for a_, b_ in zip(marg, marg[1:]):
                 arc.append(arc[-1] + (b_ - a_).length)
 
-            def at(s):   # (the margin's point at a share of its length)
-                t = s * arc[-1]
+            def at(s, marg=marg, arc=arc):   # (the margin's point at a share of its length)
+                t = max(0., min(1., s)) * arc[-1]
                 for i in range(len(arc) - 1):
                     if arc[i + 1] >= t:
                         return marg[i].lerp(marg[i + 1], (t - arc[i]) / max(arc[i + 1] - arc[i], 1e-9))
                 return marg[-1].copy()
-            s0, s1 = (.05, .97) if lid == "up" else (.2, .93)
+            s0, s1 = (.04, .98) if lid == "up" else (.18, .94)
             sgn = 1 if lid == "up" else -1
-            for layer in range(sp["layers"]):
-                base = len(verts)
-                for i in range(NU + 1):
-                    s = s0 + (s1 - s0) * i / NU
+            n = int(sp["n"] * (.55 if lid == "lo" else 1.))
+            for layer in range(sp["layers"] if lid == "up" else 1):
+                cl = []
+                for i in range(n):
+                    s = s0 + (s1 - s0) * min(1., max(0., (i + .5 + .5 * layer + rs.uniform(-.3, .3)) / n))   # (a second row between the first's)
                     m = at(s)
                     o = (m - c).normalized()
                     prof = ((.35 + .65 * smooth(0., .6, s)) * (1 - .3 * smooth(.85, 1., s))) if lid == "up" else (.5 + .5 * smooth(.2, .7, s))
-                    Lc = sp["L"] * Lk * Lf * r * prof * (1 - .12 * layer)
-                    # out of the lid forward - over the eye a little, as seen from the front -, curling up (the lower
-                    # ones down), the outer ones leaning out
-                    d0 = (o * .3 + FRONT * 1. - UP * (.18 * sgn) + lat * (.35 * s * s)).normalized()
-                    up_ = UP * sgn
-                    up_ = (up_ - d0 * up_.dot(d0)).normalized()
-                    root = m + o * ((.02 - .03 * layer) * r)
-                    curl = sp["curl"] * (1 + .25 * layer) * (1 if lid == "up" else .5)
-                    col = []
+                    # out of the lid's edge forward - over the eye a little, as seen from the front -, curling up (the
+                    # lower ones down), the outer ones leaning out
+                    cl.append(dict(s=s, m=m, o=o, Lc=sp["L"] * Lk * Lf * r * prof * (1 - .15 * layer) * rs.uniform(.82, 1.),
+                                   d0=(o * .35 + FRONT - UP * (.15 * sgn) + lat * (.35 * s * s)).normalized(), root=m + o * ((.012 + .01 * layer) * r),
+                                   curl=sp["curl"] * (1 + .2 * layer) * (1 if lid == "up" else .5) * rs.uniform(.85, 1.15)))
+
+                def shape(q, k, f):   # (a lash turned down k steps, its curl less, f of its length: its points)
+                    d0 = (q["d0"] - UP * (.25 * sgn * k)).normalized()
+                    up_ = (UP * sgn - d0 * (UP * sgn).dot(d0)).normalized()
+                    return d0, up_, q["curl"] * .6 ** k, q["Lc"] * f
+
+                def hit(q, k, f):   # (where along it it first meets the skin, or None)
+                    d0, up_, cu, L_ = shape(q, k, f)
+                    q0 = q["root"]
+                    for j in range(1, NV):
+                        t = j / (NV - 1)
+                        q1 = q["root"] + (d0 * t + up_ * (cu * t * t)) * L_
+                        h = full.ray_cast(q0, (q1 - q0).normalized(), (q1 - q0).length)
+                        if h[0] is not None:
+                            return (j - 1) / (NV - 1)
+                        q0 = q1
+                    return None
+                # (out from under the skin: where it hangs over the lid's edge - a hooded lid - a lash curling up went
+                # through the fold; turned down and forward until it clears it, else as long as it is clear - and its
+                # neighbours partly so, smoothly along the lid: one by one they stood in clumps with gaps)
+                ks, fs = [], []
+                for q in cl:
+                    k = next((k for k in range(6) if hit(q, k, 1.) is None), 5)
+                    h = hit(q, k, 1.)
+                    ks.append(float(k)); fs.append(1. if h is None else max(.15, .9 * h))
+                sm = lambda a, mx: [mx(a[i], sum(a[max(0, i - 2):i + 3]) / len(a[max(0, i - 2):i + 3])) for i in range(len(a))]   # noqa: E731
+                ks, fs = sm(ks, max), sm(fs, min)
+                for q, k, f in zip(cl, ks, fs):
+                    h = hit(q, k, f)
+                    if h is not None:
+                        f *= max(.15, .95 * h)
+                    d0, up_, curl, Lc = shape(q, k, f)
+                    m, root = q["m"], q["root"]
+                    T = at(q["s"] + .01) - at(q["s"] - .01)
+                    T = (T - d0 * T.dot(d0)).normalized()
+                    rib = d0.cross(T).normalized()
+                    if rib.dot(up_) < 0:
+                        rib = -rib
+                    w0 = .04 * r * sp["w"] * (.8 if lid == "lo" else 1.)
+                    b0, col = len(verts), []
                     for j in range(NV):
                         t = j / (NV - 1)
-                        col.append(len(verts))
-                        verts.append(root + (d0 * t + up_ * (curl * t * t)) * Lc)
-                        uvs.append((.02 + .96 * i / NU, (row0 + layer + .03 + .94 * t) / 4))
-                    cols.append((sd, lid, m, col))
-                for i in range(NU):
+                        P = root + (d0 * t + up_ * (curl * t * t)) * Lc
+                        w = w0 * (1 - t) ** .85 + .003 * r
+                        for a_, h_ in ((-1, 0.), (0, .6), (1, 0.)):   # (across it a low roof: seen from the side too)
+                            col.append(len(verts))
+                            verts.append(P + T * (a_ * w) + rib * (h_ * w))
+                            uvs.append((.5 + .5 * a_, t))
                     for j in range(NV - 1):
-                        a = base + i * NV + j
-                        faces.append((a, a + NV, a + NV + 1, a + 1))
+                        a = b0 + 3 * j
+                        faces.append((a, a + 3, a + 4, a + 1))
+                        faces.append((a + 1, a + 4, a + 5, a + 2))
+                    cols.append((sd, lid, m, col))
     if not verts:
         fail(_t("ag.lashes_no_eyes"))
-    # the keys: each column turned with its lid (about the ball's lateral axis), as far as its root goes
+    # the keys: each lash turned with its lid about the ball's lateral axis - the shell's own turn (on its edge, it goes
+    # where the edge goes), or as far as the skin's margin under its root goes, carried on
     keys = {}
-    for sd, op in found.items():
-        c, r = op["c"], op["r"]
+    for sd, f_ in found.items():
+        c, r = f_["c"], f_["r"]
         sc_ = [cl for cl in cols if cl[0] == sd]
-        turns = shell_turns(sd, c, r)
-        moves = {}   # key -> [(turn, shift)] a column
-        if turns:   # (the shells: the upper lid down to the lower's margin, as the shell closes over it; the lower as its shell)
-            blink = next((v for k, v in turns.items() if k.startswith("eyeBlink")), None)
-            rise = max(0., -blink[1]) if blink else 0.
-            ang = lambda p: lid_ang(c, p)   # noqa: E731
+        moves = {}   # key -> [(turn, shift)] a lash
+        turns = shell_turns(sd, c, r) if f_["shells"] else None
+        if turns:
             for kname, (tu, tl) in turns.items():
-                ks = []
-                for _, lid, m, _ in sc_:
-                    if lid == "up":
-                        need = max(0., along_x(op["up"], ang, m.x) - along_x(op["lo"], ang, m.x) - rise)
-                        ks.append((need * (tu / blink[0]) if blink and abs(blink[0]) > 1e-6 else 0., Vector()))
-                    else:
-                        ks.append((tl, Vector()))
-                moves[kname] = ks
-        else:   # (no shells: the skin's own margin under each root moves; the column turned as far and carried on)
+                moves[kname] = [(tu if lid == "up" else tl, Vector()) for _, lid, _, _ in sc_]
+        else:
             names, D = skin_keys()
             mv = [skin_moves(m) for _, _, m, _ in sc_]
             for ki, kname in enumerate(names):
@@ -3384,12 +3438,16 @@ def build_lashes(st):
                 moves[kname] = ks
         for kname, ks in moves.items():
             pos = keys.setdefault(kname, [v.copy() for v in verts])
-            for (_, _, m, col), (d, sh) in zip(sc_, ks):
+            for (_, _, m, col), (d, sh_) in zip(sc_, ks):
                 for vi in col:
-                    pos[vi] = lid_turn(c, verts[vi], d) + sh
-    im = save("lashes", lash_atlas(st), True)
-    ob = face_obj("lashes", verts, faces, uvs, blend_mat("lashes", im, .75), keys)
-    print("lashes", len(cols), "columns, keys", sorted(keys), flush=True)
+                    pos[vi] = lid_turn(c, verts[vi], d) + sh_
+    # its colour: dark at the root, a little lighter to the tip (the hair's colour times this grey, as the editor tints it)
+    tex = np.zeros((64, 8, 3), np.float32)
+    tex[...] = (.3 + .25 * np.linspace(0., 1., 64) ** 1.5)[:, None, None]
+    im = save("lashes", tex, False)
+    m_, _ = material("lashes", im, False, .6)
+    ob = face_obj("lashes", verts, faces, uvs, m_, keys)
+    print("lashes", len(cols), "clumps,", "shells" if any(f_["shells"] for f_ in found.values()) else "skin", "keys", sorted(keys), flush=True)
     return [ob], ob
 
 

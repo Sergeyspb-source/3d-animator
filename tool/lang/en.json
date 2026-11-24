@@ -2939,5 +2939,7 @@
  "ag.trim_embroidery": "embroidery",
  "ag.cloth2": "Second cloth",
  "ag.cloth2_info": "a sash, a rag, a rope, the wraps' bands",
- "ag.thread": "Thread"
+ "ag.thread": "Thread",
+ "ag.tn_folds": "Folds",
+ "ag.tn_folds_info": "gathers under the neckline, wrinkles on the sleeves, pleats in the skirt"
 }
