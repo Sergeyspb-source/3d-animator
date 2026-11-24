@@ -122,6 +122,32 @@ def bake_aux(obj, groups, size, item, what, socket):
     return out
 
 
+def _one(nt):   # (a constant 1: the islands' cover)
+    v = nt.nodes.get("cover_one") or nt.nodes.new("ShaderNodeValue")
+    v.name = "cover_one"; v.outputs[0].default_value = 1.0
+    return v.outputs[0]
+
+
+def pad_baked(obj, groups, size, item, images):
+    """the background between each group's islands filled from them (tex_pad.pad_fill): baked, it was black - and a
+    roughness map's black a mirror; the GPU's smaller copies of the texture (from afar) took it in along every seam:
+    dark, glossy, ragged lines over cloth and armour in the game. images(group) -> its images to pad."""
+    import sys
+    from pathlib import Path as _P
+    if str(_P(__file__).resolve().parent) not in sys.path:
+        sys.path.insert(0, str(_P(__file__).resolve().parent))
+    import tex_pad as TP
+    cov = bake_aux(obj, groups, size, item, "cover", _one)
+    for g in groups:
+        mask = (cov[g["slot"]][:, 0] > .5).reshape(size, size)
+        if mask.all() or not mask.any():
+            continue
+        for im in images(g):
+            px = pixels(im, size).reshape(size, size, 4).copy()
+            px[..., :3] = TP.pad_fill(px[..., :3], mask)
+            im.pixels.foreach_set(px.ravel())
+
+
 def uv_user(obj, groups, size, job, info, layer="UVMap"):
     """A texture given back for a group (job["uvtex"][slot]: its path, the hash of the unwrap it was painted on) made
     that group's colour - when the unwrap is still that one (else info[slot] = "changed")."""
@@ -341,6 +367,7 @@ def bake_made(obj, item, job, tex_dir):
         target("normal")
         bpy.ops.object.bake(type="NORMAL", margin=4)
     uv_user(obj, groups, size, job, info, "bake_uv")
+    pad_baked(obj, groups, size, item, lambda g: [g[k] for k in ("color", "rough", "normal") if k in g])
     tex_dir = Path(tex_dir); tex_dir.mkdir(parents=True, exist_ok=True)
     for g in groups:
         for kind in ("color", "rough") + (("normal",) if look else ()):

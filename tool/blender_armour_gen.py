@@ -121,6 +121,8 @@ def bake(obj, mats, size, out_dir, item, paint=None):
                 im = imgs[(m.name, "color")]
                 px = _pixels(im, size).copy(); px[:, 3] = (al[m.name][:, 0] > .5).astype(np.float32)
                 im.pixels.foreach_set(px.ravel()); im.alpha_mode = "STRAIGHT"
+    # the background between the islands filled from them (no dark, glossy seams from afar: TB.pad_baked)
+    TB.pad_baked(obj, _groups(mats, imgs), size, item, lambda g: [imgs[(g["mats"][0].name, k)] for k in ("color", "rough", "normal")])
     for (mn, kind), im in imgs.items():
         im.filepath_raw = str(Path(out_dir) / f"{im.name}.png")
         im.file_format = "PNG"
