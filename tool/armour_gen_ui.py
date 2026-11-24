@@ -199,7 +199,10 @@ def _poleyn_params(params) -> dict:
 
 
 def _foot_params(params) -> dict:
-    return {"gap": float(params.get("foot_gap", 6)) / 100}
+    """The editor's footwear sliders as blender_footwear_gen.py's: the gap (percent), the skin kept inside below the
+    rim and the toe's spring (millimetres on a man 1.75 m tall, a man's shoe), the width (percent of the last's)."""
+    return {"gap": float(params.get("foot_gap", 6)) / 100, "keep_mm": float(params.get("foot_keep", 20)),
+            "spring_mm": float(params.get("foot_spring", 10)), "width": float(params.get("foot_width", 100)) / 100}
 
 
 def hair_models_dir(export_dir) -> Path:
@@ -286,7 +289,7 @@ MADE = {"helmet": ("blender_helmet_gen.py", HELMETS, "", _helmet_params,
                     "morion": ("strap", "strap_fwd")}),
         "elbow": ("blender_elbow_gen.py", ELBOWS, "elbow_", _elbow_params,
                   {k: ("wing",) for k in ("elbow_winged_plate", "elbow_articulated_plate", "elbow_plate_mail_hybrid")}),
-        "footwear": ("blender_footwear_gen.py", FOOTWEAR, "foot_", _foot_params, {}),
+        "footwear": ("blender_footwear_gen.py", FOOTWEAR, "foot_", _foot_params, {k: ("keep_mm", "spring_mm", "width") for k in FOOTWEAR}),
         "poleyn": ("blender_elbow_gen.py", POLEYNS, "poleyn_", _poleyn_params,
                    {k: ("wing",) for k in ("poleyn_winged_plate", "poleyn_articulated_plate", "poleyn_plate_mail_hybrid")}),
         # hair: cards with gravity (long, a bob), a shell unwrapped along the hair's way (short cuts, the mohawk's base)

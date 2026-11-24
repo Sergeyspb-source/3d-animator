@@ -40,7 +40,9 @@ def build(style, p, mats, collection):
     from elbow_geometry import ribbon
     if style == "turnshoe":   # soft leather, no tongue: a lace round the ankle tied over the open throat, a seam over the instep
         last.sole(p, mats, collection)
-        last.upper(p, mats, collection, laced=True)   # (the throat open: closed, the instep came out through it as the foot bent)
+        # the throat open: closed, the instep came out through it as the foot bent; with the foot hidden in the shoe
+        # (p["hidden_foot"], blender_footwear_gen) the open throat showed a dark slit into the empty shoe: closed then
+        last.upper(p, mats, collection, laced=not p.get("hidden_foot"))
         z = p["shaft_height"] - .014
         tube("Lace_Round", _ring(last, p, z, .0012), .0011, mats["liner"], collection, True)
         front = last.last_point(p, 0, z) + Vector((0, -.0015, 0))

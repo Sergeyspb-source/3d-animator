@@ -8,6 +8,9 @@ from footwear_last import last_point
 def toe_cap(p,mats,collection):
     scale = p["foot_length"]/0.270
     start,end = -0.210*scale-p["toe_extension"],-0.163*scale
+    # the point grows out of a full section a little behind the last's tip (the last's toe is low and round: from the
+    # tip itself a long point came out a thin rod)
+    tip = -(0.205-min(0.015,0.5*p["toe_extension"]))*scale
     vertices,faces = [],[]
     for row in range(13):
         t = row/12
@@ -16,12 +19,12 @@ def toe_cap(p,mats,collection):
         for j in range(33):
             a = -1.56+3.12*j/32
             rear = plate_point(p,end,a,0.003)
-            if y>=-0.205*scale:
+            if y>=tip:
                 point = plate_point(p,y,a,0.004)
                 vertices.append(tuple(point))
             else:
-                edge = plate_point(p,-0.205*scale,a,0.004)
-                blend = (y-start)/(-0.205*scale-start)
+                edge = plate_point(p,tip,a,0.004)
+                blend = (y-start)/(tip-start)
                 x = edge.x*math.sin(blend*math.pi/2)+0.001*math.sin(a)*(1-blend)
                 z = 0.015+(edge.z-0.015)*blend+0.006*(1-blend)*math.cos(a)
                 vertices.append((x,y,z))

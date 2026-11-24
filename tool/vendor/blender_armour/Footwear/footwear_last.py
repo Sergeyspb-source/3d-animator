@@ -4,11 +4,19 @@ from mathutils import Vector
 from helmet_geometry import surface
 from kettle_hat_details import tube
 
-PROFILE = ((0.009,0.206,0.064,0.050),(0.022,0.206,0.064,0.051),
-           (0.035,0.203,0.062,0.051),(0.045,0.185,0.059,0.050),
-           (0.060,0.145,0.054,0.047),(0.075,0.095,0.049,0.043),
-           (0.090,0.060,0.044,0.039),(0.105,0.042,0.041,0.036),
-           (0.140,0.042,0.042,0.038),(0.210,0.046,0.044,0.042))
+# (height, forward of the ankle, back of it, half width): a man's last 27 cm long. The toe low and rounded (its tip
+# 1.5-2.5 cm up), the vamp rising evenly to the instep, the heel's back fullest 2-4 cm up and rounding under, the
+# instep and the shaft round the leg. (Was a box: the toe a 3.5 cm wall, widest under the ankle.)
+PROFILE = ((0.009,0.206,0.064,0.050),(0.015,0.206,0.064,0.050),
+           (0.022,0.205,0.064,0.050),(0.030,0.199,0.064,0.050),
+           (0.038,0.186,0.063,0.049),(0.046,0.166,0.061,0.048),
+           (0.054,0.142,0.058,0.046),(0.062,0.118,0.055,0.045),
+           (0.070,0.097,0.052,0.043),(0.078,0.080,0.049,0.041),
+           (0.088,0.064,0.046,0.039),(0.100,0.052,0.044,0.037),
+           (0.112,0.046,0.042,0.036),(0.140,0.043,0.042,0.037),
+           (0.210,0.046,0.045,0.042))
+BALL = 0.58   # the ball of the foot: the widest, this share of the way from the ankle to the toe's tip
+HEEL = 0.72   # the heel's and the waist's half width against the ball's
 
 # //#GPT: Interpolate the last so upper, tongue, seams and bindings share one measurable form.
 def profile(p,z):
@@ -20,11 +28,25 @@ def profile(p,z):
                     result[2]*p["foot_width"]/0.100)
     raise ValueError("Shaft height exceeds last profile")
 
+def plan(c,z):
+    """The half width at a slice's point (a share of the slice's half width) by c: its place from the ankle's line to
+    the toe's tip (0..1) or to the heel's back (0..-1). Low down a foot's outline: widest across the ball, narrower at
+    the waist and the heel, the toe and the heel rounded; up the instep and the shaft more and more a round (|sin|)."""
+    if c>=0:
+        rise = HEEL+(1-HEEL)*min(1,c/BALL)**2*(3-2*min(1,c/BALL))
+        u = max(0,(c-BALL)/(1-BALL))
+        g = rise*max(0,1-u**2.6)**(1/2.6)
+    else:
+        g = HEEL*max(0,1-(-c)**2.4)**(1/2.4)
+    k = max(0,min(1,(z-0.045)/0.055))
+    k = k*k*(3-2*k)
+    return g+(math.sqrt(max(0,1-c*c))-g)*k
+
 # //#GPT: Offset the toe slightly toward the big toe to create genuinely handed footwear.
 def last_point(p,a,z,scale=1):
     front,back,width = profile(p,z)
     c,s = math.cos(a),math.sin(a)
-    x = width*s*(1+0.06*max(0,c))-0.005*max(0,c)**3*(1-z/0.22)
+    x = width*math.copysign(plan(c,z),s)-0.005*max(0,c)**3*(1-z/0.22)
     y = -front*c if c>=0 else -back*c
     return Vector((x*scale,y*scale,z))
 

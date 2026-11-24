@@ -5,18 +5,27 @@ vendor/blender_armour/Footwear to the character's feet and put on them.
 
 job.json: {"style": leather_shoe | ankle_boot | mail_foot | round_sabaton | pointed_sabaton | hybrid_boot | turnshoe | work_boot | sandal
            (the last three: footwear_extra.py),
-           "sides": ["L", "R"], "params": {"gap": air round the foot, a share of its size}, "out": piece.glb,
+           "sides": ["L", "R"], "params": {"gap": air round the foot, a share of its size, "hide": the foot hidden in a
+           closed shoe (1, the default; sandals never), "keep": the skin kept inside below the shaft's rim, a share of
+           the body's height (.0114: 2 cm of a man; or "keep_mm": millimetres on a man 1.75 m tall), "width": the shoe's
+           width against the last's own (1), "spring" / "spring_mm": the toe's tip lifted off the ground on a man's shoe
+           (.010 m / 10 mm)}, "out": piece.glb,
            "work": a folder (the generator's textures), "character": rigged.glb, "names": {naming: {joint: bone}},
            "mask": mask.json}
 
 The generator builds a man's right shoe, in metres, on one last: the ankle joint at the origin, the toe -Y, up +Z, the
 sole's bottom at -ankle_height; at the sole the last reaches .206 forward of the ankle and .064 back, .050 to either
 side; the shaft above the ankle is the last's profile too. Each foot is measured on the skin (its heel, its toes'
-tip with the claws, its width and middle, the ground, the ankle's height) and the shoe is scaled to it along, across
-and up, its toe along the foot, its sole on the ground; above the ankle the shaft is fitted round the leg at each
-height. The left one is the right one mirrored, as the generator makes it. It moves with the foot, its toe with the
-toes, its shaft more and more with the shin; steel goes whole with what it lies on. What it hides goes into the mask
-(body_mask.py), each foot on its own. Prints ARMOUR_GEN_OK {json} (as blender_armour_gen.py).
+tip with the claws, its width and middle, the ground, the ankle's height) and the shoe is scaled to it along, its toe
+along the foot, its sole on the ground; above the ankle the shaft is fitted round the leg at each height.
+A closed shoe hides the foot (hide): below the ankle it keeps the last's own form at the foot's length (as wide and as
+high as a man's shoe of that length, rising to the ankle's height only near the ankle; a goblin's broad clawed toes
+go through it unseen), and the skin in it is hidden whole up to `keep` below the rim along the shin; that much skin
+stays inside the rim, the shoe fitted round it there (a bending ankle would open holes at a bare edge). Otherwise
+(sandals, hide 0) the shoe is fitted round the foot at each height and hides what it covers (body_mask).
+The left one is the right one mirrored, as the generator makes it. It moves with the foot, its toe with the toes, its
+shaft more and more with the shin; steel goes whole with what it lies on. What it hides goes into the mask, each foot
+on its own. Prints ARMOUR_GEN_OK {json} (as blender_armour_gen.py).
 """
 import importlib
 import json
@@ -79,6 +88,10 @@ for o in body:
 tree = BVHTree.FromPolygons(verts, polys)
 H = max(v.z for v in verts) - min(v.z for v in verts)
 gap = float(prm.get("gap", .06))
+hide = bool(prm.get("hide", 1)) and style != "sandal"   # (a sandal leaves the foot bare)
+# the skin kept inside below the rim (world): the editor's in millimetres on a man 1.75 m tall, or a share of the height
+keep = (float(prm["keep_mm"]) / 1750 if "keep_mm" in prm else float(prm.get("keep", .0114))) * H
+k_width = float(prm.get("width", 1.))
 
 
 def bone(key):
@@ -125,13 +138,21 @@ def leg_round(f, z):
     A, K = f["A"], f["K"]
     q = A + (K - A) * ((z - A.z) / (K.z - A.z))
     band, reach = .012 * (K - A).length, .3 * (K - A).length
-    sl = [v for v in verts if abs(v.z - z) < band and Vector((v.x - q.x, v.y - q.y, 0)).length < reach]
-    if len(sl) < 12:
+    for grow in (1, 2, 4):   # (a shin's sparse rows: a thin slice held too few of them)
+        sl = [v for v in verts if abs(v.z - z) < band * grow and Vector((v.x - q.x, v.y - q.y, 0)).length < reach]
+        if len(sl) >= 12:
+            break
+    else:
         return None
     al = [(v - q).dot(f["fdir"]) for v in sl]
     ac = [(v - q).dot(f["xs"]) for v in sl]
     mid = q + f["fdir"] * ((max(al) + min(al)) / 2) + f["xs"] * ((max(ac) + min(ac)) / 2)
-    return Vector((mid.x, mid.y, z)), (max(al) - min(al)) / 2, (max(ac) - min(ac)) / 2
+    hd, hw = (max(al) - min(al)) / 2, (max(ac) - min(ac)) / 2
+    if hide:   # an ellipse round the whole slice, not the one in its box: a calf's corners came out through the shaft
+        cd, cw = (max(al) + min(al)) / 2, (max(ac) + min(ac)) / 2   # (the skin kept below the rim is seen there)
+        k = max(1., max(math.hypot((a_ - cd) / max(hd, 1e-6), (c_ - cw) / max(hw, 1e-6)) for a_, c_ in zip(al, ac)))
+        hd, hw = hd * k, hw * k
+    return Vector((mid.x, mid.y, z)), hd, hw
 
 
 feet = {s: foot(s) for s in sides}
@@ -144,6 +165,7 @@ make_materials = importlib.import_module("kettle_hat_details").make_materials
 prepare_meshes = importlib.import_module("generate_kettle_hat").prepare_meshes
 import footwear_extra as FX   # (everyday ones beside the generator's six: turnshoes, work boots, sandals)
 p = FX.config(cat, style) if style in FX.STYLES else cat.validate_config(style, {})
+p["hidden_foot"] = hide   # (a turnshoe's throat closed over a hidden foot: footwear_extra)
 bpy.ops.object.select_all(action="DESELECT")   # their mesh preparation unwraps whatever is selected
 col = bpy.data.collections.new("Footwear")
 bpy.context.scene.collection.children.link(col)
@@ -158,6 +180,14 @@ for o in list(col.objects):
 ah = p["ankle_height"]
 k_len = p["foot_length"] / .270
 sole_front, sole_back, sole_side = SOLE[1] * k_len, SOLE[2] * k_len, SOLE[3] * p["foot_width"] / .100
+spring = (float(prm["spring_mm"]) / 1000 if "spring_mm" in prm else float(prm.get("spring", .010))) * k_len   # the toe's spring: its tip lifted off the ground (a man's 1 cm)
+if spring > 0 and hide:   # (from the ball, more and more to the tip; sole, upper and steel alike: what lies on what stays
+    # on it. Not under a bare foot: a sandal's sole lifted at the toe let the toes through it)
+    y_ball = last.BALL * sole_front
+    for o in right:
+        for v in o.data.vertices:
+            t = clamp((-v.co.y - y_ball) / (sole_front - y_ball), 0, 1.2)
+            v.co.z += spring * t * t
 
 
 def shaft_k(f, origin, sx, sy, sz, zf):
@@ -194,16 +224,19 @@ def foot_k(f, origin, sx, sy, sz, zf):
             (max(ac) + min(ac)) / 2 / sx)
 
 
-def curve(fn, zs, n):
+def curve(fn, zs, n, floor=()):
     """fn at the frame's heights zs (tuples of n numbers, None where not found), smoothed along them: a function of the
-    height (the slices are noisy: a bone's bump, a toe's claw, the calf)."""
+    height (the slices are noisy: a bone's bump, a toe's claw, the calf). floor: the numbers never smoothed below what
+    was found there (a shaft's size round a leg widening to the calf: smoothed, its top was too tight)."""
     ks = [fn(z) for z in zs]
-    good = [k for k in ks if k]
+    good = [i for i, k in enumerate(ks) if k]
     if not good:
         return lambda z: None
-    ks = [k or good[0] for k in ks]
+    ks = [k or ks[min(good, key=lambda g: abs(g - i))] for i, k in enumerate(ks)]   # (a missing one: the nearest found)
+    raw = list(ks)
     for _ in range(2):
         ks = [tuple((ks[max(0, i - 1)][j] + 2 * ks[i][j] + ks[min(len(ks) - 1, i + 1)][j]) / 4 for j in range(n)) for i in range(len(ks))]
+    ks = [tuple(max(k[j], r[j]) if j in floor else k[j] for j in range(n)) for k, r in zip(ks, raw)]
 
     def at(z):
         t = clamp((z - zs[0]) / (zs[-1] - zs[0]), 0, 1) * (len(zs) - 1)
@@ -223,12 +256,13 @@ def foot_curve(f, origin, sx, sy, sz):
 def shaft_curve(f, origin, sx, sy, sz):
     """shaft_k from the ankle to the shaft's top at ten heights, smoothed along them."""
     zs = [(p["shaft_height"] - ah + .01) * i / 9 for i in range(10)]
-    return curve(lambda z: shaft_k(f, origin, sx, sy, sz, z), zs, 5)
+    return curve(lambda z: shaft_k(f, origin, sx, sy, sz, z), zs, 5, (0, 1) if hide else ())
 
 
-def widen(obs, f, origin, sx, sy, sz):
+def widen(obs, f, origin, sx, sy, sz, share=None):
     """Along the foot: at each stretch of it the shoe no narrower than the foot there and the gap (a goblin's toes
-    spread wide where a last narrows to its toe), each side of the shoe's own middle there; below the ankle."""
+    spread wide where a last narrows to its toe), each side of the shoe's own middle there; below the ankle. share(z):
+    how much of it at the frame's height z (a hidden foot: only where the skin stays, near the rim)."""
     fp = [((q - origin).dot(f["xs"]) / sx, -(q - origin).dot(f["fdir"]) / sy) for q in f["pts"] if q.z < f["A"].z]
     sp = [(v.co.x, v.co.y) for o in obs for v in o.data.vertices if v.co.z < 0]
     if not fp or not sp:
@@ -259,7 +293,7 @@ def widen(obs, f, origin, sx, sy, sz):
             u = t - i
             k = ks[i][0] * (1 - u) + ks[i + 1][0] * u
             c = ks[i][1] * (1 - u) + ks[i + 1][1] * u
-            k = 1 + (k - 1) * (1 - smooth(-.01, .02, v.co.z))   # the foot only, not the shaft
+            k = 1 + (k - 1) * (1 - smooth(-.01, .02, v.co.z)) * (1 if share is None else share(v.co.z))   # the foot only, not the shaft
             v.co.x = c + (v.co.x - c) * k
 
 
@@ -278,6 +312,19 @@ for s in sides:
     M = Matrix.Translation(origin) @ R @ Matrix.Diagonal((sx, sy, sz, 1))
     fit_foot = foot_curve(f, origin, sx, sy, sz)
     fit_shaft = shaft_curve(f, origin, sx, sy, sz)
+    # a hidden foot: below the ankle the last's own form at the foot's length (sy across and up too), up to the ankle's
+    # height near the ankle only; fitted round the skin where it stays (keep below the rim) and round the shin above
+    zb = p["shaft_height"] - ah - keep / sz   # the lowest kept skin in the frame
+    band = (lambda z: smooth(zb - .03, zb, z)) if hide else None
+    sx_own = sy * k_width
+
+    def own_z(z):
+        """The frame's height z (below the ankle) of the last's own form: the height above the sole scaled as along
+        (sy), more and more as the ankle's own (sz) towards it."""
+        if z >= 0:
+            return z
+        hw = z + ah
+        return hw * (sy + (sz - sy) * (hw / ah) ** 2) / sz - ah
     obs = []
     foot_b, toe_b, leg_b = names[f"foot_{s}"], names.get(f"toe_{s}"), names[f"leg_{s}"]
     toe_b = toe_b if toe_b in arm.data.bones else foot_b
@@ -300,25 +347,29 @@ for s in sides:
         # height (its length is the foot's already): the lames lie over one another at different heights, stretched
         # along each at its own they would cut through each other
         for vx in ob.data.vertices:
-            zf = vx.co.z
+            x, y, zf = vx.co.x, vx.co.y, vx.co.z
             w = smooth(.0, .035, zf)
-            if w < 1:
-                k = fit_foot(zf)
-                if k is not None:
-                    kx, dx = k[0], k[3]
-                    x = vx.co.x
-                    vx.co.x = x + (dx + x * kx - x) * (1 - w)
-            if w <= 0:
+            kf = fit_foot(zf) if w < 1 else None
+            ks = fit_shaft(zf) if w > 0 else None
+            if hide:   # below the ankle the last's own form, fitted round the skin only where it stays; the shaft round the leg
+                b = band(zf)
+                xf = kf[3] + x * kf[0] if kf is not None else x
+                xo, zo = x * sx_own / sx, own_z(zf)
+                xb, zb_ = xo + (xf - xo) * b, zo + (zf - zo) * b
+                if ks is not None:
+                    kx, ky, dx, dy, yc = ks   # round the leg's own middle
+                    xb, y = xb + (dx + x * kx - xb) * w, y + (dy + (y - yc) * ky - y) * w
+                vx.co.x, vx.co.y, vx.co.z = xb, y, zb_ + (zf - zb_) * w
                 continue
-            k = fit_shaft(zf)
-            if k is None:
-                continue
-            kx, ky, dx, dy, yc = k   # round the leg's own middle
-            x, y = vx.co.x, vx.co.y
-            vx.co.x = x + (dx + x * kx - x) * w
-            vx.co.y = y + (dy + (y - yc) * ky - y) * w
+            if kf is not None:
+                kx, dx = kf[0], kf[3]
+                x = x + (dx + x * kx - x) * (1 - w)
+            if ks is not None:
+                kx, ky, dx, dy, yc = ks   # round the leg's own middle
+                x, y = x + (dx + x * kx - x) * w, y + (dy + (y - yc) * ky - y) * w
+            vx.co.x, vx.co.y = x, y
         obs.append(ob)
-    widen(obs, f, origin, sx, sy, sz)
+    widen(obs, f, origin, sx, sy, sz, band)
     for ob in obs:
         # weights: the foot; the toe (soft parts by where they are, steel whole by its middle); the shaft to the shin
         ob.vertex_groups.clear()
@@ -338,7 +389,8 @@ for s in sides:
         ob.data.update()
         parts.append((s, ob))
     info[s] = {"length": round(f["toe"] - f["heel"], 2), "half_width": round(f["half_w"], 2), "ankle": round(f["A"].z - f["ground"], 2),
-               "scale": [round(sx, 1), round(sy, 1), round(sz, 1)]}
+               "scale": [round(sx, 1), round(sy, 1), round(sz, 1)],
+               "hidden_to": round((p["shaft_height"] - ah) * sz - keep, 3) if hide else None}   # (along the shin from the ankle)
 for src in right:
     bpy.data.objects.remove(src, do_unlink=True)
 
@@ -357,9 +409,17 @@ def join(obs):
 # with the shin)
 keys = set()
 if job.get("mask"):
-    from body_mask import body_mask
+    from body_mask import body_mask, where
     for s in sides:
-        keys |= {tuple(x) for x in body_mask(body, [ob for x, ob in parts if x == s], erode=4)}
+        if hide:   # the foot whole and the shin up to keep below the rim (along the shin from the ankle)
+            f = feet[s]
+            up = (f["K"] - f["A"]).normalized()
+            fb = bone(f"foot_{s}")
+            own = {fb.name, *(b.name for b in fb.children_recursive), names[f"leg_{s}"]}
+            lim = info[s]["hidden_to"]
+            keys |= {tuple(x) for x in where(body, own, lambda q, A=f["A"], up=up, lim=lim: (q - A).dot(up) < lim)}
+        else:
+            keys |= {tuple(x) for x in body_mask(body, [ob for x, ob in parts if x == s], erode=4)}
 import blender_texbake as TB
 TB.tag_mail([ob for _, ob in parts])   # (the mail's rings: a slot of their own)
 obj = join([ob for _, ob in parts])

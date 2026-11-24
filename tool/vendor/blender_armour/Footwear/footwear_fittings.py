@@ -27,7 +27,7 @@ def plate_point(p,y,a,lift=0):
     from footwear_last import PROFILE,last_point
     target = max(0.0431*p["foot_length"]/0.270,-y)
     centre_z = 0.105
-    for low,high in zip(PROFILE[:7],PROFILE[1:8]):
+    for low,high in zip(PROFILE,PROFILE[1:]):   # (the first fall of the front past target: the toe's slope)
         front0,front1 = low[1]*p["foot_length"]/0.270,high[1]*p["foot_length"]/0.270
         if front0>=target>=front1 and front0!=front1:
             centre_z = low[0]+(high[0]-low[0])*(front0-target)/(front0-front1)
