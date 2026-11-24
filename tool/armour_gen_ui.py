@@ -282,11 +282,11 @@ def _hair_params(params) -> dict:
 
 # pieces the generators make: piece -> (the Blender script, its styles (the editor's keys), the style key's prefix in
 # them, the editor's parameters -> the script's, the parameters a style's preview depends on besides the gap)
-MADE = {"helmet": ("blender_helmet_gen.py", HELMETS, "", _helmet_params,
 _HELMET_OWN = {"visored_bascinet": ("visor_angle",), "armet": ("visor_angle", "cheek_angle"), "sallet": ("tail", "strap", "strap_fwd"),
                "kettle_hat": ("brim", "strap", "strap_fwd"), "barbute": ("strap", "strap_fwd"), "open_bascinet": ("strap", "strap_fwd"),
                "close_helm": ("visor_angle", "cheek_angle"), "nasal_helm": ("strap", "strap_fwd"), "spangenhelm": ("strap", "strap_fwd"),
                "morion": ("strap", "strap_fwd")}
+MADE = {"helmet": ("blender_helmet_gen.py", HELMETS, "", _helmet_params,
                    {k: (*_HELMET_OWN.get(k, ()), "keep_mm") for k in HELMETS}),   # (the skin kept round what is seen: every one's)
         "elbow": ("blender_elbow_gen.py", ELBOWS, "elbow_", _elbow_params,
                   {k: ("wing",) for k in ("elbow_winged_plate", "elbow_articulated_plate", "elbow_plate_mail_hybrid")}),
