@@ -31,6 +31,9 @@ PORT = 7861
 _state = {"model": None, "rembg": None, "on_gpu": False}
 
 HY_PY = r"D:\conda\envs\hunyuan\python.exe"
+# categories whose Hunyuan shape defaults to the turbo model (hy_pipeline --fast): a character in 28 s instead of
+# 254 s with the same detail; buildings came out lumpier and no faster, so they keep the base model
+HY_FAST_CATEGORIES = {"character", "item", "prop"}
 HY_SRC = r"D:\My projects\SF3D\hunyuan3d-src"
 ENGINE_SF3D = _t("ui.sf3d_one_picture_about_20_seconds")
 ENGINE_HY = _t("ui.hunyuan3d_1_4_pictures_the_best")
@@ -480,8 +483,9 @@ def generate_hy(front, back, left, right, category_label, name, height, width, d
                 collision_label, override,
                 metallic, roughness, hy_tex, hy_faces, hy_steps, paint, overwrite, make_preview=False,
                 color_match=0.0, saturation=1.0, brightness=1.0, auto_materials=False,
-                auto_rig=False, rig_naming_label=None, rig_tries=3, progress=None):
-    """Hunyuan3D: runs hy_pipeline.py in the 'hunyuan' env as a separate process (VRAM is freed on exit)."""
+                auto_rig=False, rig_naming_label=None, rig_tries=3, progress=None, hy_fast=False):
+    """Hunyuan3D: runs hy_pipeline.py in the 'hunyuan' env as a separate process (VRAM is freed on exit).
+    hy_fast: the shape from the turbo model (hy_pipeline --fast, ~30 s instead of ~4 min)."""
     cfg = T.load_config()
     category = LABEL_TO_KEY[category_label]
     preset = cfg["categories"][category]
@@ -522,6 +526,8 @@ def generate_hy(front, back, left, right, category_label, name, height, width, d
         cmd += [f"--{k}", v]
     if not paint:
         cmd.append("--no-texture")
+    if hy_fast:
+        cmd.append("--fast")
     env = dict(os.environ, HF_HOME=r"D:\conda\hf", HF_HUB_OFFLINE="1", HY3DGEN_MODELS=r"D:\conda\hy3dgen",
                TMP=r"D:\conda\tmp", TEMP=r"D:\conda\tmp", PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1")
     t0 = time.time()
@@ -654,13 +660,13 @@ def _viewer_outputs(gen):
 def run(engine, files, f_front, f_back, f_left, f_right, category, name, height, width, depth, pivot,
         collision, override, metallic, roughness, tex_res, fg_ratio, remove_bg, remesh, overwrite,
         hy_tex, hy_faces, hy_steps, paint, make_preview, color_match, saturation, brightness,
-        auto_materials, auto_rig, rig_naming_label, rig_tries, progress=gr.Progress()):
+        auto_materials, auto_rig, rig_naming_label, rig_tries, hy_fast=False, progress=gr.Progress()):
     if engine == ENGINE_HY:
         yield from _viewer_outputs(generate_hy(
             f_front, f_back, f_left, f_right, category, name, height, width, depth, pivot,
             collision, override, metallic, roughness, hy_tex, hy_faces, hy_steps, paint,
             overwrite, make_preview, color_match, saturation, brightness, auto_materials,
-            auto_rig, rig_naming_label, rig_tries))
+            auto_rig, rig_naming_label, rig_tries, hy_fast=hy_fast))
     else:
         yield from _viewer_outputs(generate(
             files, category, name, height, width, depth, pivot, collision, override,
@@ -2590,6 +2596,8 @@ def build():
                                     hy_tex = gr.Dropdown([1024, 2048], value=2048, label=_t("ui.texture_size"))
                                     hy_faces = gr.Slider(10000, 100000, value=50000, step=5000,
                                                          label=_t("ui.target_face_count_after_simplifying"))
+                                    hy_fast = gr.Checkbox(label=_t("ui.hy_fast_shape"), info=_t("ui.hy_fast_shape_info"),
+                                                          value=LABEL_TO_KEY.get(default_cat) in HY_FAST_CATEGORIES)
                                     hy_steps = gr.Slider(20, 50, value=50, step=5, label=_t("ui.diffusion_steps_fewer_faster"))
                                 with gr.Accordion(_t("ui.sf3d_generation_options"), open=False) as sf_params:
                                     tex_res = gr.Dropdown([512, 1024, 2048], value=1024,
@@ -3015,6 +3023,8 @@ def build():
         category.change(on_category, category, preset_note, show_progress="hidden")
         category.change(lambda c: gr.update(visible=LABEL_TO_KEY.get(c) == "vegetation"), category, veg_kind,
                         show_progress="hidden")
+        category.change(lambda c: gr.update(value=LABEL_TO_KEY.get(c) in HY_FAST_CATEGORIES), category, hy_fast,
+                        show_progress="hidden")
         veg_kind.change(lambda k: VEG_STATE.update(kind=VEG_KINDS[k]), veg_kind, None, show_progress="hidden")
         engine.change(on_engine, engine, [files, hy_views, sf_params, hy_params], show_progress="hidden")
         go.click(run,
@@ -3022,7 +3032,7 @@ def build():
                   collision, override,
                   metallic, roughness, tex_res, fg_ratio, remove_bg, remesh, overwrite,
                   hy_tex, hy_faces, hy_steps, paint, make_preview, color_match, saturation, brightness,
-                  auto_materials, auto_rig, rig_naming, rig_tries],
+                  auto_materials, auto_rig, rig_naming, rig_tries, hy_fast],
                  [logbox, table, viewer, inputs_gallery])
         gpu_btn.click(gpu_status, None, [gpu_md, gpu_proc])
         gpu_close.click(gpu_close_proc, [gpu_proc, gpu_force], [gpu_msg, gpu_md, gpu_proc])

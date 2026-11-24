@@ -5,6 +5,12 @@ Progress lines start with '@@ ' so the GUI can show them.
 
     python hy_pipeline.py --out DIR --front f.png [--back b.png] [--left l.png] [--right r.png]
                           [--faces 50000] [--tex 2048] [--steps 50] [--octree 380] [--seed 12345] [--no-texture]
+                          [--fast]
+
+--fast: the shape from the step-distilled turbo model (hunyuan3d-dit-v2-mv-turbo, 5 steps) with the FlashVDM decoder
+on the checkpoint's own VAE. Measured 2026-11-24 on the RTX 4060 8 GB: a character 28 s instead of 254 s with the same
+detail; a building no faster (FlashVDM peaked at 7.8 GB) and lumpier walls - so the GUI offers it for characters,
+items and props. Out of memory in FlashVDM -> the plain decoder (~105 s); turbo weights missing -> the base model.
 """
 import argparse
 import gc
@@ -44,6 +50,7 @@ ap.add_argument("--steps", type=int, default=50)
 ap.add_argument("--octree", type=int, default=380)
 ap.add_argument("--seed", type=int, default=12345)
 ap.add_argument("--no-texture", action="store_true")
+ap.add_argument("--fast", action="store_true")
 a = ap.parse_args()
 
 out = Path(a.out)
@@ -119,20 +126,59 @@ from hy3dgen.shapegen import (  # noqa: E402
 )
 
 say(_t("hy.loading_the_shape_model"))
-shape_pipe = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
-    "tencent/Hunyuan3D-2mv", subfolder="hunyuan3d-dit-v2-mv", variant="fp16"
-)
-say(_t("hy.generating_the_shape_steps", a.steps))
+
+
+def load_shape(turbo, flashvdm):
+    p = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
+        "tencent/Hunyuan3D-2mv", subfolder="hunyuan3d-dit-v2-mv-turbo" if turbo else "hunyuan3d-dit-v2-mv",
+        variant="fp16")
+    if flashvdm:
+        p.enable_flashvdm(replace_vae=False)   # (the turbo VAE is another download; the checkpoint's own works)
+    return p
+
+
+turbo = flashvdm = bool(a.fast)
+try:
+    shape_pipe = load_shape(turbo, flashvdm)
+except (FileNotFoundError, OSError, RuntimeError, ValueError):
+    if not turbo:
+        raise
+    traceback.print_exc()
+    say(_t("hy.turbo_missing_base_model"))
+    turbo = flashvdm = False
+    shape_pipe = load_shape(False, False)
+steps = 5 if turbo else a.steps
+stats.update(shape_model="turbo" if turbo else "base", flashvdm=flashvdm, steps=steps)
+say(_t("hy.generating_the_shape_fast", steps) if turbo else _t("hy.generating_the_shape_steps", steps))
 torch.cuda.reset_peak_memory_stats()
 t = time.time()
-mesh = shape_pipe(
-    image=images,
-    num_inference_steps=a.steps,
-    octree_resolution=a.octree,
-    num_chunks=20000,
-    generator=torch.manual_seed(a.seed),
-    output_type="trimesh",
-)[0]
+
+
+def make_shape():
+    return shape_pipe(
+        image=images,
+        num_inference_steps=steps,
+        octree_resolution=a.octree,
+        num_chunks=20000,
+        generator=torch.manual_seed(a.seed),
+        output_type="trimesh",
+    )[0]
+
+
+try:
+    mesh = make_shape()
+except torch.cuda.OutOfMemoryError:
+    if not flashvdm:
+        raise
+    del shape_pipe
+    free_gpu()
+    say(_t("hy.flashvdm_out_of_memory"))
+    flashvdm = False
+    stats["flashvdm"] = False
+    shape_pipe = load_shape(turbo, False)
+    torch.cuda.reset_peak_memory_stats()
+    t = time.time()
+    mesh = make_shape()
 stats["shape_seconds"] = round(time.time() - t, 1)
 stats["shape_peak_vram_mb"] = round(torch.cuda.max_memory_allocated() / 1024**2)
 stats["shape_faces_raw"] = int(len(mesh.faces))

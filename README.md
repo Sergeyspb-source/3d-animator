@@ -29,7 +29,7 @@ It glues several open-source models together (Stable Fast 3D, Hunyuan3D-2, UniRi
 | GUI tab | What you get | Engine |
 |---|---|---|
 | Create → Reference | Style card + reference pictures (single view or front/back/left/right) for a model, built from a text prompt | Codex CLI (ChatGPT) or OpenRouter |
-| Create → Make a model | GLB from 1 picture (~20 s) or from 1–4 views (7–10 min), with pivot, real-world scale, collision proxy, PBR factors, previews and an icon. Categories: item, prop, building, character, vegetation | SF3D / Hunyuan3D-2mv + Hunyuan3D-Paint |
+| Create → Make a model | GLB from 1 picture (~20 s) or from 1–4 views (7–10 min, ~5 min with the fast shape), with pivot, real-world scale, collision proxy, PBR factors, previews and an icon. Categories: item, prop, building, character, vegetation | SF3D / Hunyuan3D-2mv + Hunyuan3D-Paint |
 | Character → Skeleton (automatic UniRig or by hand with landmarks) | Skeleton + skin for humanoids, Mixamo or Godot bone names, seam welding, body split into regions; «Bones and weights» shows any skeleton | UniRig + Blender |
 | Creatures → Colouring | A creature's colour variants: colour zones, ready tones, patterns (spots, stripes, back, belly, blood) live; a variant is a model of its own with every clip | three.js |
 | Creatures → Skeleton | A creature on four paws (a tail, a muzzle): UniRig's skeleton with readable bone names, turned muzzle forward, a jaw along the mouth line; the skeleton markup viewer (chains, names, skin by bones, weights, a pose check) | UniRig + Blender + three.js |
@@ -425,7 +425,7 @@ In Godot: copy `tool\godot\face_curves_clip.gd` and `face_curves_player.gd` into
 ```powershell
 powershell -ExecutionPolicy Bypass -File hunyuan3d-install.ps1        # env + PyTorch 2.4.1 cu121 + hy3dgen
 powershell -ExecutionPolicy Bypass -File hunyuan3d-texgen-install.ps1 # nvcc 12.1 from conda + builds custom_rasterizer / mesh_processor (needs VS 2022 Build Tools)
-powershell -ExecutionPolicy Bypass -File hunyuan3d-weights.ps1        # shape model tencent/Hunyuan3D-2mv (fp16)
+powershell -ExecutionPolicy Bypass -File hunyuan3d-weights.ps1        # shape models tencent/Hunyuan3D-2mv: base and turbo (fp16)
 powershell -ExecutionPolicy Bypass -File hunyuan3d-texgen-weights.ps1 # delight + paint models
 ```
 
@@ -457,7 +457,9 @@ On first start, `tool\config.example.json` is used. To change the paths or the l
 | `sf3d-batch.bat <folder> [--force] [--no-preview]` | batch: `<folder>\<category>\pic.png` → SF3D; `<folder>\<category>\<asset>\front.png [back/left/right.png]` → Hunyuan3D |
 | `sf3d-gradio.bat` | the original SF3D demo UI (port 7860) |
 
-**Run one GPU job at a time.** Approximate peak VRAM: SF3D 6.2 GB, Hunyuan shape 5.8 GB, Hunyuan paint 7.4 GB, UniRig 4.5 GB. The GUI checks free memory before each job.
+**Run one GPU job at a time.** Approximate peak VRAM: SF3D 6.2 GB, Hunyuan shape 5.8 GB (fast 6.5 GB), Hunyuan paint 7.4 GB, UniRig 4.5 GB. The GUI checks free memory before each job.
+
+**Fast Hunyuan shape** («Hunyuan3D options» → «Fast shape (turbo)»): the shape comes from the turbo Hunyuan3D-2mv model in 5 steps with the FlashVDM mesh decoder. On an RTX 4060 (8 GB) a knight from four views took 21–28 s instead of 254 s with the same detail. A building got no faster (FlashVDM reached 7.8 GB) and its walls and windows came out lumpier, so the box turns itself on for characters, items and props and off for buildings and vegetation. If the decoder runs out of memory it is redone the plain way (~105 s); if the turbo model is not on disk the base one is used. Batch processing uses the base model.
 
 ---
 
