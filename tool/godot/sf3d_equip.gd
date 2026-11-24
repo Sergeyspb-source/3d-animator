@@ -104,6 +104,8 @@ static func wear(character: Node, piece: PackedScene, mask := "", layer := -1.0)
 				_grip(skel).point(hold.substr(0, 1), Vector3(float(pt[0]), float(pt[1]), float(pt[2])) / 1000.0, true)
 	inst.free()
 	var kind := piece.resource_path.get_file().get_basename().trim_prefix("wear_").trim_prefix("proc_").get_slice("_", 0)
+	for mi in out:
+		mi.set_meta("sf3d_kind", kind)
 	for mi in out:   # brows, lashes: fine hairs on the face - no shadows (a card's whole shape fell on the cheek)
 		if kind in ["brows", "lashes"] or String(mi.name).begins_with("brows") or String(mi.name).begins_with("lashes"):
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -130,6 +132,8 @@ static func wear(character: Node, piece: PackedScene, mask := "", layer := -1.0)
 			out[0].set_meta("sf3d_press", press)
 			out[0].set_meta("sf3d_character", character)
 			_hide_body(character)
+	if out.size() > 0 and (kind in CINCH_BELTS or kind in CINCH_SOFT):   # a belt over clothes cinches them
+		_cinch(skel)
 	return out
 
 
@@ -1070,6 +1074,7 @@ static func _rebind(mi: MeshInstance3D, own: Skeleton3D, skel: Skeleton3D) -> vo
 
 static func take_off(meshes: Array) -> void:
 	var character: Node = null
+	var skels := []
 	for mi in meshes:
 		if is_instance_valid(mi) and mi.has_meta("sf3d_cloth"):
 			var sim = mi.get_meta("sf3d_cloth")
@@ -1087,15 +1092,21 @@ static func take_off(meshes: Array) -> void:
 		if is_instance_valid(mi):
 			if mi.has_meta("sf3d_character"):
 				character = mi.get_meta("sf3d_character")
+			var sk := mi.get_parent() as Skeleton3D
 			mi.get_parent().remove_child(mi)
 			mi.queue_free()
+			if sk and not sk in skels:
+				skels.append(sk)
 	if character:
 		_hide_body(character)
+	for sk in skels:   # (a belt off: the clothes under it as made)
+		_cinch(sk)
 
 
 ## Shows or hides a piece put on (the body under it comes back while it is hidden).
 static func show(meshes: Array, on: bool) -> void:
 	var character: Node = null
+	var skels := []
 	for mi in meshes:
 		if is_instance_valid(mi):
 			mi.visible = on and bool(mi.get_meta("sf3d_arrow_on", true))
@@ -1115,8 +1126,12 @@ static func show(meshes: Array, on: bool) -> void:
 						g.grasp(sd, mi.get_meta("sf3d_grasp_degs", []), on)
 			if mi.has_meta("sf3d_character"):
 				character = mi.get_meta("sf3d_character")
+			if mi.get_parent() is Skeleton3D and not mi.get_parent() in skels:
+				skels.append(mi.get_parent())
 	if character:
 		_hide_body(character)
+	for sk in skels:   # (a belt hidden: the clothes under it as made; shown: cinched)
+		_cinch(sk)
 
 
 ## A quiver's arrows (its meshes «…__arrow_<k>»): the first n shown, the rest hidden — the game spends them so.
@@ -1309,6 +1324,368 @@ static func _hide_body(character: Node) -> void:
 			am.surface_set_material(s, full.surface_get_material(s))
 		mi.mesh = am if taken > 0 else full
 	_hide_pieces(skel)
+
+
+## A belt worn over clothes cinches them (the user: «a belt over clothes must draw them in at the waist»), whatever was
+## made with what: each soft piece under a shown belt (CINCH_SOFT, a lower layer) pressed in under its band at rest -
+## its outside no farther out than the band's inside, coming out of it at a slant above and below (CINCH_SLOPE), its
+## thickness kept, never into the body - and gathered in folds above and below it where it had to be pressed (one made
+## under that belt fits it already: nothing added again). As the armour editor's cinchPoints, here by the meshes'
+## points in cells round the torso's axis (hips to neck) instead of rays. The band: the belt's rows that go all round
+## (its pouches, its buckle's frame do not). The soft pieces' meshes as made kept aside («sf3d_cinch_base»).
+const CINCH_SOFT := ["undercloth", "trousers", "tunic", "vest"]
+const CINCH_BELTS := ["belt"]
+const CINCH_SLOPE := 0.6   # across per along
+const CINCH_TAPER := 30.0   # mm so far above and below the band (past it free: breeches' legs, a skirt's flare)
+const CINCH_GATHER := 7.0   # mm (on a man 1.75 m tall): the folds out at the band's edges
+const CINCH_REACH := 75.0   # mm the folds reach up and down
+const CINCH_FOLDS := 9   # round the body
+const CINCH_NA := 72
+
+
+static func _cinch(skel: Skeleton3D) -> void:
+	if skel == null:
+		return
+	var soft: Array = []
+	var belts: Array = []
+	for node in skel.get_children():
+		if node is MeshInstance3D and node.has_meta("sf3d_kind"):
+			var k := String(node.get_meta("sf3d_kind"))
+			if k in CINCH_BELTS:
+				belts.append(node)
+			elif k in CINCH_SOFT:
+				soft.append(node)
+	for mi in soft + belts:   # (as made first)
+		if not mi.has_meta("sf3d_cinch_base"):
+			mi.set_meta("sf3d_cinch_base", mi.get_meta("sf3d_full_mesh") if mi.has_meta("sf3d_full_mesh") else mi.mesh)
+	var lay := func(mi) -> float: return float(mi.get_meta("sf3d_layer", LAYER.get(String(mi.get_meta("sf3d_kind")), 0.0)))
+	soft.sort_custom(func(x, y): return lay.call(x) < lay.call(y))   # (inside first: each lies over those under it)
+	var shown := belts.filter(func(bt): return bt.visible)
+	var ctx := {}
+	if not shown.is_empty():
+		var hips := _bone_named(skel, "hips")
+		var neck := _bone_named(skel, "neck")
+		if hips >= 0 and neck >= 0:
+			var a := skel.get_bone_global_rest(hips).origin
+			var b := skel.get_bone_global_rest(neck).origin
+			if a.distance_to(b) > 1e-4:
+				var u := (b - a).normalized()
+				var p1 := (Vector3.FORWARD if absf(u.dot(Vector3.FORWARD)) < 0.9 else Vector3.RIGHT)
+				p1 = (p1 - u * p1.dot(u)).normalized()
+				ctx = _cinch_ctx({"a": a, "u": u, "p1": p1, "p2": u.cross(p1), "mm": _height(skel) / 1.75 / 1000.0}, shown)
+	var low := 99.0
+	for bt in shown:
+		low = minf(low, lay.call(bt))
+	for mi in soft:
+		var base: Mesh = mi.get_meta("sf3d_cinch_base")
+		var pressed: Mesh = base if ctx.is_empty() or lay.call(mi) >= low else _cinch_mesh(skel, mi, base, ctx)
+		_set_mesh(mi, pressed)
+	# the belt out over the clothes pressed under it where they are thicker than its room (made over one layer, worn
+	# over three): each way round by what they stand out of its band's inside, all of it (its pouches with it)
+	for bt in belts:
+		var base: Mesh = bt.get_meta("sf3d_cinch_base")
+		_set_mesh(bt, base if ctx.is_empty() or not bt.visible else _belt_out(bt, base, ctx))
+	_hide_pieces(skel)
+
+
+static func _set_mesh(mi: MeshInstance3D, m: Mesh) -> void:
+	mi.mesh = m
+	if mi.has_meta("sf3d_full_mesh"):
+		mi.set_meta("sf3d_full_mesh", m)
+
+
+static func _bone_named(skel: Skeleton3D, word: String) -> int:   # «mixamorig_Hips» (the import's «:» -> «_»), «Hips», «hips»
+	for i in skel.get_bone_count():
+		var n := skel.get_bone_name(i).to_lower()
+		if n == word or n.ends_with("_" + word) or n.ends_with(":" + word):
+			return i
+	return -1
+
+
+# a point in the cells round the axis: [along (m), angle (rad), radius]
+static func _cyl(ax: Dictionary, p: Vector3) -> Vector3:
+	var d: Vector3 = p - ax["a"]
+	var s: float = d.dot(ax["u"])
+	d -= ax["u"] * s
+	return Vector3(s, atan2(d.dot(ax["p2"]), d.dot(ax["p1"])), d.length())
+
+
+static func _cells(nr: int, na: int, v: float) -> Array:
+	var g := []
+	for i in nr:
+		var row := []
+		row.resize(na)
+		row.fill(v)
+		g.append(row)
+	return g
+
+
+static func _col(ang: float) -> int:
+	return posmod(int(floor((ang / TAU + 1.0) * CINCH_NA)), CINCH_NA)
+
+
+# the belts' band (their rows that go all round, from their points binned), the wall it makes in cells round the axis
+# (its inside, out of it at a slant up to CINCH_TAPER), and the stack of what is pressed under it so far: {} if none
+static func _cinch_ctx(ax: Dictionary, belts: Array) -> Dictionary:
+	var mm: float = ax["mm"]
+	var NA := CINCH_NA
+	var ds := 4.0 * mm
+	var bp := []
+	var s_lo := INF
+	var s_hi := -INF
+	for bt in belts:
+		var m: Mesh = bt.get_meta("sf3d_cinch_base")
+		var tr: Transform3D = bt.transform
+		for sfc in m.get_surface_count():
+			for v in m.surface_get_arrays(sfc)[Mesh.ARRAY_VERTEX]:
+				var c := _cyl(ax, tr * v)
+				bp.append(c)
+				s_lo = minf(s_lo, c.x)
+				s_hi = maxf(s_hi, c.x)
+	if bp.is_empty():
+		return {}
+	var nb := int((s_hi - s_lo) / ds) + 1
+	var bmin := _cells(nb, NA, INF)
+	for c in bp:
+		var i := mini(nb - 1, int((c.x - s_lo) / ds))
+		var j := _col(c.y)
+		bmin[i][j] = minf(bmin[i][j], c.z)
+	var band := []
+	for i in nb:
+		var filled := 0
+		for j in NA:
+			if bmin[i][j] < INF:
+				filled += 1
+		if filled >= int(NA * 0.75):
+			band.append(i)
+	if band.is_empty():
+		return {}
+	var b0: float = s_lo + band[0] * ds
+	var b1: float = s_lo + (band[-1] + 1) * ds
+	var reach := CINCH_REACH * mm
+	var S0 := b0 - reach - 40.0 * mm
+	var NR := int((b1 + reach + 40.0 * mm - S0) / ds) + 1
+	var wall := _cells(NR, NA, INF)
+	var band_in := _cells(NR, NA, INF)   # (the band's own inside, its rows)
+	for i in band:
+		var r := int((s_lo + i * ds + 0.5 * ds - S0) / ds)
+		if r < 0 or r >= NR:
+			continue
+		var src: Array = bmin[i]
+		for j in NA:
+			var w: float = src[j]
+			if w == INF:   # (a gap round: the nearest of its row)
+				for k in range(1, NA / 2):
+					w = minf(src[posmod(j + k, NA)], src[posmod(j - k, NA)])
+					if w < INF:
+						break
+			band_in[r][j] = minf(band_in[r][j], w)
+			wall[r][j] = minf(wall[r][j], w - 0.8 * mm)
+	var sl := CINCH_SLOPE * ds
+	for i in range(1, NR):
+		for j in NA:
+			wall[i][j] = minf(wall[i][j], wall[i - 1][j] + sl)
+	for i in range(NR - 2, -1, -1):
+		for j in NA:
+			wall[i][j] = minf(wall[i][j], wall[i + 1][j] + sl)
+	for i in NR:
+		var si := S0 + (i + 0.5) * ds
+		if si < b0 - CINCH_TAPER * mm or si > b1 + CINCH_TAPER * mm:
+			for j in NA:
+				wall[i][j] = INF
+	return {"ax": ax, "mm": mm, "ds": ds, "S0": S0, "NR": NR, "b0": b0, "b1": b1, "wall": wall, "band_in": band_in,
+		"stack": _cells(NR, NA, -INF)}
+
+
+static func _cinch_mesh(skel: Skeleton3D, mi: MeshInstance3D, base: Mesh, ctx: Dictionary) -> Mesh:
+	var ax: Dictionary = ctx["ax"]
+	var mm: float = ctx["mm"]
+	var ds: float = ctx["ds"]
+	var S0: float = ctx["S0"]
+	var NR: int = ctx["NR"]
+	var NA := CINCH_NA
+	var wall: Array = ctx["wall"]
+	var stack: Array = ctx["stack"]
+	var tr: Transform3D = mi.transform
+	var arrs := []
+	var outer := _cells(NR, NA, -INF)
+	var inner := _cells(NR, NA, INF)
+	for sfc in base.get_surface_count():
+		var arrays := base.surface_get_arrays(sfc)
+		arrs.append(arrays)
+		for v in arrays[Mesh.ARRAY_VERTEX]:
+			var c := _cyl(ax, tr * v)
+			var i := int((c.x - S0) / ds)
+			if i < 0 or i >= NR:
+				continue
+			var j := _col(c.y)
+			outer[i][j] = maxf(outer[i][j], c.z)
+			inner[i][j] = minf(inner[i][j], c.z)
+	# what is under it: the body's outermost there (not an arm past it) and the pieces pressed under the belt before it
+	var floor_ := _cells(NR, NA, -INF)
+	for node in skel.find_children("*", "MeshInstance3D", true, false):
+		var bm := node as MeshInstance3D
+		if bm.has_meta("sf3d_piece") or bm.mesh == null:
+			continue
+		var m: Mesh = bm.get_meta("sf3d_body_mesh") if bm.has_meta("sf3d_body_mesh") else bm.mesh
+		var btr := _relative(skel, bm)
+		for sfc in m.get_surface_count():
+			for v in m.surface_get_arrays(sfc)[Mesh.ARRAY_VERTEX]:
+				var c := _cyl(ax, btr * v)
+				var i := int((c.x - S0) / ds)
+				if i < 0 or i >= NR:
+					continue
+				var j := _col(c.y)
+				if inner[i][j] < INF and c.z <= inner[i][j] + 5.0 * mm:
+					floor_[i][j] = maxf(floor_[i][j], c.z)
+	var press := _cells(NR, NA, 0.0)
+	var most := 0.0
+	for i in NR:
+		for j in NA:
+			var fl: float = maxf(floor_[i][j], stack[i][j])
+			if wall[i][j] < INF and outer[i][j] > -INF and fl > -INF:   # (nothing under it there - between the legs: not drawn in)
+				var m: float = outer[i][j] - wall[i][j]
+				if m > 0.0:
+					press[i][j] = clampf(minf(m, inner[i][j] - fl - 0.5 * mm), 0.0, m)
+					most = maxf(most, press[i][j])
+	var pressed := most >= 1.5 * mm   # (else made under it, or loose enough: as it is, no folds added again)
+	var at := func(s: float, ang: float) -> float:
+		var x := (s - S0) / ds - 0.5
+		if x < 0.0 or x > NR - 1:
+			return 0.0
+		var i := mini(NR - 2, int(floor(x)))
+		var f := x - i
+		var y := (ang / TAU + 1.0) * NA - 0.5
+		var j := posmod(int(floor(y)), NA)
+		var g: float = y - floor(y)
+		var j1 := (j + 1) % NA
+		return (press[i][j] * (1.0 - g) + press[i][j1] * g) * (1.0 - f) + (press[i + 1][j] * (1.0 - g) + press[i + 1][j1] * g) * f
+	var b0: float = ctx["b0"]
+	var b1: float = ctx["b1"]
+	var sc := 0.5 * (b0 + b1)
+	var half := 0.5 * (b1 - b0)
+	var reach := CINCH_REACH * mm
+	var inv := tr.affine_inverse()
+	var am := ArrayMesh.new()
+	for b in base.get_blend_shape_count():
+		am.add_blend_shape(base.get_blend_shape_name(b))
+	if base is ArrayMesh:
+		am.blend_shape_mode = (base as ArrayMesh).blend_shape_mode
+	for sfc in base.get_surface_count():
+		var arrays: Array = arrs[sfc]
+		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var moved := PackedByteArray()
+		moved.resize(verts.size())
+		for k in verts.size():
+			var p: Vector3 = tr * verts[k]
+			var c := _cyl(ax, p)
+			var r := c.z
+			var rn: float = r
+			if pressed and r > 1e-6:
+				rn = r - float(at.call(c.x, c.y))
+				var off := absf(c.x - sc) - half
+				if off > 0.0 and off < reach:   # the folds: out only, those below between those above
+					var ph := 0.0 if c.x > sc else 0.5
+					var fo := maxf(0.0, sin(c.y * CINCH_FOLDS / 2.0 + ph * PI / 2.0 + 0.3 * sin(c.y * 3.0)))
+					var fi := int(round(c.y * CINCH_FOLDS / TAU * 2.0))
+					var hv := float(posmod(fi * 374761393 + 5 * 668265263 + 31, 1000)) / 1000.0
+					rn += CINCH_GATHER * mm * smoothstep(0.0, 12.0 * mm, off) * pow(1.0 - off / reach, 1.4) * fo * fo * (0.6 + 0.4 * hv)
+			var i2 := int((c.x - S0) / ds)   # (the stack: its outside as it is now)
+			if i2 >= 0 and i2 < NR:
+				var j2 := _col(c.y)
+				stack[i2][j2] = maxf(stack[i2][j2], rn + 0.5 * mm)
+			if absf(rn - r) < 1e-6:
+				continue
+			var d: Vector3 = p - ax["a"]
+			var dr: Vector3 = d - ax["u"] * d.dot(ax["u"])
+			verts[k] = inv * (p + dr / r * (rn - r))
+			moved[k] = 1
+		arrays[Mesh.ARRAY_VERTEX] = verts
+		if arrays[Mesh.ARRAY_NORMAL] != null:
+			arrays[Mesh.ARRAY_NORMAL] = _normals_near(arrays, moved)
+		am.add_surface_from_arrays(base.surface_get_primitive_type(sfc), arrays, base.surface_get_blend_shape_arrays(sfc))
+		am.surface_set_material(sfc, base.surface_get_material(sfc))
+	return am if pressed else base
+
+
+static func _belt_out(bt: MeshInstance3D, base: Mesh, ctx: Dictionary) -> Mesh:
+	var NA := CINCH_NA
+	var stack: Array = ctx["stack"]
+	var band_in: Array = ctx["band_in"]
+	var ex := PackedFloat32Array()
+	ex.resize(NA)
+	for i in ctx["NR"]:
+		for j in NA:
+			if band_in[i][j] < INF and stack[i][j] > -INF:
+				ex[j] = maxf(ex[j], stack[i][j] - band_in[i][j])
+	var ex2 := ex.duplicate()
+	var most := 0.0
+	for j in NA:   # (a little wider round: no step at a fold's top)
+		for k in range(-2, 3):
+			ex2[j] = maxf(ex2[j], ex[posmod(j + k, NA)])
+		most = maxf(most, ex2[j])
+	var mm: float = ctx["mm"]
+	if most < 0.2 * mm:
+		return base
+	var ax: Dictionary = ctx["ax"]
+	var tr: Transform3D = bt.transform
+	var inv := tr.affine_inverse()
+	var am := ArrayMesh.new()
+	for sfc in base.get_surface_count():
+		var arrays := base.surface_get_arrays(sfc)
+		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		for k in verts.size():
+			var p: Vector3 = tr * verts[k]
+			var c := _cyl(ax, p)
+			if c.z < 1e-6:
+				continue
+			var y := (c.y / TAU + 1.0) * NA - 0.5
+			var j := posmod(int(floor(y)), NA)
+			var g: float = y - floor(y)
+			var e: float = ex2[j] * (1.0 - g) + ex2[(j + 1) % NA] * g
+			var d: Vector3 = p - ax["a"]
+			var dr: Vector3 = d - ax["u"] * d.dot(ax["u"])
+			verts[k] = inv * (p + dr / c.z * e)
+		arrays[Mesh.ARRAY_VERTEX] = verts
+		am.add_surface_from_arrays(base.surface_get_primitive_type(sfc), arrays, base.surface_get_blend_shape_arrays(sfc))
+		am.surface_set_material(sfc, base.surface_get_material(sfc))
+	return am
+
+
+# the surface's normals where it moved taken again from its faces (the folds seen), the same at one place (its seams)
+static func _normals_near(arrays: Array, moved: PackedByteArray) -> PackedVector3Array:
+	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var nrm: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+	if nrm.size() != verts.size():
+		return nrm
+	var idx = arrays[Mesh.ARRAY_INDEX]
+	if idx == null or (idx as PackedInt32Array).is_empty():
+		idx = PackedInt32Array(range(verts.size()))
+	var near := moved.duplicate()
+	for t in range(0, idx.size(), 3):   # (and the corners of the faces they are in)
+		if moved[idx[t]] or moved[idx[t + 1]] or moved[idx[t + 2]]:
+			near[idx[t]] = 1; near[idx[t + 1]] = 1; near[idx[t + 2]] = 1
+	var key := func(v: Vector3) -> Vector3i: return Vector3i(roundi(v.x * 1e5), roundi(v.y * 1e5), roundi(v.z * 1e5))
+	var acc := {}
+	for t in range(0, idx.size(), 3):
+		var a: int = idx[t]
+		var b: int = idx[t + 1]
+		var c: int = idx[t + 2]
+		if not (near[a] or near[b] or near[c]):
+			continue
+		var fn := (verts[c] - verts[a]).cross(verts[b] - verts[a])   # (Godot's front faces: clockwise)
+		for q in [a, b, c]:
+			if near[q]:
+				var kq: Vector3i = key.call(verts[q])
+				acc[kq] = acc.get(kq, Vector3.ZERO) + fn
+	var out := nrm.duplicate()
+	for q in verts.size():
+		if near[q]:
+			var n: Vector3 = acc.get(key.call(verts[q]), Vector3.ZERO)
+			if n.length_squared() > 1e-20:
+				n = n.normalized()
+				out[q] = n if n.dot(nrm[q]) >= 0.0 else -n
+	return out
 
 
 static func _relative(from: Node, node: Node3D) -> Transform3D:   # node's transform in from's space, outside the tree

@@ -113,7 +113,7 @@ PIECES = {"bracer": ("forearm", "hand", "forearm", ("Spine", "Hips", "Chest", "U
                         tn_ease=14, vs_gap=34, gap=3, thickness=4, straps=0, surface="plain", rigidity=0, cell=4)),
           "apron": ("hips", "neck", "spine1", (), "torso", "cloth", (0, 0, 0, 0),
                     dict(apron="apron_smith", material="cloth", cloth="#a8936e", weave="plain", tint="#5a3a22", ap_len=85, ap_width=62, ap_bib=72,
-                         ap_bibw=40, ap_pockets=1, ap_tools=True, gap=3, thickness=4, straps=0, surface="plain", rigidity=0, trim="", cell=4)),
+                         ap_bibw=40, ap_pockets=1, ap_tools=False, gap=3, thickness=4, straps=0, surface="plain", rigidity=0, trim="", cell=4)),
           "belt": ("hips", "neck", "hips", (), "torso", "cloth", (0, 0, 0, 0),
                    dict(belt="belt_buckle", material="leather", tint="#5f3a20", cloth2="#c9b48e", bl_at=22, bl_width=100, bl_pouch=True, bl_purse=False,
                         bl_satchel=False, bl_rag=False, bl_coil=False, gap=2, thickness=3, straps=0, surface="plain", rigidity=1, trim="")),
