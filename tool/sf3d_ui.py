@@ -605,21 +605,76 @@ def generate_hy(front, back, left, right, category_label, name, height, width, d
     yield emit()
 
 
+COLLISION_SUFFIXES = ("-colonly", "-convcolonly")
+
+
+def viewer_glb(path):
+    """The model as the result viewer should show it. The viewer draws every mesh of the file, and a prop's
+    collision proxy (`<name>-convcolonly` / `-colonly`: Godot makes a StaticBody of it and never draws it) covered
+    the model with a grey hull - a character came out as «a geometric figure». A copy in work_dir/_viewer with
+    those nodes unhooked from the scene (the export itself stays as it is); the path as it was when there are none."""
+    if not path or not str(path).lower().endswith(".glb"):
+        return path
+    try:
+        import struct
+        b = Path(path).read_bytes()
+        jl = struct.unpack("<I", b[12:16])[0]
+        j = json.loads(b[20:20 + jl])
+        col = {i for i, n in enumerate(j.get("nodes", [])) if str(n.get("name", "")).endswith(COLLISION_SUFFIXES)}
+        if not col:
+            return path
+        for n in j["nodes"]:
+            if "children" in n:
+                n["children"] = [c for c in n["children"] if c not in col]
+                if not n["children"]:
+                    del n["children"]
+        for s in j.get("scenes", []):
+            s["nodes"] = [c for c in s.get("nodes", []) if c not in col]
+        js = json.dumps(j, separators=(",", ":")).encode("utf-8")
+        js += b" " * (-len(js) % 4)
+        out = bytearray(b[:12] + struct.pack("<I", len(js)) + b"JSON" + js + b[20 + jl:])
+        out[8:12] = struct.pack("<I", len(out))
+        p = Path(path)
+        dst = Path(T.load_config()["work_dir"]) / "_viewer" / f"{p.parent.name}__{p.name}"
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_bytes(bytes(out))
+        return str(dst)
+    except Exception:   # (the viewer then shows the file as it is)
+        return path
+
+
+def _viewer_outputs(gen):
+    """A generator of (log, table, model, gallery) with the model swapped for viewer_glb's copy"""
+    for out in gen:
+        out = list(out)
+        out[2] = viewer_glb(out[2])
+        yield tuple(out)
+
+
 def run(engine, files, f_front, f_back, f_left, f_right, category, name, height, width, depth, pivot,
         collision, override, metallic, roughness, tex_res, fg_ratio, remove_bg, remesh, overwrite,
         hy_tex, hy_faces, hy_steps, paint, make_preview, color_match, saturation, brightness,
         auto_materials, auto_rig, rig_naming_label, rig_tries, progress=gr.Progress()):
     if engine == ENGINE_HY:
-        yield from generate_hy(f_front, f_back, f_left, f_right, category, name, height, width, depth, pivot,
-                               collision, override, metallic, roughness, hy_tex, hy_faces, hy_steps, paint,
-                               overwrite, make_preview, color_match, saturation, brightness, auto_materials,
-                               auto_rig, rig_naming_label, rig_tries)
+        yield from _viewer_outputs(generate_hy(
+            f_front, f_back, f_left, f_right, category, name, height, width, depth, pivot,
+            collision, override, metallic, roughness, hy_tex, hy_faces, hy_steps, paint,
+            overwrite, make_preview, color_match, saturation, brightness, auto_materials,
+            auto_rig, rig_naming_label, rig_tries))
     else:
-        yield from generate(files, category, name, height, width, depth, pivot, collision, override,
-                            metallic, roughness,
-                            tex_res, fg_ratio, remove_bg, remesh, overwrite, make_preview,
-                            color_match, saturation, brightness, auto_materials,
-                            auto_rig, rig_naming_label, rig_tries, progress=progress)
+        yield from _viewer_outputs(generate(
+            files, category, name, height, width, depth, pivot, collision, override,
+            metallic, roughness,
+            tex_res, fg_ratio, remove_bg, remesh, overwrite, make_preview,
+            color_match, saturation, brightness, auto_materials,
+            auto_rig, rig_naming_label, rig_tries, progress=progress))
+
+
+def batch_run_view(root, default_label, overwrite, make_preview, auto_materials=False,
+                   auto_rig=False, rig_naming_label=None, rig_tries=3):
+    """batch_run for the «Batch» tab: its viewer without collision proxies (viewer_glb)"""
+    yield from _viewer_outputs(batch_run(root, default_label, overwrite, make_preview, auto_materials,
+                                         auto_rig, rig_naming_label, rig_tries))
 
 
 def on_engine(engine):
@@ -3207,7 +3262,7 @@ def build():
 
         # batch, settings
         scan_btn.click(on_scan, [batch_dir, batch_cat], [batch_jobs, batch_info])
-        batch_btn.click(batch_run, [batch_dir, batch_cat, batch_over, batch_prev, batch_mat, batch_rig,
+        batch_btn.click(batch_run_view, [batch_dir, batch_cat, batch_over, batch_prev, batch_mat, batch_rig,
                                     rig_naming, rig_tries],
                         [batch_log, batch_table, batch_view, batch_gallery])
         save_btn.click(save_settings, export_dir, info)
