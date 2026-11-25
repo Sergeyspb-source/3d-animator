@@ -37,6 +37,18 @@ HY_FAST_CATEGORIES = {"character", "item", "prop"}
 HY_SRC = r"D:\My projects\SF3D\hunyuan3d-src"
 ENGINE_SF3D = _t("ui.sf3d_one_picture_about_20_seconds")
 ENGINE_HY = _t("ui.hunyuan3d_1_4_pictures_the_best")
+ENGINE_TR = _t("ui.trellis_one_picture")
+# TRELLIS.2 (trellis.cpp, MIT): one picture -> GLB with base colour + metal/roughness maps, a separate process like
+# Hunyuan. trellis2-install.ps1 builds it, trellis2-weights.ps1 fetches the weights; config.json keys
+# trellis_exe / trellis_models / trellis_cuda_bin point elsewhere. Peak 2.7-5.3 GB in the 24.11 test (res 512).
+TRELLIS_EXE = r"D:\conda\trellis\trellis-cli.exe"
+TRELLIS_MODELS = r"D:\conda\hf\trellis2-gguf\q8"
+TRELLIS_CUDA_BIN = r"D:\conda\envs\hunyuan\bin"  # the CUDA 12.1 runtime + cuBLAS it was built against
+TRELLIS_WEIGHTS = ("ss_flow", "ss_dec", "shape_flow_512", "shape_dec", "tex_flow_512", "tex_dec", "dinov3", "birefnet")
+TRELLIS_VRAM_MB = 5500
+# its albedo comes out 1.4-2.2x darker (Lab L) than the picture; the palette pulled 0.7 of the way to the picture
+# lands at Hunyuan's lightness (work/trellis_test/REPORT.md)
+TRELLIS_COLOR_MATCH = 0.7
 
 # Ключ категории в config.json -> подпись в интерфейсе
 CATEGORY_LABELS = {
@@ -103,8 +115,9 @@ def gpu_free_mb():
 GPU_NEEDS = [(_t("ui.sf3d_item_prop_character"), 6400),
              (_t("ui.hunyuan3d_shape"), 6200),
              (_t("ui.hunyuan3d_texture_painting"), 7000),
+             (_t("ui.trellis_gpu_need"), TRELLIS_VRAM_MB),
              (_t("ui.rigging_unirig"), 4500)]
-GPU_SHORT = ["SF3D", _t("ui.hunyuan_shape"), _t("ui.hunyuan_paint"), _t("ui.rigging")]  # same order as GPU_NEEDS, for the status strip
+GPU_SHORT = ["SF3D", _t("ui.hunyuan_shape"), _t("ui.hunyuan_paint"), "TRELLIS", _t("ui.rigging")]  # same order as GPU_NEEDS, for the status strip
 # never offered for closing: Windows itself and the things that would log the user out or break the GPU driver
 PROTECTED = {"claude", "system", "idle", "registry", "dwm", "csrss", "winlogon", "wininit", "services", "lsass", "smss",
              "svchost", "explorer", "fontdrvhost", "audiodg", "memory compression", "nvcontainer",
@@ -611,6 +624,150 @@ def generate_hy(front, back, left, right, category_label, name, height, width, d
     yield emit()
 
 
+def _tr_run(cmd, env, cwd, log, live, emit, t0):
+    """One trellis-cli run: its stages into the log, the flow's steps as the live line.
+    Generator; returns (exit code, the last lines of its output)."""
+    tail = deque(maxlen=25)
+    stage = re.compile(r"^\[(\d)/\d\]\s")
+    step = re.compile(r"\[flow\]\s+\[[#.]*\]\s+(\d+)/(\d+)")
+    proc = subprocess.Popen(cmd, cwd=str(cwd), env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, encoding="utf-8", errors="replace",
+                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    for line in proc.stdout:
+        s = line.strip()
+        m = stage.match(s)
+        if m:
+            live[0] = ""
+            log.append(_t("ui.trellis_stage", time.time() - t0, _t(f"ui.trellis_stage_{m.group(1)}")))
+            yield emit()
+            continue
+        m = step.search(s)
+        if m:
+            live[0] = _t("ui.trellis_step", m.group(1), m.group(2))
+            yield emit()
+            continue
+        if s and not s.startswith("[trellis:dbg]"):
+            tail.append(s)
+    return proc.wait(), tail
+
+
+def generate_trellis(files, category_label, name, height, width, depth, pivot_label, collision_label, override,
+                     metallic, roughness, overwrite, make_preview=False, color_match=TRELLIS_COLOR_MATCH,
+                     saturation=1.0, brightness=1.0, auto_materials=False, auto_rig=False, rig_naming_label=None,
+                     rig_tries=3, tr_faces=50000, tr_seed=42):
+    """TRELLIS.2 (trellis.cpp): one picture -> a textured GLB with its own metal/roughness map. A separate process
+    per picture (VRAM is freed on exit); res 512 path, the 1024 cascade needs a 16 GB card. A picture with alpha is
+    kept as cut out, others go through its BiRefNet; that cutout is the palette reference."""
+    cfg = T.load_config()
+    category = LABEL_TO_KEY[category_label]
+    preset = cfg["categories"][category]
+    log, results, last_glb, previews = [], [], None, []
+    live = [""]
+    rig_queue = []
+
+    def emit():
+        lines = log + ([live[0]] if live[0] else [])
+        return "\n".join(lines), results, last_glb, previews
+
+    if not files:
+        log.append(_t("ui.add_at_least_one_picture_first"))
+        yield emit()
+        return
+    exe = Path(cfg.get("trellis_exe") or TRELLIS_EXE)
+    models = Path(cfg.get("trellis_models") or TRELLIS_MODELS)
+    missing = [f"{w}.gguf" for w in TRELLIS_WEIGHTS if not (models / f"{w}.gguf").exists()]
+    if not exe.exists():
+        log.append(_t("ui.trellis_no_exe", exe))
+        yield emit()
+        return
+    if missing:
+        log.append(_t("ui.trellis_no_weights", models, ", ".join(missing)))
+        yield emit()
+        return
+    paths = T.collect_images([f if isinstance(f, str) else f.name for f in files])
+    log.append(_t("ui.trellis_pictures", len(paths), category_label))
+    if category == "building":
+        log.append(_t("ui.trellis_building_note"))
+    yield emit()
+    unload_model()
+    env = dict(os.environ, TMP=r"D:\conda\tmp", TEMP=r"D:\conda\tmp",
+               PATH=str(cfg.get("trellis_cuda_bin") or TRELLIS_CUDA_BIN) + os.pathsep + os.environ.get("PATH", ""))
+
+    for img_path in paths:
+        stem = T.slug(name if (name and len(paths) == 1) else img_path.stem)
+        work = Path(cfg["work_dir"]) / "trellis" / category / stem
+        final = Path(cfg["export_dir"]) / category / stem / f"{stem}.glb"
+        if final.exists() and not overwrite:
+            log.append(_t("ui.skip_already_exported_turn_on", stem))
+            last_glb = str(final)
+            yield emit()
+            continue
+        try:
+            t0 = time.time()
+            work.mkdir(parents=True, exist_ok=True)
+            src_copy = work / f"source{img_path.suffix.lower()}"  # Gradio's upload folder gets cleaned
+            shutil.copy2(img_path, src_copy)
+            raw = work / "raw.glb"
+            cutout = work / "raw_cutout.png"  # --dump-bg: the picture as the model saw it
+            for old in (raw, cutout):
+                if old.exists():
+                    old.unlink()
+            if not (yield from vram_gate(TRELLIS_VRAM_MB, log, emit, stem)):
+                raise RuntimeError(_t("ui.not_enough_free_video_memory"))
+            cmd = [str(exe), str(src_copy), str(raw), "--models", str(models), "--res", "512",
+                   "--faces", str(int(tr_faces)), "--seed", str(int(tr_seed)), "--webp", "off",
+                   "--require-gpu", "--dump-bg"]
+            log.append(_t("ui.trellis_generating", stem))
+            yield emit()
+            code, tail = yield from _tr_run(cmd, env, work, log, live, emit, t0)
+            live[0] = ""
+            if code != 0 or not raw.exists():
+                log.append(_t("ui.trellis_failed", stem, code))
+                log += [f"  {x}" for x in list(tail)[-8:]]
+                yield emit()
+                continue
+            if (work / "raw.ply").exists():  # trellis-cli always dumps the raw mesh too (28-150 MB), nothing reads it
+                (work / "raw.ply").unlink()
+            ref = cutout if cutout.exists() else src_copy
+            previews.append((str(ref), stem))
+            pp = dict(
+                height=height if height and height > 0 else None, pivot=PIVOT_LABELS[pivot_label],
+                metallic=metallic if override else None, roughness=roughness if override else None,
+                width=width if width and width > 0 else None, depth=depth if depth and depth > 0 else None,
+                collision=COLLISION_LABELS[collision_label], collision_faces=cfg.get("collision_faces", 800),
+                rotate_y=0.0,  # faces +Z already, like glTF and Hunyuan
+                color_refs=[str(ref)], color_strength=color_match, saturation=saturation, brightness=brightness,
+                materials="auto" if auto_materials else None, category=category)
+            stats = pp_call(raw, final, preset, pp)
+            save_pp(work, stem, category, raw, final, pp)
+            stats.update(engine="trellis2", source=str(src_copy), category=category,
+                         seconds=round(time.time() - t0, 1), faces_target=int(tr_faces), seed=int(tr_seed))
+            (final.parent / f"{stem}.json").write_text(json.dumps(stats, indent=2), encoding="utf-8")
+            last_glb = str(final)
+            results.append([stem, category_label, stats["faces"], " x ".join(map(str, stats["size_m"])),
+                            stats["seconds"], str(final)])
+            log.append(_t("ui.done_in_s_faces", stats["seconds"], stats["faces"], _t("ui.trellis_textured"), final))
+            if make_preview:
+                yield emit()
+                previews += make_previews(final, work, stem, cfg, log)
+            if auto_rig:
+                if category == "character":
+                    rig_queue.append((final, stem))
+                else:
+                    log.append(_t("ui.skeletons_are_made_only_for_the", stem))
+        except Exception as e:  # noqa: BLE001
+            log.append(_t("ui.error_4", stem, type(e).__name__, e))
+        yield emit()
+    if rig_queue:
+        log.append(_t("ui.generation_finished_making_skeletons", len(rig_queue)))
+        yield emit()
+        rigged = yield from rig_queue_run(rig_queue, cfg, rig_naming_label, rig_tries, log, emit)
+        if rigged:
+            last_glb = rigged[-1]
+    log.append(_t("ui.done"))
+    yield emit()
+
+
 COLLISION_SUFFIXES = ("-colonly", "-convcolonly")
 
 
@@ -660,8 +817,14 @@ def _viewer_outputs(gen):
 def run(engine, files, f_front, f_back, f_left, f_right, category, name, height, width, depth, pivot,
         collision, override, metallic, roughness, tex_res, fg_ratio, remove_bg, remesh, overwrite,
         hy_tex, hy_faces, hy_steps, paint, make_preview, color_match, saturation, brightness,
-        auto_materials, auto_rig, rig_naming_label, rig_tries, hy_fast=False, progress=gr.Progress()):
-    if engine == ENGINE_HY:
+        auto_materials, auto_rig, rig_naming_label, rig_tries, hy_fast=False, tr_faces=50000, tr_seed=42,
+        progress=gr.Progress()):
+    if engine == ENGINE_TR:
+        yield from _viewer_outputs(generate_trellis(
+            files, category, name, height, width, depth, pivot, collision, override, metallic, roughness,
+            overwrite, make_preview, color_match, saturation, brightness, auto_materials,
+            auto_rig, rig_naming_label, rig_tries, tr_faces=tr_faces, tr_seed=tr_seed))
+    elif engine == ENGINE_HY:
         yield from _viewer_outputs(generate_hy(
             f_front, f_back, f_left, f_right, category, name, height, width, depth, pivot,
             collision, override, metallic, roughness, hy_tex, hy_faces, hy_steps, paint,
@@ -684,9 +847,12 @@ def batch_run_view(root, default_label, overwrite, make_preview, auto_materials=
 
 
 def on_engine(engine):
-    hy = engine == ENGINE_HY
+    """pictures / views / each engine's options; TRELLIS.2 starts with its palette pulled toward the picture
+    (its albedo comes out dark), the others with none"""
+    hy, tr = engine == ENGINE_HY, engine == ENGINE_TR
     return (gr.update(visible=not hy), gr.update(visible=hy),
-            gr.update(visible=not hy), gr.update(visible=hy))
+            gr.update(visible=not (hy or tr)), gr.update(visible=hy), gr.update(visible=tr),
+            gr.update(value=TRELLIS_COLOR_MATCH if tr else 0.0))
 
 
 # ------------------------------------------------------------------ пакетная обработка
@@ -2553,7 +2719,8 @@ def build():
                     with gr.Tab(_t("ui.make_a_model"), id="gen"):
                         with gr.Row():
                             with gr.Column(scale=1):
-                                engine = gr.Radio([ENGINE_SF3D, ENGINE_HY], value=ENGINE_SF3D, label=_t("ui.engine_2"))
+                                engine = gr.Radio([ENGINE_SF3D, ENGINE_HY, ENGINE_TR], value=ENGINE_SF3D,
+                                                  label=_t("ui.engine_2"), info=_t("ui.engine_info"))
                                 files = gr.File(label=_t("ui.pictures_one_or_several"), file_count="multiple",
                                                 file_types=["image"], type="filepath")
                                 with gr.Group(visible=False) as hy_views:
@@ -2599,6 +2766,11 @@ def build():
                                     hy_fast = gr.Checkbox(label=_t("ui.hy_fast_shape"), info=_t("ui.hy_fast_shape_info"),
                                                           value=LABEL_TO_KEY.get(default_cat) in HY_FAST_CATEGORIES)
                                     hy_steps = gr.Slider(20, 50, value=50, step=5, label=_t("ui.diffusion_steps_fewer_faster"))
+                                with gr.Accordion(_t("ui.trellis_options"), open=False, visible=False) as tr_params:
+                                    tr_faces = gr.Slider(10000, 150000, value=50000, step=5000,
+                                                         label=_t("ui.target_face_count_after_simplifying"))
+                                    tr_seed = gr.Number(value=42, precision=0, label=_t("ui.trellis_seed"),
+                                                        info=_t("ui.trellis_seed_info"))
                                 with gr.Accordion(_t("ui.sf3d_generation_options"), open=False) as sf_params:
                                     tex_res = gr.Dropdown([512, 1024, 2048], value=1024,
                                                           label=_t("ui.texture_size_2048_may_not_fit_into_8"))
@@ -3026,13 +3198,14 @@ def build():
         category.change(lambda c: gr.update(value=LABEL_TO_KEY.get(c) in HY_FAST_CATEGORIES), category, hy_fast,
                         show_progress="hidden")
         veg_kind.change(lambda k: VEG_STATE.update(kind=VEG_KINDS[k]), veg_kind, None, show_progress="hidden")
-        engine.change(on_engine, engine, [files, hy_views, sf_params, hy_params], show_progress="hidden")
+        engine.change(on_engine, engine, [files, hy_views, sf_params, hy_params, tr_params, color_match],
+                      show_progress="hidden")
         go.click(run,
                  [engine, files, v_front, v_back, v_left, v_right, category, name, height, width, depth, pivot,
                   collision, override,
                   metallic, roughness, tex_res, fg_ratio, remove_bg, remesh, overwrite,
                   hy_tex, hy_faces, hy_steps, paint, make_preview, color_match, saturation, brightness,
-                  auto_materials, auto_rig, rig_naming, rig_tries, hy_fast],
+                  auto_materials, auto_rig, rig_naming, rig_tries, hy_fast, tr_faces, tr_seed],
                  [logbox, table, viewer, inputs_gallery])
         gpu_btn.click(gpu_status, None, [gpu_md, gpu_proc])
         gpu_close.click(gpu_close_proc, [gpu_proc, gpu_force], [gpu_msg, gpu_md, gpu_proc])

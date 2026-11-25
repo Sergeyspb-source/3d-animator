@@ -46,5 +46,8 @@
                    },
     "godot_exe":  "D:/Godot_v4.7.2-stable_win64.exe/Godot_v4.7.2-stable_win64_console.exe",
     "lipsync_skills_dir": "",
-    "hf_home": "D:/conda/hf"
+    "hf_home": "D:/conda/hf",
+    "trellis_exe": "D:/conda/trellis/trellis-cli.exe",
+    "trellis_models": "D:/conda/hf/trellis2-gguf/q8",
+    "trellis_cuda_bin": "D:/conda/envs/hunyuan/bin"
 }

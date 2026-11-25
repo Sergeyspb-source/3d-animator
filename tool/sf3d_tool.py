@@ -194,6 +194,7 @@ def postprocess(src: Path, dst: Path, preset: dict, height, pivot, metallic, rou
             m.apply_transform(rot)
     height = height if height is not None else preset.get("height_m")
     pivot = pivot or preset.get("pivot", "center")
+    metallic_set, roughness_set = metallic is not None, roughness is not None  # by hand, not from the preset
     metallic = metallic if metallic is not None else preset.get("metallic")
     roughness = roughness if roughness is not None else preset.get("roughness")
 
@@ -218,10 +219,23 @@ def postprocess(src: Path, dst: Path, preset: dict, height, pivot, metallic, rou
         m.apply_translation(offset)
         mat = getattr(m.visual, "material", None)
         if mat is not None and hasattr(mat, "metallicFactor"):
-            if metallic is not None:
+            # a generator's own metal/roughness map (TRELLIS.2): the factors multiply it, so the category preset's
+            # metallic 0 would wipe the metal out - the map stays as made (factors 1) unless set by hand
+            own_map = getattr(mat, "metallicRoughnessTexture", None) is not None
+            if metallic is not None and (metallic_set or not own_map):
                 mat.metallicFactor = float(metallic)
-            if roughness is not None:
+            elif own_map:
+                mat.metallicFactor = 1.0
+            if roughness is not None and (roughness_set or not own_map):
                 mat.roughnessFactor = float(roughness)
+            elif own_map:
+                mat.roughnessFactor = 1.0
+            mr = getattr(mat, "metallicRoughnessTexture", None)
+            if mr is not None and getattr(mr, "format", None) not in ("PNG", "JPEG"):
+                # a WebP map (EXT_texture_webp) would be written as a plain image/webp: glTF readers want PNG/JPEG
+                mr = mr.convert("RGB")
+                mr.format = "PNG"
+                mat.metallicRoughnessTexture = mr
             base = getattr(mat, "baseColorTexture", None)
             if materials and base is not None and getattr(m.visual, "uv", None) is not None:
                 # recognise materials on the original albedo, then write a glTF metallicRoughness map

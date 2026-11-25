@@ -29,7 +29,7 @@ It glues several open-source models together (Stable Fast 3D, Hunyuan3D-2, UniRi
 | GUI tab | What you get | Engine |
 |---|---|---|
 | Create → Reference | Style card + reference pictures (single view or front/back/left/right) for a model, built from a text prompt | Codex CLI (ChatGPT) or OpenRouter |
-| Create → Make a model | GLB from 1 picture (~20 s) or from 1–4 views (7–10 min, ~5 min with the fast shape), with pivot, real-world scale, collision proxy, PBR factors, previews and an icon. Categories: item, prop, building, character, vegetation | SF3D / Hunyuan3D-2mv + Hunyuan3D-Paint |
+| Create → Make a model | GLB from 1 picture (~20 s), from 1–4 views (7–10 min, ~5 min with the fast shape) or from 1 picture with its own metal/roughness map (1–4 min), with pivot, real-world scale, collision proxy, PBR factors, previews and an icon. Categories: item, prop, building, character, vegetation | SF3D / Hunyuan3D-2mv + Hunyuan3D-Paint / TRELLIS.2 (trellis.cpp) |
 | Character → Skeleton (automatic UniRig or by hand with landmarks) | Skeleton + skin for humanoids, Mixamo or Godot bone names, seam welding, body split into regions; «Bones and weights» shows any skeleton | UniRig + Blender |
 | Creatures → Colouring | A creature's colour variants: colour zones, ready tones, patterns (spots, stripes, back, belly, blood) live; a variant is a model of its own with every clip | three.js |
 | Creatures → Skeleton | A creature on four paws (a tail, a muzzle): UniRig's skeleton with readable bone names, turned muzzle forward, a jaw along the mouth line; the skeleton markup viewer (chains, names, skin by bones, weights, a pose check) | UniRig + Blender + three.js |
@@ -345,6 +345,7 @@ The scripts assume this layout. The easiest route is to reproduce it. Otherwise,
 | `D:\conda\rig` | staging folder for UniRig (its bash scripts break on spaces in paths) | `tool\rigging.py` (`STAGE`) |
 | `D:\Git\bin\bash.exe` | Git Bash for UniRig | `tool\rigging.py` (`BASH`) |
 | `<repo>\hunyuan3d-src` | Hunyuan3D source | `tool\sf3d_ui.py` (`HY_SRC`) |
+| `D:\conda\trellis`, `D:\conda\hf\trellis2-gguf\q8` | TRELLIS.2 build (`trellis-cli.exe` + ggml DLLs) and its weights | `trellis2-install.ps1`, `trellis2-weights.ps1`, `tool\sf3d_ui.py` (`TRELLIS_*`); `tool\config.json` keys `trellis_exe`, `trellis_models`, `trellis_cuda_bin` override them |
 | Blender, Godot, export/work/input folders, interface language | | `tool\config.json` (also editable in the Settings window) |
 
 The repository itself can live anywhere. The original lives at `D:\My projects\SF3D`; paths with spaces are fine for everything except UniRig staging.
@@ -431,6 +432,17 @@ powershell -ExecutionPolicy Bypass -File hunyuan3d-texgen-weights.ps1 # delight 
 
 The build script `hunyuan3d-texgen-build.bat` has `TORCH_CUDA_ARCH_LIST=8.9` (RTX 40xx). **Change it to match your GPU** (8.6 for RTX 30xx, 12.0 for RTX 50xx).
 
+### 5b. TRELLIS.2 (optional): one picture → a model with metal/roughness maps
+
+[trellis.cpp](https://github.com/pwilkin/trellis.cpp) is a C++/GGML port of Microsoft's TRELLIS.2 image-to-3D model. It is built from source at a pinned commit, with the CUDA 12.1 toolkit of the `hunyuan` env (step 5 first) and VS 2022 Build Tools:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File trellis2-install.ps1   # clone + build -> D:\conda\trellis\trellis-cli.exe (~25 min)
+powershell -ExecutionPolicy Bypass -File trellis2-weights.ps1   # ilintar/trellis2-gguf, Q8, the res-512 set: 8 files, 7.2 GB, SHA-256 checked
+```
+
+The build is for `CMAKE_CUDA_ARCHITECTURES=89` (RTX 40xx); **change it in `trellis2-install.ps1` to match your GPU** (86 for RTX 30xx, 120 for RTX 50xx). Only the res-512 path is used: the 1024 cascade needs a 16 GB card. At run time the app puts the `hunyuan` env's `bin` on PATH for the CUDA runtime and cuBLAS DLLs.
+
 ### 6. UniRig environment (`unirig`): auto-rigging
 
 ```powershell
@@ -457,7 +469,22 @@ On first start, `tool\config.example.json` is used. To change the paths or the l
 | `sf3d-batch.bat <folder> [--force] [--no-preview]` | batch: `<folder>\<category>\pic.png` → SF3D; `<folder>\<category>\<asset>\front.png [back/left/right.png]` → Hunyuan3D |
 | `sf3d-gradio.bat` | the original SF3D demo UI (port 7860) |
 
-**Run one GPU job at a time.** Approximate peak VRAM: SF3D 6.2 GB, Hunyuan shape 5.8 GB (fast 6.5 GB), Hunyuan paint 7.4 GB, UniRig 4.5 GB. The GUI checks free memory before each job.
+**Run one GPU job at a time.** Approximate peak VRAM: SF3D 6.2 GB, Hunyuan shape 5.8 GB (fast 6.5 GB), Hunyuan paint 7.4 GB, TRELLIS.2 1.7–4.2 GB (up to 5.3 GB with the desktop's share), UniRig 4.5 GB. The GUI checks free memory before each job.
+
+**TRELLIS.2** («Engine» → «TRELLIS.2 — one picture»): one picture → a GLB with a base colour and its own metal/roughness map, as a separate process (`trellis-cli.exe --res 512 --faces 50000 --webp off`). A picture with transparency keeps its cutout; others go through its BiRefNet. On the RTX 4060 (8 GB, 24.11.2026) against Hunyuan3D-2mv + Paint at the same 50 000 faces:
+
+| | Hunyuan3D (views) | TRELLIS.2 (one picture) |
+|---|---|---|
+| character (skeleton knight) | 517 s (4) | 62 s |
+| item (shield) | 446 s (1) | 85 s |
+| large prop (barrel filling the frame) | 415 s (2) | 284 s |
+| building (tavern) | 602 s (4) | 216 s |
+
+The TRELLIS.2 times are `trellis-cli` alone; in the app, with the post step, the palette match and the preview, a character took 84–115 s and the shield 125 s.
+
+Its shape from one picture beats Hunyuan's from four on characters (thin bones, torn cloth) and matches it on items and props; the metal map marks only the iron. Its albedo comes out 1.4–2.2 times darker than the picture, so «Match the palette to your pictures» starts at 0.7 for this engine (it lands at Hunyuan's lightness). The post step keeps the map's metallic/roughness factors at 1 instead of the category preset (set them by hand to override). Weak spots: dark cracks may become holes through thin parts, and buildings get a dark, flat texture — **make buildings in Hunyuan3D**. Time grows with the visible surface: a big solid object filling the frame is the slowest case. Options: face count (default 50 000) and seed. Batch processing does not use TRELLIS.2.
+
+![Hunyuan3D-2mv + Paint against TRELLIS.2 on the skeleton knight: grey shape on top, textured below](docs/images/en/trellis_vs_hunyuan.jpg)
 
 **Fast Hunyuan shape** («Hunyuan3D options» → «Fast shape (turbo)»): the shape comes from the turbo Hunyuan3D-2mv model in 5 steps with the FlashVDM mesh decoder. On an RTX 4060 (8 GB) a knight from four views took 21–28 s instead of 254 s with the same detail. A building got no faster (FlashVDM reached 7.8 GB) and its walls and windows came out lumpier, so the box turns itself on for characters, items and props and off for buildings and vegetation. If the decoder runs out of memory it is redone the plain way (~105 s); if the turbo model is not on disk the base one is used. Batch processing uses the base model.
 
@@ -513,7 +540,7 @@ D:\conda\envs\sf3d\python.exe tool\anim_gallery.py "<character>_landmarks_rigged
 sf3d-ui.vbs / sf3d-ui.bat     GUI launchers
 sf3d-tool.bat / sf3d-batch.bat CLI launchers
 sf3d-env.bat                  environment for the sf3d env
-*-install.ps1, *-weights.ps1, *-build.bat   installers for Hunyuan3D and UniRig
+*-install.ps1, *-weights.ps1, *-build.bat   installers for Hunyuan3D, TRELLIS.2 and UniRig
 patches/                      changes applied on top of the third-party repos
 docs/images/                  README screenshots (en/, ru/)
 tool/
@@ -546,6 +573,7 @@ This repository holds only the glue code. Each model keeps its own licence, so *
 - **Stable Fast 3D**: [Stability AI Community License](https://huggingface.co/stabilityai/stable-fast-3d) (free under USD 1M annual revenue).
 - **Hunyuan3D-2**: [Tencent Hunyuan 3D 2.0 Community License](https://github.com/Tencent-Hunyuan/Hunyuan3D-2/blob/main/LICENSE). **Not licensed in the EU, the UK and South Korea.**
 - **UniRig**: MIT.
+- **TRELLIS.2** (Microsoft) and **trellis.cpp**: MIT. Its GGUF set also holds DINOv3 ViT-L (Meta's DINOv3 License) and BiRefNet (MIT).
 - **Robust Weight Transfer** (`tool/vendor/rwt`): GPL-3.0.
 - **CLIP weights** (open_clip, LAION ViT-B/32): MIT.
 - **Mesh2Motion animations** (gallery): CC0.
