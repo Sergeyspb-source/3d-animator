@@ -4,8 +4,6 @@ rem sf3d-ui.vbs starts the same with no console. Close other GPU-heavy apps firs
 rem Builds the page when its sources are newer than the built one (Node.js 18+ and npm needed for that),
 rem then starts the server and opens an app window once it answers. Close this console to stop the server.
 call "%~dp0sf3d-env.bat"
-set "GRADIO_ANALYTICS_ENABLED=False"
-set "GRADIO_TEMP_DIR=D:\conda\tmp"
 set "PYTHONWARNINGS=ignore"
 set "ORT_LOGGING_LEVEL=3"
 set "PORT=7890"

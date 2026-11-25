@@ -7,7 +7,6 @@ import shutil
 import subprocess
 from pathlib import Path
 
-import gradio as gr
 from i18n import t as _t
 
 ROOT = Path(__file__).resolve().parent
@@ -100,10 +99,10 @@ def preview(cfg, *a):
     out = _cache_dir(cfg, job)
     for kind, info in _run(cfg, job, out):
         if kind == "glb":
-            yield _t("face.preview_rendering"), gr.update(), str(out / "preview.glb")
+            yield _t("face.preview_rendering"), None, str(out / "preview.glb")
         elif kind == "ok":
             yield _t("face.preview_updated"), str(out / "preview.png"), str(out / "preview.glb")
         else:
             shutil.rmtree(out, ignore_errors=True)
-            yield _t("face.failed") + info, gr.update(), gr.update()
+            yield _t("face.failed") + info, None, None
     _prune(out.parent)

@@ -76,8 +76,8 @@ def delete(value: str) -> dict:
 
 
 # ------------------------------------------------------------------ generator jobs of the app's handlers, as tasks
-def gradio_job(gen_fn, *args):
-    """A task's function from a handler generator (in Gradio's form) yielding (log text, model path, ...)."""
+def gen_job(gen_fn, *args):
+    """A task's function from a handler generator yielding (log text, model path or None, ...)."""
     def run(task):
         last = None
         gen = gen_fn(*args)
@@ -99,15 +99,15 @@ def naming_label(key: str) -> str:
 
 
 def rig_task(value, naming="mixamo", tries=3):
-    return gradio_job(UI.rig_run, None, value, naming_label(naming), int(tries))
+    return gen_job(UI.rig_run, None, value, naming_label(naming), int(tries))
 
 
 def seams_task(value):
-    return gradio_job(UI.seam_run, None, value)
+    return gen_job(UI.seam_run, None, value)
 
 
 def split_task(value):
-    return gradio_job(UI.split_run, None, value)
+    return gen_job(UI.split_run, None, value)
 
 
 # ------------------------------------------------------------------ skeleton by landmarks

@@ -60,7 +60,7 @@ ENGINES = {"sf3d": "ui.sf3d_one_picture_about_20_seconds", "hunyuan": "ui.hunyua
 
 
 def _label(table: dict, value):
-    """The Gradio label (in the process's language) that maps to value in one of sf3d_ui's label tables."""
+    """The label (in the process's language) that maps to value in one of sf3d_ui's label tables."""
     return next(k for k, v in table.items() if v == value)
 
 
@@ -100,7 +100,7 @@ def _num(p, k, d=0.0):
 
 
 def _progress(task):
-    def progress(value, desc=None, *a, **k):   # gr.Progress's call: a fraction or (i, n)
+    def progress(value, desc=None, *a, **k):   # the handlers' progress call: a fraction or (i, n)
         if isinstance(value, (tuple, list)) and len(value) == 2 and value[1]:
             task.set_progress(value[0] / value[1])
         elif isinstance(value, (int, float)):

@@ -618,10 +618,16 @@ def paint_refresh(d: Path, name: str) -> list:
     return made
 
 
+def upload_root() -> Path:
+    """Where the web interface's /upload puts the files its pages send (the colouring page's baked pictures; paint_save
+    takes them only from there): SF3D_UPLOAD_DIR, else <temp>/sf3d_uploads."""
+    import tempfile
+    return Path(os.environ.get("SF3D_UPLOAD_DIR") or Path(tempfile.gettempdir()) / "sf3d_uploads")
+
+
 def paint_save(cfg, d: Path, name: str, req: dict):
     """A variant kept: its baked pictures (uploaded files) into <name>_paint/<slug>/, its params in the passport,
     its model <name>_v_<slug>.glb. Yields log lines."""
-    import tempfile
     d = Path(d)
     title = (req.get("title") or "").strip()
     if not title:
@@ -630,8 +636,8 @@ def paint_save(cfg, d: Path, name: str, req: dict):
     imgs = req.get("images") or {}
     if not imgs:
         raise RuntimeError(_t("cr.paint_no_images"))
-    # (only Gradio's own uploads: the page's paths are taken from nowhere else)
-    up_root = Path(os.environ.get("GRADIO_TEMP_DIR") or Path(tempfile.gettempdir()) / "gradio").resolve()
+    # (only the interface's own uploads: the page's paths are taken from nowhere else)
+    up_root = upload_root().resolve()
     folder = d / f"{name}_paint" / slug
     folder.mkdir(parents=True, exist_ok=True)
     files = {}

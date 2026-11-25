@@ -24,7 +24,6 @@ HERE = Path(__file__).resolve().parent
 TOOL = HERE.parent
 sys.path.insert(0, str(TOOL))
 sys.path.insert(0, str(HERE))
-os.environ.setdefault("GRADIO_ANALYTICS_ENABLED", "False")
 
 import uvicorn  # noqa: E402
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile  # noqa: E402
@@ -648,11 +647,11 @@ def editor_creature(id: str, what: str = "viewer", current: str = ""):
 
 
 @app.post("/upload")
-async def gradio_upload(files: list[UploadFile] = File(...)):
-    """Gradio's /upload as the colouring page uses it: the files land in Gradio's temp folder (creatures.paint_save
-    takes pictures only from there) and their paths come back as a list."""
-    import tempfile
-    root = Path(os.environ.get("GRADIO_TEMP_DIR") or Path(tempfile.gettempdir()) / "gradio") / "sf3d_web" / uuid.uuid4().hex[:12]
+async def page_upload(files: list[UploadFile] = File(...)):
+    """/upload as the colouring page uses it (the form Gradio had): the files land in creatures.upload_root()
+    (paint_save takes pictures only from there) and their paths come back as a list."""
+    import creatures as CR
+    root = CR.upload_root() / uuid.uuid4().hex[:12]
     root.mkdir(parents=True, exist_ok=True)
     out = []
     for f in files:
@@ -769,8 +768,8 @@ async def settings_save(req: Request):
 
 
 @app.get("/file={rest:path}")
-def gradio_file(rest: str):
-    """The paths the app's editors ask for as Gradio served them (/file=<absolute path>): export, work, input only."""
+def page_file(rest: str):
+    """The paths the app's editors ask for (/file=<absolute path>, the form Gradio had): export, work, input only."""
     p = _allowed(rest)
     if not p.is_file():
         raise HTTPException(404, "no such file")

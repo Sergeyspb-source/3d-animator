@@ -394,8 +394,8 @@ $py = 'D:\conda\envs\sf3d\python.exe'
 & $py -m pip install setuptools==69.5.1 wheel
 cd sf3d-src
 & $py -m pip install -r requirements.txt          # builds texture_baker and uv_unwrapper
-& $py -m pip install -r requirements-demo.txt     # gradio 4.41.0
 cd ..
+& $py -m pip install -r tool\web\requirements.txt   # the interface's server: FastAPI, uvicorn
 # extra modules used by this toolkit (not in SF3D's requirements)
 & $py -m pip install scikit-image scipy matplotlib fast-simplification onnxruntime-gpu
 # log in so the gated SF3D weights can download on first run
@@ -467,7 +467,7 @@ On first start, `tool\config.example.json` is used. To change the paths or the l
 | `sf3d-tool.bat generate <image or folder> --category prop` | one-off CLI: image(s) → game-ready GLB |
 | `sf3d-tool.bat post work\item\axe\raw.glb --category item --name axe` | re-run post-processing only |
 | `sf3d-batch.bat <folder> [--force] [--no-preview]` | batch: `<folder>\<category>\pic.png` → SF3D; `<folder>\<category>\<asset>\front.png [back/left/right.png]` → Hunyuan3D |
-| `sf3d-gradio.bat` | the original SF3D demo UI (port 7860) |
+| `sf3d-gradio.bat` | the original SF3D demo UI (port 7860); it needs `pip install gradio==4.41.0`, the toolkit itself no longer uses Gradio |
 
 ### The interface (7890)
 
@@ -487,7 +487,7 @@ Since 25.11.2026 the interface is a page of its own; the former Gradio tabs (786
 - **Environment** («Surfaces», «Effects», «Dungeons», «Destructibles»; «Vegetation» is «Make a model» with that category), **Models → Reference** (variants, back and side views, the project's style; «Send to 3D» fills «Make a model»: one picture — SF3D, with views — Hunyuan3D) and **Models → Model materials** (the colour groups and a material for each); the pictures made show as a grid where the 3D view is.
 - **Models → Batch processing:** a folder of pictures as one task; the models go into the drafts, «Check → Release all» releases at once those export does not have yet. **Video memory:** what holds the card (by Windows' counters) and «Close» a program (asked first; system ones are not offered). **Settings:** the export folder and OpenRouter (the key is never shown; an empty field keeps it) are written to `config.json`.
 
-The page is built with Vite + TypeScript + React + Mantine, 3D with three.js. The FastAPI server in the `sf3d` env (`tool\web\server.py`) calls the app's functions; some of them still answer in Gradio's form (`gr.update`, `gr.Progress`), so the `gradio` package stays installed for now. `sf3d-ui.vbs` / `sf3d-ui.bat` build the page on the first start and after the page changes (Node.js 18+ and npm needed). What is next is in `docs\ROADMAP.md`, stage 9.
+The page is built with Vite + TypeScript + React + Mantine, 3D with three.js. The FastAPI server in the `sf3d` env (`tool\web\server.py`) calls the app's functions; Gradio is not used any more (since 25.11.2026; the server's packages are in `tool\web\requirements.txt`). `sf3d-ui.vbs` / `sf3d-ui.bat` build the page on the first start and after the page changes (Node.js 18+ and npm needed). What is next is in `docs\ROADMAP.md`, stage 9.
 
 **Run one GPU job at a time.** Approximate peak VRAM: SF3D 6.2 GB, Hunyuan shape 5.8 GB (fast 6.5 GB), Hunyuan paint 7.4 GB, TRELLIS.2 1.7–4.2 GB (up to 5.3 GB with the desktop's share), UniRig 4.5 GB. The GUI checks free memory before each job.
 

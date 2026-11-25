@@ -1,6 +1,6 @@
 """Работа приложения SF3D: модели, персонажи, существа, окружение. Эти функции вызывает веб-интерфейс
-(tool/web/server.py, http://127.0.0.1:7890); прежние вкладки Gradio убраны, сами функции пока отвечают в его форме
-(gr.update, gr.Progress).
+(tool/web/server.py, http://127.0.0.1:7890). Gradio больше не нужен: «без изменений» — None, выпадающие списки —
+словари {visible, value, label}, ход работы — необязательный вызов progress(доля или (i, n), desc=...).
 
 Запуск: sf3d-ui.vbs (без консоли) или sf3d-ui.bat (с консолью для отладки).
 Постобработка и настройки общие с sf3d_tool.py.
@@ -14,8 +14,6 @@ import sys
 import time
 from collections import deque
 from pathlib import Path
-
-import gradio as gr
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import materials as MT  # noqa: E402
@@ -182,7 +180,7 @@ def gpu_holders():
 
 
 def gpu_status():
-    """Markdown report: free VRAM, will each task fit, who holds the memory; plus the 'close' dropdown."""
+    """Markdown report: free VRAM, will each task fit, who holds the memory; plus the programs one may close: [(label, pid)]."""
     free = gpu_free_mb()
     try:
         r = subprocess.run(["nvidia-smi", "--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"],
@@ -190,7 +188,7 @@ def gpu_status():
                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         used, total = (int(x) for x in r.stdout.strip().splitlines()[0].split(","))
     except Exception:  # noqa: BLE001
-        return _t("ui.could_not_read_the_gpu_data_nvidia"), gr.update(choices=[], value=None)
+        return _t("ui.could_not_read_the_gpu_data_nvidia"), []
     lines = [_t("ui.video_memory_of_gb_used_gb_free", used / 1024, total / 1024, free / 1024), ""]
     for what, need in GPU_NEEDS:
         if free >= need + 500:
@@ -212,7 +210,7 @@ def gpu_status():
                 choices.append((f"{h['label']} — {size} (PID {h['pid']})", h["pid"]))
     if _state["model"] is not None:
         lines += ["", _t("ui.the_sf3d_model_is_now", 'в видеопамяти' if _state['on_gpu'] else 'в оперативной памяти')]
-    return "\n".join(lines), gr.update(choices=choices, value=None)
+    return "\n".join(lines), choices
 
 
 def gpu_close_proc(pid, force):
@@ -268,7 +266,7 @@ def generate(files, category_label, name, height, width, depth, pivot_label, col
              metallic, roughness,
              tex_res, fg_ratio, remove_bg, remesh, overwrite, make_preview=False,
              color_match=0.0, saturation=1.0, brightness=1.0, auto_materials=False,
-             auto_rig=False, rig_naming_label=None, rig_tries=3, progress=gr.Progress()):
+             auto_rig=False, rig_naming_label=None, rig_tries=3, progress=None):
     cfg = T.load_config()
     category = LABEL_TO_KEY[category_label]
     log, results, last_glb, previews = [], [], None, []
@@ -294,7 +292,8 @@ def generate(files, category_label, name, height, width, depth, pivot_label, col
 
     for i, img_path in enumerate(paths):
         stem = T.slug(name if (name and len(paths) == 1) else img_path.stem)
-        progress((i, len(paths)), desc=f"{stem}")
+        if progress:
+            progress((i, len(paths)), desc=f"{stem}")
         work = Path(cfg["work_dir"]) / category / stem
         final = Path(cfg["export_dir"]) / category / stem / f"{stem}.glb"
         if final.exists() and not overwrite:
@@ -803,7 +802,7 @@ def run(engine, files, f_front, f_back, f_left, f_right, category, name, height,
         collision, override, metallic, roughness, tex_res, fg_ratio, remove_bg, remesh, overwrite,
         hy_tex, hy_faces, hy_steps, paint, make_preview, color_match, saturation, brightness,
         auto_materials, auto_rig, rig_naming_label, rig_tries, hy_fast=False, tr_faces=50000, tr_seed=42,
-        progress=gr.Progress()):
+        progress=None):
     if engine == ENGINE_TR:
         yield from _viewer_outputs(generate_trellis(
             files, category, name, height, width, depth, pivot, collision, override, metallic, roughness,
@@ -1118,8 +1117,7 @@ def _add_model(upload):
         return None
     src = Path(upload if isinstance(upload, str) else upload.name)
     if WF.is_piece_file(src):   # a piece put on a character (its result, its source): not a character
-        gr.Warning(_t("ui.char_add_piece", src.name))
-        return None
+        return None   # (the web interface says so: ui.char_add_piece)
     stem = re.sub(r"_(landmarks_)?rigged$", "", src.stem)
     root = Path(T.load_config()["export_dir"]) / "character"
     # its folder: one of the file's own name if there is one already (a build of the same file made it), else the
@@ -1371,7 +1369,7 @@ def creature_remember(value):
 def creature_rig(value):
     """«Create the skeleton» of the «Creatures» section: on the current creature (its log, its model, the jaw)."""
     for log, glb, pics, _ in creature_run(None, value):
-        yield log, (glb or gr.update()), pics
+        yield log, (glb or None), pics
 
 
 def creature_steps(value, what):
@@ -1386,7 +1384,7 @@ def creature_steps(value, what):
         return "\n".join(lines), str(f["dir"] / f"{f['name']}_rigged.glb"), CR.jaw_pictures(f["dir"], f["name"])
     except Exception as e:  # noqa: BLE001
         lines.append(_t("ui.error_2", e))
-        return "\n".join(lines), gr.update(), gr.update()
+        return "\n".join(lines), None, None
 
 
 def creature_straighten(value):
@@ -1398,11 +1396,11 @@ def creature_straighten(value):
             raise RuntimeError(_t("cr.view_needs_skeleton"))
         for line in CR.straighten(T.load_config(), f["dir"], f["name"]):
             lines.append(line)
-            yield "\n".join(lines), gr.update(), gr.update()
+            yield "\n".join(lines), None, None
         yield "\n".join(lines), str(f["dir"] / f"{f['name']}_rigged.glb"), CR.jaw_pictures(f["dir"], f["name"])
     except Exception as e:  # noqa: BLE001
         lines.append(_t("ui.error_2", e))
-        yield "\n".join(lines), gr.update(), gr.update()
+        yield "\n".join(lines), None, None
 
 
 def creature_request(value, text):
@@ -1423,11 +1421,11 @@ def creature_request(value, text):
                  else CR.mark_jaw(cfg, f["dir"], f["name"], req.get("mouth") or {}, rigged=f["rigged"]))
         for line in steps:
             lines.append(line)
-            yield "\n".join(lines), gr.update(), gr.update()
+            yield "\n".join(lines), None, None
         yield "\n".join(lines), str(_char_files(value)["rigged"]), CR.jaw_pictures(f["dir"], f["name"])
     except Exception as e:  # noqa: BLE001
         lines.append(_t("ui.error_2", e))
-        yield "\n".join(lines), gr.update(), gr.update()
+        yield "\n".join(lines), None, None
 
 
 def creature_clips_viewer(value):
@@ -1450,11 +1448,11 @@ def creature_animate(value, keys, picks):
             raise RuntimeError(_t("cr.anim_humanoid"))
         for line in CR.animate(T.load_config(), f["dir"], f["name"], {k: list(p or []) for k, p in zip(keys, picks)}):
             lines.append(line)
-            yield "\n".join(lines), gr.update()
+            yield "\n".join(lines), None
         yield "\n".join(lines), creature_clips_viewer(value)
     except Exception as e:  # noqa: BLE001
         lines.append(_t("ui.error_2", e))
-        yield "\n".join(lines), gr.update()
+        yield "\n".join(lines), None
 
 
 def creature_paint_view(value, current=""):
@@ -1482,12 +1480,12 @@ def creature_paint_request(value, text):
                  else CR.paint_delete(f["dir"], f["name"], req.get("variant") or ""))
         for line in steps:
             lines.append(line)
-            yield "\n".join(lines), gr.update()
+            yield "\n".join(lines), None
         cur = (req.get("variant") or CR.paint_slug(req.get("title") or "")) if act == "save" else ""
         yield "\n".join(lines), creature_paint_view(value, cur)
     except Exception as e:  # noqa: BLE001
         lines.append(_t("ui.error_2", e))
-        yield "\n".join(lines), gr.update()
+        yield "\n".join(lines), None
 
 
 def rig_run(upload, asset, naming_label, tries=3):
@@ -1534,7 +1532,7 @@ def outfit_scan(model):
     """The 'Разобрать на сегменты' button: pictures of the segments and a slot guess for each."""
     import outfit as OF
 
-    hidden = [gr.update(visible=False, value=None) for _ in range(MAX_SEGS)]
+    hidden = [dict(visible=False, value=None) for _ in range(MAX_SEGS)]
     if not model:
         return _t("ui.load_the_glb_of_a_dressed_model_with"), [], [], "", *hidden
     model = Path(model if isinstance(model, str) else model.name)
@@ -1544,7 +1542,7 @@ def outfit_scan(model):
     except Exception as e:  # noqa: BLE001
         return _t("ui.error_2", e), [], [], "", *hidden
     segs = segs[:MAX_SEGS]
-    dd = [gr.update(visible=True, value=s["label"], label=_t("ui.faces", s['name'], s['faces'])) for s in segs]
+    dd = [dict(visible=True, value=s["label"], label=_t("ui.faces", s['name'], s['faces'])) for s in segs]
     dd += hidden[len(segs):]
     pics = [(s["thumb"], f"{s['name']}") for s in segs]
     note = (_t("ui.segments_check_the_slots_under_the", len(segs)))
@@ -1633,7 +1631,7 @@ def ref_describe(provider_label, files):
     cfg = T.load_config()
     imgs = _paths(files)
     if not imgs:
-        return gr.update(), _t("ui.add_1_5_style_reference_pictures")
+        return None, _t("ui.add_1_5_style_reference_pictures")
     try:
         if REF_PROVIDERS[provider_label] == "codex":
             text = RF.codex_describe(imgs, out_dir=Path(cfg["work_dir"]) / "refgen")
@@ -1641,7 +1639,7 @@ def ref_describe(provider_label, files):
             text = RF.openrouter_describe(cfg.get("openrouter_key", ""),
                                           cfg.get("openrouter_text_model", "google/gemini-2.5-flash"), imgs)
     except Exception as e:  # noqa: BLE001
-        return gr.update(), _t("ui.error_2", e)
+        return None, _t("ui.error_2", e)
     return text, _t("ui.the_style_description_is_ready")
 
 
@@ -2111,19 +2109,19 @@ def fbx_run(upload, asset, folder, rows, weapon_set=_t("fbx.none")):
     src = Path(upload if isinstance(upload, str) else upload.name) if upload else (
         _rigged_path(asset) if asset else None)
     if not src or not src.exists():
-        yield _t("ui.choose_a_model_with_a_skeleton_from_2"), gr.update(), None
+        yield _t("ui.choose_a_model_with_a_skeleton_from_2"), None, None
         return
     if not rows or not len(rows):
-        yield _t("ui.first_press_read_the_folder"), gr.update(), None
+        yield _t("ui.first_press_read_the_folder"), None, None
         return
     rows = [list(r) for r in (rows.values.tolist() if hasattr(rows, "values") else rows)]
     FA.save_map(p, rows)
     dst = _clips_file(src, "fbx")
-    yield _t("ui.blender_is_retargeting_animations", len(rows), src.name), gr.update(), None
+    yield _t("ui.blender_is_retargeting_animations", len(rows), src.name), None, None
     try:
         info = FA.retarget(cfg["blender_exe"], src, p, dst)
     except Exception as e:  # noqa: BLE001
-        yield _t("ui.error_2", e), gr.update(), None
+        yield _t("ui.error_2", e), None, None
         return
     log = [_t("ui.done_2", dst), _t("ui.clips_2") + ", ".join(_t("ui.s", c['name'], c['seconds']) for c in info["clips"]) + "."]
     if info["missing"]:
@@ -2177,7 +2175,7 @@ def _mat_params(asset):
 
 
 def _hidden_groups():
-    return [gr.update(visible=False, value=None) for _ in range(MAX_GROUPS)]
+    return [dict(visible=False, value=None) for _ in range(MAX_GROUPS)]
 
 
 def mat_analyze(asset):
@@ -2200,11 +2198,11 @@ def mat_analyze(asset):
             key, conf = an["suggestions"][j]
             st = an["stats"][j]
             r, gg, b = (int(v) for v in st["rgb"])
-            groups.append(gr.update(
+            groups.append(dict(
                 visible=True, value=key,
                 label=_t("ui.group_of_the_texture_mean_colour", j + 1, st['share'] * 100, r, gg, b, MT.MATERIALS[key][0], conf)))
         else:
-            groups.append(gr.update(visible=False, value=None))
+            groups.append(dict(visible=False, value=None))
     note = (_t("ui.groups_found_the_colours_in_the", an['k']))
     return MT.overlay(tex, an), note, *groups
 

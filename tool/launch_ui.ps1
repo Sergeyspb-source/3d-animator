@@ -40,7 +40,6 @@ if (-not (Test-Up)) {
         }
     }
     $env:HF_HOME = 'D:\conda\hf'; $env:TMP = 'D:\conda\tmp'; $env:TEMP = 'D:\conda\tmp'
-    $env:GRADIO_ANALYTICS_ENABLED = 'False'; $env:GRADIO_TEMP_DIR = 'D:\conda\tmp'
     $env:PYTHONWARNINGS = 'ignore'; $env:ORT_LOGGING_LEVEL = '3'
     $env:PATH = "$env_;$env_\Scripts;$env_\bin;$env_\Library\bin;$env:PATH"
     $server = Start-Process "$env_\python.exe" -ArgumentList "`"$root\tool\web\server.py`"", '--port', $port `

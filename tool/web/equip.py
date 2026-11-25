@@ -3,11 +3,11 @@ of its own, its requests answered by armour_gen_ui.handle as in the former Gradi
 
 The editor is not changed: it still writes a request into «the parent page's hidden field» and clicks «its hidden
 button», then waits for the answer file (work/status/<model>/<stem>_<action>.wear.json) through /file=<path>. The shell
-keeps that field and button (they post to /api/equip/action), the server serves /file= like Gradio did. The page gets
+keeps that field and button (they post to /api/equip/action), the server serves /file= (the form Gradio had). The page gets
 the shell's look and the steps' modes from adapters/armour_editor.css + .js, put into it here.
 
 Long requests (a piece made in Blender, a generator's preview, the check in motion, learning an outline) go into the
-GPU task queue and show in the dock; the quick ones run at once, one after another (as Gradio ran them)."""
+GPU task queue and show in the dock; the quick ones run at once, one after another."""
 import json
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path

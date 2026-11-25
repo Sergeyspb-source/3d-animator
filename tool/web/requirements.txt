@@ -1,0 +1,7 @@
+# The web interface's server (tool/web/server.py) in env sf3d. Until 2026-11-25 these came with gradio 4.41;
+# the versions are the ones it pinned (the app is tested with them).
+fastapi==0.112.4
+starlette==0.38.6
+pydantic==2.10.6
+uvicorn==0.54.0
+python-multipart==0.0.32

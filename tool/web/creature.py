@@ -2,7 +2,7 @@
 requests: the joints moved, the rest pose straightened, the jaw, the eyes), its clips (by body kind, own keyed ones,
 the check, Godot), its colouring (variants, holes and normals mended) - the app's own functions (sf3d_ui,
 creatures), long ones as tasks of the shared queue. The viewer and the colouring page are served as pages of their
-own; their requests reach the shell's hidden fields as they reached Gradio's."""
+own; their requests reach the shell's hidden fields (as they reached Gradio's once)."""
 import json
 from datetime import datetime
 from pathlib import Path
