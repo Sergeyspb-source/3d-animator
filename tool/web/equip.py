@@ -14,6 +14,7 @@ from pathlib import Path
 
 import sf3d_tool as T
 from i18n import t as _t
+from pages import inject
 
 HERE = Path(__file__).resolve().parent
 ADAPTER_CSS = HERE / "adapters" / "armour_editor.css"
@@ -31,12 +32,7 @@ def _ag():
 def page(rigged: str) -> str:
     cfg = T.load_config()
     r = Path(rigged)
-    html = _ag().editor_page(r, Path(cfg["export_dir"]) / "decals")
-    css = "<style>\n" + ADAPTER_CSS.read_text(encoding="utf-8") + "\n</style>\n"
-    js = "<script>\n" + ADAPTER_JS.read_text(encoding="utf-8") + "\n</script>\n"
-    html = html.replace("</head>", css + "</head>", 1)
-    i = html.rfind("</body>")
-    return html[:i] + js + html[i:] if i >= 0 else html + js
+    return inject(_ag().editor_page(r, Path(cfg["export_dir"]) / "decals"), css=[ADAPTER_CSS], js=[ADAPTER_JS])
 
 
 def _shots(shots) -> list:

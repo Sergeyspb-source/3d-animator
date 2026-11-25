@@ -33,6 +33,7 @@ from fastapi.staticfiles import StaticFiles  # noqa: E402
 
 import models as M  # noqa: E402  (patches sf3d_tool.load_config first)
 import equip as EQ  # noqa: E402
+import character as CH  # noqa: E402
 
 for k, env in (("export_dir", "SF3D_EXPORT_DIR"), ("work_dir", "SF3D_WORK_DIR")):
     if os.environ.get(env):
@@ -108,7 +109,8 @@ def state():
             "drafts_dir": M.drafts_root(cfg).as_posix(), "gradio": f"http://127.0.0.1:{UI.PORT}",
             "has_openrouter_key": bool(cfg.get("openrouter_key") or os.environ.get("OPENROUTER_API_KEY")),
             "gpu": dict(GPU), "tasks": tasks.list(),
-            "bridges": {"equip": [UI.armour_gen_ui.TARGET_ID, UI.armour_gen_ui.GO_ID]}}
+            "bridges": {"equip": [UI.armour_gen_ui.TARGET_ID, UI.armour_gen_ui.GO_ID],
+                        "markup": UI.landmarks.TARGET_ID, "pose": UI.landmarks.TARGET_ID + "_pose"}}
 
 
 def _lang_file(code):
@@ -333,6 +335,116 @@ async def equip_action(req: Request):
                               meta={"action": r.get("action") or "generate", "rigged": r["rigged"]}))
         return {"ok": True, "queued": True, "task": t.summary()}
     return {"ok": True, **(await asyncio.wrap_future(EQ.quick(text)))}
+
+
+# ------------------------------------------------------------------ «Character»
+def _char(value: str) -> str:
+    if not value or UI._char_files(value) is None or not UI._char_files(value)["dir"].is_dir():
+        raise HTTPException(404, "no such character")
+    return value
+
+
+def _page_or_note(make):
+    """An editor's page, or a short page saying why it cannot open (shown in the frame)."""
+    try:
+        return HTMLResponse(make(), headers={"Cache-Control": "no-store"})
+    except ValueError as e:
+        return HTMLResponse(f"<!doctype html><meta charset=utf-8><body style='background:#1d2126;color:#dde1e5;"
+                            f"font:14px system-ui;display:grid;place-items:center;height:100vh;margin:0'>{e}</body>")
+
+
+def _char_task(key, value, fn, what):
+    t = tasks.submit(Task("char", _t(key) + " · " + value.split("/", 1)[-1], fn, meta={"char": value, "what": what}))
+    return {"ok": True, "task": t.summary()}
+
+
+@app.get("/api/char/overview")
+def char_overview(id: str):
+    return CH.overview(_char(id))
+
+
+@app.post("/api/char/add")
+async def char_add(req: Request):
+    return CH.add(str(_allowed((await req.json()).get("path") or "")))
+
+
+@app.post("/api/char/delete")
+async def char_delete(req: Request):
+    return CH.delete(_char((await req.json()).get("id") or ""))
+
+
+@app.post("/api/char/rig")
+async def char_rig(req: Request):
+    p = await req.json()
+    v = _char(p.get("id") or "")
+    return _char_task("web.task_rig", v, CH.rig_task(v, p.get("naming") or "mixamo", p.get("tries") or 3), "rig")
+
+
+@app.post("/api/char/seams")
+async def char_seams(req: Request):
+    v = _char((await req.json()).get("id") or "")
+    return _char_task("web.task_seams", v, CH.seams_task(v), "seams")
+
+
+@app.post("/api/char/split")
+async def char_split(req: Request):
+    v = _char((await req.json()).get("id") or "")
+    return _char_task("web.task_split", v, CH.split_task(v), "split")
+
+
+@app.get("/api/char/options")
+def char_options():
+    return CH.options()
+
+
+@app.post("/api/char/options")
+async def char_options_save(req: Request):
+    return CH.save_options(await req.json())
+
+
+@app.get("/editor/landmarks")
+def editor_landmarks(id: str, mode: str = "markup"):
+    v = _char(id)
+    return _page_or_note(lambda: CH.landmarks_page(v, mode if mode in ("markup", "pose", "view") else "markup"))
+
+
+@app.post("/api/char/landmark_build")
+async def char_landmark_build(req: Request):
+    p = await req.json()
+    v = _char(p.get("id") or "")
+    return _char_task("web.task_landmarks", v, CH.landmark_build_task(v, p.get("markup") or "", p.get("options") or {}), "landmarks")
+
+
+@app.post("/api/char/keep_fist")
+async def char_keep_fist(req: Request):
+    p = await req.json()
+    v = _char(p.get("id") or "")
+    try:
+        if p.get("rig"):
+            return {"ok": True, "log": CH.keep_rig_fist(v, p.get("markup") or "")}
+        return {"ok": CH.keep_fist(v, p.get("markup") or "")}
+    except Exception as e:  # noqa: BLE001  (the markup's own field: never in the way of editing)
+        return {"ok": False, "log": str(e)}
+
+
+@app.get("/editor/bones")
+def editor_bones(id: str):
+    v = _char(id)
+    return _page_or_note(lambda: CH.bones_page(v))
+
+
+@app.post("/api/char/weights")
+async def char_weights(req: Request):
+    p = await req.json()
+    v = _char(p.get("id") or "")
+    return _char_task("web.task_weights", v, CH.weights_task(v, p.get("mesh") or "", p.get("group") or "",
+                                                            p.get("strength", 1.0), p.get("size", 1.0)), "weights")
+
+
+@app.post("/api/char/wardrobe")
+async def char_wardrobe(req: Request):
+    v = _char((await req.json()).get("id") or "")
+    return _char_task("web.task_wardrobe", v, CH.wardrobe_task(v), "wardrobe")
 
 
 @app.get("/file={rest:path}")

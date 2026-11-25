@@ -15,13 +15,13 @@ export const SECTIONS: Section[] = [
     { id: 'batch', key: 'ui.batch_processing_2', gradio: ['ui.create', 'ui.batch_processing_2'], about: 'web.about_batch' },
   ] },
   { id: 'character', key: 'web.sec_character', icon: IconUser, object: 'character', steps: [
-    { id: 'overview', key: 'web.step_overview', gradio: ['ui.character'], about: 'web.about_char_overview' },
-    { id: 'skeleton', key: 'ui.skeleton', gradio: ['ui.character', 'ui.skeleton'], about: 'web.about_char_skeleton' },
+    { id: 'overview', ready: true, key: 'web.step_overview', gradio: ['ui.character'], about: 'web.about_char_overview' },
+    { id: 'skeleton', ready: true, key: 'ui.skeleton', gradio: ['ui.character', 'ui.skeleton'], about: 'web.about_char_skeleton' },
     { id: 'face', key: 'web.step_face', gradio: ['ui.character', 'ui.face_parts'], about: 'web.about_char_face' },
     { id: 'look', ready: true, key: 'web.step_look', gradio: ['ui.character', 'ui.equipment_procedural'], about: 'web.about_char_look' },
     { id: 'anim', key: 'cr.anim_tab', gradio: ['ui.character', 'ui.animations_procedural'], about: 'web.about_char_anim' },
-    { id: 'weights', key: 'web.step_weights', gradio: ['ui.character', 'ui.weight_fixing'], about: 'web.about_weights' },
-    { id: 'game', key: 'web.step_game', gradio: ['ui.character', 'ui.equipment_procedural'], about: 'web.about_char_game' },
+    { id: 'weights', ready: true, key: 'web.step_weights', gradio: ['ui.character', 'ui.weight_fixing'], about: 'web.about_weights' },
+    { id: 'game', ready: true, key: 'web.step_game', gradio: ['ui.character', 'ui.equipment_procedural'], about: 'web.about_char_game' },
   ] },
   { id: 'equipment', key: 'web.sec_equipment', icon: IconShield, object: 'character', steps: [
     { id: 'workshop', ready: true, key: 'web.step_workshop', gradio: ['ui.character', 'ui.equipment_procedural'], about: 'web.about_eq_workshop' },

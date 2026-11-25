@@ -5,9 +5,6 @@
 // Its requests still go through «the parent page's hidden field and button» (sendNow): the shell keeps both.
 (() => {
   const q = new URLSearchParams(location.search);
-  const root = document.documentElement;
-  root.dataset.sf3d = '1';
-  root.dataset.theme = q.get('theme') === 'light' ? 'light' : 'dark';
   const HAIRY = ['hair', 'beard', 'brows', 'lashes'];
   const pieces = () => document.getElementById('pieces');
   const ready = () => { const m = document.getElementById('msg'); return !!m && m.hidden && !!pieces() && !!pieces().querySelector('button'); };
