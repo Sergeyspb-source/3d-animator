@@ -24,7 +24,7 @@ import CharFace from './screens/CharFace';
 import CharAnims from './screens/CharAnims';
 import { CrOverviewScreen, CrSkeleton, CrAnims, CrPaint, CrGame } from './screens/Creatures';
 import { Surfaces, Effects, Dungeons, Destructibles, Reference, ModelMaterials } from './screens/EnvScreens';
-import { TasksScreen, GpuScreen, SettingsScreen } from './screens/Tools';
+import { TasksScreen, GpuScreen, SettingsScreen, BatchScreen } from './screens/Tools';
 
 export default function App({ initial }: { initial: AppState }) {
   const t = useT();
@@ -66,6 +66,7 @@ export default function App({ initial }: { initial: AppState }) {
   else if (route.section === 'environment' && route.step === 'vegetation') screen = <ModelCreate go={go} vegetation />;
   else if (route.section === 'models' && route.step === 'check') screen = <ModelCheck go={go} />;
   else if (route.section === 'models' && route.step === 'ref') screen = <Reference go={go} />;
+  else if (route.section === 'models' && route.step === 'batch') screen = <BatchScreen go={go} />;
   else if (route.section === 'models' && route.step === 'materials') screen = <ModelMaterials />;
   else if (route.section === 'environment' && route.step === 'surfaces') screen = <Surfaces />;
   else if (route.section === 'environment' && route.step === 'fx') screen = <Effects />;

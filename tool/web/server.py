@@ -38,6 +38,7 @@ import face as FC  # noqa: E402
 import anims as AN  # noqa: E402
 import creature as CRW  # noqa: E402
 import env as EV  # noqa: E402
+import tools_api as TA  # noqa: E402
 
 for k, env in (("export_dir", "SF3D_EXPORT_DIR"), ("work_dir", "SF3D_WORK_DIR")):
     if os.environ.get(env):
@@ -685,6 +686,49 @@ async def mat_apply(req: Request):
     t = tasks.submit(Task("env", _t("web.task_mat") + " · " + (p.get("asset") or ""), EV.mat_apply_task(p.get("asset") or "", p.get("values") or []),
                           meta={"job": "mat"}))
     return {"ok": True, "task": t.summary()}
+
+
+# ------------------------------------------------------------------ batch, video memory, settings
+@app.post("/api/models/release_all")
+def model_release_all():
+    return M.release_all()
+
+
+@app.get("/api/batch/scan")
+def batch_scan(root: str = "", category: str = "prop"):
+    if root:
+        _allowed(root)
+    return TA.batch_scan(root or (T.load_config().get("input_dir") or ""), category)
+
+
+@app.post("/api/batch/run")
+async def batch_run(req: Request):
+    p = await req.json()
+    if p.get("root"):
+        _allowed(p["root"])
+    t = tasks.submit(Task("model", _t("web.task_batch") + " · " + Path(p.get("root") or "").name, TA.batch_task(p), meta={"engine": "batch"}))
+    return {"ok": True, "task": t.summary()}
+
+
+@app.get("/api/gpu/holders")
+async def gpu_holders():
+    return await asyncio.to_thread(TA.gpu_holders)
+
+
+@app.post("/api/gpu/close")
+async def gpu_close(req: Request):
+    p = await req.json()
+    return await asyncio.to_thread(TA.gpu_close, int(p.get("pid") or 0), bool(p.get("force")))
+
+
+@app.get("/api/settings")
+def settings_get():
+    return TA.settings()
+
+
+@app.post("/api/settings")
+async def settings_save(req: Request):
+    return TA.save_settings(await req.json(), TEST_BENCH)
 
 
 @app.get("/file={rest:path}")

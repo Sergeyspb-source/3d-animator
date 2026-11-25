@@ -12,7 +12,7 @@ export const SECTIONS: Section[] = [
     { id: 'check', key: 'web.step_check', ready: true, about: 'web.about_check' },
     { id: 'materials', ready: true, key: 'web.step_model_materials', gradio: ['ui.create', 'ui.materials'], about: 'web.about_model_materials' },
     { id: 'release', key: 'web.step_release', ready: true, about: 'web.about_release' },
-    { id: 'batch', key: 'ui.batch_processing_2', gradio: ['ui.create', 'ui.batch_processing_2'], about: 'web.about_batch' },
+    { id: 'batch', ready: true, key: 'ui.batch_processing_2', gradio: ['ui.create', 'ui.batch_processing_2'], about: 'web.about_batch' },
   ] },
   { id: 'character', key: 'web.sec_character', icon: IconUser, object: 'character', steps: [
     { id: 'overview', ready: true, key: 'web.step_overview', gradio: ['ui.character'], about: 'web.about_char_overview' },

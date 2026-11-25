@@ -3239,5 +3239,17 @@
  "web.task_destr": "Destructible object",
  "web.task_ref": "Reference",
  "web.task_ref_views": "Reference views",
- "web.task_mat": "Model materials"
+ "web.task_mat": "Model materials",
+ "web.task_batch": "Batch processing",
+ "web.batch_note": "The models go into the drafts: check them in the Check step and release them («Release all» — at once).",
+ "web.release_all": "Release all",
+ "web.release_all_text": "Release into export the drafts not there yet ({})? Those export has already stay drafts: they are replaced one by one.",
+ "web.released_all": "Released: {}. Left as drafts (in export already): {}",
+ "web.close_program": "Close",
+ "web.close_program_title": "Close the program?",
+ "web.close_program_text": "«{}» (PID {}) is closed to free video memory. It may ask about unsaved work.",
+ "web.key_set_keep": "a key is set; an empty field keeps it",
+ "web.settings_save": "Save the settings",
+ "web.settings_saved": "The settings are saved to config.json. A new export folder is seen after the server restarts.",
+ "web.settings_test_bench": "The settings are not saved on a test copy."
 }

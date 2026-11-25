@@ -66,6 +66,7 @@ export default function ModelCheck({ go }: { go: (r: Route) => void }) {
   const [sel, setSel] = useState<string | null>(() => localStorage.getItem('sf3d.check_sel'));
   const [ask, setAsk] = useState<string | null>(null);   // the draft asked about (kept while the dialog fades)
   const [busy, setBusy] = useState(false);
+  const [askAll, setAskAll] = useState(false);
   const load = () => get<ModelInfo[]>('/api/models/drafts').then((d) => {
     setItems(d);
     setSel((s) => (s && d.some((m) => `${m.category}/${m.stem}` === s) ? s : d[0] ? `${d[0].category}/${d[0].stem}` : null));
@@ -95,7 +96,8 @@ export default function ModelCheck({ go }: { go: (r: Route) => void }) {
   return (
     <div className="work three">
       <div className="side">
-        <div className="side-title">{t('web.drafts')}</div>
+        <Group justify="space-between" pr={6} wrap="nowrap"><div className="side-title">{t('web.drafts')}</div>
+          {items.some((x) => !x.in_export) && <Button size="compact-xs" variant="subtle" color="gray" onClick={() => setAskAll(true)}>{t('web.release_all')}</Button>}</Group>
         <ModelList items={items} sel={sel} onPick={pick} empty={t('web.no_drafts')} />
       </div>
       <div className="stage">
@@ -119,6 +121,15 @@ export default function ModelCheck({ go }: { go: (r: Route) => void }) {
           </Stack>
         ) : <Text p="md" c="dimmed" size="sm">{t('web.no_drafts')}</Text>}
       </ScrollArea>
+      <Modal opened={askAll} onClose={() => setAskAll(false)} title={t('web.release_all')} centered>
+        <Stack>
+          <Text size="sm">{t('web.release_all_text', items.filter((x) => !x.in_export).length)}</Text>
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setAskAll(false)}>{t('web.cancel')}</Button>
+            <Button onClick={async () => { const r = await post<{ log: string }>('/api/models/release_all'); setAskAll(false); notifications.show({ color: 'patina', message: r.log }); load(); }}>{t('web.release_all')}</Button>
+          </Group>
+        </Stack>
+      </Modal>
       <Modal opened={!!ask} onClose={() => setAsk(null)} title={t('web.replace_title')} centered>
         <Stack>
           <Text size="sm">{ask ? t('web.replace_text', `export/${ask}`) : ''}</Text>

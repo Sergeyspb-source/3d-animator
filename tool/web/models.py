@@ -254,3 +254,15 @@ def discard(cat: str, stem: str) -> dict:
         return {"ok": False, "log": _t("web.no_draft", stem)}
     dst = _aside(src, "discarded", cfg)
     return {"ok": True, "log": _t("web.discarded", stem, dst)}
+
+
+def release_all() -> dict:
+    """Every draft not in export yet released (one already there is left as a draft, to be replaced by hand)."""
+    done, kept = [], []
+    for d in drafts():
+        if d["in_export"]:
+            kept.append(f"{d['category']}/{d['stem']}")
+            continue
+        r = release(d["category"], d["stem"])
+        (done if r.get("ok") else kept).append(f"{d['category']}/{d['stem']}")
+    return {"ok": True, "log": _t("web.released_all", len(done), ", ".join(kept) or "—"), "released": done, "kept": kept}
