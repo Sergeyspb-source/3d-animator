@@ -482,6 +482,7 @@ The interface is moving from Gradio to a page of its own, section by section. Gr
 - **Models → Make a model:** SF3D, Hunyuan3D (with the fast shape) and TRELLIS.2 with the same options as the Gradio tab. The result is shown in 3D at once: views, grid, wireframe, the Godot collision, a 1.75 m person for scale, F frames the model. The model lands as a **draft** in `work\web_drafts\export\<category>\<name>\`.
 - **Models → Check:** the drafts with their size, face count, time, previews and the source picture. «Release into export» moves the folder to `export\<category>\<name>\`; if a model is there already it asks, and the old one goes to `work\web_drafts\replaced\` (nothing is deleted). «Remove» puts the draft aside in `work\web_drafts\discarded\`.
 - **Models → Release:** what is in export already, by category.
+- **Equipment** and **Character → Looks:** the same procedural editor as in Gradio, on the whole screen and by steps: «Workshop» (the pieces' catalogue and the shape), «Materials and textures», «Fitting» (what is worn and its layers, the gap to the skin, motion, the pinch brush), «Check» (in motion, the Godot fitting room), «Release» (the made pieces, the rebuild by layers, «Generate»). The scene and the piece stay between the steps. «Looks» shows only hairstyles, beards, brows and lashes. A piece's bake, a generator's preview and the check in motion go into the shared task queue; their pictures show in a strip over the editor. «A finished piece (GLB)» and «Off a dressed model» still open in Gradio.
 
 The page is built with Vite + TypeScript + React + Mantine, 3D with three.js. The FastAPI server in the `sf3d` env (`tool\web\server.py`) calls the same functions as Gradio. `sf3d-web.bat` builds the page on the first start and after the page changes (Node.js 18+ and npm needed). The order in which the other sections move is in `docs\ROADMAP.md`, stage 9.
 
@@ -563,7 +564,8 @@ docs/images/                  README screenshots (en/, ru/)
 tool/
   sf3d_ui.py                  Gradio GUI (all tabs)
   web/                        the new web interface: server.py (FastAPI), tasks.py (the GPU task queue),
-                              models.py (the «Models» chain), lang_web.py (its texts), front/ (the page: Vite + TypeScript)
+                              models.py (the «Models» chain), equip.py + adapters/ (the equipment editor in the new page),
+                              lang_web.py (its texts), front/ (the page: Vite + TypeScript)
   i18n.py, lang/*.json        interface language: every text by key (English, Russian)
   sf3d_tool.py, batch_cli.py  CLI and post-processing (pivot, scale, collision, materials)
   hy_*.py                     Hunyuan3D workers (run in the hunyuan env)

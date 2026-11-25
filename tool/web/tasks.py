@@ -205,8 +205,9 @@ class TaskQueue:
                 t.status, t.error = "error", f"{type(e).__name__}: {e}"
                 t.lines.append(traceback.format_exc(limit=6))
             finally:
-                for p in list(t.procs):
-                    kill_tree(p)
+                if t.cancel.is_set():   # (a finished job's programs stay: the Godot fitting room is a window it opened)
+                    for p in list(t.procs):
+                        kill_tree(p)
                 t.procs.clear()
                 _current.task = None
                 t.finished = time.time()

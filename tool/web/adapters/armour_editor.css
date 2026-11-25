@@ -1,0 +1,57 @@
+/* The procedural equipment editor (tool/armour_gen_editor.html) inside the new web UI: served as a page of its own and
+   given the shell's look here, the file itself untouched. Its colours are CSS variables; these win over its own.
+   data-step on <body> (from the shell, armour_editor.js) shows only the rail's part for that step of the chain. */
+@font-face { font-family: "Golos Text"; font-weight: 400; font-display: swap; src: url(/fonts/golos-text-cyrillic-400-normal.woff2) format("woff2"); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: "Golos Text"; font-weight: 400; font-display: swap; src: url(/fonts/golos-text-latin-400-normal.woff2) format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Golos Text"; font-weight: 600; font-display: swap; src: url(/fonts/golos-text-cyrillic-600-normal.woff2) format("woff2"); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: "Golos Text"; font-weight: 600; font-display: swap; src: url(/fonts/golos-text-latin-600-normal.woff2) format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+
+:root[data-sf3d] { --bg:#1d2126; --panel:#22272d; --stage:#2c333c; --fg:#dde1e5; --muted:#8e98a3; --line:#333a42; --accent:#e0782e;
+  --accent-fg:#1a0e06; --warn:#c9651f; --ui:"Golos Text","Segoe UI",system-ui,sans-serif; color-scheme:dark; }
+:root[data-sf3d][data-theme="light"] { --bg:#eef1f4; --panel:#f6f8fa; --stage:#cfd6dd; --fg:#1d2126; --muted:#5b6570; --line:#cdd3da;
+  --accent:#c9651f; --accent-fg:#fff6ec; --warn:#c9651f; color-scheme:light; }
+:root[data-sf3d] body { padding:0; font-variant-numeric:tabular-nums; }
+:root[data-sf3d] .wrap { gap:0; grid-template-columns:minmax(0,1fr) clamp(350px, 28vw, 470px); min-height:0; }
+:root[data-sf3d] .rail { overflow-x:hidden; }
+:root[data-sf3d] .pieces button { white-space:normal; overflow-wrap:anywhere; min-width:0; }
+:root[data-sf3d] .main { gap:0; }
+:root[data-sf3d] .toolbar { border-radius:0; border-width:0 0 1px; padding:5px 8px; }
+:root[data-sf3d] .stage { border:0; border-radius:0; }
+:root[data-sf3d] .rail { gap:0; border-left:1px solid var(--line); background:var(--panel); }
+:root[data-sf3d] .box { border-radius:0; border-width:0 0 1px; padding:10px 12px; }
+:root[data-sf3d] .box.hot { box-shadow:inset 2px 0 0 var(--accent); border-color:var(--line); }
+:root[data-sf3d] .grp { font:600 13px var(--ui); letter-spacing:0; text-transform:none; color:var(--fg); margin:0 0 6px; }
+:root[data-sf3d] .pieces .pgrp { font-size:12px; letter-spacing:0; text-transform:none; opacity:1; color:var(--muted); }
+:root[data-sf3d] .badge, :root[data-sf3d] .sl .val, :root[data-sf3d] .node label, :root[data-sf3d] .node kbd { font-family:var(--ui); }
+:root[data-sf3d] button { border-radius:4px; }
+:root[data-sf3d] .seg button:first-child { border-radius:4px 0 0 4px; } :root[data-sf3d] .seg button:last-child { border-radius:0 4px 4px 0; }
+:root[data-sf3d] .foot { box-shadow:0 -1px 0 var(--line); }
+
+/* the steps of the chain: Workshop (make the piece), Materials and textures, Fitting, Check, Release; Looks = hair */
+body[data-step="workshop"] #g_4, body[data-step="workshop"] #g_5, body[data-step="workshop"] #pinchBox,
+body[data-step="workshop"] #wornRow, body[data-step="workshop"] #savedRow, body[data-step="workshop"] #layersRow,
+body[data-step="workshop"] #pieces [data-block="hair"], body[data-step="workshop"] #pieces button[data-piece="hair"],
+body[data-step="workshop"] #pieces button[data-piece="beard"], body[data-step="workshop"] #pieces button[data-piece="brows"],
+body[data-step="workshop"] #pieces button[data-piece="lashes"] { display:none !important; }
+
+body[data-step="look"] #g_5, body[data-step="look"] #pinchBox, body[data-step="look"] #wornRow, body[data-step="look"] #savedRow,
+body[data-step="look"] #layersRow, body[data-step="look"] #sidesRow,
+body[data-step="look"] #pieces .pgrp:not([data-block="hair"]),
+body[data-step="look"] #pieces button:not([data-piece="hair"]):not([data-piece="beard"]):not([data-piece="brows"]):not([data-piece="lashes"]) { display:none !important; }
+
+body[data-step="materials"] .rail > .box:first-child, body[data-step="materials"] #groups > .box:not(#g_4),
+body[data-step="materials"] #pinchOn, body[data-step="materials"] #pinchClear, body[data-step="materials"] #pinchOnly { display:none !important; }
+
+body[data-step="fit"] .rail > .box:first-child > :not(#wornRow):not(#layersRow),
+body[data-step="fit"] #groups > .box:not(#g_0):not(#g_5),
+body[data-step="fit"] #g_0 > :not(.grp):not(#r_gap):not(#r_limb_keep):not(#r_thickness),
+body[data-step="fit"] #paintOn, body[data-step="fit"] #paintClear, body[data-step="fit"] #paintOnly,
+body[data-step="fit"] #battleWear { display:none !important; }
+
+body[data-step="check"] .rail > .box:first-child > :not(#wornRow), body[data-step="check"] #groups,
+body[data-step="check"] #pinchBox { display:none !important; }
+
+body[data-step="release"] .rail > .box:first-child > :not(#savedRow):not(#layersRow), body[data-step="release"] #groups,
+body[data-step="release"] #pinchBox { display:none !important; }
+/* (on Check and Release the action bar at the rail's foot is the step: «Check in motion», the fitting room; «Generate») */
+body[data-step="check"] .foot, body[data-step="release"] .foot { position:static; }

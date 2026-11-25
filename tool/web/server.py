@@ -28,10 +28,11 @@ os.environ.setdefault("GRADIO_ANALYTICS_ENABLED", "False")
 
 import uvicorn  # noqa: E402
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile  # noqa: E402
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse  # noqa: E402
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 
 import models as M  # noqa: E402  (patches sf3d_tool.load_config first)
+import equip as EQ  # noqa: E402
 
 for k, env in (("export_dir", "SF3D_EXPORT_DIR"), ("work_dir", "SF3D_WORK_DIR")):
     if os.environ.get(env):
@@ -106,7 +107,8 @@ def state():
             "export_dir": cfg["export_dir"], "work_dir": cfg["work_dir"], "input_dir": cfg.get("input_dir"),
             "drafts_dir": M.drafts_root(cfg).as_posix(), "gradio": f"http://127.0.0.1:{UI.PORT}",
             "has_openrouter_key": bool(cfg.get("openrouter_key") or os.environ.get("OPENROUTER_API_KEY")),
-            "gpu": dict(GPU), "tasks": tasks.list()}
+            "gpu": dict(GPU), "tasks": tasks.list(),
+            "bridges": {"equip": [UI.armour_gen_ui.TARGET_ID, UI.armour_gen_ui.GO_ID]}}
 
 
 def _lang_file(code):
@@ -302,6 +304,44 @@ async def model_release(req: Request):
 async def model_discard(req: Request):
     p = await req.json()
     return M.discard(p.get("category") or "", p.get("stem") or "")
+
+
+# ------------------------------------------------------------------ «Equipment» and «Looks»: the procedural editor
+@app.get("/editor/equip")
+def editor_equip(rigged: str):
+    p = _allowed(rigged)
+    if not p.is_file():
+        raise HTTPException(404, "no such model")
+    return HTMLResponse(EQ.page(str(p)), headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/equip/action")
+async def equip_action(req: Request):
+    text = (await req.body()).decode("utf-8")
+    try:
+        r = EQ.parse(text)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    _allowed(r["rigged"])
+    key = EQ.heavy(r)
+    if key:   # long: into the GPU queue (the editor waits for its answer file meanwhile)
+        def job(task):
+            res = EQ.run(text)
+            task.set_lines(str(res.get("log") or "").splitlines())   # (the editor's answer, in the dock's log too)
+            return res
+        t = tasks.submit(Task("equip", EQ.title(r, key), job,
+                              meta={"action": r.get("action") or "generate", "rigged": r["rigged"]}))
+        return {"ok": True, "queued": True, "task": t.summary()}
+    return {"ok": True, **(await asyncio.wrap_future(EQ.quick(text)))}
+
+
+@app.get("/file={rest:path}")
+def gradio_file(rest: str):
+    """The paths the app's editors ask for as Gradio served them (/file=<absolute path>): export, work, input only."""
+    p = _allowed(rest)
+    if not p.is_file():
+        raise HTTPException(404, "no such file")
+    return FileResponse(p, headers={"Cache-Control": "no-cache"}, content_disposition_type="inline")
 
 
 # ------------------------------------------------------------------ the page

@@ -3141,5 +3141,16 @@
  "web.key_unset": "no key",
  "web.settings_note": "The folders and the key are still changed in the Gradio app (Options → Settings): both read one config.json.",
  "web.v_faces_unit": "faces",
- "web.done_mark": "done"
+ "web.done_mark": "done",
+ "web.eq_generate": "Equipment: make the piece",
+ "web.eq_preview": "Equipment: the generator's preview",
+ "web.eq_qa": "Equipment: the check in motion",
+ "web.eq_learn": "Equipment: remember the outline",
+ "web.piece": "Piece",
+ "web.no_piece": "none chosen",
+ "web.need_rig": "{} has no skeleton yet: build it first (Character → Skeleton).",
+ "web.eq_ready_glb": "A finished piece (GLB)",
+ "web.eq_outfit": "Off a dressed model",
+ "web.shots": "Pictures: {}",
+ "web.editor_title": "The equipment editor"
 }

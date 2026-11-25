@@ -16,6 +16,7 @@ import ModelCreate from './screens/ModelCreate';
 import ModelCheck from './screens/ModelCheck';
 import ModelRelease from './screens/ModelRelease';
 import Placeholder from './screens/Placeholder';
+import EquipWorkspace from './screens/EquipWorkspace';
 import { TasksScreen, GpuScreen, SettingsScreen } from './screens/Tools';
 
 export default function App({ initial }: { initial: AppState }) {
@@ -58,6 +59,8 @@ export default function App({ initial }: { initial: AppState }) {
   else if (route.section === 'environment' && route.step === 'vegetation') screen = <ModelCreate go={go} vegetation />;
   else if (route.section === 'models' && route.step === 'check') screen = <ModelCheck go={go} />;
   else if (route.section === 'models' && route.step === 'release') screen = <ModelRelease />;
+  else if (route.section === 'equipment' || (route.section === 'character' && route.step === 'look'))   // (one editor: kept between the steps)
+    screen = <EquipWorkspace step={route.section === 'character' ? 'look' : route.step} info={step} gradio={initial.gradio} bridge={initial.bridges.equip} />;
   else screen = <Placeholder section={sec!} step={step!} gradio={initial.gradio} />;
 
   return (

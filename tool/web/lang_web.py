@@ -130,6 +130,18 @@ TEXTS = {
     "web.v_faces": ("{} граней", "{} faces"),
     "web.v_faces_unit": ("граней", "faces"),
     "web.done_mark": ("сделано", "done"),
+    # equipment and looks
+    "web.eq_generate": ("Экипировка: сделать вещь", "Equipment: make the piece"),
+    "web.eq_preview": ("Экипировка: вид из генератора", "Equipment: the generator's preview"),
+    "web.eq_qa": ("Экипировка: проверка в движении", "Equipment: the check in motion"),
+    "web.eq_learn": ("Экипировка: запомнить контур", "Equipment: remember the outline"),
+    "web.piece": ("Вещь", "Piece"),
+    "web.no_piece": ("не выбрана", "none chosen"),
+    "web.need_rig": ("У персонажа {} ещё нет скелета: сначала постройте его (Персонаж → Скелет).", "{} has no skeleton yet: build it first (Character → Skeleton)."),
+    "web.eq_ready_glb": ("Готовая вещь (GLB)", "A finished piece (GLB)"),
+    "web.eq_outfit": ("Снять с одетой модели", "Off a dressed model"),
+    "web.shots": ("Снимки: {}", "Pictures: {}"),
+    "web.editor_title": ("Редактор экипировки", "The equipment editor"),
     "web.v_failed": ("Модель не открылась: {}", "The model did not open: {}"),
     "web.m": ("м", "m"),
     # create a model
