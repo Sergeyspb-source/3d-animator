@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { ActionIcon, Badge, Divider, NavLink, ScrollArea, Stack, Switch, Text, Tooltip } from '@mantine/core';
 import { useLocalStorage } from '@mantine/hooks';
-import { IconCheck, IconChevronsLeft, IconChevronsRight, IconListDetails, IconCpu, IconSettings } from '@tabler/icons-react';
+import { IconCheck, IconChevronsLeft, IconChevronsRight, IconExternalLink, IconListDetails, IconCpu, IconSettings } from '@tabler/icons-react';
 import { get, live, useStore, type ModelInfo, type SceneObject } from '../api';
 import { useT } from '../i18n';
 import { useCurrent } from '../objects';
@@ -51,7 +51,7 @@ export default function NavMenu({ route, go, small, toggle, canToggle }: { route
         {SECTIONS.map((s) => {
           const needs = s.object && (!cur || cur.creature !== (s.object === 'creature'));
           return (
-            <NavLink key={s.id} label={<Text fw={600} size="sm">{t(s.key)}</Text>} leftSection={<s.icon size={18} />}
+            <NavLink key={s.id} label={<Text fw={600} size="md">{t(s.key)}</Text>} leftSection={<s.icon size={18} stroke={1.6} />}
               opened={!!open[s.id] || route.section === s.id} onChange={(o) => setOpen({ ...open, [s.id]: o })} childrenOffset={22}
               description={needs ? t(s.object === 'creature' ? 'web.need_creature' : 'web.need_character') : undefined}>
               {s.steps.filter((x) => !onlyReady || x.ready).map((x, i) => {
@@ -59,10 +59,10 @@ export default function NavMenu({ route, go, small, toggle, canToggle }: { route
                 return (
                   <NavLink key={x.id} active={route.section === s.id && route.step === x.id} onClick={() => go({ section: s.id, step: x.id })}
                     label={<Text size="sm" c={x.ready ? undefined : 'dimmed'}>{t(x.key)}</Text>}
-                    leftSection={<Text size="xs" c="dimmed" ff="monospace" w={10}>{i + 1}</Text>}
-                    rightSection={m === true ? <IconCheck size={14} color="var(--mantine-color-teal-5)" />
-                      : m ? <Badge size="xs" variant="light">{m}</Badge>
-                      : !x.ready ? <Tooltip label={t('web.in_gradio_tip')}><Badge size="xs" variant="outline" color="gray">G</Badge></Tooltip> : null} />
+                    leftSection={<span className="step-n">{i + 1}</span>}
+                    rightSection={m === true ? <IconCheck size={14} color="var(--mantine-color-patina-4)" aria-label={t('web.done_mark')} />
+                      : m ? <Badge size="sm" variant="light" color="gray">{m}</Badge>
+                      : !x.ready ? <Tooltip label={t('web.in_gradio_tip')}><IconExternalLink size={13} color="var(--ash)" aria-label={t('web.in_gradio')} /></Tooltip> : null} />
                 );
               })}
             </NavLink>

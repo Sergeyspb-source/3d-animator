@@ -5,7 +5,7 @@ import { AppShell } from '@mantine/core';
 import { useHotkeys, useLocalStorage, useMediaQuery } from '@mantine/hooks';
 import { Spotlight, type SpotlightActionData } from '@mantine/spotlight';
 import { IconSearch } from '@tabler/icons-react';
-import type { AppState } from './api';
+import { live, useStore, type AppState } from './api';
 import { useT } from './i18n';
 import { SECTIONS, TOOLS, hashOf, parseHash, stepOf, type Route } from './nav';
 import TopBar from './components/TopBar';
@@ -49,6 +49,7 @@ export default function App({ initial }: { initial: AppState }) {
   ];
 
   const step = stepOf(route);
+  const hot = useStore(live, (s) => Object.values(s.tasks).find((x) => x.status === 'running'));
   let screen;
   if (route.section === 'tasks') screen = <TasksScreen />;
   else if (route.section === 'gpu') screen = <GpuScreen />;
@@ -61,11 +62,14 @@ export default function App({ initial }: { initial: AppState }) {
 
   return (
     <ObjectsProvider>
-      <AppShell header={{ height: 48 }} navbar={{ width: small ? 60 : 248, breakpoint: 0 }}
-        footer={{ height: dockOpen ? 'clamp(170px, 24vh, 300px)' : 34 }} padding={0}>
+      <AppShell header={{ height: 44 }} navbar={{ width: small ? 60 : 248, breakpoint: 0 }}
+        footer={{ height: dockOpen ? 'clamp(160px, 22vh, 300px)' : 32 }} padding={0}>
         <AppShell.Header><TopBar route={route} go={go} testBench={initial.test_bench} /></AppShell.Header>
-        <AppShell.Navbar><NavMenu route={route} go={go} small={small} toggle={() => setNavSmall(!navSmall)} canToggle={!narrow} /></AppShell.Navbar>
-        <AppShell.Main className="main">{screen}</AppShell.Main>
+        <AppShell.Navbar className="navrail"><NavMenu route={route} go={go} small={small} toggle={() => setNavSmall(!navSmall)} canToggle={!narrow} /></AppShell.Navbar>
+        <AppShell.Main className="main">
+          {hot && <div className={'heat' + (hot.progress == null || hot.progress < 0.05 ? ' unknown' : '')} style={{ ['--p' as string]: hot.progress ?? 1 }} title={hot.title}><i /></div>}
+          {screen}
+        </AppShell.Main>
         <AppShell.Footer><Dock open={dockOpen} toggle={() => setDockOpen(!dockOpen)} /></AppShell.Footer>
       </AppShell>
       <Spotlight actions={actions} shortcut={['mod + K']} nothingFound={t('web.nothing_found')} highlightQuery

@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { Badge, Group, Loader, SegmentedControl, Text, Tooltip, ActionIcon } from '@mantine/core';
+import { Loader, Text, Tooltip } from '@mantine/core';
 import { IconFocusCentered, IconGridDots, IconBox, IconUser, IconShape } from '@tabler/icons-react';
 import { useT } from '../i18n';
 
@@ -45,9 +45,9 @@ export default function Viewer3D({ url, empty, onMeasured, person: personDefault
     const sun = new THREE.DirectionalLight(0xffffff, 1.4);
     sun.position.set(2, 4, 3);
     scene.add(sun, new THREE.AmbientLight(0xffffff, 0.25));
-    const gridH = new THREE.GridHelper(10, 20, 0x8a7350, 0x3a414b);
+    const gridH = new THREE.GridHelper(10, 20, 0x9a8462, 0x55606c);   // (0.5 m cells; brass centre lines)
     (gridH.material as THREE.Material).transparent = true;
-    (gridH.material as THREE.Material).opacity = 0.55;
+    (gridH.material as THREE.Material).opacity = 0.45;
     scene.add(gridH);
     const man = new THREE.Mesh(new THREE.CapsuleGeometry(0.2, 1.75 - 0.4, 6, 16),
       new THREE.MeshStandardMaterial({ color: 0x6f8fb0, transparent: true, opacity: 0.35, roughness: 0.9 }));
@@ -175,28 +175,29 @@ export default function Viewer3D({ url, empty, onMeasured, person: personDefault
   });
 
   const fmt = (x: number) => x.toFixed(x < 1 ? 2 : 1);
+  const views: [View, string][] = [['front', t('ag.view_front')], ['side', t('ag.view_side')], ['back', t('ag.view_back')], ['top', t('web.view_top')]];
+  const toggles: [boolean, () => void, string, typeof IconGridDots][] = [
+    [grid, () => setGrid(!grid), t('web.v_grid'), IconGridDots], [wire, () => setWire(!wire), t('web.v_wire'), IconShape],
+    [col, () => setCol(!col), t('web.v_collision'), IconBox], [person, () => setPerson(!person), t('web.v_person'), IconUser]];
   return (
     <div className="viewer">
       <div className="viewer-canvas" ref={host} />
-      <Group className="viewer-tools" gap={6} wrap="wrap">
-        <SegmentedControl size="xs" value={view} onChange={(v) => setView(v as View)}
-          data={[{ value: 'front', label: t('ag.view_front') }, { value: 'side', label: t('ag.view_side') },
-            { value: 'back', label: t('ag.view_back') }, { value: 'top', label: t('web.view_top') }]} />
-        <Tooltip label={t('web.v_frame')}><ActionIcon variant="default" onClick={() => frame()}><IconFocusCentered size={16} /></ActionIcon></Tooltip>
-        <Tooltip label={t('web.v_grid')}><ActionIcon variant={grid ? 'filled' : 'default'} onClick={() => setGrid(!grid)}><IconGridDots size={16} /></ActionIcon></Tooltip>
-        <Tooltip label={t('web.v_wire')}><ActionIcon variant={wire ? 'filled' : 'default'} onClick={() => setWire(!wire)}><IconShape size={16} /></ActionIcon></Tooltip>
-        <Tooltip label={t('web.v_collision')}><ActionIcon variant={col ? 'filled' : 'default'} onClick={() => setCol(!col)}><IconBox size={16} /></ActionIcon></Tooltip>
-        <Tooltip label={t('web.v_person')}><ActionIcon variant={person ? 'filled' : 'default'} onClick={() => setPerson(!person)}><IconUser size={16} /></ActionIcon></Tooltip>
-      </Group>
+      <div className="viewer-tools" role="toolbar">
+        {views.map(([v, label]) => <button key={v} type="button" className={'vt' + (view === v ? ' on' : '')} onClick={() => setView(v)}>{label}</button>)}
+        <span className="sep" />
+        <Tooltip label={t('web.v_frame')}><button type="button" className="vt icon" onClick={() => frame()} aria-label={t('web.v_frame')}><IconFocusCentered size={16} /></button></Tooltip>
+        {toggles.map(([on, act, label, I]) => (
+          <Tooltip key={label} label={label}><button type="button" className={'vt icon' + (on ? ' on' : '')} onClick={act} aria-label={label} aria-pressed={on}><I size={16} /></button></Tooltip>))}
+      </div>
       {info && (
-        <Group className="viewer-badge" gap={6}>
-          <Badge variant="default" radius="sm">{t('web.v_faces', info.faces.toLocaleString())}</Badge>
-          <Badge variant="default" radius="sm">{fmt(info.size[0])} × {fmt(info.size[1])} × {fmt(info.size[2])} {t('web.m')}</Badge>
-        </Group>
+        <div className="viewer-badge">
+          <span>{info.faces.toLocaleString()}<em>{t('web.v_faces_unit')}</em></span>
+          <span>{fmt(info.size[0])} × {fmt(info.size[1])} × {fmt(info.size[2])}<em>{t('web.m')}</em></span>
+        </div>
       )}
-      {!url && empty && <Text className="viewer-empty" c="dimmed">{empty}</Text>}
+      {!url && empty && <Text className="viewer-empty">{empty}</Text>}
       {busy && <Loader className="viewer-busy" size="sm" />}
-      {err && <Text className="viewer-empty" c="red">{t('web.v_failed', err)}</Text>}
+      {err && <Text className="viewer-empty" c="rust.4">{t('web.v_failed', err)}</Text>}
     </div>
   );
 }

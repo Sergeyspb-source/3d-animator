@@ -1,9 +1,9 @@
 // Models → Check: the drafts made here, each in 3D beside a 1.75 m person, its numbers and previews; «Release»
 // moves it into export (a model already there goes aside to web_drafts/replaced), «Remove» puts the draft aside.
 import { useEffect, useState } from 'react';
-import { Badge, Button, Group, Image, Modal, ScrollArea, Stack, Table, Text, Title, UnstyledButton } from '@mantine/core';
+import { Badge, Button, Group, Image, Modal, ScrollArea, Stack, Table, Text, UnstyledButton } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconFolder, IconRocket, IconTrash, IconArrowLeft } from '@tabler/icons-react';
+import { IconFolder, IconTrash } from '@tabler/icons-react';
 import { fileUrl, get, live, post, useStore, type ModelInfo } from '../api';
 import { useT } from '../i18n';
 import type { Route } from '../nav';
@@ -27,9 +27,12 @@ export function ModelList({ items, sel, onPick, empty }: { items: ModelInfo[]; s
                 <div className="icon">{m.icon ? <Image src={fileUrl(m.icon, m.time)} w={40} h={40} fit="contain" /> : null}</div>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <Text size="sm" fw={600} truncate>{m.stem}</Text>
-                  <Text size="xs" c="dimmed" truncate>{t(CAT_KEY[m.category] || m.category)} · {ENGINE[m.engine] || m.engine}</Text>
+                  <Text size="xs" c="dimmed" truncate>{t(CAT_KEY[m.category] || m.category)}</Text>
                 </div>
-                {m.in_export && <Badge size="xs" color="yellow" variant="light">{t('web.in_export')}</Badge>}
+                <Stack gap={3} align="flex-end">
+                  <span className="tag">{ENGINE[m.engine] || m.engine}</span>
+                  {m.in_export && <span className="tag warm">{t('web.in_export')}</span>}
+                </Stack>
               </Group>
             </UnstyledButton>
           );
@@ -50,8 +53,8 @@ export function ModelFacts({ m }: { m: ModelInfo }) {
     [t('web.folder'), m.dir],
   ];
   return (
-    <Table withRowBorders={false} verticalSpacing={3} fz="xs">
-      <Table.Tbody>{rows.map(([k, v]) => <Table.Tr key={k}><Table.Td c="dimmed" w={120}>{k}</Table.Td><Table.Td style={{ wordBreak: 'break-all' }}>{v}</Table.Td></Table.Tr>)}</Table.Tbody>
+    <Table withRowBorders={false} verticalSpacing={2} horizontalSpacing={0} fz="sm">
+      <Table.Tbody>{rows.map(([k, v]) => <Table.Tr key={k}><Table.Td c="dimmed" w={130}>{k}</Table.Td><Table.Td style={{ wordBreak: 'break-all' }}>{v}</Table.Td></Table.Tr>)}</Table.Tbody>
     </Table>
   );
 }
@@ -92,7 +95,7 @@ export default function ModelCheck({ go }: { go: (r: Route) => void }) {
   return (
     <div className="work three">
       <div className="side">
-        <Text className="side-title" size="xs" fw={600} c="dimmed" tt="uppercase">{t('web.drafts')}</Text>
+        <div className="side-title">{t('web.drafts')}</div>
         <ModelList items={items} sel={sel} onPick={pick} empty={t('web.no_drafts')} />
       </div>
       <div className="stage">
@@ -100,20 +103,19 @@ export default function ModelCheck({ go }: { go: (r: Route) => void }) {
       </div>
       <ScrollArea className="panel">
         {m ? (
-          <Stack gap="sm" p="md">
-            <Title order={4}>{m.stem}</Title>
-            <Text size="xs" c="dimmed">{t(CAT_KEY[m.category] || m.category)}</Text>
+          <Stack gap="sm" p="sm">
+            <div><div className="panel-title">{m.stem}</div><div className="field-note">{t(CAT_KEY[m.category] || m.category)}</div></div>
             <ModelFacts m={m} />
             {m.preview && <Image src={fileUrl(m.preview, m.time)} radius="sm" />}
             {m.source && <Group gap={8} align="flex-start"><Image src={fileUrl(m.source)} w={96} h={96} fit="contain" radius="sm" /><Text size="xs" c="dimmed">{t('web.source_picture')}</Text></Group>}
-            {m.rigged && <Badge variant="light">{t('web.has_skeleton')}</Badge>}
-            <Button leftSection={<IconRocket size={16} />} onClick={() => release(false)} loading={busy}>{t('web.release_btn')}</Button>
-            <Text size="xs" c="dimmed">{t('web.release_to', `export/${m.category}/${m.stem}/`)}</Text>
+            {m.rigged && <Badge variant="light" color="patina">{t('web.has_skeleton')}</Badge>}
+            <Button onClick={() => release(false)} loading={busy}>{t('web.release_btn')}</Button>
+            <div className="field-note">{t('web.release_to', `export/${m.category}/${m.stem}/`)}</div>
             <Group grow>
               <Button variant="default" leftSection={<IconFolder size={16} />} onClick={() => post('/api/open', { path: m.dir })}>{t('ui.char_open_folder')}</Button>
               <Button variant="default" color="red" leftSection={<IconTrash size={16} />} onClick={discard}>{t('web.discard')}</Button>
             </Group>
-            <Button variant="subtle" leftSection={<IconArrowLeft size={16} />} onClick={() => go({ section: 'models', step: 'create' })}>{t('web.make_again')}</Button>
+            <Button variant="subtle" color="gray" onClick={() => go({ section: 'models', step: 'create' })}>{t('web.make_again')}</Button>
           </Stack>
         ) : <Text p="md" c="dimmed" size="sm">{t('web.no_drafts')}</Text>}
       </ScrollArea>

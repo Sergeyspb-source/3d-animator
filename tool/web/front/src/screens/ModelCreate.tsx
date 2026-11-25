@@ -2,11 +2,11 @@
 // result straight in the 3D view. It is made as a draft; «Release» puts it into export.
 import { useEffect, useMemo, useState } from 'react';
 import { Accordion, Alert, Button, CloseButton, Group, Image, Kbd, NumberInput, ScrollArea, SegmentedControl, Select, SimpleGrid,
-  Slider, Stack, Switch, Text, TextInput, Title } from '@mantine/core';
+  Slider, Stack, Switch, Text, TextInput } from '@mantine/core';
 import { Dropzone, IMAGE_MIME_TYPE } from '@mantine/dropzone';
 import { useHotkeys, useLocalStorage } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
-import { IconPhotoPlus, IconInfoCircle, IconArrowRight } from '@tabler/icons-react';
+import { IconPhotoPlus, IconCpu } from '@tabler/icons-react';
 import { fileUrl, get, live, onTaskFinished, post, upload, useStore, type TaskSummary } from '../api';
 import { useT } from '../i18n';
 import type { Route } from '../nav';
@@ -113,18 +113,19 @@ export default function ModelCreate({ go, vegetation }: { go: (r: Route) => void
           </Group>
         )}
         {result && task?.status === 'done' && (
-          <Button className="stage-next" rightSection={<IconArrowRight size={16} />} onClick={() => { localStorage.setItem('sf3d.check_sel', `${result.category}/${result.stem}`); go({ section: 'models', step: 'check' }); }}>
+          <Button className="stage-next" variant="default" onClick={() => { localStorage.setItem('sf3d.check_sel', `${result.category}/${result.stem}`); go({ section: 'models', step: 'check' }); }}>
             {t('web.to_check')}
           </Button>)}
       </div>
       <ScrollArea className="panel">
-        <Stack gap="sm" p="md">
-          <Title order={4}>{vegetation ? t('web.step_vegetation') : t('ui.make_a_model')}</Title>
+        <Stack gap="sm" p="sm">
+          <div className="panel-title">{vegetation ? t('web.step_vegetation') : t('ui.make_a_model')}</div>
           <div>
             <Text size="sm" fw={500} mb={4}>{t('ui.engine_2')}</Text>
             <SegmentedControl fullWidth value={f.engine} data={engineData}
               onChange={(v) => set({ engine: v, color_match: v === 'trellis' ? opt.defaults.trellis_color_match : f.engine === 'trellis' ? 0 : f.color_match })} />
-            <Text size="xs" c="dimmed" mt={4}>{engine ? t(engine.key) : ''} · {t('web.gpu_need', ((opt.gpu_needs[f.engine] || 0) / 1024).toFixed(1))}</Text>
+            <div className="field-note" style={{ marginTop: 6 }}>{engine ? t(engine.key) : ''}</div>
+            <Group gap={4} mt={2} wrap="nowrap"><IconCpu size={13} color="var(--ash)" /><span className="field-note">{t('web.gpu_need', ((opt.gpu_needs[f.engine] || 0) / 1024).toFixed(1))}</span></Group>
             {engine && !engine.ok && <Alert color="red" mt={6} p={6}><Text size="xs">{t('web.engine_missing', engine.why || '')}</Text></Alert>}
           </div>
 
@@ -158,7 +159,7 @@ export default function ModelCreate({ go, vegetation }: { go: (r: Route) => void
             <div><Text size="sm" fw={500} mb={4}>{t('ui.what_plant_it_is_for_the_wind_in')}</Text>
               <SegmentedControl fullWidth size="xs" value={f.veg} data={choices(opt.veg)} onChange={(v) => set({ veg: v })} /></div>)}
           <TextInput label={t('web.name')} description={t('web.name_hint')} value={f.name} onChange={(e) => set({ name: e.currentTarget.value })} />
-          <Text size="xs" c="dimmed">{t('web.preset', preset.height_m ?? '—', t(opt.pivots.find((x) => x.id === preset.pivot)?.key || '—'),
+          <Text className="field-note">{t('web.preset', preset.height_m ?? '—', t(opt.pivots.find((x) => x.id === preset.pivot)?.key || '—'),
             t(opt.collisions.find((x) => x.id === preset.collision)?.key || '—'))}</Text>
 
           <Accordion multiple variant="contained" defaultValue={[]} chevronPosition="right">
@@ -237,9 +238,8 @@ export default function ModelCreate({ go, vegetation }: { go: (r: Route) => void
           <Button size="md" onClick={submit} disabled={!canGo} loading={busyUp} rightSection={<Kbd size="xs">Ctrl+Enter</Kbd>}>
             {running ? t('web.queue_another') : t('ui.make_a_model')}
           </Button>
-          <Group gap={6} wrap="nowrap" align="flex-start"><IconInfoCircle size={16} style={{ flexShrink: 0, marginTop: 2 }} />
-            <Text size="xs" c="dimmed">{t('web.draft_note')}</Text></Group>
-          {f.engine !== 'sf3d' && <Text size="xs" c="dimmed">{t('ui.engine_info')}</Text>}
+          <div className="field-note">{t('web.draft_note')}</div>
+          {f.engine !== 'sf3d' && <div className="field-note">{t('ui.engine_info')}</div>}
         </Stack>
       </ScrollArea>
     </div>

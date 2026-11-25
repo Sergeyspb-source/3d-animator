@@ -5,7 +5,6 @@ import { IconChevronDown, IconChevronUp, IconPlayerStop } from '@tabler/icons-re
 import { live, loadLog, post, useStore, type TaskSummary } from '../api';
 import { useT } from '../i18n';
 
-const COLOR: Record<string, string> = { queued: 'gray', running: 'bronze', done: 'teal', error: 'red', cancelled: 'gray' };
 export const since = (t0: number | null, t1?: number | null) => {
   if (!t0) return '';
   const s = Math.max(0, Math.round((t1 || Date.now() / 1000) - t0));
@@ -17,14 +16,15 @@ export function TaskRow({ task, selected, onPick }: { task: TaskSummary; selecte
   return (
     <UnstyledButton className={'task-row' + (selected ? ' on' : '')} onClick={onPick}>
       <Group gap={8} wrap="nowrap">
-        <Badge size="xs" color={COLOR[task.status]} variant={task.status === 'running' ? 'filled' : 'light'} w={84}>{t('web.st_' + task.status)}</Badge>
-        <Text size="xs" fw={600} truncate style={{ flex: 1 }}>{task.title}</Text>
-        <Text size="xs" c="dimmed" ff="monospace">{since(task.started || task.created, task.finished)}</Text>
+        <Tooltip label={t('web.st_' + task.status)}><span className={'mark ' + task.status} aria-label={t('web.st_' + task.status)} /></Tooltip>
+        <Text size="sm" fw={600} truncate style={{ flex: 1 }}>{task.title}</Text>
+        <Text size="xs" c="dimmed">{task.status === 'running' ? since(task.started, null) : t('web.st_' + task.status)}</Text>
         {(task.status === 'running' || task.status === 'queued') && (
           <Tooltip label={t('web.cancel')}><ActionIcon size="xs" variant="subtle" color="red" onClick={(e) => { e.stopPropagation(); post(`/api/tasks/${task.id}/cancel`); }}><IconPlayerStop size={12} /></ActionIcon></Tooltip>)}
       </Group>
-      {task.status === 'running' && <Progress mt={3} size={3} value={(task.progress ?? 0) * 100} animated={task.progress == null} striped={task.progress == null} />}
-      {task.status !== 'running' && task.error && <Text size="xs" c="red" truncate>{task.error}</Text>}
+      {task.status === 'running' && <Text size="xs" c="dimmed" truncate>{task.last}</Text>}
+      {task.status === 'running' && task.progress != null && <Progress mt={3} size={3} value={task.progress * 100} />}
+      {task.status !== 'running' && task.error && <Text size="xs" c="rust.4" truncate>{task.error}</Text>}
     </UnstyledButton>
   );
 }
@@ -58,12 +58,13 @@ export default function Dock({ open, toggle }: { open: boolean; toggle: () => vo
         <Text size="xs" fw={600}>{t('web.dock')}</Text>
         {run ? (
           <Group gap={6} wrap="nowrap" style={{ flex: 1, minWidth: 0 }}>
-            <Text size="xs" truncate>▶ {run.title} · {run.last}</Text>
+            <span className="mark running" />
+            <Text size="xs" fw={600}>{run.title}</Text>
+            <Text size="xs" c="dimmed" truncate>{run.last}</Text>
             {run.progress != null && <Progress w={90} size="sm" value={run.progress * 100} />}
           </Group>
         ) : <Text size="xs" c="dimmed" style={{ flex: 1 }}>{t('web.gpu_idle')}</Text>}
         {waiting > 0 && <Badge size="xs" variant="light">{t('web.waiting', waiting)}</Badge>}
-        <Text size="xs" c="dimmed">` </Text>
       </Group>
       {open && (
         <div className="dock-body">

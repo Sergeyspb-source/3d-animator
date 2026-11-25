@@ -1,6 +1,6 @@
 // Models → Release: what is in export (the game takes it from there), newest first, filtered by category.
 import { useEffect, useState } from 'react';
-import { Button, Image, ScrollArea, Select, Stack, Text, Title } from '@mantine/core';
+import { Button, Image, ScrollArea, Select, Stack, Text } from '@mantine/core';
 import { IconFolder } from '@tabler/icons-react';
 import { fileUrl, get, live, post, useStore, type ModelInfo } from '../api';
 import { useT } from '../i18n';
@@ -26,12 +26,11 @@ export default function ModelRelease() {
       <div className="stage"><Viewer3D url={m ? fileUrl(m.glb, m.time) : null} empty={t('web.no_released')} person /></div>
       <ScrollArea className="panel">
         {m && (
-          <Stack gap="sm" p="md">
-            <Title order={4}>{m.stem}</Title>
-            <Text size="xs" c="dimmed">{t(CAT_KEY[m.category] || m.category)} · {new Date(m.time * 1000).toLocaleString()}</Text>
+          <Stack gap="sm" p="sm">
+            <div><div className="panel-title">{m.stem}</div><div className="field-note">{t(CAT_KEY[m.category] || m.category)}, {new Date(m.time * 1000).toLocaleString()}</div></div>
             <ModelFacts m={m} />
             {m.preview && <Image src={fileUrl(m.preview, m.time)} radius="sm" />}
-            <Text size="xs" c="dimmed">{m.files.join(' · ')}</Text>
+            <div className="field-note">{m.files.join(', ')}</div>
             <Button variant="default" leftSection={<IconFolder size={16} />} onClick={() => post('/api/open', { path: m.dir })}>{t('ui.char_open_folder')}</Button>
             <Text size="xs" c="dimmed">{t('web.release_game_note')}</Text>
           </Stack>)}

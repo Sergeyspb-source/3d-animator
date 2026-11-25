@@ -16,7 +16,7 @@ export function TasksScreen() {
   return (
     <div className="work tasks">
       <ScrollArea className="side">
-        <Text className="side-title" size="xs" fw={600} c="dimmed" tt="uppercase">{t('web.tool_tasks')}</Text>
+        <div className="side-title">{t('web.tool_tasks')}</div>
         {list.map((x) => <TaskRow key={x.id} task={x} selected={x.id === shown} onPick={() => live.set((s) => ({ ...s, selected: x.id }))} />)}
         {!list.length && <Text size="sm" c="dimmed" p="sm">{t('web.no_tasks')}</Text>}
       </ScrollArea>
@@ -41,12 +41,12 @@ export function GpuScreen() {
         <Card withBorder>
           <Text size="sm">{gpu.total ? t('ui.video_memory_of_gb_used_gb_free', (gpu.used || 0) / 1024, gpu.total / 1024, free / 1024) : t('ui.could_not_read_the_gpu_data_nvidia')}</Text>
           <Progress mt="xs" value={gpu.total ? (100 * (gpu.used || 0)) / gpu.total : 0} />
-          <Text size="xs" c="dimmed" mt={6}>{t('web.gpu_util', gpu.util ?? '—')} · {gpu.sf3d ? t('web.sf3d_loaded') : t('web.sf3d_not_loaded')}</Text>
+          <Text size="xs" c="dimmed" mt={6}>{t('web.gpu_util', gpu.util ?? '—')}. {gpu.sf3d ? t('web.sf3d_loaded') : t('web.sf3d_not_loaded')}</Text>
         </Card>
         <Table>
           <Table.Tbody>{NEEDS.map((n) => (
-            <Table.Tr key={n.key}><Table.Td>{t(n.key)}</Table.Td><Table.Td ff="monospace">{(n.mb / 1024).toFixed(1)} GB</Table.Td>
-              <Table.Td c={free >= n.mb + 500 ? 'teal' : free >= n.mb ? 'yellow' : 'red'}>{free >= n.mb + 500 ? t('ui.fits') : free >= n.mb ? t('ui.tight_better_free_some') : t('ui.will_not_fit_another_gb_short', (n.mb - free) / 1024)}</Table.Td></Table.Tr>))}
+            <Table.Tr key={n.key}><Table.Td>{t(n.key)}</Table.Td><Table.Td>{(n.mb / 1024).toFixed(1)} GB</Table.Td>
+              <Table.Td c={free >= n.mb + 500 ? 'patina.4' : free >= n.mb ? 'yellow' : 'rust.4'}>{free >= n.mb + 500 ? t('ui.fits') : free >= n.mb ? t('ui.tight_better_free_some') : t('ui.will_not_fit_another_gb_short', (n.mb - free) / 1024)}</Table.Td></Table.Tr>))}
           </Table.Tbody>
         </Table>
         <Group><Button variant="default" onClick={unload} disabled={!gpu.sf3d}>{t('ui.unload_sf3d_from_video_memory')}</Button></Group>

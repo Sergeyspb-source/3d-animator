@@ -13,11 +13,11 @@ export default function Placeholder({ section, step, gradio }: { section: Sectio
     <div className="placeholder">
       <Card withBorder radius="md" p="xl" maw={720}>
         <Stack gap="md">
-          <Group gap="xs"><Badge variant="outline" color="gray">{t('web.in_gradio')}</Badge><Text size="sm" c="dimmed">{t(section.key)}</Text></Group>
-          <Title order={3}>{t(step.key)}</Title>
+          <div><Text size="sm" c="dimmed">{t(section.key)}</Text><Title order={3}>{t(step.key)}</Title></div>
+          <Badge variant="outline" color="gray" w="fit-content">{t('web.in_gradio')}</Badge>
           <Text>{t(step.about)}</Text>
           {section.object && (
-            <Text size="sm" c={wrongKind || !cur ? 'yellow' : 'dimmed'}>
+            <Text size="sm" c={wrongKind || !cur ? 'ember.3' : 'dimmed'}>
               {cur ? t('web.works_on', cur.name) : t(section.object === 'creature' ? 'web.need_creature' : 'web.need_character')}
             </Text>)}
           {step.gradio && (

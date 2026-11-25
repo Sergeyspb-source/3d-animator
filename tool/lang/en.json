@@ -3139,5 +3139,7 @@
  "web.input_dir": "Source pictures",
  "web.key_set": "key set",
  "web.key_unset": "no key",
- "web.settings_note": "The folders and the key are still changed in the Gradio app (Options → Settings): both read one config.json."
+ "web.settings_note": "The folders and the key are still changed in the Gradio app (Options → Settings): both read one config.json.",
+ "web.v_faces_unit": "faces",
+ "web.done_mark": "done"
 }

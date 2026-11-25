@@ -1,22 +1,48 @@
-/* Layout: the shell is the whole window; a step's work area is a grid of [list] | 3D stage | properties panel,
-   the panel and the list grow with the screen (laptop -> wide monitor), and stack under the stage when narrow. */
+/* The asset forge.
+   Colour: iron #1d2126 panels, quench #171a1e rails (menu, dock), seam #333a42 lines, tin #dde1e5 text, ash #8e98a3
+   secondary, ember #e0782e only for heat (the GPU at work, a step's one main action), patina #5fae94 done, rust #c4553f
+   failed. Type: Golos Text with tabular figures; JetBrains Mono only in the job log.
+   Layout: [menu rail] | [list] | 3D anvil (the largest, lightest surface) | [properties]; dock at the bottom.
+   Docked surfaces are square, controls 4px, the floating viewer plate 6px. The one moving thing is the heat seam on
+   top of the work area while a GPU job runs. Panels and list grow with the window and stack when it is narrow. */
 :root {
-  --panel-w: clamp(320px, 25vw, 460px);
-  --list-w: clamp(210px, 15vw, 300px);
-  --stage-a: #e7ebf0; --stage-b: #d3dae2;
-  --line: var(--mantine-color-default-border);
+  --panel-w: clamp(320px, 24vw, 440px);
+  --list-w: clamp(210px, 15vw, 290px);
+  --rail: var(--mantine-color-dark-8);
+  --panel: var(--mantine-color-dark-7);
+  --seam: var(--mantine-color-dark-5);
+  --lift: var(--mantine-color-dark-6);
+  --tin: var(--mantine-color-dark-0);
+  --ash: var(--mantine-color-dark-2);
+  --anvil-a: #3a434e; --anvil-b: #20252b;
+  --heat-a: #c9651f; --heat-b: #f2c14e;
 }
-[data-mantine-color-scheme='dark'] { --stage-a: #20262e; --stage-b: #121519; }
+[data-mantine-color-scheme='light'] {
+  --rail: #e4e8ec; --panel: #f4f6f8; --seam: #cdd3da; --lift: #e9edf1; --tin: #1d2126; --ash: #5b6570;
+  --anvil-a: #dfe4e9; --anvil-b: #b9c2cb;
+}
 html, body, #root { height: 100%; }
-body { overflow: hidden; }
+body { overflow: hidden; font-variant-numeric: tabular-nums; background: var(--rail); }
+:focus-visible { outline: 2px solid var(--mantine-color-ember-4); outline-offset: 1px; }
 
-.topbar .brand { font-size: 15px; letter-spacing: .08em; color: var(--mantine-color-bronze-5); }
-.topbar .crumbs { max-width: 32vw; }
+/* top bar */
+.topbar { background: var(--rail); }
+.topbar .brand { font-weight: 700; font-size: 15px; letter-spacing: .02em; color: var(--tin); }
+.topbar .brand b { color: var(--mantine-color-ember-5); font-weight: 700; }
 .topbar .gpu { cursor: pointer; }
+.heatmeter { width: 76px; height: 6px; border-radius: 3px; background: var(--lift); overflow: hidden; }
+.heatmeter i { display: block; height: 100%; border-radius: 3px; transition: width .6s ease; }
 
-.main { height: 100dvh; display: flex; flex-direction: column; }
-.main > * { flex: 1; min-height: 0; }
+/* menu rail */
+.navrail { background: var(--rail); }
+.navrail .mantine-NavLink-root { border-radius: 4px; padding-block: 5px; }
+.navrail .mantine-NavLink-root[data-active] { background: var(--lift); color: var(--tin); box-shadow: inset 2px 0 0 var(--mantine-color-ember-5); }
+.navrail .mantine-NavLink-root[data-active] .mantine-NavLink-label { font-weight: 600; }
+.step-n { width: 12px; color: var(--ash); font-size: 12px; text-align: right; }
 
+/* work area */
+.main { height: 100dvh; display: flex; flex-direction: column; position: relative; }
+.main > .work, .main > .page, .main > .placeholder { flex: 1; min-height: 0; }
 .work { display: grid; min-height: 0; height: 100%; }
 .work.two { grid-template-columns: minmax(0, 1fr) var(--panel-w); }
 .work.three { grid-template-columns: var(--list-w) minmax(0, 1fr) var(--panel-w); }
@@ -28,44 +54,73 @@ body { overflow: hidden; }
   .work .side { max-height: 30vh; }
 }
 
-.stage { position: relative; background: radial-gradient(120% 90% at 50% 20%, var(--stage-a), var(--stage-b)); overflow: hidden; }
-.panel { border-left: 1px solid var(--line); background: var(--mantine-color-body); }
-.side { border-right: 1px solid var(--line); display: flex; flex-direction: column; background: var(--mantine-color-body); }
-.side .list { flex: 1; }
-.side-title { padding: 10px 12px 4px; letter-spacing: .06em; }
-.page { height: 100%; }
+/* the heat seam: only while a GPU job runs; its fill is the job's progress, a moving sheen when that is unknown */
+.heat { position: fixed; top: var(--app-shell-header-offset, 44px); left: var(--app-shell-navbar-offset, 0px); right: 0; height: 3px; z-index: 5; pointer-events: none; background: transparent; }
+.heat i { display: block; height: 100%; width: calc(var(--p, 1) * 100%); transition: width .5s ease;
+  background: linear-gradient(90deg, var(--heat-a), var(--heat-b) 60%, #fff4d6); box-shadow: 0 0 10px 1px rgba(240, 140, 50, .55); }
+.heat.unknown i { width: 100%; background: linear-gradient(90deg, transparent, var(--heat-a) 30%, var(--heat-b) 50%, var(--heat-a) 70%, transparent);
+  background-size: 40% 100%; background-repeat: no-repeat; animation: sheen 2.4s linear infinite; }
+@keyframes sheen { from { background-position: -40% 0; } to { background-position: 140% 0; } }
+@media (prefers-reduced-motion: reduce) { .heat.unknown i { animation: none; background-size: 100% 100%; } }
 
+.stage { position: relative; background: radial-gradient(110% 85% at 50% 30%, var(--anvil-a), var(--anvil-b)); overflow: hidden; }
+.panel { border-left: 1px solid var(--seam); background: var(--panel); }
+.side { border-right: 1px solid var(--seam); display: flex; flex-direction: column; background: var(--panel); }
+.side .list { flex: 1; }
+.side-title { padding: 12px 12px 4px; font-weight: 600; font-size: 13px; color: var(--tin); }
+.page { height: 100%; background: var(--panel); }
+.panel-title { font-size: 17px; font-weight: 600; color: var(--tin); }
+.field-note { font-size: 12px; color: var(--ash); line-height: 1.4; }
+
+/* the 3D view */
 .viewer { position: absolute; inset: 0; }
 .viewer-canvas { position: absolute; inset: 0; }
 .viewer-canvas canvas { display: block; outline: none; }
-.viewer-tools { position: absolute; top: 10px; left: 10px; right: 10px; pointer-events: none; }
-.viewer-tools > * { pointer-events: auto; }
-.viewer-badge { position: absolute; left: 10px; bottom: 10px; }
-.viewer-empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; pointer-events: none; }
+.viewer-tools { position: absolute; top: 10px; left: 10px; display: flex; gap: 2px; align-items: center; padding: 3px;
+  border-radius: 6px; background: color-mix(in srgb, var(--rail) 82%, transparent); border: 1px solid var(--seam); backdrop-filter: blur(6px); }
+.viewer-tools .sep { width: 1px; height: 18px; background: var(--seam); margin: 0 3px; }
+.vt { height: 26px; min-width: 26px; padding: 0 8px; border: 0; border-radius: 4px; background: transparent; color: var(--ash);
+  font: 500 12px/1 var(--mantine-font-family); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.vt:hover { color: var(--tin); background: var(--lift); }
+.vt.on { color: var(--tin); background: var(--lift); box-shadow: inset 0 -2px 0 var(--mantine-color-ember-5); }
+.vt.icon { padding: 0; }
+.viewer-badge { position: absolute; left: 10px; bottom: 10px; display: flex; gap: 14px; padding: 5px 10px; border-radius: 6px;
+  background: color-mix(in srgb, var(--rail) 82%, transparent); border: 1px solid var(--seam); font-size: 12px; color: var(--tin); }
+.viewer-badge span em { font-style: normal; color: var(--ash); margin-left: 4px; }
+.viewer-empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; pointer-events: none; color: var(--ash); max-width: 520px; margin: auto; }
 .viewer-busy { position: absolute; top: 50%; left: 50%; }
 .stage-strip { position: absolute; right: 10px; bottom: 10px; max-width: 60%; justify-content: flex-end; }
-.stage-strip .thumb { background: var(--mantine-color-body); border: 1px solid var(--line); border-radius: 6px; padding: 3px; }
-.stage-next { position: absolute; top: 54px; right: 10px; }
+.stage-strip .thumb { background: var(--panel); border: 1px solid var(--seam); border-radius: 4px; padding: 3px; }
+.stage-next { position: absolute; top: 10px; right: 10px; }
 
-.drop { border-width: 1px; }
-.slot { border: 1px solid var(--line); border-radius: 6px; padding: 4px; background: var(--mantine-color-default); position: relative; }
+.drop { border-width: 1px; background: var(--lift); }
+.slot { border: 1px solid var(--seam); border-radius: 4px; padding: 4px; background: var(--lift); position: relative; }
 .slot.small { padding: 2px; }
-.slot-x { position: absolute; top: -6px; right: -6px; background: var(--mantine-color-body); border-radius: 50%; }
+.slot-x { position: absolute; top: -6px; right: -6px; background: var(--panel); border-radius: 50%; }
 
-.list-item { display: block; width: 100%; padding: 6px 8px; border-radius: 6px; }
-.list-item:hover { background: var(--mantine-color-default-hover); }
-.list-item.on { background: var(--mantine-color-bronze-light); }
-.list-item .icon { width: 40px; height: 40px; border-radius: 4px; background: var(--mantine-color-default); flex-shrink: 0; }
+/* lists */
+.list-item { display: block; width: 100%; padding: 6px 8px; border-radius: 4px; }
+.list-item:hover { background: var(--lift); }
+.list-item.on { background: var(--lift); box-shadow: inset 2px 0 0 var(--mantine-color-ember-5); }
+.list-item .icon { width: 40px; height: 40px; border-radius: 4px; background: var(--rail); flex-shrink: 0; }
+.tag { font-size: 11px; color: var(--ash); border: 1px solid var(--seam); border-radius: 3px; padding: 0 5px; white-space: nowrap; }
+.tag.warm { color: var(--mantine-color-ember-3); border-color: var(--mantine-color-ember-8); }
 
-.dock { height: 100%; display: flex; flex-direction: column; }
-.dock-head { height: 34px; flex-shrink: 0; padding: 0 12px; cursor: pointer; border-bottom: 1px solid var(--line); user-select: none; }
+/* the dock: jobs and their log */
+.dock { height: 100%; display: flex; flex-direction: column; background: var(--rail); }
+.dock-head { height: 32px; flex-shrink: 0; padding: 0 12px; cursor: pointer; border-bottom: 1px solid var(--seam); user-select: none; }
 .dock-body { flex: 1; min-height: 0; display: grid; grid-template-columns: clamp(280px, 26vw, 440px) minmax(0, 1fr); }
-.dock-tasks { border-right: 1px solid var(--line); }
-.task-row { display: block; width: 100%; padding: 5px 10px; border-bottom: 1px solid var(--line); }
-.task-row:hover { background: var(--mantine-color-default-hover); }
-.task-row.on { background: var(--mantine-color-bronze-light); }
-.log { min-height: 0; }
-.log pre { margin: 0; padding: 8px 12px; font: 12px/1.45 var(--mantine-font-family-monospace); white-space: pre-wrap; word-break: break-word; }
-.log-stage { display: flex; flex-direction: column; background: var(--mantine-color-body); }
+.dock-tasks { border-right: 1px solid var(--seam); }
+.task-row { display: block; width: 100%; padding: 6px 10px; border-bottom: 1px solid var(--seam); }
+.task-row:hover { background: var(--lift); }
+.task-row.on { background: var(--lift); box-shadow: inset 2px 0 0 var(--mantine-color-ember-5); }
+.mark { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; background: var(--ash); }
+.mark.running { background: var(--mantine-color-ember-5); box-shadow: 0 0 6px var(--mantine-color-ember-5); }
+.mark.done { background: var(--mantine-color-patina-4); }
+.mark.error { background: var(--mantine-color-rust-5); }
+.mark.queued, .mark.cancelled { background: transparent; border: 1px solid var(--ash); }
+.log { min-height: 0; background: var(--panel); }
+.log pre { margin: 0; padding: 8px 12px; font: 12px/1.5 var(--mantine-font-family-monospace); white-space: pre-wrap; word-break: break-word; color: var(--tin); }
+.log-stage { display: flex; flex-direction: column; background: var(--panel); }
 
-.placeholder { display: grid; place-items: start center; padding: 6vh 24px; overflow: auto; }
+.placeholder { display: grid; place-items: start center; padding: 6vh 24px; overflow: auto; background: var(--panel); }

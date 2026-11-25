@@ -128,6 +128,8 @@ TEXTS = {
     "web.v_collision": ("Коллизия для Godot", "Godot collision"),
     "web.v_person": ("Человек 1,75 м для масштаба", "A 1.75 m person for scale"),
     "web.v_faces": ("{} граней", "{} faces"),
+    "web.v_faces_unit": ("граней", "faces"),
+    "web.done_mark": ("сделано", "done"),
     "web.v_failed": ("Модель не открылась: {}", "The model did not open: {}"),
     "web.m": ("м", "m"),
     # create a model
