@@ -872,6 +872,10 @@ if job.get("mask"):   # what of the body the piece hides (the game takes it away
         from body_mask import limb_cover                                    # what is seen and a band round it, body_mask.limb_cover)
         zs = [(o.matrix_world @ v.co).z for o in body for v in o.data.vertices]
         keys = {tuple(x) for x in limb_cover(body, [obj], float(mj["limb_keep"]) / 1750 * (max(zs) - min(zs)), arm)}
+        if kind in ("cuisse", "rerebrace") and float(mj.get("press_in") or 0) > 0:   # (pressed in, not hidden: the limb's skin under it
+            from body_mask import press_under                                      # 25 / 18 mm into it - no hole, a third of the skin out; the
+            H_ = max(zs) - min(zs)                                                 # limb_cover mask left holes at an inner thigh)
+            keys = {tuple(m) for m in press_under(body, [obj], float(mj["press_in"]) / 1750 * H_, 30 / 1750 * H_, by_bone=True)}
     else:
         keys = {tuple(x) for x in body_mask(body, [obj], cover=30, erode=int(job.get("mask_erode", 1)))}   # only what it really covers: no holes beside a strap or at a rim (a garment: more, job mask_erode)
         if mj.get("limb_keep") is not None and kind == "cuirass":   # (a cuirass keeps its own shape and this much skin round its edge:

@@ -625,32 +625,50 @@ def limb_cover(body, pieces, band, arm, share=.5, slip=25):
     return [list(x) for x in sorted(hide)]
 
 
-def _under(body, pieces, margin, reach=.06, deg=30):
+def _under(body, pieces, margin, reach=.06, deg=30, by_bone=False):
     """the body near the piece: [(key, world point, outward normal, under it)], H. Under it: its normal and four rays `deg`
-    round it all meet the piece within `reach` (a share of the body's height)."""
+    round it all meet the piece within `reach` (a share of the body's height) - each side by its own half of a pair only.
+    by_bone: "outward" away from the line of the bone carrying the vertex most (a limb: the middle of the body at a thigh's
+    height lies between the legs, and an inner thigh's normal was turned in); else away from the body's middle at that height."""
     zs = [(o.matrix_world @ v.co).z for o in body for v in o.data.vertices]
     H = max(zs) - min(zs)
     lo = Vector((min(min((o.matrix_world @ v.co)[i] for v in o.data.vertices) for o in pieces) for i in range(3)))
     hi = Vector((max(max((o.matrix_world @ v.co)[i] for v in o.data.vertices) for o in pieces) for i in range(3)))
     m = margin + .05 * H
-    tree, R, e = _bvh(pieces), reach * H, 1e-3 * H
+    trees, R, e = _bvh_sides(pieces), reach * H, 1e-3 * H
     key_of = lambda c: (round(c.x * 1000), round(c.z * 1000), round(-c.y * 1000))  # noqa: E731
     pts = []
     for o in body:
         W, N = o.matrix_world, o.matrix_world.to_3x3().inverted().transposed()
+        vs = _vert_sides(o)
+        names = [g.name for g in o.vertex_groups]
+        arm = next((md.object for md in o.modifiers if md.type == "ARMATURE" and md.object), None)
         for v in o.data.vertices:
             p = W @ v.co
             if lo.x - m <= p.x <= hi.x + m and lo.y - m <= p.y <= hi.y + m and lo.z - m <= p.z <= hi.z + m:
-                pts.append((key_of(v.co), p, (N @ v.normal).normalized()))
+                line = None
+                if by_bone and arm is not None and v.groups:
+                    bo = arm.data.bones.get(names[max(v.groups, key=lambda g: g.weight).group])
+                    if bo is not None:
+                        line = (arm.matrix_world @ bo.head_local, arm.matrix_world @ bo.tail_local)
+                pts.append((key_of(v.co), p, (N @ v.normal).normalized(), vs[v.index], line))
     by_z = {}   # (a Tripo mesh's normals may point in: out from the body's middle at that height)
-    for _, p, _n in pts:
+    for _, p, _n, _s, _l in pts:
         by_z.setdefault(round(p.z / (.02 * H)), []).append(p)
     mid = {z: sum(ps, Vector()) / len(ps) for z, ps in by_z.items()}
     out = []
-    for k, p, n in pts:
-        c = mid[round(p.z / (.02 * H))]
-        if abs(n.z) < .9 and Vector((p.x - c.x, p.y - c.y, 0)).dot(n) < 0:
-            n = -n
+    for k, p, n, sd, line in pts:
+        if line is not None:
+            a0, u = line[0], line[1] - line[0]
+            t = 0.0 if u.length_squared < 1e-12 else max(0.0, min(1.0, (p - a0).dot(u) / u.length_squared))
+            r = p - (a0 + u * t)
+            if r.length > 1e-9 and r.dot(n) < 0:
+                n = -n
+        else:
+            c = mid[round(p.z / (.02 * H))]
+            if abs(n.z) < .9 and Vector((p.x - c.x, p.y - c.y, 0)).dot(n) < 0:
+                n = -n
+        tree = trees.get(sd) or trees.get("M") or next(iter(trees.values()))
         q = p + n * e
         out.append((k, p, n, all(tree.ray_cast(q, d, R)[0] is not None for d in _cone(n, deg))))
     return out, H
@@ -678,7 +696,7 @@ def keep_band(body, keys, pieces, band, reach=.06, deg=30):
     return [k for k in keys if len(k) != 3 or tuple(k[:3]) not in back]
 
 
-def press_under(body, pieces, depth, fade, reach=.06, deg=30):
+def press_under(body, pieces, depth, fade, reach=.06, deg=30, by_bone=False):
     """The skin under a rigid piece pressed `depth` into the body along its normal (2026-11-25, the user's idea: the belly came
     out through the steel cuirass's lower edge in a step - pressed in, it stays under it, and no hole opens: the skin is
     there, only deeper), the skin shown beside the piece less and less over `fade` from the skin under it (the edge seems to
@@ -686,7 +704,7 @@ def press_under(body, pieces, depth, fade, reach=.06, deg=30):
     from mathutils.kdtree import KDTree
     if depth <= 0:
         return []
-    pts, _H = _under(body, pieces, fade, reach, deg)
+    pts, _H = _under(body, pieces, fade, reach, deg, by_bone)
     under = [p for _k, p, _n, u in pts if u]
     if not under:
         return []

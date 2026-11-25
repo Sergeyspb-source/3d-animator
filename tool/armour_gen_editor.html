@@ -7203,7 +7203,10 @@ const styleSet = () => (S.piece === 'cuirass' ? STYLES.cuirass : isLimb() ? STYL
 // own shape, the body in it hidden the same way). The waist and the hips open far in the clips (the user, 2026-11-25): measured
 // on the guards' 61 clips (work/wear_test/torso_band)
 const TUBED = ['bracer', 'greave', 'cuisse', 'rerebrace'];
-const LIMB_KEEP = { bracer: 20, greave: 20, cuisse: 55, rerebrace: 30, cuirass: 110 };   // (0 holes in the clips: old masks left 2071 hole vertices on a cuisse, 1341 on a steel cuirass)
+const LIMB_KEEP = { bracer: 20, greave: 20, cuisse: 55, rerebrace: 30, cuirass: 110 };
+// the skin under it pressed into the body instead of hidden (mm on a man 1.75 m tall): 0 holes, the skin coming out through it
+// a third or less on the guards' clips (2026-11-25; cuisse 180 -> 66 vertices, rerebrace 17 -> 0)
+const PRESS_IN = { cuirass: 25, cuisse: 25, rerebrace: 18 };   // (0 holes in the clips: old masks left 2071 hole vertices on a cuisse, 1341 on a steel cuirass)
 function applyStyle(k) {
   const set = styleSet(); if (!set || !set[k]) return;
   // a shield of another shape is another shield: the last one's pictures, dents, pinches, its place on the arm and its
@@ -7217,6 +7220,7 @@ function applyStyle(k) {
   Object.assign(S.p, set[k]);
   if (isLimb()) S.p.straps = S.piece === 'greave' || S.piece === 'cuisse' ? 3 : 2;   // a greave has three straps, a bracer two
   if (LIMB_KEEP[S.piece] != null) S.p.limb_keep = LIMB_KEEP[S.piece];   // (the skin kept under it: each its own, from the clips)
+  if (PRESS_IN[S.piece] != null) S.p.press_in = PRESS_IN[S.piece];
   if (['weapon_greatsword', 'weapon_greataxe'].includes(k) && S.sides.length > 1) S.sides = ['R'];   // a two-handed one: one, held in both
   S.style = k; changed('style');
   if (newShape) genStale = true;   // the generator's picture made again for this outline (when it is open)
@@ -7232,7 +7236,7 @@ const SPEC = [
     ['thickness', 2, 30, 1, '{{js:ag.thickness}}', '', 'rad'],
     ['relief', 0, 1, .05, '{{js:ag.relief}}', '{{js:ag.relief_info}}', '', () => !['glove', 'undercloth', ...GARB].includes(S.piece)],
     ['limb_keep', 0, 120, 5, '{{js:ag.limb_keep}}', '{{js:ag.limb_keep_info}}', '', isP(...TUBED, 'cuirass')],
-    ['press_in', 0, 40, 1, '{{js:ag.press_in}}', '{{js:ag.press_in_info}}', '', isP('cuirass')],
+    ['press_in', 0, 40, 1, '{{js:ag.press_in}}', '{{js:ag.press_in_info}}', '', isP('cuirass', 'cuisse', 'rerebrace')],
     ['top_cut', 0, 30, 1, '{{js:ag.top_cut}}', '{{js:ag.top_cut_info}}', 'pc', isLimb],
     ['bottom_cut', 0, 30, 1, '{{js:ag.bottom_cut}}', '{{js:ag.bottom_cut_info}}', 'pc', isLimb],
     ['neckline', 0, 25, 1, '{{js:ag.neckline}}', '{{js:ag.neckline_info}}', 'pc', isP('cuirass')],
@@ -7714,6 +7718,7 @@ function setPiece(k, keep) {
     S.p.fitted = false;   // (tights chosen before: not the next trousers' unless chosen again)
     Object.assign(S.p, PIECES[k].defaults);
     if (LIMB_KEEP[k] != null) S.p.limb_keep = LIMB_KEEP[k];   // (the skin kept under it: each its own, also with no style picked)
+    if (PRESS_IN[k] != null) S.p.press_in = PRESS_IN[k];
     if (HAIRY.includes(k)) S.p[k] = '';   // (no style chosen yet: Blender makes none until one is picked)
     S.p.pinches = []; S.p.paints = [];
   }
@@ -9319,9 +9324,9 @@ function payload() {   // every part in one mesh: positions (glTF axes), faces (
     // a bracer, a greave, a cuisse, a rerebrace, a cuirass: the limb, the body in it hidden but for this much skin round what is
     // seen (mm on a man 1.75 m tall)
     limb_keep: [...TUBED, 'cuirass'].includes(S.piece) ? (S.p.limb_keep ?? LIMB_KEEP[S.piece]) : null,
-    // a cuirass: the skin under it pressed this far into the body (mm on a man 1.75 m tall) - the belly came out through a
-    // rigid cuirass's lower edge in a step (body_mask.press_under)
-    press_in: S.piece === 'cuirass' ? (S.p.press_in ?? 25) : null };
+    // a cuirass, a cuisse, a rerebrace: the skin under it pressed this far into the body (mm on a man 1.75 m tall) - the belly
+    // came out through a rigid cuirass's lower edge in a step (body_mask.press_under)
+    press_in: PRESS_IN[S.piece] != null ? (S.p.press_in ?? PRESS_IN[S.piece]) : null };
 }
 let busy = false;
 // one request at a time: they go through the one hidden field of the app's page, a second one sent at once would take
