@@ -6,7 +6,7 @@ import { notifications } from '@mantine/notifications';
 import { IconFolder, IconPlus, IconTrash } from '@tabler/icons-react';
 import { fileUrl, get, live, post, upload, useStore } from '../api';
 import { useT } from '../i18n';
-import { useCurrent, useObjects } from '../objects';
+import { PickList, useCurrent, useObjects } from '../objects';
 import type { Route } from '../nav';
 import Viewer3D from '../components/Viewer3D';
 
@@ -83,6 +83,7 @@ export default function CharOverview({ go }: { go: (r: Route) => void }) {
             <div className="panel-title">{o?.name || t('web.sec_character')}</div>
             {o && <div className="field-note">{o.dir}</div>}
           </div>
+          {!(cur && !cur.creature) && <PickList />}
           {o && <>
             <Row title={t('ui.skeleton')} ok={!!rig} onOpen={step('character', 'skeleton')}
               state={rig ? `${t(rig.kind === 'landmark' ? 'web.ov_landmark' : 'web.ov_auto')}, ${t('web.ov_bones', rig.bones)}` : t('web.ov_none')}

@@ -7,7 +7,7 @@ import { notifications } from '@mantine/notifications';
 import { IconFolder, IconPlus, IconTrash } from '@tabler/icons-react';
 import { fileUrl, get, live, onTaskFinished, post, upload, useStore, type TaskSummary } from '../api';
 import { plain, useT } from '../i18n';
-import { useCurrent, useObjects } from '../objects';
+import { PickList, useCurrent, useObjects } from '../objects';
 import type { Route } from '../nav';
 import EditorFrame from '../components/EditorFrame';
 import Viewer3D from '../components/Viewer3D';
@@ -75,6 +75,7 @@ export function CrOverviewScreen({ go }: { go: (r: Route) => void }) {
       <ScrollArea className="panel">
         <Stack gap="sm" p="sm">
           <div><div className="panel-title">{o?.name || t('cr.section')}</div>{o && <div className="field-note">{o.dir}</div>}</div>
+          {!id && <PickList creatures />}
           {o && <>
             {row(t('ui.skeleton'), rig ? t('web.cr_rig_state', rig.bones, Object.entries(rig.paws).map(([k, n]) => `${k} ${n}`).join(', ') || '—', rig.tail) : t('web.ov_none'), !!rig, 'skeleton',
               rig ? `${rig.jaw ? t('web.cr_jaw') : t('web.cr_no_jaw')}, ${rig.file}, ${rig.when}` : t('web.ov_skeleton_hint'))}
