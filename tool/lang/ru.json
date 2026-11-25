@@ -3200,5 +3200,15 @@
  "web.face_no_rig_title": "Сначала нужен скелет",
  "web.task_face": "Лицо на скелете",
  "web.task_face_parts": "Детали лица",
- "web.task_lipsync": "Липсинк"
+ "web.task_lipsync": "Липсинк",
+ "web.anim_watch": "Смотреть клипы",
+ "web.anim_proc": "Свои клипы",
+ "web.anim_mixamo": "Mixamo (FBX)",
+ "web.anim_kind_anim": "Свои",
+ "web.anim_kind_fbx": "Mixamo",
+ "web.anim_none": "Клипов ещё нет: добавьте их в «Свои клипы» или «Mixamo (FBX)».",
+ "web.anim_has": "У персонажа уже есть свои клипы: {}. Новые заменят их.",
+ "web.task_anim": "Свои клипы",
+ "web.task_clipcheck": "Проверка клипов",
+ "web.task_fbx": "Клипы Mixamo"
 }

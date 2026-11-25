@@ -155,6 +155,17 @@ TEXTS = {
     "web.task_face": ("Лицо на скелете", "The face on the skeleton"),
     "web.task_face_parts": ("Детали лица", "Face parts"),
     "web.task_lipsync": ("Липсинк", "Lip sync"),
+    # animations
+    "web.anim_watch": ("Смотреть клипы", "Watch the clips"),
+    "web.anim_proc": ("Свои клипы", "Own clips"),
+    "web.anim_mixamo": ("Mixamo (FBX)", "Mixamo (FBX)"),
+    "web.anim_kind_anim": ("Свои", "Own"),
+    "web.anim_kind_fbx": ("Mixamo", "Mixamo"),
+    "web.anim_none": ("Клипов ещё нет: добавьте их в «Свои клипы» или «Mixamo (FBX)».", "No clips yet: add them in «Own clips» or «Mixamo (FBX)»."),
+    "web.anim_has": ("У персонажа уже есть свои клипы: {}. Новые заменят их.", "The character has own clips already: {}. New ones replace them."),
+    "web.task_anim": ("Свои клипы", "Own clips"),
+    "web.task_clipcheck": ("Проверка клипов", "Clip check"),
+    "web.task_fbx": ("Клипы Mixamo", "Mixamo clips"),
     # character
     "web.open": ("открыть", "open"),
     "web.files": ("Файлы в папке: {}", "Files in the folder: {}"),

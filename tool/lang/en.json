@@ -3200,5 +3200,15 @@
  "web.face_no_rig_title": "A skeleton first",
  "web.task_face": "The face on the skeleton",
  "web.task_face_parts": "Face parts",
- "web.task_lipsync": "Lip sync"
+ "web.task_lipsync": "Lip sync",
+ "web.anim_watch": "Watch the clips",
+ "web.anim_proc": "Own clips",
+ "web.anim_mixamo": "Mixamo (FBX)",
+ "web.anim_kind_anim": "Own",
+ "web.anim_kind_fbx": "Mixamo",
+ "web.anim_none": "No clips yet: add them in «Own clips» or «Mixamo (FBX)».",
+ "web.anim_has": "The character has own clips already: {}. New ones replace them.",
+ "web.task_anim": "Own clips",
+ "web.task_clipcheck": "Clip check",
+ "web.task_fbx": "Mixamo clips"
 }

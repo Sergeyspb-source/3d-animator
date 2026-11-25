@@ -146,3 +146,8 @@ body { overflow: hidden; font-variant-numeric: tabular-nums; background: var(--r
 
 /* an editor shown inside a 3D stage (the speech line): it fills the stage */
 .stage > .equip-frame { position: absolute; inset: 0; height: 100%; }
+
+/* animations: the clip check's report over the viewer; the clip sheets and the Mixamo table in the stage */
+.checkbar { display: flex; gap: 8px; align-items: flex-start; max-height: 30vh; overflow: auto; padding: 8px 12px; background: var(--rail); border-bottom: 1px solid var(--seam); }
+.checkbar pre { margin: 0; flex: 1; font: 12px/1.5 var(--mantine-font-family); white-space: pre-wrap; color: var(--tin); }
+.stage.sheets, .stage.table-stage { background: var(--panel); }

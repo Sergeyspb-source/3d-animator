@@ -35,6 +35,7 @@ import models as M  # noqa: E402  (patches sf3d_tool.load_config first)
 import equip as EQ  # noqa: E402
 import character as CH  # noqa: E402
 import face as FC  # noqa: E402
+import anims as AN  # noqa: E402
 
 for k, env in (("export_dir", "SF3D_EXPORT_DIR"), ("work_dir", "SF3D_WORK_DIR")):
     if os.environ.get(env):
@@ -489,6 +490,63 @@ async def face_lipsync(req: Request):
     v = _char(p.get("id") or "")
     audio = str(_allowed(p.get("audio") or ""))
     return _char_task("web.task_lipsync", v, FC.lipsync_task(v, audio, p.get("text") or "", p.get("lang") or "ru"), "lipsync")
+
+
+# ------------------------------------------------------------------ «Character → Animations»
+@app.get("/api/anim/options")
+def anim_options():
+    return AN.options()
+
+
+@app.get("/api/anim/state")
+def anim_state(id: str):
+    return AN.state(_char(id))
+
+
+@app.post("/api/anim/procedural")
+async def anim_procedural(req: Request):
+    p = await req.json()
+    v = _char(p.get("id") or "")
+    return _char_task("web.task_anim", v, AN.procedural_task(v, p.get("clips") or [], p.get("manner") or "normal",
+                                                              str(p.get("seed") or ""), p.get("death") or "back"), "anim")
+
+
+@app.post("/api/anim/check")
+async def anim_check(req: Request):
+    p = await req.json()
+    v = _char(p.get("id") or "")
+    kind = "fbx" if p.get("kind") == "fbx" else "anim"
+    return _char_task("web.task_clipcheck", v, AN.check_task(v, kind), "clipcheck")
+
+
+@app.get("/api/anim/fbx_table")
+def anim_fbx_table(folder: str = ""):
+    if folder:
+        _allowed(folder)
+    return AN.fbx_table(folder)
+
+
+@app.post("/api/anim/fbx_save")
+async def anim_fbx_save(req: Request):
+    p = await req.json()
+    if p.get("folder"):
+        _allowed(p["folder"])
+    return AN.fbx_save(p.get("folder") or "", p.get("rows") or [])
+
+
+@app.post("/api/anim/fbx")
+async def anim_fbx(req: Request):
+    p = await req.json()
+    v = _char(p.get("id") or "")
+    if p.get("folder"):
+        _allowed(p["folder"])
+    return _char_task("web.task_fbx", v, AN.fbx_task(v, p.get("folder") or "", p.get("rows") or [], p.get("weapon") or ""), "fbx")
+
+
+@app.get("/editor/clips")
+def editor_clips(id: str, kind: str = "fbx", weapon: str = ""):
+    v = _char(id)
+    return _page_or_note(lambda: AN.viewer_page(v, "anim" if kind == "anim" else "fbx", weapon))
 
 
 @app.get("/file={rest:path}")
