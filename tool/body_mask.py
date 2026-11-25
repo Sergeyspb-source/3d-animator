@@ -44,6 +44,46 @@ def _bvh_fixed(objs, bones, share=.9, skip=()):
     return BVHTree.FromPolygons(verts, polys)
 
 
+def _side(name):
+    """L, R or M (the middle) by a bone's name: Left/Right (Mixamo, Godot), .L/.R, _L/_R"""
+    n = name.lower()
+    if "left" in n or n.endswith((".l", "_l")):
+        return "L"
+    if "right" in n or n.endswith((".r", "_r")):
+        return "R"
+    return "M"
+
+
+def _vert_sides(o):
+    """each vertex's side: the side of the bones that carry most of it"""
+    names = [g.name for g in o.vertex_groups]
+    out = []
+    for v in o.data.vertices:
+        w = {"L": 0.0, "R": 0.0, "M": 0.0}
+        for g in v.groups:
+            w[_side(names[g.group])] += g.weight
+        out.append(max(w, key=w.get))
+    return out
+
+
+def _bvh_sides(objs):
+    """{side: BVH} of a pair's halves: each side's faces with the middle's (a pair's left cuisse does not cover the right
+    thigh: an inner thigh "covered" by the other leg's piece at rest opened as soon as the legs parted, 2026-11-25)"""
+    verts, polys = [], []
+    for o in objs:
+        base = len(verts)
+        vs = _vert_sides(o)
+        verts += [o.matrix_world @ v.co for v in o.data.vertices]
+        polys += [(tuple(base + i for i in p.vertices), max("LRM", key=lambda t: sum(1 for i in p.vertices if vs[i] == t)))
+                  for p in o.data.polygons]
+    out = {}
+    for sd in "LRM":
+        ps = [p for p, t in polys if t == sd or t == "M" or sd == "M"]
+        if ps:
+            out[sd] = BVHTree.FromPolygons(verts, ps)
+    return out
+
+
 def _cone(n, deg):
     """n and four directions turned deg from it (to its sides): a vertex the piece covers sees it along all of them."""
     t = n.orthogonal().normalized()
@@ -544,13 +584,14 @@ def limb_cover(body, pieces, band, arm, share=.5, slip=25):
     hi = Vector((max(max((o.matrix_world @ v.co)[i] for v in o.data.vertices) for o in pieces) for i in range(3)))
     size = (hi - lo).length
     m = band + .05 * size
-    tree, occ = _bvh(pieces), _bvh_fixed(body, set(carried), share=.5)   # (the limb's own skin, all of it: rays through it are no way out)
+    trees, occ = _bvh_sides(pieces), _bvh_fixed(body, set(carried), share=.5)   # (the limb's own skin, all of it: rays through it are no way out)
     e, near, along = 1e-3 * size, .5 * size, math.cos(math.radians(slip))
     dirs = _hemisphere(800)
     key_of = lambda c: (round(c.x * 1000), round(c.z * 1000), round(-c.y * 1000))  # noqa: E731
     hid_pts, seen_pts = [], []
     for o in body:
         names = [g.name for g in o.vertex_groups]
+        vs = _vert_sides(o)
         W, N = o.matrix_world, o.matrix_world.to_3x3().inverted().transposed()
         for v in o.data.vertices:
             p = W @ v.co
@@ -558,6 +599,7 @@ def limb_cover(body, pieces, band, arm, share=.5, slip=25):
                 continue
             tot = sum(g.weight for g in v.groups)
             k = key_of(v.co)
+            tree = trees.get(vs[v.index]) or trees.get("M") or next(iter(trees.values()))
             if tot > 1e-9 and sum(g.weight for g in v.groups if names[g.group] in carried) / tot >= share and axes:
                 a0, u = min(axes, key=lambda ax: (p - ax[0] - ax[1] * (p - ax[0]).dot(ax[1])).length)   # (the nearest bone's line)
                 rad = p - a0 - u * (p - a0).dot(u)
@@ -581,6 +623,57 @@ def limb_cover(body, pieces, band, arm, share=.5, slip=25):
             if kd.find(q)[2] < band:
                 hide.discard(k)
     return [list(x) for x in sorted(hide)]
+
+
+def keep_band(body, keys, pieces, band, reach=.06, deg=30):
+    """keys (body_mask's list) with `band` of skin given back round the piece's edge (2026-11-25): a cuirass is rigid on the
+    chest; the waist, the hips, the shoulder blades, the armpits bend away from its rims in the clips and opened hollows far
+    under it (measured on the guards' 61 clips: work/wear_test/torso_band). The edge: where the skin stops being under the
+    piece - a body vertex near it is under it when its normal and four rays `deg` round it all meet the piece within `reach`
+    (a share of the body's height); not the skin body_mask left in a groove under it (it is under the piece all the same).
+    The band given back: the hidden vertices nearer than `band` to a vertex not under it. Moved vertices stay as they are."""
+    from mathutils.kdtree import KDTree
+    hid = {tuple(k[:3]) for k in keys if len(k) == 3}
+    if band <= 0 or not hid:
+        return keys
+    zs = [(o.matrix_world @ v.co).z for o in body for v in o.data.vertices]
+    H = max(zs) - min(zs)
+    lo = Vector((min(min((o.matrix_world @ v.co)[i] for v in o.data.vertices) for o in pieces) for i in range(3)))
+    hi = Vector((max(max((o.matrix_world @ v.co)[i] for v in o.data.vertices) for o in pieces) for i in range(3)))
+    m = band * 1.5 + .05 * H
+    tree, R, e = _bvh(pieces), reach * H, 1e-3 * H
+    key_of = lambda c: (round(c.x * 1000), round(c.z * 1000), round(-c.y * 1000))  # noqa: E731
+    pts = []
+    for o in body:
+        W, N = o.matrix_world, o.matrix_world.to_3x3().inverted().transposed()
+        for v in o.data.vertices:
+            p = W @ v.co
+            if lo.x - m <= p.x <= hi.x + m and lo.y - m <= p.y <= hi.y + m and lo.z - m <= p.z <= hi.z + m:
+                pts.append((key_of(v.co), p, (N @ v.normal).normalized()))
+    if not pts:
+        return keys
+    by_z = {}   # (a Tripo mesh's normals may point in: out from the body's middle at that height)
+    for _, p, _n in pts:
+        by_z.setdefault(round(p.z / (.02 * H)), []).append(p)
+    mid = {z: sum(ps, Vector()) / len(ps) for z, ps in by_z.items()}
+    out = []
+    for k, p, n in pts:
+        c = mid[round(p.z / (.02 * H))]
+        r = Vector((p.x - c.x, p.y - c.y, 0))
+        if abs(n.z) < .9 and r.dot(n) < 0:
+            n = -n
+        q = p + n * e
+        under = all(tree.ray_cast(q, d, R)[0] is not None for d in _cone(n, deg))
+        if not under:
+            out.append(p)
+    if not out:
+        return keys
+    kd = KDTree(len(out))
+    for i, q in enumerate(out):
+        kd.insert(q, i)
+    kd.balance()
+    back = {k for k, p, _n in pts if k in hid and kd.find(p)[2] < band}
+    return [k for k in keys if len(k) != 3 or tuple(k[:3]) not in back]
 
 
 if __name__ == "__main__":   # a piece put on before masks were made: blender -b -P body_mask.py -- rigged.glb piece.glb out.json

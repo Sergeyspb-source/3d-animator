@@ -6235,7 +6235,7 @@ function buildPiece(kind, sides, p) {
     // over pieces worn under it (a sleeve): the outermost of the surfaces round the limb, not the skin under them
     const under = [...WORN.values()].some((w) => w.on && layerOf(w) && !isOuter(w));
     const { limb } = limbOf(kind, side), P = profile(kind + side, limb, tA, tB, { foreign: P0.foreign, limbOnly: true, ...(under ? { over: 1.6 } : {}) });
-    P.shell(p.gap, p.relief, kind === 'bracer' || kind === 'greave');   // (a bracer, a greave: their own smooth tube, the limb hidden in it)
+    P.shell(p.gap, p.relief, TUBED.includes(kind));   // (a bracer, a greave, a cuisse, a rerebrace: their own smooth tube, the limb hidden in it)
     const acc = new Acc(); acc.w = weigher(fam, PB[P0.joints[2] + '_' + side], p.rigidity);
     const mid = look(limb, side), R = P.R, thick = p.thickness * R;
     // a greave's bottom level with the floor, not square to the shin (it leans forward and out, and the edge went
@@ -7199,6 +7199,11 @@ Object.assign(STYLES, {
   },
 });
 const styleSet = () => (S.piece === 'cuirass' ? STYLES.cuirass : isLimb() ? STYLES.limb : STYLES[S.piece] || null);
+// their own smooth tube round the limb, the limb hidden in it but for what is seen and LIMB_KEEP mm round that (a cuirass keeps its
+// own shape, the body in it hidden the same way). The waist and the hips open far in the clips (the user, 2026-11-25): measured
+// on the guards' 61 clips (work/wear_test/torso_band)
+const TUBED = ['bracer', 'greave', 'cuisse', 'rerebrace'];
+const LIMB_KEEP = { bracer: 20, greave: 20, cuisse: 55, rerebrace: 30, cuirass: 110 };   // (0 holes in the clips: old masks left 2071 hole vertices on a cuisse, 1341 on a steel cuirass)
 function applyStyle(k) {
   const set = styleSet(); if (!set || !set[k]) return;
   // a shield of another shape is another shield: the last one's pictures, dents, pinches, its place on the arm and its
@@ -7211,6 +7216,7 @@ function applyStyle(k) {
   }
   Object.assign(S.p, set[k]);
   if (isLimb()) S.p.straps = S.piece === 'greave' || S.piece === 'cuisse' ? 3 : 2;   // a greave has three straps, a bracer two
+  if (LIMB_KEEP[S.piece] != null) S.p.limb_keep = LIMB_KEEP[S.piece];   // (the skin kept under it: each its own, from the clips)
   if (['weapon_greatsword', 'weapon_greataxe'].includes(k) && S.sides.length > 1) S.sides = ['R'];   // a two-handed one: one, held in both
   S.style = k; changed('style');
   if (newShape) genStale = true;   // the generator's picture made again for this outline (when it is open)
@@ -7225,7 +7231,7 @@ const SPEC = [
     ['gap', 0, 30, 1, '{{js:ag.gap}}', '', 'rad'],
     ['thickness', 2, 30, 1, '{{js:ag.thickness}}', '', 'rad'],
     ['relief', 0, 1, .05, '{{js:ag.relief}}', '{{js:ag.relief_info}}', '', () => !['glove', 'undercloth', ...GARB].includes(S.piece)],
-    ['limb_keep', 0, 60, 5, '{{js:ag.limb_keep}}', '{{js:ag.limb_keep_info}}', '', isP('bracer', 'greave')],
+    ['limb_keep', 0, 120, 5, '{{js:ag.limb_keep}}', '{{js:ag.limb_keep_info}}', '', isP(...TUBED, 'cuirass')],
     ['top_cut', 0, 30, 1, '{{js:ag.top_cut}}', '{{js:ag.top_cut_info}}', 'pc', isLimb],
     ['bottom_cut', 0, 30, 1, '{{js:ag.bottom_cut}}', '{{js:ag.bottom_cut_info}}', 'pc', isLimb],
     ['neckline', 0, 25, 1, '{{js:ag.neckline}}', '{{js:ag.neckline_info}}', 'pc', isP('cuirass')],
@@ -7706,6 +7712,7 @@ function setPiece(k, keep) {
     if (k !== 'trousers' && was === 'trousers' && S.armour) Object.assign(S.p, S.armour);
     S.p.fitted = false;   // (tights chosen before: not the next trousers' unless chosen again)
     Object.assign(S.p, PIECES[k].defaults);
+    if (LIMB_KEEP[k] != null) S.p.limb_keep = LIMB_KEEP[k];   // (the skin kept under it: each its own, also with no style picked)
     if (HAIRY.includes(k)) S.p[k] = '';   // (no style chosen yet: Blender makes none until one is picked)
     S.p.pinches = []; S.p.paints = [];
   }
@@ -9308,8 +9315,9 @@ function payload() {   // every part in one mesh: positions (glTF axes), faces (
     skin_mask: ['hair', 'beard'].includes(S.piece) ? [...new Set(parts.flatMap((x) => (x.mask ? [...x.mask] : [])))].map((k) => k.split(',').map(Number)) : null,
     // a sleeve's: the arm inside its end left (clothPiece CUFF_FREE)
     mask_free: parts.flatMap((x) => x.maskFree || []).map((k) => k.split(',').map(Number)),
-    // a bracer, a greave: the limb in its tube hidden but for this much skin round what is seen (mm on a man 1.75 m tall)
-    limb_keep: ['bracer', 'greave'].includes(S.piece) ? (S.p.limb_keep ?? 20) : null };
+    // a bracer, a greave, a cuisse, a rerebrace, a cuirass: the limb, the body in it hidden but for this much skin round what is
+    // seen (mm on a man 1.75 m tall)
+    limb_keep: [...TUBED, 'cuirass'].includes(S.piece) ? (S.p.limb_keep ?? LIMB_KEEP[S.piece]) : null };
 }
 let busy = false;
 // one request at a time: they go through the one hidden field of the app's page, a second one sent at once would take
