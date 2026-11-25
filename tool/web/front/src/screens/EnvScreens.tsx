@@ -1,5 +1,5 @@
 // Environment (surfaces, effects, dungeons, destructibles), Models → Reference and Models → Model materials: each a
-// panel of the Gradio tab's settings on the right and its pictures (or the model) on the stage; long jobs are tasks.
+// panel of the former Gradio tab's settings on the right and its pictures (or the model) on the stage; long jobs are tasks.
 import { useEffect, useState } from 'react';
 import { Button, Checkbox, ColorInput, FileButton, Group, Image, NumberInput, ScrollArea, SegmentedControl, Select, Slider, Stack, Switch,
   Text, TextInput, Textarea, UnstyledButton } from '@mantine/core';

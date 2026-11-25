@@ -1,6 +1,6 @@
 """«Character» in the web UI: the current character's overview, its skeleton (UniRig / by landmarks, seams, body
 parts, the pose and the fist, the bones and weights), weight repair and the Godot fitting room - all through the
-Gradio app's own functions (sf3d_ui, landmarks, landmarks_ui, creatures, rwt_pipeline).
+app's own functions (sf3d_ui, landmarks, landmarks_ui, creatures, rwt_pipeline).
 
 The three.js editors (landmark_editor.html, skeleton_view.html) are served as pages of their own with the shell's
 look (adapters/forge.*); they write their markup into «the parent page's hidden field», which the shell keeps."""
@@ -75,9 +75,9 @@ def delete(value: str) -> dict:
     return {"ok": bool(ok), "log": _t("web.char_deleted", value) if ok else _t("web.char_not_deleted", value)}
 
 
-# ------------------------------------------------------------------ generator jobs of the Gradio app, as tasks
+# ------------------------------------------------------------------ generator jobs of the app's handlers, as tasks
 def gradio_job(gen_fn, *args):
-    """A task's function from a Gradio generator yielding (log text, model path, ...)."""
+    """A task's function from a handler generator (in Gradio's form) yielding (log text, model path, ...)."""
     def run(task):
         last = None
         gen = gen_fn(*args)

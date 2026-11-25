@@ -1,5 +1,5 @@
 """«Equipment» (and «Character → Looks») in the web UI: the procedural editor (tool/armour_gen_editor.html) as a page
-of its own, its requests answered by armour_gen_ui.handle as in the Gradio app.
+of its own, its requests answered by armour_gen_ui.handle as in the former Gradio app.
 
 The editor is not changed: it still writes a request into «the parent page's hidden field» and clicks «its hidden
 button», then waits for the answer file (work/status/<model>/<stem>_<action>.wear.json) through /file=<path>. The shell

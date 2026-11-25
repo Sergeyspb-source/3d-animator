@@ -1,5 +1,5 @@
 """«Environment» (surfaces, effects, dungeons, destructibles), «Models → Reference» and «Models → Model materials» in
-the web UI: the Gradio app's own handlers (they give back a log and a gallery of pictures), called with the labels
+the web UI: the app's own handlers (they give back a log and a gallery of pictures), called with the labels
 their tabs used; long ones as tasks of the shared queue."""
 import json
 import types
@@ -9,7 +9,7 @@ import sf3d_tool as T
 import sf3d_ui as UI
 from i18n import t as _t
 
-# choices by id, their text keys (as the Gradio tabs' labels)
+# choices by id, their text keys (as the former Gradio tabs' labels)
 PROVIDERS = [("codex", "ui.chatgpt_subscription_through_codex"), ("openrouter", "ui.openrouter_with_a_key_nano_banana")]
 REF_CATS = [("item", "ui.item_weapon"), ("prop", "ui.environment_object"), ("building", "ui.building"),
             ("vegetation", "ui.plant_tree_bush_grass"), ("character", "ui.character_a_pose"), ("creature", "ui.creature_monster")]

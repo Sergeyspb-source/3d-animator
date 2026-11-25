@@ -1,9 +1,8 @@
-// The left menu: the chains, each step with what the current object already has (a tick, a count) and a mark
-// on the steps whose screen is still in the Gradio app.
+// The left menu: the chains, each step with what the current object already has (a tick, a count).
 import { useEffect, useState } from 'react';
-import { ActionIcon, Badge, Divider, NavLink, ScrollArea, Stack, Switch, Text, Tooltip } from '@mantine/core';
+import { ActionIcon, Badge, Divider, NavLink, ScrollArea, Stack, Text, Tooltip } from '@mantine/core';
 import { useLocalStorage } from '@mantine/hooks';
-import { IconCheck, IconChevronsLeft, IconChevronsRight, IconExternalLink, IconListDetails, IconCpu, IconSettings } from '@tabler/icons-react';
+import { IconCheck, IconChevronsLeft, IconChevronsRight, IconListDetails, IconCpu, IconSettings } from '@tabler/icons-react';
 import { get, live, useStore, type ModelInfo, type SceneObject } from '../api';
 import { useT } from '../i18n';
 import { useCurrent } from '../objects';
@@ -27,7 +26,6 @@ export default function NavMenu({ route, go, small, toggle, canToggle }: { route
   const cur = useCurrent();
   const finished = useStore(live, (s) => s.finished);
   const [drafts, setDrafts] = useState(0);
-  const [onlyReady, setOnlyReady] = useLocalStorage({ key: 'sf3d.only_ready', defaultValue: false });
   const [open, setOpen] = useLocalStorage<Record<string, boolean>>({ key: 'sf3d.nav_open', defaultValue: { models: true, equipment: true } });
   useEffect(() => { get<ModelInfo[]>('/api/models/drafts').then((d) => setDrafts(d.length)).catch(() => {}); }, [finished, route]);
 
@@ -54,15 +52,14 @@ export default function NavMenu({ route, go, small, toggle, canToggle }: { route
             <NavLink key={s.id} label={<Text fw={600} size="md">{t(s.key)}</Text>} leftSection={<s.icon size={18} stroke={1.6} />}
               opened={!!open[s.id] || route.section === s.id} onChange={(o) => setOpen({ ...open, [s.id]: o })} childrenOffset={22}
               description={needs ? t(s.object === 'creature' ? 'web.need_creature' : 'web.need_character') : undefined}>
-              {s.steps.filter((x) => !onlyReady || x.ready).map((x, i) => {
+              {s.steps.map((x, i) => {
                 const m = mark(s.id, x.id, cur, drafts);
                 return (
                   <NavLink key={x.id} active={route.section === s.id && route.step === x.id} onClick={() => go({ section: s.id, step: x.id })}
-                    label={<Text size="sm" c={x.ready ? undefined : 'dimmed'}>{t(x.key)}</Text>}
+                    label={<Text size="sm">{t(x.key)}</Text>}
                     leftSection={<span className="step-n">{i + 1}</span>}
                     rightSection={m === true ? <IconCheck size={14} color="var(--mantine-color-patina-4)" aria-label={t('web.done_mark')} />
-                      : m ? <Badge size="sm" variant="light" color="gray">{m}</Badge>
-                      : !x.ready ? <Tooltip label={t('web.in_gradio_tip')}><IconExternalLink size={13} color="var(--ash)" aria-label={t('web.in_gradio')} /></Tooltip> : null} />
+                      : m ? <Badge size="sm" variant="light" color="gray">{m}</Badge> : null} />
                 );
               })}
             </NavLink>
@@ -73,7 +70,6 @@ export default function NavMenu({ route, go, small, toggle, canToggle }: { route
       <Stack gap={0} p={6}>
         {TOOLS.map((x) => { const I = TOOL_ICON[x.id]; return (
           <NavLink key={x.id} label={t(x.key)} leftSection={<I size={16} />} active={route.section === x.id} onClick={() => go({ section: x.id, step: '' })} />); })}
-        <Switch size="xs" mt={8} mx={10} checked={onlyReady} onChange={(e) => setOnlyReady(e.currentTarget.checked)} label={t('web.only_ready')} />
         {canToggle && <NavLink label={t('web.collapse')} leftSection={<IconChevronsLeft size={16} />} onClick={toggle} />}
       </Stack>
     </Stack>

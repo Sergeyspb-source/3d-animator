@@ -1,5 +1,5 @@
 // The current object (a character or a creature): chosen once on top, every step of its sections works on it.
-// It is the Gradio app's «current character» too (work_dir/current_character.txt).
+// It is the handler modules' «current character» too (work_dir/current_character.txt).
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { Group, Text, UnstyledButton } from '@mantine/core';
 import { get, post, type SceneObject } from './api';

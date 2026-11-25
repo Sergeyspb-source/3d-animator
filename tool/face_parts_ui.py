@@ -1,5 +1,5 @@
-"""Gradio panel: the shared procedural eyes, teeth and tongue (tool/blender_face_parts.py)."""
-import contextlib
+"""The shared procedural eyes, teeth and tongue (tool/blender_face_parts.py): the live preview and the saved set
+(the web UI: Character -> Face, tool/web/face.py)."""
 import hashlib
 import json
 import re
@@ -107,56 +107,3 @@ def preview(cfg, *a):
             shutil.rmtree(out, ignore_errors=True)
             yield _t("face.failed") + info, gr.update(), gr.update()
     _prune(out.parent)
-
-
-def mount(config_loader, accordion=True, tab=None):
-    with (gr.Accordion(_t("face.face_parts_eyes_teeth_tongue_one_set"), open=False) if accordion
-          else contextlib.nullcontext()):
-        gr.Markdown(_t("face.procedural_eyes_a_ball_with_a_cornea"))
-        with gr.Row():
-            with gr.Column():
-                name = gr.Textbox(value="goblin", label=_t("face.set_name_folder_export_face_parts"))
-                with gr.Row():
-                    iris = gr.ColorPicker(value="#4d8033", label=_t("face.iris"))
-                    tongue = gr.ColorPicker(value="#b8545c", label=_t("face.tongue"))
-                eye_style = gr.Radio([_t("face.realistic"), _t("face.anime")], value=_t("face.realistic"), label=_t("face.eye_style"),
-                                     info=_t("face.anime_a_large_even_iris_darker_at"))
-                iris_size = gr.Slider(0, 70, value=0, step=1, label=_t("face.iris_size_0_by_the_style_32_50"))
-                pupil = gr.Slider(0.25, 0.7, value=0.42, step=0.01, label=_t("face.pupil_share_of_the_iris"))
-                slit = gr.Checkbox(value=False, label=_t("face.vertical_pupil_creatures"))
-                sclera = gr.Slider(0, 1, value=0.0, step=0.05, label=_t("face.yellowness_of_the_white"))
-                veins = gr.Slider(0, 1, value=0.35, step=0.05, label=_t("face.veins_on_the_white"))
-            with gr.Column():
-                per = gr.Slider(4, 8, value=7, step=1, label=_t("face.teeth_per_half_arch"))
-                missing = gr.Textbox(label=_t("face.missing_teeth_e_g_u2_l4"))
-                mrand = gr.Slider(0, 0.6, value=0.0, step=0.05, label=_t("face.random_gaps_share"))
-                yellow = gr.Slider(0, 1, value=0.15, step=0.05, label=_t("face.teeth_yellowness_1_rotten_brown"))
-                crooked = gr.Slider(0, 1, value=0.2, step=0.05, label=_t("face.teeth_crookedness"))
-                t_height = gr.Slider(0.5, 1.6, value=1.0, step=0.05, label=_t("face.teeth_height"))
-                t_volume = gr.Slider(0, 1, value=1.0, step=0.05, label=_t("face.teeth_volume"),
-                                     info=_t("face.0_a_solid_white_strip_1_separate"))
-                canines = gr.Checkbox(value=True, label=_t("face.fangs_off_fangs_like_incisors"))
-                fangs = gr.Slider(0, 1, value=0.0, step=0.05, label=_t("face.fang_length"))
-                seed = gr.Number(value=1, precision=0, label=_t("face.variant_random_seed"))
-                go = gr.Button(_t("face.generate_the_set"), variant="primary")
-        args = [name, iris, pupil, slit, sclera, veins, per, missing, mrand, yellow, crooked, fangs, tongue, seed,
-                eye_style, iris_size, t_height, t_volume, canines]
-        live = [seed, iris, pupil, slit, sclera, veins, per, missing, mrand, yellow, crooked, fangs, tongue,
-                eye_style, iris_size, t_height, t_volume, canines]
-        png0, glb0 = cached_preview(config_loader(), *(c.value for c in live))   # the default set, if made before
-        with gr.Row():
-            pic = gr.Image(png0, label=_t("face.preview"), type="filepath", height=300)
-            view = gr.Model3D(glb0, label=_t("face.preview_3d"), height=300, clear_color=(0.75, 0.74, 0.72, 1), camera_position=(90, 75, 0.15))
-        log = gr.Textbox(label=_t("face.progress"), lines=3, interactive=False)
-        files = gr.File(label=_t("face.files"), file_count="multiple", interactive=False)
-        go.click(lambda *a: generate(config_loader(), *a),
-                 args, [log, pic, files, view], concurrency_id="face_parts", concurrency_limit=1)
-        # the live view: remade while a slider moves or a choice changes (the newest request wins; seen settings are cached)
-        def remake(*a):
-            yield from preview(config_loader(), *a)
-        live_kw = dict(fn=remake, inputs=live, outputs=[log, pic, view],
-                       concurrency_id="face_parts", concurrency_limit=1, trigger_mode="always_last", show_progress="minimal")
-        for c in live:
-            (c.input if isinstance(c, (gr.ColorPicker, gr.Textbox, gr.Number)) else c.change)(**live_kw)
-        if tab is not None:   # the current settings shown as soon as the tab is opened (the first time they are built)
-            tab.select(**live_kw)

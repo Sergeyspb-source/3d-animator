@@ -1,12 +1,11 @@
-"""Gradio panel «Equipment: procedural»: a piece of armour made for a rigged character out of its own skin. The editor
+"""«Equipment»: a piece of armour made for a rigged character out of its own skin. The editor
 page (armour_gen_editor.html) builds the piece and its weights live over the character from the parameters, so the
 result is seen (and posed) before it is made; «Generate» sends that geometry here and Blender (blender_armour_gen.py)
 bakes its materials and exports it. The result lies next to the character like a piece put on in the «Armour» mode
 (<model>/<armor|clothes|weapons>/<item>.glb with its fit.json: wear_files), so the Godot fitting room and the editor's
-other pieces see it."""
+other pieces see it. The web UI shows the editor and sends its requests here (tool/web/equip.py)."""
 import base64
 import hashlib
-import html as _html
 import json
 import os
 import re
@@ -17,7 +16,6 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
-import gradio as gr
 import i18n
 from i18n import t as _t
 
@@ -1256,55 +1254,3 @@ def handle(cfg, text):
     WF.status(cfg, rigged, f"_wear_{item}").write_text(
         json.dumps({"id": req.get("id"), **{k: v for k, v in res.items() if k != "shots"}}, ensure_ascii=False), encoding="utf-8")
     return res["log"], res.get("shots")
-
-
-def _frame(page):
-    return ('<iframe srcdoc="%s" style="width:100%%;height:max(780px,86vh);border:0;border-radius:10px"></iframe>'
-            % _html.escape(page, quote=True))
-
-
-def mount(config_loader, char=None, tab=None, active=None):
-    """char: the app's current character (its model with a skeleton); without it the tab has its own choice. tab: this
-    tab, active: the label of the tab shown: the editor (a heavy 3D page) opens when the tab is entered, and on a new
-    character only while the tab is shown (else it goes, not to run hidden)."""
-    cfg0 = config_loader()
-    gr.Markdown(_t("ag.intro"))
-    with gr.Row():
-        rig = gr.Dropdown(characters(cfg0), value=(characters(cfg0) or [(None, None)])[0][1], label=_t("ag.character"), scale=4,
-                          visible=char is None, allow_custom_value=True)
-        refresh = gr.Button(_t("ui.refresh"), scale=1, visible=char is None)
-        open_btn = gr.Button(_t("ag.open_editor"), variant="primary", scale=2)
-    editor = gr.HTML()
-    gr.HTML("<style>.sf3d-hidden{display:none!important}</style>")
-    req = gr.Textbox(elem_id=TARGET_ID, elem_classes=["sf3d-hidden"], show_label=False)
-    go = gr.Button("go", elem_id=GO_ID, elem_classes=["sf3d-hidden"])
-    with gr.Row():
-        log = gr.Textbox(label=_t("face.progress"), lines=3, interactive=False, scale=1)
-        shots = gr.Gallery(label=_t("ag.previews"), columns=3, height=240, scale=2)
-
-    def open_editor(r):
-        if not r or not Path(r).exists():
-            return _t("ag.choose_a_character")
-        return _frame(editor_page(Path(r), Path(config_loader()["export_dir"]) / "decals"))
-
-    def run(text):
-        try:
-            return handle(config_loader(), text)
-        except Exception as e:  # noqa: BLE001
-            return _t("lm.error_2") + str(e), None
-
-    refresh.click(lambda: gr.update(choices=characters(config_loader())), None, rig)
-    open_btn.click(open_editor, rig, editor)
-    if char is not None:   # the current character: on it as soon as the tab is seen
-        opened = gr.State("")
-        here = _t("ui.equipment_procedural")
-        ok = lambda r: LM.is_rig(r)  # noqa: E731  (any skeleton: from the markup or the auto-rigger)
-        # (what was opened: the skeleton's file and its time - built again in «Skeleton» (the face, the eyes), the
-        # same file is opened anew when the tab is seen)
-        seen = lambda r: f"{r}|{Path(r).stat().st_mtime}" if r and Path(r).exists() else str(r or "")  # noqa: E731
-        char.change(lambda r, act: (r, open_editor(r) if ok(r) else _t("ag.choose_a_character"), seen(r)) if act == here else (r, "", ""),
-                    [char, active], [rig, editor, opened], show_progress="hidden")
-        tab.select(lambda r, op: (open_editor(r) if ok(r) else _t("ag.choose_a_character"), seen(r)) if seen(r) != op else (gr.update(), op),
-                   [char, opened], [editor, opened], show_progress="hidden")
-    go.click(lambda: _t("ag.working"), None, log).then(run, req, [log, shots], concurrency_id="armour_gen", concurrency_limit=1,
-                                                         show_progress="minimal")

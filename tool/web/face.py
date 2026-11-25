@@ -1,6 +1,6 @@
 """«Character → Face» in the web UI: the face marked and built on an auto-rig (a landmark rig gets its face with the
 skeleton), the shared procedural eyes / teeth / tongue (face_parts_ui, live preview), the lip-sync lines (lipsync_link)
-- the Gradio app's own functions; long ones are tasks of the shared queue."""
+- the app's own functions; long ones are tasks of the shared queue."""
 import json
 import threading
 from concurrent.futures import ThreadPoolExecutor

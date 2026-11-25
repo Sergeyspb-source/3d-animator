@@ -1,4 +1,4 @@
-// Texts by key from tool/lang/<code>.json (the Gradio app's catalog; the web UI's own keys are web.*).
+// Texts by key from tool/lang/<code>.json (the app's catalog; the web UI's own keys are web.*).
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { get, post } from './api';
 

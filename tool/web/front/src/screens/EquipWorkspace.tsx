@@ -15,7 +15,7 @@ import type { Step } from '../nav';
 
 interface Shot { path: string; caption: string }
 
-export default function EquipWorkspace({ step, info, bridge, wear }: { step: string; info?: Step; gradio: string; bridge: [string, string]; wear: string[] }) {
+export default function EquipWorkspace({ step, info, bridge, wear }: { step: string; info?: Step; bridge: [string, string]; wear: string[] }) {
   const { t, lang } = useI18n();
   const { colorScheme } = useMantineColorScheme();
   const cur = useCurrent();

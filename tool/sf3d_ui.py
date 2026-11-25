@@ -1,4 +1,6 @@
-"""Графический интерфейс для обёртки SF3D (Gradio, локально на 127.0.0.1:7861).
+"""Работа приложения SF3D: модели, персонажи, существа, окружение. Эти функции вызывает веб-интерфейс
+(tool/web/server.py, http://127.0.0.1:7890); прежние вкладки Gradio убраны, сами функции пока отвечают в его форме
+(gr.update, gr.Progress).
 
 Запуск: sf3d-ui.vbs (без консоли) или sf3d-ui.bat (с консолью для отладки).
 Постобработка и настройки общие с sf3d_tool.py.
@@ -18,16 +20,13 @@ import gradio as gr
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import materials as MT  # noqa: E402
 import sf3d_tool as T  # noqa: E402  (заодно добавляет sf3d-src в sys.path)
-import rwt_ui  # GPT: Mount isolated weight repair without extending rig generation.
 import landmarks  # any skeleton: what the tools read off it
 import landmarks_ui  # hand-placed landmark skeleton (Mixamo-like)
-import face_parts_ui  # procedural eyes, teeth, tongue
-import armour_gen_ui  # procedural armour from the character's own skin
+import face_parts_ui  # noqa: F401  procedural eyes, teeth, tongue (imported here before the web server patches the config)
+import armour_gen_ui  # noqa: F401  procedural armour from the character's own skin (the web server: UI.armour_gen_ui)
 import wear_files as WF
 import creatures as CR  # the «Creatures» section: which models are creatures, the skeleton viewer
-import i18n
 from i18n import t as _t
-PORT = 7861
 _state = {"model": None, "rembg": None, "on_gpu": False}
 
 HY_PY = r"D:\conda\envs\hunyuan\python.exe"
@@ -35,7 +34,6 @@ HY_PY = r"D:\conda\envs\hunyuan\python.exe"
 # 254 s with the same detail; buildings came out lumpier and no faster, so they keep the base model
 HY_FAST_CATEGORIES = {"character", "item", "prop"}
 HY_SRC = r"D:\My projects\SF3D\hunyuan3d-src"
-ENGINE_SF3D = _t("ui.sf3d_one_picture_about_20_seconds")
 ENGINE_HY = _t("ui.hunyuan3d_1_4_pictures_the_best")
 ENGINE_TR = _t("ui.trellis_one_picture")
 # TRELLIS.2 (trellis.cpp, MIT): one picture -> GLB with base colour + metal/roughness maps, a separate process like
@@ -117,7 +115,6 @@ GPU_NEEDS = [(_t("ui.sf3d_item_prop_character"), 6400),
              (_t("ui.hunyuan3d_texture_painting"), 7000),
              (_t("ui.trellis_gpu_need"), TRELLIS_VRAM_MB),
              (_t("ui.rigging_unirig"), 4500)]
-GPU_SHORT = ["SF3D", _t("ui.hunyuan_shape"), _t("ui.hunyuan_paint"), "TRELLIS", _t("ui.rigging")]  # same order as GPU_NEEDS, for the status strip
 # never offered for closing: Windows itself and the things that would log the user out or break the GPU driver
 PROTECTED = {"claude", "system", "idle", "registry", "dwm", "csrss", "winlogon", "wininit", "services", "lsass", "smss",
              "svchost", "explorer", "fontdrvhost", "audiodg", "memory compression", "nvcontainer",
@@ -266,17 +263,6 @@ def vram_gate(need_mb, log, emit, label, timeout_s=900):
     return False
 
 
-def vram_text():
-    try:
-        import torch
-
-        free, total = torch.cuda.mem_get_info()
-        loaded = _t("ui.loaded") if _state["model"] else _t("ui.not_loaded")
-        return (_t("ui.video_memory_of_gb_used_model", (total - free) / 1024**3, total / 1024**3, loaded))
-    except Exception as e:  # noqa: BLE001
-        return _t("ui.could_not_get_the_gpu_data", e)
-
-
 # ------------------------------------------------------------------ генерация
 def generate(files, category_label, name, height, width, depth, pivot_label, collision_label, override,
              metallic, roughness,
@@ -420,7 +406,6 @@ def pp_call(src, final, preset, pp, materials=None):
     return stats
 
 
-VEG_KINDS = {_t("mat.wood"): "tree", _t("ui.bush"): "bush", _t("ui.grass_flowers"): "grass"}
 VEG_STATE = {"kind": "tree"}  # chosen in the generation tab; one user, one generation at a time
 
 
@@ -839,22 +824,6 @@ def run(engine, files, f_front, f_back, f_left, f_right, category, name, height,
             auto_rig, rig_naming_label, rig_tries, progress=progress))
 
 
-def batch_run_view(root, default_label, overwrite, make_preview, auto_materials=False,
-                   auto_rig=False, rig_naming_label=None, rig_tries=3):
-    """batch_run for the «Batch» tab: its viewer without collision proxies (viewer_glb)"""
-    yield from _viewer_outputs(batch_run(root, default_label, overwrite, make_preview, auto_materials,
-                                         auto_rig, rig_naming_label, rig_tries))
-
-
-def on_engine(engine):
-    """pictures / views / each engine's options; TRELLIS.2 starts with its palette pulled toward the picture
-    (its albedo comes out dark), the others with none"""
-    hy, tr = engine == ENGINE_HY, engine == ENGINE_TR
-    return (gr.update(visible=not hy), gr.update(visible=hy),
-            gr.update(visible=not (hy or tr)), gr.update(visible=hy), gr.update(visible=tr),
-            gr.update(value=TRELLIS_COLOR_MATCH if tr else 0.0))
-
-
 # ------------------------------------------------------------------ пакетная обработка
 IMAGE_EXT = T.IMAGE_EXT
 VIEW_NAMES = ("front", "back", "left", "right")
@@ -1132,16 +1101,6 @@ def char_info(value):
             str(f["rigged"] or f["source"] or f["parts"]) if (f["rigged"] or f["source"] or f["parts"]) else None)
 
 
-def char_open_folder(value):
-    """The character's folder in the file manager (Windows Explorer)."""
-    f = _char_files(value)
-    if f and f["dir"].exists():
-        try:
-            os.startfile(str(f["dir"]))   # noqa: S606 — a folder the app made, opened for the user
-        except (AttributeError, OSError):
-            pass
-
-
 def _delete_model(value) -> bool:
     """A character's or a creature's folder under export/ deleted for good (its «Delete» confirmed in the page): the
     models, skeleton, face, pieces and clips made here; the file it was loaded from stays where it was."""
@@ -1151,17 +1110,6 @@ def _delete_model(value) -> bool:
         return False
     shutil.rmtree(f["dir"])
     return True
-
-
-def char_delete(value):
-    """The current character deleted; the list then shows the first other character with a skeleton."""
-    return gr.update(choices=_characters(), value=_char_default()) if _delete_model(value) else gr.update()
-
-
-def char_add(upload):
-    """A model loaded as a new character: export/character/<name>/<name>.glb."""
-    value = _add_model(upload)
-    return gr.update(choices=_characters(), value=value) if value else gr.update()
 
 
 def _add_model(upload):
@@ -1189,26 +1137,6 @@ def _add_model(upload):
     return f"character/{name}"
 
 
-def _char_sig(value) -> str:
-    """The character's files as they are now: its skeleton's and its source's names and times (built again: another)."""
-    f = _char_files(value) or {}
-    return "|".join(f"{p.name}:{p.stat().st_mtime}" for p in (f.get("rigged"), f.get("source")) if p and p.exists())
-
-
-def char_for_tabs(value):
-    """The current character's files, each in the form its tab's (hidden) picker takes."""
-    f = _char_files(value) or {}
-    rig = str(f["rigged"]) if f.get("rigged") else None
-
-    def pick(v, choices):   # the lists were filled when the app started: a character made since is added, or the
-        return gr.update(choices=sorted(set(choices) | ({v} if v else set())), value=v)   # pick keeps the old one
-
-    return (pick(value if f.get("source") or f.get("rigged") else None, _export_assets()),   # skeleton, lipsync: "category/name"
-            pick(value if f.get("rigged") else None, _rigged_assets()), pick(value if f.get("rigged") else None, _rigged_assets()),   # animations
-            pick(str(f["parts"]) if f.get("parts") else None, _parts_bodies()),   # whole set
-            rig)   # procedural, weights
-
-
 def _asset_src(asset):
     """A model picked as "category/name": its source, else its skeleton's model (a source loaded once and never kept)."""
     f = _char_files(asset)
@@ -1225,10 +1153,6 @@ def _export_assets():
             continue
         out.append(f"{p.parent.parent.name}/{p.stem}")
     return out
-
-
-def rig_refresh():
-    return gr.update(choices=_export_assets())
 
 
 def rig_core(src, dst, name, cfg, naming_key, tries, log, emit, kind="humanoid"):
@@ -1352,11 +1276,6 @@ def split_run(upload, asset):
     yield emit()
 
 
-def _parts_bodies():
-    cfg = T.load_config()
-    return [str(p) for p in sorted(Path(cfg["export_dir"]).rglob("*_parts.glb"))]
-
-
 def _src_of(upload, asset):
     """(path, name, dst folder) of the model chosen in a tab: an uploaded GLB or a ready model."""
     cfg = T.load_config()
@@ -1376,13 +1295,6 @@ def preview_pick(upload, asset):
         return char_info(asset)[1] if asset and "/" in asset else None
     src, _, _ = _src_of(upload, asset)
     return str(src) if src and src.exists() else None
-
-
-def rig_upload_view(upload, asset):
-    """«Skeleton»'s one-off GLB in the bar's view. Without one the view is left alone: the upload is cleared when the
-    character changes, while its picker («asset») may still hold the old one - the old model was put in the view after
-    the new (the character's own view comes from char_info, and from the upload's «clear»)."""
-    return preview_pick(upload, asset) if upload else gr.update()
 
 
 def creature_run(upload, asset, line_mm=0, hinge_mm=0):
@@ -1448,71 +1360,12 @@ def _creature_memo():
     return Path(T.load_config()["work_dir"]) / "current_creature.txt"
 
 
-def _creature_default():
-    """The creature chosen last time (kept in work_dir), else the first with a skeleton, else the first model."""
-    crs = _characters(True)
-    try:
-        last = _creature_memo().read_text(encoding="utf-8").strip()
-    except OSError:
-        last = ""
-    if any(v == last for _, v in crs):
-        return last
-    return next((v for _, v in crs if (_char_files(v) or {}).get("rigged")), crs[0][1] if crs else None)
-
-
 def creature_remember(value):
     if value:
         try:
             _creature_memo().write_text(value, encoding="utf-8")
         except OSError:
             pass
-
-
-def creature_info(value):
-    """What the creature has - its folder, its files, its skeleton by parts (paws, tail, head, jaw) - and its model
-    for the 3D view (the skeleton's when it has one)."""
-    f = _char_files(value)
-    if not f:
-        return _t("cr.none"), None
-    from datetime import datetime
-    when = lambda p: datetime.fromtimestamp(p.stat().st_mtime).strftime("%d.%m %H:%M")  # noqa: E731
-    lines = [_t("ui.char_folder", f["dir"])]
-    if f["source"] and f["source"] != f.get("rigged"):
-        lines.append(_t("ui.char_file_source", f["source"].name, when(f["source"])))
-    r = f["rigged"]
-    if r:
-        sm = CR.summary(r)
-        paws = sm.get("paws") or {}
-        lines.append(_t("cr.file_rigged", r.name, when(r), sm.get("bones", 0)))
-        lines.append(_t("cr.skeleton_parts", ", ".join(f"{k} {v}" for k, v in sorted(paws.items())) or "—", sm.get("tail", 0),
-                        "✓" if sm.get("head") else "—", "✓" if sm.get("jaw") else "—"))
-        lines.append(_t("ui.char_tools_take", r.name))
-    else:
-        lines.append(_t("cr.no_skeleton"))
-    return ("\n".join("- " + x if i else x for i, x in enumerate(lines)),
-            str(r or f["source"]) if (r or f["source"]) else None)
-
-
-def creature_for_tab(value):
-    """The current creature's skeleton (the tools that take a path) and its jaw's pictures."""
-    f = _char_files(value) or {}
-    if not f:
-        return "", []
-    return str(f["rigged"]) if f.get("rigged") else "", CR.jaw_pictures(f["dir"], f["name"])
-
-
-def creature_add(upload):
-    """A model loaded as a new creature: export/character/<name>/<name>.glb, its passport saying «creature»."""
-    value = _add_model(upload)
-    if not value:
-        return gr.update()
-    f = _char_files(value)
-    CR.mark(f["dir"], f["name"])
-    return gr.update(choices=_characters(True), value=value)
-
-
-def creature_delete(value):
-    return gr.update(choices=_characters(True), value=_creature_default()) if _delete_model(value) else gr.update()
 
 
 def creature_rig(value):
@@ -1635,27 +1488,6 @@ def creature_paint_request(value, text):
     except Exception as e:  # noqa: BLE001
         lines.append(_t("ui.error_2", e))
         yield "\n".join(lines), gr.update()
-
-
-def _bones_frame(glb, title, kind=""):
-    return landmarks_ui._frame(CR.viewer_page(Path(glb), title=title, kind=kind))
-
-
-def creature_viewer(value):
-    """The skeleton viewer on the current creature, its markup editable (or why not)."""
-    f = _char_files(value) or {}
-    r = f.get("rigged")
-    if not r or not landmarks.has_skin(r):
-        return _t("cr.view_needs_skeleton")
-    return landmarks_ui._frame(CR.viewer_page(Path(r), title=f["name"], kind=_t("cr.kind_creature"),
-                                              edit=CR.viewer_data(f["dir"], f["name"])))
-
-
-def rig_viewer(path):
-    """The skeleton viewer on any model with a skeleton (the «Character» section's: the current character's)."""
-    if not path or not landmarks.is_rig(path):
-        return _t("lm.rig_pose_needs_a_skeleton")
-    return _bones_frame(path, landmarks._stem(Path(path)))
 
 
 def rig_run(upload, asset, naming_label, tries=3):
@@ -1859,11 +1691,6 @@ def ref_generate(provider_label, obj, cat_label, variants, style_text, style_fil
     yield emit()
 
 
-def ref_pick(paths, evt: gr.SelectData):
-    p = paths[evt.index] if paths and evt.index < len(paths) else None
-    return p, (_t("ui.variant_chosen", evt.index + 1) if p else "")
-
-
 def ref_views(provider_label, front, obj, cat_label, style_text, style_files, want):
     """Back / left / right views of the chosen front picture."""
     import refgen as RF
@@ -1897,29 +1724,6 @@ def ref_views(provider_label, front, obj, cat_label, style_text, style_files, wa
     log.append(_t("ui.check_that_all_views_show_the_same"))
     yield emit()
 
-
-def ref_send(views, front, cat_label, obj):
-    """Fill the generation tab: one picture -> SF3D, several views -> Hunyuan3D."""
-    views = dict(views or {})
-    if front and not views.get("front"):
-        views["front"] = front
-    cat = CATEGORY_LABELS[REF_TO_GEN[REF_CATEGORIES[cat_label]]]
-    multi = sum(1 for k in ("back", "left", "right") if views.get(k)) > 0
-    return (gr.update(value=ENGINE_HY if multi else ENGINE_SF3D),
-            gr.update(value=[views["front"]] if views.get("front") and not multi else None),
-            views.get("front") if multi else None, views.get("back"), views.get("left"), views.get("right"),
-            gr.update(value=cat), T.slug(obj or "")[:40] or "",
-            gr.Tabs(selected="g_create"), gr.Tabs(selected="gen"))
-
-
-def ref_save_keys(key, img_model, txt_model):
-    cfg = T.load_config()
-    if key and key.strip() and not set(key.strip()) <= {"•"}:
-        cfg["openrouter_key"] = key.strip()
-    cfg["openrouter_image_model"] = (img_model or "").strip() or "google/gemini-2.5-flash-image"
-    cfg["openrouter_text_model"] = (txt_model or "").strip() or "google/gemini-2.5-flash"
-    (T.ROOT / "config.json").write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
-    return _t("ui.openrouter_settings_saved") + (_t("ui.key_set") if cfg.get("openrouter_key") else _t("ui.key_not_set"))
 
 # ------------------------------------------------------------------ бесшовные материалы поверхностей
 def surface_run(provider_label, desc, own_file, tile_m, strength, size, name):
@@ -1972,7 +1776,6 @@ def surface_run(provider_label, desc, own_file, tile_m, strength, size, name):
 # ------------------------------------------------------------------ эффекты (листы для частиц, спрайты, сцены Godot)
 FX_KINDS = {_t("ui.explosion_once"): "explosion", _t("ui.smoke_once"): "smoke", _t("ui.fire_loop"): "fire",
             _t("ui.magic_flash_once"): "magic", _t("ui.spark_ember_one_frame"): "spark"}
-FX_SCENES = ["explosion", "fire", "smoke", "magic_circle", "hit_sparks"]
 
 
 def _fx_dir():
@@ -2100,11 +1903,6 @@ def _kit_sample():
 
 def _kit_dir():
     return Path(T.load_config()["export_dir"]) / "modkit" / "dungeon_kit"
-
-
-def kit_refresh_mats():
-    names = _mat_folders()
-    return (gr.update(choices=[KIT_PROC] + names), gr.update(choices=names), gr.update(choices=names))
 
 
 def kit_build(cell, height, seed, wall, floor, wood):
@@ -2238,19 +2036,7 @@ def destr_run(upload, asset, chunks, seed, auto_in, in_color, mass, health, burs
     yield emit([(p, cap[i] if i < len(cap) else "") for i, p in enumerate(r["shots"])])
 
 
-
-import hanim as HA  # noqa: E402
-
-
 # ------------------------------------------------------------------ библиотека анимаций человекоподобных
-def _rigged_assets():
-    cfg = T.load_config()
-    out = []
-    for p in sorted(Path(cfg["export_dir"]).rglob("*_rigged*.glb")):
-        out.append(f"{p.parent.parent.name}/{p.stem}")
-    return out
-
-
 def _clips_file(src: Path, kind: str) -> Path:
     """Where a character's clips go (kind: "anim" - the procedural ones, "fbx" - Mixamo's): beside its skeleton's model,
     in its own folder, named after it (<name>_landmarks_rigged.glb -> <name>_fbx.glb); a model loaded once from
@@ -2273,11 +2059,6 @@ def _rigged_path(asset):   # "category/name" (the current character) or "categor
         return f["rigged"]
     cat, nm = asset.split("/", 1)
     return Path(T.load_config()["export_dir"]) / cat / re.sub(r"(_landmarks)?_rigged.*$", "", nm) / f"{nm}.glb"
-
-
-def hanim_pick(upload, asset):
-    src = Path(upload if isinstance(upload, str) else upload.name) if upload else (_rigged_path(asset) if asset else None)
-    return str(src) if src and src.exists() else None
 
 
 def hanim_run(upload, asset, clip_labels, manner=None, seed=None, death=None):
@@ -2314,18 +2095,6 @@ def hanim_run(upload, asset, clip_labels, manner=None, seed=None, death=None):
 # ------------------------------------------------------------------ анимации Mixamo (FBX без скина)
 def _fbx_dir():
     return str(Path(T.load_config()["export_dir"]) / "fbx")
-
-
-def fbx_scan(folder):
-    """'Прочитать папку': one table row per FBX, with the settings saved in map.json."""
-    import fbxanim as FA
-    p = Path((folder or "").strip() or _fbx_dir())
-    if not p.exists():
-        return [], _t("ui.folder_not_found", p)
-    rows = FA.table_rows(p)
-    if not rows:
-        return [], _t("ui.the_folder_has_no_fbx_download", p)
-    return rows, (_t("ui.files_found_the_clip_name_and_group", len(rows)))
 
 
 def _viewer_frame(page):
@@ -2407,10 +2176,6 @@ def _mat_params(asset):
     return None, None
 
 
-def mat_refresh():
-    return gr.update(choices=_mat_assets())
-
-
 def _hidden_groups():
     return [gr.update(visible=False, value=None) for _ in range(MAX_GROUPS)]
 
@@ -2479,1023 +2244,3 @@ def save_settings(export_dir):
     cfg["export_dir"] = export_dir.replace("\\", "/")
     (T.ROOT / "config.json").write_text(json.dumps(cfg, indent=2), encoding="utf-8")
     return _t("ui.saved_export_now_goes_to", export_dir)
-
-
-def open_export(export_dir):
-    p = Path((export_dir or T.load_config()["export_dir"]).strip().strip('"'))
-    p.mkdir(parents=True, exist_ok=True)
-    os.startfile(str(p))
-    return _t("ui.opened_folder", p)
-
-
-def on_category(category_label):
-    p = T.load_config()["categories"][LABEL_TO_KEY[category_label]]
-    pivot = {"bottom": _t("ui.at_the_base"), "center": _t("ui.at_the_centre")}[p["pivot"]]
-    h = _t("ui.m", p['height_m']) if p["height_m"] else _t("ui.unchanged")
-    m = p["metallic"] if p["metallic"] is not None else _t("ui.as_generated")
-    r = p["roughness"] if p["roughness"] is not None else _t("ui.as_generated")
-    return _t("ui.preset_pivot_height_metallic", pivot, h, m, r)
-
-
-# ------------------------------------------------------------------ интерфейс
-UI_CSS = """
-.gradio-container { max-width: 1400px !important; }
-/* «Character»: its tabs' buttons first, then the current character, then the tab (the tabs' box lets its parts
-   take their places among the column's) */
-.char-wrap { display: flex !important; flex-direction: column; }
-.char-wrap > .char-tabs { display: contents !important; }
-.char-wrap > .char-tabs > .tab-nav { order: 1; }
-.char-wrap > .char-bar { order: 2; }
-.char-wrap > .char-tabs > .tabitem { order: 3; }
-.tab-nav button { font-size: 15px; font-weight: 600; }
-/* two levels of tabs: sections big, the tools inside them smaller */
-#maintabs > .tab-nav button { font-size: 17px; font-weight: 700; padding: 8px 18px; }
-#maintabs .tabs .tab-nav button { font-size: 14px; font-weight: 500; padding: 5px 12px; }
-/* menu bar: File / Options / Help, GPU status on the right */
-#topbar { align-items: center; flex-wrap: nowrap !important; gap: 0 !important; padding: 2px 8px;
-  border: 1px solid var(--border-color-primary); border-radius: 10px; background: var(--background-fill-secondary);
-  margin-bottom: 8px; overflow: visible !important; }
-#topbar .brand-box { flex: 0 0 auto !important; width: auto !important; min-width: 0 !important; padding: 0 12px 0 4px; border: none !important;
-  background: none !important; }
-#topbar .brand { font-weight: 800; font-size: 16px; letter-spacing: .04em; }
-.menu { position: relative; flex: 0 0 auto !important; overflow: visible !important; }
-.menu-title { background: transparent !important; border: none !important; box-shadow: none !important;
-  padding: 4px 12px !important; font-weight: 600 !important; }
-.menu:hover .menu-title { background: var(--background-fill-primary) !important; }
-.menu-drop { display: none !important; position: absolute; top: 100%; left: 0; z-index: 1500; width: max-content !important;
-  min-width: 250px !important; background: var(--background-fill-primary); border: 1px solid var(--border-color-primary);
-  border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.25); padding: 4px; gap: 0 !important; }
-.menu:hover .menu-drop { display: flex !important; }
-.menu-drop button { justify-content: flex-start !important; text-align: left; background: transparent !important;
-  border: none !important; box-shadow: none !important; font-weight: 400 !important; }
-.menu-drop button:hover { background: var(--background-fill-secondary) !important; }
-#gpustat { flex: 1 1 auto !important; width: auto !important; height: 30px; overflow: hidden !important; opacity: 1 !important; text-align: right; border: none !important; background: none !important; padding: 0 !important; min-width: 0 !important; }
-#gpustat .wrap, #gpustat .progress-text { display: none !important; }
-.gpu-in { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; font-size: 13px; }
-.gpu-bar { display: inline-block; width: 110px; height: 8px; border-radius: 4px; background: var(--border-color-primary);
-  overflow: hidden; }
-.gpu-bar i { display: block; height: 100%; }
-.gpu-bar i.ok { background: #2f9e5f; } .gpu-bar i.warn { background: #e0a800; } .gpu-bar i.bad { background: #e5484d; }
-.gpu-chip { padding: 1px 8px; border-radius: 10px; border: 1px solid var(--border-color-primary); font-size: 12px; }
-.gpu-chip.ok { color: #2f9e5f; } .gpu-chip.warn { color: #b88a00; } .gpu-chip.bad { color: #e5484d; }
-.gpu-sf { color: var(--body-text-color-subdued); font-size: 12px; }
-/* dialogs opened from the menu */
-.dlg { position: fixed !important; top: 6vh; left: 50%; transform: translateX(-50%); width: min(780px, 94vw) !important;
-  max-height: 86vh; overflow: auto; z-index: 2000; background: var(--background-fill-primary);
-  border: 1px solid var(--border-color-primary); border-radius: 12px; padding: 14px;
-  box-shadow: 0 0 0 100vmax rgba(0,0,0,.4), 0 20px 60px rgba(0,0,0,.4); }
-"""
-
-UI_HEAD = """<script>document.addEventListener('keydown', (e) => {
-  if (e.key !== 'Escape') return;
-  for (const b of document.querySelectorAll('.dlg-close')) if (b.offsetParent) { b.click(); break; } });</script>
-<script>/* Gradio's own texts (upload areas, buttons) follow the browser's language: make it the interface's */
-for (const k of ['language', 'languages']) Object.defineProperty(navigator, k, { get: () => k === 'language' ? '@@LANG@@' : ['@@LANG@@'] });</script>
-<script>/* Gradio 4.41's 3D view (Model3D) clears its scene in a forEach over the array the disposal shrinks (half the old
-model stays) and appends each model as it comes (a load that finishes late lands over the newer): the old character
-was seen under the new one. Its loads go through SceneLoader.Append once Babylon is there: each into a container, put
-in the scene only if it is still the latest, after everything the scene held but its camera and lights is gone. */
-(function patch3d() {
-  const B = window.BABYLON;
-  if (!B || !B.SceneLoader || !B.SceneLoader.LoadAssetContainer) { setTimeout(patch3d, 300); return; }
-  if (B.SceneLoader.__sf3d) return;
-  B.SceneLoader.__sf3d = true;
-  const clear = (sc) => {
-    for (const a of sc.animationGroups.slice()) a.dispose();
-    for (const m of sc.meshes.slice()) if (!m.isDisposed()) m.dispose(false, true);
-    for (const t of sc.transformNodes.slice()) t.dispose();
-    for (const k of sc.skeletons.slice()) k.dispose();
-  };
-  B.SceneLoader.Append = function (root, file, scene, onOk, onProgress, onError, ext) {
-    const token = (scene.__sf3dLoad = (scene.__sf3dLoad || 0) + 1);
-    return B.SceneLoader.LoadAssetContainer(root, file, scene, (box) => {
-      if (scene.__sf3dLoad !== token || scene.isDisposed) { box.dispose(); return; }   // a newer model was asked for
-      clear(scene); box.addAllToScene();
-      if (onOk) onOk(scene);
-    }, onProgress, onError, ext);
-  };
-})();</script>""".replace("@@LANG@@", i18n.LANG)
-
-RIG_MODES = [_t("ui.automatic_unirig_needs_a_gpu"), _t("ui.by_hand_with_landmarks_like_mixamo")]
-
-HELP_TEXT = _t("ui.the_window_has_three_sections_inside")
-
-
-def status_html():
-    """The always-visible GPU strip next to the menu: usage bar, which tasks fit now, where the SF3D model sits."""
-    try:
-        r = subprocess.run(["nvidia-smi", "--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"],
-                           capture_output=True, text=True, timeout=10,
-                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        used, total = (int(x) for x in r.stdout.strip().splitlines()[0].split(","))
-    except Exception:  # noqa: BLE001
-        return _t("ui.gpu_no_data_nvidia_smi")
-    free = total - used
-    frac = used / total
-    level = "ok" if frac < 0.6 else "warn" if frac < 0.85 else "bad"
-    chips = []
-    for (short, (_, need)) in zip(GPU_SHORT, GPU_NEEDS):
-        if short == "SF3D" and _state["model"] is not None and _state["on_gpu"]:
-            cls, mark, tip = "ok", "✓", _t("ui.the_model_is_already_in_video_memory")
-        elif free >= need + 500:
-            cls, mark, tip = "ok", "✓", _t("ui.needs_about_gb_fits", need / 1024)
-        elif free >= need:
-            cls, mark, tip = "warn", "≈", _t("ui.needs_about_gb_tight", need / 1024)
-        else:
-            cls, mark, tip = "bad", "✗", _t("ui.needs_about_gb_not_enough", need / 1024)
-        chips.append(f'<span class="gpu-chip {cls}" title="{tip}">{short} {mark}</span>')
-    sf = ""
-    if _state["model"] is not None:
-        sf = f'<span class="gpu-sf">SF3D: {"в видеопамяти" if _state["on_gpu"] else "в оперативной памяти"}</span>'
-    return (_t("ui.video_memory_gb_free", used / 1024, total / 1024, level, frac * 100, used / 1024, total / 1024, free / 1024, "".join(chips), sf))
-
-def _restart():
-    """A new copy of this server (it waits for the port), then this one ends: the interface is built once, in one
-    language, so a new language needs a new process. The copy shares the console (or the launcher's hidden one)."""
-    import threading
-    subprocess.Popen([sys.executable, *sys.argv], cwd=os.getcwd(), env={**os.environ, "SF3D_WAIT_PORT": "1"})
-    threading.Timer(1.0, lambda: os._exit(0)).start()
-
-
-def switch_language(code):
-    i18n.set_lang(code)
-    _restart()
-
-
-# the page waits for the new server and reloads (both languages: the old one is still on the screen)
-RESTART_JS = """() => {
-  document.body.insertAdjacentHTML('beforeend', '<div style="position:fixed;inset:0;z-index:9999;display:flex;align-items:center;'
-    + 'justify-content:center;background:rgba(0,0,0,.55);color:#fff;font:20px sans-serif">Перезапуск… / Restarting…</div>');
-  const go = () => fetch(location.href, { cache: 'no-store' }).then((r) => r.ok ? location.reload() : setTimeout(go, 1000))
-    .catch(() => setTimeout(go, 1000));
-  setTimeout(go, 4000);
-}"""
-
-
-def _wait_port(port, seconds=40):
-    """After a restart the old server may still hold the port for a moment."""
-    import socket
-    for _ in range(seconds * 2):
-        with socket.socket() as sk:
-            try:
-                sk.bind(("127.0.0.1", port))
-                return
-            except OSError:
-                time.sleep(0.5)
-
-
-def build():
-    cfg = T.load_config()
-    labels = [CATEGORY_LABELS[k] for k in cfg["categories"]]
-    default_cat = CATEGORY_LABELS["prop"]
-    import outfit as OF
-    with gr.Blocks(title=_t("ui.sf3d_game_assets"), theme=gr.themes.Soft(), css=UI_CSS, head=UI_HEAD) as ui:
-        with gr.Row(elem_id="topbar"):
-            gr.HTML('<span class="brand">SF3D</span>', elem_classes="brand-box")
-            with gr.Column(elem_classes="menu", min_width=0, scale=0):
-                gr.Button(_t("fbx.file"), elem_classes="menu-title", size="sm")
-                with gr.Column(elem_classes="menu-drop", min_width=0):
-                    mi_open_export = gr.Button(_t("ui.open_the_export_folder"), size="sm")
-                    mi_open_input = gr.Button(_t("ui.open_the_input_pictures_folder"), size="sm")
-                    mi_batch = gr.Button(_t("ui.batch_processing"), size="sm")
-            with gr.Column(elem_classes="menu", min_width=0, scale=0):
-                gr.Button(_t("ui.options"), elem_classes="menu-title", size="sm")
-                with gr.Column(elem_classes="menu-drop", min_width=0):
-                    mi_vram = gr.Button(_t("ui.video_memory_2"), size="sm")
-                    mi_settings = gr.Button(_t("ui.settings_2"), size="sm")
-                    mi_unload = gr.Button(_t("ui.unload_sf3d_from_video_memory"), size="sm")
-            with gr.Column(elem_classes="menu", min_width=0, scale=0):
-                gr.Button(_t("ui.help"), elem_classes="menu-title", size="sm")
-                with gr.Column(elem_classes="menu-drop", min_width=0):
-                    mi_help = gr.Button(_t("ui.order_of_work_2"), size="sm")
-            with gr.Column(elem_classes="menu", min_width=0, scale=0):
-                gr.Button("🌐 " + i18n.LANGS[i18n.LANG], elem_classes="menu-title", size="sm")
-                with gr.Column(elem_classes="menu-drop", min_width=0):
-                    mi_langs = [(code, gr.Button(name, size="sm")) for code, name in i18n.LANGS.items()]
-            gpu_stat = gr.HTML("", elem_id="gpustat")
-            gpu_timer = gr.Timer(5)
-
-        with gr.Tabs(elem_id="maintabs") as main_tabs:
-            with gr.Tab(_t("ui.create"), id="g_create"):
-                with gr.Tabs() as tabs_create:
-                    # ---------------------------------------------------------------- 0. reference pictures
-                    with gr.Tab(_t("ui.reference"), id="ref"):
-                        with gr.Row():
-                            with gr.Column(scale=1):
-                                gr.Markdown(_t("ui.1_what_is_needed_describe_the_object"))
-                                ref_obj = gr.Textbox(label=_t("ui.object"), lines=2,
-                                                     placeholder=_t("ui.for_example_a_crooked_wooden_fence"))
-                                with gr.Row():
-                                    ref_cat = gr.Dropdown(list(REF_CATEGORIES), value=_t("ui.environment_object"), label=_t("ui.type"), scale=2)
-                                    ref_n = gr.Slider(1, 4, value=1, step=1, label=_t("ui.variants"), scale=1)
-                                ref_provider = gr.Radio(list(REF_PROVIDERS), value=list(REF_PROVIDERS)[0],
-                                                        label=_t("ui.generate_with"))
-                                ref_go = gr.Button(_t("ui.generate"), variant="primary")
-                                with gr.Accordion(_t("ui.project_style_shared_by_all"), open=False):
-                                    gr.Markdown(_t("ui.reference_pictures_3_5_good_assets"))
-                                    ref_style_text = gr.Textbox(label=_t("ui.style_description_more_precise_in"), lines=4)
-                                    ref_style_files = gr.File(label=_t("ui.style_reference_pictures"), file_count="multiple",
-                                                              file_types=["image"], type="filepath")
-                                    with gr.Row():
-                                        ref_describe_btn = gr.Button(_t("ui.describe_from_the_pictures"))
-                                        ref_style_save_btn = gr.Button(_t("ui.save_the_style"))
-                                    ref_style_note = gr.Markdown("")
-                                ref_log = gr.Textbox(label=_t("face.progress"), lines=5, interactive=False)
-                            with gr.Column(scale=1):
-                                ref_gallery = gr.Gallery(label=_t("ui.variants_click_the_best"), columns=2, height=420,
-                                                         allow_preview=True)
-                                ref_choice_note = gr.Markdown("")
-                                ref_want = gr.CheckboxGroup([_t("ui.back"), _t("ui.left"), _t("ui.right")], value=[_t("ui.back"), _t("ui.left"), _t("ui.right")],
-                                                            label=_t("ui.extra_views_for_hunyuan3d_the_best"))
-                                with gr.Row():
-                                    ref_views_btn = gr.Button(_t("ui.make_views_of_the_chosen_variant"))
-                                    ref_send_btn = gr.Button(_t("ui.send_to_3d"), variant="primary")
-                                ref_views_gallery = gr.Gallery(label=_t("ui.views"), columns=4, height=200)
-                        ref_paths = gr.State([])
-                        ref_front = gr.State(None)
-                        ref_views_state = gr.State({})
-
-                    # ---------------------------------------------------------------- 1. generation
-                    with gr.Tab(_t("ui.make_a_model"), id="gen"):
-                        with gr.Row():
-                            with gr.Column(scale=1):
-                                engine = gr.Radio([ENGINE_SF3D, ENGINE_HY, ENGINE_TR], value=ENGINE_SF3D,
-                                                  label=_t("ui.engine_2"), info=_t("ui.engine_info"))
-                                files = gr.File(label=_t("ui.pictures_one_or_several"), file_count="multiple",
-                                                file_types=["image"], type="filepath")
-                                with gr.Group(visible=False) as hy_views:
-                                    gr.Markdown(_t("ui.object_views_the_same_model_from"))
-                                    with gr.Row():
-                                        v_front = gr.Image(label=_t("ui.front_2"), type="filepath", sources=["upload"], height=150)
-                                        v_back = gr.Image(label=_t("ui.back_2"), type="filepath", sources=["upload"], height=150)
-                                    with gr.Row():
-                                        v_left = gr.Image(label=_t("ui.left_2"), type="filepath", sources=["upload"], height=150)
-                                        v_right = gr.Image(label=_t("ui.right_2"), type="filepath", sources=["upload"], height=150)
-                                with gr.Row():
-                                    category = gr.Dropdown(labels, value=default_cat, label=_t("ui.category_2"), scale=1)
-                                    name = gr.Textbox(label=_t("ui.name_if_there_is_one_picture"), scale=1)
-                                preset_note = gr.Markdown(on_category(default_cat))
-                                veg_kind = gr.Radio(list(VEG_KINDS), value=_t("mat.wood"), visible=False,
-                                                    label=_t("ui.what_plant_it_is_for_the_wind_in"))
-                                with gr.Accordion(_t("ui.size_and_pivot"), open=False):
-                                    height = gr.Number(label=_t("ui.model_height_in_metres_0_the"),
-                                                       value=0)
-                                    with gr.Row():
-                                        width = gr.Number(label=_t("ui.width_along_x_m_0_unchanged"), value=0)
-                                        depth = gr.Number(label=_t("ui.depth_along_z_m_0_unchanged"), value=0)
-                                    pivot = gr.Radio(list(PIVOT_LABELS), value=_t("ui.auto_by_category"),
-                                                     label=_t("ui.pivot_point"))
-                                    collision = gr.Dropdown(list(COLLISION_LABELS), value=_t("ui.by_category"),
-                                                            label=_t("ui.collision_for_godot_made"))
-                                with gr.Accordion(_t("ui.material_and_colour"), open=False):
-                                    override = gr.Checkbox(label=_t("ui.set_metallic_and_roughness_by_hand"), value=False)
-                                    metallic = gr.Slider(0, 1, value=0.0, step=0.05, label=_t("ui.metallic"))
-                                    roughness = gr.Slider(0, 1, value=0.8, step=0.05, label=_t("ui.roughness_2"))
-                                    color_match = gr.Slider(0, 1, value=0.0, step=0.05,
-                                                            label=_t("ui.match_the_palette_to_your_pictures_0"))
-                                    saturation = gr.Slider(0.3, 1.5, value=1.0, step=0.05,
-                                                           label=_t("ui.saturation_1_unchanged"))
-                                    brightness = gr.Slider(0.5, 1.5, value=1.0, step=0.05, label=_t("ui.brightness_1_unchanged"))
-                                    auto_materials = gr.Checkbox(label=_t("ui.recognise_materials_wood_metal_stone"),
-                                                                 value=False)
-                                with gr.Accordion(_t("ui.hunyuan3d_options"), open=False, visible=False) as hy_params:
-                                    paint = gr.Checkbox(label=_t("ui.paint_a_texture_without_it_a_grey"), value=True)
-                                    hy_tex = gr.Dropdown([1024, 2048], value=2048, label=_t("ui.texture_size"))
-                                    hy_faces = gr.Slider(10000, 100000, value=50000, step=5000,
-                                                         label=_t("ui.target_face_count_after_simplifying"))
-                                    hy_fast = gr.Checkbox(label=_t("ui.hy_fast_shape"), info=_t("ui.hy_fast_shape_info"),
-                                                          value=LABEL_TO_KEY.get(default_cat) in HY_FAST_CATEGORIES)
-                                    hy_steps = gr.Slider(20, 50, value=50, step=5, label=_t("ui.diffusion_steps_fewer_faster"))
-                                with gr.Accordion(_t("ui.trellis_options"), open=False, visible=False) as tr_params:
-                                    tr_faces = gr.Slider(10000, 150000, value=50000, step=5000,
-                                                         label=_t("ui.target_face_count_after_simplifying"))
-                                    tr_seed = gr.Number(value=42, precision=0, label=_t("ui.trellis_seed"),
-                                                        info=_t("ui.trellis_seed_info"))
-                                with gr.Accordion(_t("ui.sf3d_generation_options"), open=False) as sf_params:
-                                    tex_res = gr.Dropdown([512, 1024, 2048], value=1024,
-                                                          label=_t("ui.texture_size_2048_may_not_fit_into_8"))
-                                    fg_ratio = gr.Slider(0.5, 1.0, value=cfg["foreground_ratio"], step=0.01,
-                                                         label=_t("ui.object_s_share_of_the_frame"))
-                                    remove_bg = gr.Checkbox(label=_t("ui.remove_the_background_turn_off_if"),
-                                                            value=True)
-                                    remesh = gr.Dropdown(["none", "triangle", "quad"], value="none",
-                                                         label=_t("ui.remesh_none_unchanged"))
-                                with gr.Row():
-                                    make_preview = gr.Checkbox(label=_t("ui.preview_and_icon_blender_10_s"), value=True)
-                                    overwrite = gr.Checkbox(label=_t("ui.overwrite_finished_ones_2"), value=False)
-                                auto_rig = gr.Checkbox(label=_t("ui.make_a_skeleton_for_a_humanoid"), value=False)
-                                go = gr.Button(_t("ui.make_a_model"), variant="primary", size="lg")
-                            with gr.Column(scale=1):
-                                viewer = gr.Model3D(label=_t("lm.result"), height=460, clear_color=(0.9, 0.9, 0.9, 1))
-                                inputs_gallery = gr.Gallery(label=_t("ui.prepared_pictures_preview_and_icon"),
-                                                            columns=4, height=150)
-                                logbox = gr.Textbox(label=_t("ui.log"), lines=6, interactive=False)
-                        table = gr.Dataframe(headers=[_t("ui.name"), _t("ui.category"), _t("ui.faces_2"), _t("ui.size_m"), _t("ui.seconds"), _t("ui.file_2")],
-                                             label=_t("ui.made_in_this_session"), interactive=False, wrap=True)
-
-                    # ---------------------------------------------------------------- 4. materials
-                    with gr.Tab(_t("ui.materials"), id="mat"):
-                        with gr.Row():
-                            with gr.Column(scale=1):
-                                gr.Markdown(_t("ui.1_choose_a_model_2_analyse_the"))
-                                with gr.Row():
-                                    mat_asset = gr.Dropdown(_mat_assets(), label=_t("ui.model_category_name"), scale=4)
-                                    mat_refresh_btn = gr.Button(_t("ui.refresh"), scale=1)
-                                mat_analyze_btn = gr.Button(_t("ui.analyse"))
-                                mat_note = gr.Markdown("")
-                                mat_dd = [gr.Dropdown(MAT_CHOICES, value=None, visible=False, label=_t("ui.group", j + 1))
-                                          for j in range(MAX_GROUPS)]
-                                mat_apply_btn = gr.Button(_t("ui.apply_the_materials"), variant="primary")
-                                mat_status = gr.Textbox(label=_t("lm.result"), interactive=False)
-                            with gr.Column(scale=1):
-                                mat_m3d = gr.Model3D(label=_t("ui.model"), height=380, clear_color=(0.9, 0.9, 0.9, 1))
-                                mat_overlay = gr.Image(label=_t("ui.groups_on_the_texture"), height=260, interactive=False)
-                                mat_gallery = gr.Gallery(label=_t("ui.preview"), columns=4, height=150)
-
-                    # ---------------------------------------------------------------- 5. batch
-                    with gr.Tab(_t("ui.batch_processing_2"), id="batch"):
-                        gr.Markdown(_t("ui.folder_scheme_picture_png_sf3d_front"))
-                        with gr.Row():
-                            batch_dir = gr.Textbox(label=_t("ui.root_folder"),
-                                                   value=cfg.get("input_dir", r"D:\My projects\SF3D\input"), scale=3)
-                            batch_cat = gr.Dropdown(labels, value=default_cat, label=_t("ui.default_category"), scale=2)
-                        with gr.Row():
-                            batch_over = gr.Checkbox(label=_t("ui.overwrite_finished_ones"), value=False)
-                            batch_prev = gr.Checkbox(label=_t("ui.previews_and_icons"), value=True)
-                            batch_mat = gr.Checkbox(label=_t("ui.recognise_materials"), value=False)
-                            batch_rig = gr.Checkbox(label=_t("ui.skeletons_for_characters_at_the_end"), value=False)
-                        with gr.Row():
-                            scan_btn = gr.Button(_t("ui.scan_the_folder"))
-                            batch_btn = gr.Button(_t("ui.run_the_batch"), variant="primary")
-                        batch_info = gr.Textbox(label=_t("ui.found"), interactive=False)
-                        batch_jobs = gr.Dataframe(headers=[_t("ui.name"), _t("ui.category"), _t("ui.engine"), _t("ui.source"), _t("ui.status_2")],
-                                                  label=_t("ui.queue"), interactive=False, wrap=True)
-                        with gr.Row():
-                            batch_log = gr.Textbox(label=_t("ui.log"), lines=8, interactive=False, scale=1)
-                            batch_view = gr.Model3D(label=_t("ui.last_model"), height=320, clear_color=(0.9, 0.9, 0.9, 1),
-                                                    scale=1)
-                        batch_table = gr.Dataframe(headers=[_t("ui.name"), _t("ui.category"), _t("ui.faces_2"), _t("ui.size_m"), _t("ui.seconds"), _t("ui.file_2")],
-                                                   label=_t("ui.done_4"), interactive=False, wrap=True)
-                        batch_gallery = gr.Gallery(label=_t("ui.preview"), columns=6, height=150)
-
-            with gr.Tab(_t("ui.character"), id="g_char"), gr.Column(elem_classes=["char-wrap"]):
-                with gr.Row(elem_classes=["char-bar"]):   # the current character: every tool below works on it
-                    with gr.Column(scale=3):
-                        with gr.Row():
-                            char_dd = gr.Dropdown(_characters(), value=_char_default(), label=_t("ui.current_character"), scale=4,
-                                                  info=_t("ui.char_legend"))
-                            char_refresh = gr.Button(_t("ui.refresh"), scale=1)
-                            char_up = gr.UploadButton(_t("ui.char_add"), file_types=[".glb"], type="filepath", scale=2)
-                            char_dir = gr.Button(_t("ui.char_open_folder"), scale=1)
-                            char_del = gr.Button(_t("ui.char_delete"), scale=1, variant="stop")
-                        char_md = gr.Markdown(char_info(_char_default())[0])
-                    with gr.Column(scale=2):
-                        char_view = gr.Model3D(value=char_info(_char_default())[1], label=_t("ui.model"), height=230,
-                                               clear_color=(0.9, 0.9, 0.9, 1))
-                char_rig = gr.Textbox(visible=False)   # its model with a skeleton, for the tools that take a path
-                char_tab = gr.State("")   # the label of the «Character» tab shown (heavy editors run only there)
-                with gr.Tabs(elem_classes=["char-tabs"]) as tabs_char:
-                    with gr.Tab(_t("ui.skeleton"), id="rig"):
-                        with gr.Row():
-                            with gr.Column(scale=1):
-                                gr.Markdown(_t("ui.1_model_choose_one_you_made_or_load"))
-                                with gr.Row(visible=False):   # the current character's (above)
-                                    rig_asset = gr.Dropdown(_export_assets(), label=_t("ui.finished_model_category_name"),
-                                                            scale=4, allow_custom_value=True)
-                                    rig_refresh_btn = gr.Button(_t("ui.refresh"), scale=1)
-                                rig_upload = gr.File(label=_t("ui.or_load_a_glb"), file_types=[".glb"], type="filepath")
-                                rig_mode = gr.Radio(list(RIG_MODES), value=list(RIG_MODES)[0], label=_t("ui.2_how_to_build_the_skeleton"))
-                                with gr.Column() as rig_auto_box:
-                                    # (a creature on four paws: its skeleton is made in the «Creatures» section)
-                                    gr.Markdown(_t("cr.char_rig_note"))
-                                    rig_naming = gr.Radio(list(RIG_NAMINGS), value=list(RIG_NAMINGS)[0],
-                                                          label=_t("lm.bone_names"))
-                                    rig_tries = gr.Slider(1, 6, value=3, step=1,
-                                                          label=_t("ui.attempts_to_get_a_skeleton_with"))
-                                    rig_btn = gr.Button(_t("ui.make_the_skeleton_3_6_minutes_3_5_gb"), variant="primary")
-                                    with gr.Accordion(_t("ui.for_humanoids_seams_and_body_parts"), open=False):
-                                        seam_btn = gr.Button(_t("ui.fix_the_seams_between_parts_the"))
-                                        split_btn = gr.Button(_t("ui.split_the_body_into_parts_for_armour"))
-                                    rig_log = gr.Textbox(label=_t("face.progress"), lines=8, interactive=False)
-                        with gr.Column(visible=False) as rig_manual_box:
-                            lm_data, lm_editor = landmarks_ui.mount(T.load_config, rig_asset, rig_upload, accordion=False)
-                        with gr.Accordion(_t("lm.rig_pose_title"), open=True):   # any skeleton: the pose and the fist (open: seen at once)
-                            landmarks_ui.mount_rig_pose(T.load_config, char_rig)
-                        with gr.Accordion(_t("cr.view_any_title"), open=False):   # any skeleton: its bones and weights
-                            gr.Markdown(_t("cr.view_any_info"))
-                            char_bones_btn = gr.Button(_t("cr.view_open"))
-                            char_bones = gr.HTML()
-
-                    # ---------------------------------------------------------------- humanoid animation library
-                    with gr.Tab(_t("ui.animations_procedural"), id="hanim"):
-                        with gr.Row():
-                            with gr.Column(scale=1):
-                                gr.Markdown(_t("ui.a_set_of_ready_clips_for_a_humanoid"))
-                                with gr.Row(visible=False):   # the current character's (above)
-                                    ha_asset = gr.Dropdown(_rigged_assets(), label=_t("lm.model_with_a_skeleton"), scale=4, allow_custom_value=True)
-                                    ha_refresh_btn = gr.Button(_t("ui.refresh"), scale=1)
-                                ha_upload = gr.File(label=_t("ui.or_load_a_glb_with_a_skeleton"), file_types=[".glb"],
-                                                    type="filepath")
-                                ha_clips = gr.CheckboxGroup(list(HA.CLIPS.values()), value=list(HA.CLIPS.values()),
-                                                            label=_t("ui.which_clips_to_add"))
-                                with gr.Row():   # the manner: the same clips, this character's own way of moving
-                                    ha_manner = gr.Dropdown([_t(f"hanim.manner_{k}") for k in HA.MANNERS], value=_t("hanim.manner_normal"),
-                                                            label=_t("hanim.manner"), info=_t("hanim.manner_info"), scale=3)
-                                    ha_seed = gr.Textbox(label=_t("hanim.seed"), info=_t("hanim.seed_info"), scale=2)
-                                    ha_death = gr.Dropdown([_t(f"hanim.death_{k}") for k in HA.DEATHS], value=_t("hanim.death_back"),
-                                                           label=_t("hanim.death_kind"), scale=2)
-                                ha_btn = gr.Button(_t("ui.add_the_animations"), variant="primary")
-                                ha_log = gr.Textbox(label=_t("face.progress"), lines=8, interactive=False)
-                                ha_check_btn = gr.Button(_t("cc.button"))
-                                ha_check_md = gr.Markdown()
-                            with gr.Column(scale=1):
-                                ha_view = gr.Model3D(label=_t("ui.result_rest_pose"), height=320,
-                                                     clear_color=(0.9, 0.9, 0.9, 1))
-                                ha_gallery = gr.Gallery(label=_t("ui.clip_frames_side_view_6_frames_per"), columns=1,
-                                                        height=420)
-
-                    # ---------------------------------------------------------------- Mixamo FBX animations
-                    with gr.Tab(_t("ui.animations_mixamo_fbx"), id="fbxanim"):
-                        with gr.Row():
-                            with gr.Column(scale=4):
-                                gr.Markdown(_t("ui.animations_from_mixamo_fbx_without"))
-                                with gr.Row(visible=False):   # the current character's (above)
-                                    fx_asset = gr.Dropdown(_rigged_assets(), label=_t("lm.model_with_a_skeleton"), scale=4, allow_custom_value=True)
-                                    fx_refresh = gr.Button(_t("ui.refresh"), scale=1)
-                                fx_upload = gr.File(label=_t("ui.or_your_own_glb_with_a_skeleton"), file_types=[".glb"], type="filepath")
-                                fx_folder = gr.Textbox(value=_fbx_dir(), label=_t("ui.folder_with_fbx"))
-                                with gr.Row():
-                                    fx_scan_btn = gr.Button(_t("ui.read_the_folder"))
-                                    fx_save_btn = gr.Button(_t("ui.save_the_settings"))
-                                fx_table = gr.Dataframe(headers=[_t("fbx.file"), _t("fbx.clip_name"), _t("fbx.loop"), _t("fbx.speed"), _t("fbx.in_place"), _t("fbx.group")],
-                                                        datatype=["str", "str", "bool", "number", "bool", "str"],
-                                                        col_count=(6, "fixed"), interactive=True, type="array", wrap=True)
-                                fx_weapon = gr.Dropdown(list(__import__("fbxanim").WEAPON_SETS), value=_t("fbx.none"),
-                                                        label=_t("ui.weapons_in_hand_only_for_viewing"))
-                                fx_go = gr.Button(_t("ui.retarget_onto_the_model"), variant="primary")
-                                fbx_log = gr.Textbox(label=_t("face.progress"), lines=7, interactive=False)   # (not fx_log: that is the effects')
-                                fx_file = gr.File(label=_t("ui.ready_glb"), interactive=False)
-                            with gr.Column(scale=6):
-                                fx_view = gr.HTML(value=_t("ui.the_viewer_appears_here_choose_a"))
-
-                    # ---------------------------------------------------------------- 3. equipment
-                    with gr.Tab(_t("ui.equipment_whole_set")):
-                        with gr.Row():
-                            with gr.Column(scale=1):
-                                gr.Markdown(
-                                    _t("ui.generate_the_same_character_in_the"))
-                                out_model = gr.File(label=_t("ui.glb_of_the_dressed_model_with"), file_types=[".glb"],
-                                                    type="filepath")
-                                with gr.Row(visible=False):   # the current character's body in parts (above)
-                                    out_body = gr.Dropdown(_parts_bodies(), label=_t("ui.onto_which_body_parts_glb"),
-                                                           scale=3, allow_custom_value=True)
-                                    out_refresh = gr.Button(_t("ui.refresh"), scale=1)
-                                out_name = gr.Textbox(label=_t("ui.set_name_folder_in_equipment"))
-                                out_scan_btn = gr.Button(_t("ui.split_into_segments"))
-                            with gr.Column(scale=1):
-                                out_m3d = gr.Model3D(label=_t("ui.model"), height=420, clear_color=(0.9, 0.9, 0.9, 1))
-                        out_note = gr.Markdown("")
-                        out_thumbs = gr.Gallery(label=_t("ui.segments"), columns=8, height=260)
-                        out_names = gr.State([])
-                        out_dd = []
-                        for _row in range(MAX_SEGS // 4):
-                            with gr.Row():
-                                for _ in range(4):
-                                    out_dd.append(gr.Dropdown(list(OF.SLOTS), visible=False, label=""))
-                        out_btn = gr.Button(_t("ui.transfer_the_set"), variant="primary")
-                        out_log = gr.Textbox(label=_t("face.progress"), lines=8, interactive=False)
-                        out_view = gr.Gallery(label=_t("ui.result_on_the_base_body"), columns=4, height=420)
-                    with gr.Tab(_t("ui.equipment_fitting"), id="wear") as tab_wear:   # «Броня» on the current character
-                        landmarks_ui.mount_wear(T.load_config, char_rig, tab_wear, char_tab)
-
-                    with gr.Tab(_t("ui.equipment_procedural"), id="proc_armour") as tab_proc:
-                        armour_gen_ui.mount(T.load_config, char_rig, tab_proc, char_tab)
-
-                    with gr.Tab(_t("ui.weight_fixing"), id="rwt"):
-                        rwt_ui.mount(T.load_config, accordion=False, char=char_rig)  # GPT: Optional repair retains the skeleton.
-                    with gr.Tab(_t("ui.face_parts"), id="face") as tab_face:
-                        face_parts_ui.mount(T.load_config, accordion=False, tab=tab_face)
-                    with gr.Tab(_t("ui.lipsync"), id="lipsync"):
-                        landmarks_ui.mount_lipsync(T.load_config, rig_asset, rig_upload, lm_data, lm_editor, accordion=False)
-
-            # ---------------------------------------------------------------- creatures: four paws, a tail, a muzzle
-            # (no armour, no fitting: their own section, their own current one - kept in work_dir as the character)
-            with gr.Tab(_t("cr.section"), id="g_creature"), gr.Column(elem_classes=["char-wrap"]):
-                with gr.Row(elem_classes=["char-bar"]):
-                    with gr.Column(scale=3):
-                        with gr.Row():
-                            cr_dd = gr.Dropdown(_characters(True), value=_creature_default(), label=_t("cr.current"), scale=4,
-                                                info=_t("cr.legend"))
-                            cr_refresh = gr.Button(_t("ui.refresh"), scale=1)
-                            cr_up = gr.UploadButton(_t("ui.char_add"), file_types=[".glb"], type="filepath", scale=2)
-                            cr_dir = gr.Button(_t("ui.char_open_folder"), scale=1)
-                            cr_del = gr.Button(_t("ui.char_delete"), scale=1, variant="stop")
-                        cr_md = gr.Markdown(creature_info(_creature_default())[0])
-                    with gr.Column(scale=2):
-                        cr_view = gr.Model3D(value=creature_info(_creature_default())[1], label=_t("ui.model"), height=230,
-                                             clear_color=(0.9, 0.9, 0.9, 1))
-                cr_rig = gr.Textbox(visible=False)   # its model with a skeleton, for the tools that take a path
-                cr_tab = gr.State("")   # the label of the section's tab shown (the viewer runs only there)
-                cr_opened = gr.State("")   # the creature the viewer is open on
-                with gr.Tabs(elem_classes=["char-tabs"]) as tabs_cr:
-                    with gr.Tab(_t("ui.skeleton"), id="cr_rig") as cr_tab_rig:
-                        with gr.Row():
-                            with gr.Column(scale=1):
-                                gr.Markdown(_t("cr.rig_intro"))
-                                cr_rig_btn = gr.Button(_t("ui.make_the_skeleton_3_6_minutes_3_5_gb"), variant="primary")
-                                gr.Markdown(_t("cr.straighten_info"))
-                                cr_straight_btn = gr.Button(_t("cr.straighten"))
-                                cr_restore_btn = gr.Button(_t("cr.restore"), variant="secondary")
-                                cr_log = gr.Textbox(label=_t("face.progress"), lines=6, interactive=False)
-                            with gr.Column(scale=1):
-                                cr_jaw_gallery = gr.Gallery(label=_t("cr.jaw_eyes_gallery"), columns=4, height=220)
-                        gr.Markdown(_t("cr.view_info"))
-                        cr_view_btn = gr.Button(_t("cr.view_reopen"))
-                        cr_viewer = gr.HTML()
-                        # the markup's requests (the skeleton and the weights again, the jaw from the mouth's points):
-                        # the page writes here and clicks the button, both kept out of sight
-                        gr.HTML("<style>.sf3d-hidden{display:none!important}</style>")
-                        cr_req = gr.Textbox(elem_id=CR.REQ_ID, elem_classes=["sf3d-hidden"], show_label=False)
-                        cr_go = gr.Button("go", elem_id=CR.REQ_GO, elem_classes=["sf3d-hidden"])
-                    with gr.Tab(_t("cr.anim_tab"), id="cr_anim") as cr_tab_anim:
-                        gr.Markdown(_t("cr.anim_intro"))
-                        cr_srcs = CR.clip_sources()
-                        cr_picks, _items = [], list(cr_srcs.items())
-                        for i0 in range(0, len(_items), 4):   # (four sources a row)
-                            with gr.Row():
-                                cr_picks += [gr.CheckboxGroup(names, value=names if k in CR.CLIP_DEFAULT else [], label=_t("cr.anim_src_" + k))
-                                             for k, (_p, names) in _items[i0:i0 + 4]]
-                        with gr.Row():
-                            cr_anim_btn = gr.Button(_t("cr.anim_go"), variant="primary")
-                            cr_godot_btn = gr.Button(_t("cr.godot_btn"))
-                            cr_check_btn = gr.Button(_t("cc.button"))
-                        cr_anim_log = gr.Textbox(label=_t("face.progress"), lines=4, interactive=False)
-                        cr_check_md = gr.Markdown()
-                        cr_anim_view = gr.HTML()
-                    with gr.Tab(_t("cr.paint_tab"), id="cr_paint") as cr_tab_paint:
-                        gr.Markdown(_t("cr.paint_intro"))
-                        with gr.Row():
-                            cr_paint_btn = gr.Button(_t("cr.view_reopen"))
-                            cr_holes_btn = gr.Button(_t("cr.mend_holes"))
-                            cr_normals_btn = gr.Button(_t("cr.mend_normals"))
-                        cr_paint_log = gr.Textbox(label=_t("face.progress"), lines=3, interactive=False)
-                        cr_paint_view = gr.HTML()
-                        cr_paint_req = gr.Textbox(elem_id=CR.PAINT_ID, elem_classes=["sf3d-hidden"], show_label=False)
-                        cr_paint_go = gr.Button("go", elem_id=CR.PAINT_GO, elem_classes=["sf3d-hidden"])
-                    with gr.Tab(_t("ui.weight_fixing"), id="cr_rwt"):
-                        rwt_ui.mount(T.load_config, accordion=False, char=cr_rig)
-
-            with gr.Tab(_t("ui.environment"), id="g_env"):
-                with gr.Tabs():
-                    # ---------------------------------------------------------------- surfaces
-                    with gr.Tab(_t("ui.surfaces_ground_floor_walls"), id="surf"):
-                        with gr.Row():
-                            with gr.Column(scale=1):
-                                gr.Markdown(_t("ui.a_seamless_material_for_terrain"))
-                                surf_desc = gr.Textbox(label=_t("ui.surface"), lines=2,
-                                                       placeholder=_t("ui.for_example_an_old_cobbled_road_moss"))
-                                surf_own = gr.File(label=_t("ui.or_your_own_picture_top_view"), file_types=["image"],
-                                                   type="filepath")
-                                surf_provider = gr.Radio(list(REF_PROVIDERS), value=list(REF_PROVIDERS)[0],
-                                                         label=_t("ui.generate_with"))
-                                with gr.Row():
-                                    surf_tile = gr.Slider(0.5, 10, value=4, step=0.5, label=_t("ui.the_tile_repeats_every_m"))
-                                    surf_strength = gr.Slider(0.2, 3, value=1.0, step=0.1, label=_t("ui.relief_strength"))
-                                with gr.Row():
-                                    surf_size = gr.Dropdown([512, 1024, 2048], value=1024, label=_t("ui.texture_size_2"))
-                                    surf_name = gr.Textbox(label=_t("ui.name_folder_in_materials"))
-                                surf_btn = gr.Button(_t("ui.make_the_material"), variant="primary")
-                                surf_log = gr.Textbox(label=_t("face.progress"), lines=6, interactive=False)
-                            with gr.Column(scale=1):
-                                surf_gallery = gr.Gallery(label=_t("lm.result"), columns=1, height=520)
-
-                    # ---------------------------------------------------------------- effects
-                    with gr.Tab(_t("ui.effects_particles"), id="fx"):
-                        with gr.Row():
-                            with gr.Column(scale=1):
-                                gr.Markdown(_t("ui.1_an_animated_sheet_for_godot"))
-                                fx_kind = gr.Dropdown(list(FX_KINDS), value=list(FX_KINDS)[0], label=_t("ui.what_to_draw"))
-                                with gr.Row():
-                                    fx_color = gr.ColorPicker(value="#ffffff", label=_t("ui.hue"))
-                                    fx_grid = gr.Dropdown([4, 8], value=8, label=_t("ui.frame_grid"))
-                                    fx_size = gr.Dropdown([64, 128, 256], value=128, label=_t("ui.frame_size_px"))
-                                with gr.Row():
-                                    fx_seed = gr.Number(value=1, precision=0, label=_t("ui.variant_seed"))
-                                    fx_speed = gr.Slider(0.5, 2.0, value=1.0, step=0.1, label=_t("fbx.speed"))
-                                    fx_name = gr.Textbox(label=_t("ui.file_name_empty_by_the_kind"))
-                                fx_flip_btn = gr.Button(_t("ui.make_the_sheet"), variant="primary")
-                                gr.Markdown(_t("ui.2_a_glowing_sprite_from_a"))
-                                fx_provider = gr.Radio(list(REF_PROVIDERS), value=list(REF_PROVIDERS)[0],
-                                                       label=_t("ui.generate_with"))
-                                fx_desc = gr.Textbox(label=_t("ui.description"), lines=2, placeholder=_t("ui.a_summoning_circle_with_runes_blue"))
-                                fx_sname = gr.Textbox(label=_t("ui.file_name_magic_circle_for_the"))
-                                fx_sprite_btn = gr.Button(_t("ui.generate_the_sprite"))
-                                gr.Markdown(_t("ui.3_godot_scenes_from_the_sheets"))
-                                fx_scene_btn = gr.Button(_t("ui.build_the_godot_scenes"))
-                                fx_log = gr.Textbox(label=_t("lm.result"), lines=5, interactive=False)
-                            with gr.Column(scale=1):
-                                fx_gallery = gr.Gallery(label=_t("face.preview"), columns=1, height=560)
-
-                    # ---------------------------------------------------------------- modular kits
-                    with gr.Tab(_t("ui.modular_kits_dungeon"), id="kit"):
-                        with gr.Row():
-                            with gr.Column(scale=1):
-                                gr.Markdown(_t("ui.a_set_of_pieces_that_join_on_a_grid"))
-                                gr.Markdown(_t("ui.1_kit_pieces"))
-                                with gr.Row():
-                                    kit_cell = gr.Number(value=4, label=_t("ui.cell_m"))
-                                    kit_height = gr.Number(value=3, label=_t("ui.storey_height_m"))
-                                    kit_seed = gr.Number(value=1, precision=0, label=_t("ui.masonry_variant"))
-                                _mats = _mat_folders()
-                                with gr.Row():
-                                    kit_wall = gr.Dropdown([KIT_PROC] + _mats, value=KIT_PROC, label=_t("ui.wall_stone"))
-                                    kit_floor = gr.Dropdown(_mats, value="dungeon_floor" if "dungeon_floor" in _mats
-                                                            else (_mats[0] if _mats else None), label=_t("ui.floor_and_stairs"))
-                                    kit_wood = gr.Dropdown(_mats, value="dungeon_wood" if "dungeon_wood" in _mats
-                                                           else (_mats[0] if _mats else None), label=_t("ui.wood_door_beams"))
-                                    kit_mats_btn = gr.Button(_t("ui.refresh_the_list"), scale=0)
-                                kit_build_btn = gr.Button(_t("ui.build_the_pieces"), variant="primary")
-                                gr.Markdown(_t("ui.2_floor_plan_godot_scene_rows_are"))
-                                kit_plan = gr.Textbox(value=_kit_sample(), lines=16, label=_t("ui.plan"), max_lines=40,
-                                                      elem_classes=["mono"])
-                                kit_ceil = gr.Checkbox(value=True, label=_t("ui.ceilings"))
-                                kit_scene_btn = gr.Button(_t("ui.build_the_scene"))
-                                kit_log = gr.Textbox(label=_t("face.progress"), lines=6, interactive=False)
-                            with gr.Column(scale=1):
-                                kit_gallery = gr.Gallery(label=_t("lm.result"), columns=1, height=620)
-
-                    # ---------------------------------------------------------------- destructibles
-                    with gr.Tab(_t("ui.destructible_objects"), id="destr"):
-                        with gr.Row():
-                            with gr.Column(scale=1):
-                                gr.Markdown(_t("ui.the_model_a_barrel_a_crate_a_vase_a"))
-                                with gr.Row():
-                                    dst_asset = gr.Dropdown(_export_assets(), label=_t("ui.finished_model_category_name"), scale=4)
-                                    dst_refresh_btn = gr.Button(_t("ui.refresh"), scale=1)
-                                dst_upload = gr.File(label=_t("ui.or_load_a_glb"), file_types=[".glb"], type="filepath")
-                                with gr.Row():
-                                    dst_chunks = gr.Slider(4, 40, value=14, step=1, label=_t("ui.chunks"))
-                                    dst_seed = gr.Number(value=1, precision=0, label=_t("ui.fracture_variant"))
-                                with gr.Row():
-                                    dst_auto = gr.Checkbox(value=True, label=_t("ui.fracture_colour_from_the_texture"))
-                                    dst_color = gr.ColorPicker(value="#6b4a2e", label=_t("ui.or_your_own_fracture_colour"))
-                                with gr.Row():
-                                    dst_mass = gr.Number(value=20, label=_t("ui.mass_kg"))
-                                    dst_health = gr.Number(value=20, label=_t("ui.toughness"))
-                                    dst_burst = gr.Number(value=3.5, label=_t("ui.fly_apart_speed_m_s"))
-                                dst_name = gr.Textbox(label=_t("ui.name_empty_as_the_model_s"))
-                                dst_btn = gr.Button(_t("ui.make_destructible"), variant="primary")
-                                dst_log = gr.Textbox(label=_t("face.progress"), lines=6, interactive=False)
-                            with gr.Column(scale=1):
-                                dst_view = gr.Model3D(label=_t("ui.model"), height=300, clear_color=(0.9, 0.9, 0.9, 1))
-                                dst_gallery = gr.Gallery(label=_t("ui.check_in_godot_intact_destruction"), columns=2, height=380)
-
-
-        # ---------------------------------------------------------------- dialogs opened from the menu bar
-        with gr.Column(visible=False, elem_classes="dlg") as dlg_vram:
-            with gr.Row():
-                gr.Markdown(_t("ui.video_memory"))
-                dlg_vram_x = gr.Button(_t("ui.close"), scale=0, min_width=110, elem_classes="dlg-close")
-            gr.Markdown(_t("ui.before_generating_close_programs"))
-            gpu_btn = gr.Button(_t("ui.refresh_show_the_video_memory_use"))
-            gpu_md = gr.Markdown("")
-            with gr.Row():
-                gpu_proc = gr.Dropdown([], label=_t("ui.a_program_that_can_be_closed"), scale=3)
-                gpu_force = gr.Checkbox(label=_t("ui.force_unsaved_work_is_lost"), scale=2)
-            gpu_close = gr.Button(_t("ui.close_the_chosen_program"))
-            unload_btn = gr.Button(_t("ui.unload_sf3d_from_video_memory"))
-            gpu_msg = gr.Markdown("")
-        with gr.Column(visible=False, elem_classes="dlg") as dlg_settings:
-            with gr.Row():
-                gr.Markdown(_t("ui.settings"))
-                dlg_settings_x = gr.Button(_t("ui.close"), scale=0, min_width=110, elem_classes="dlg-close")
-            export_dir = gr.Textbox(label=_t("ui.export_folder_later_point_it_to_the"),
-                                    value=cfg["export_dir"])
-            with gr.Row():
-                save_btn = gr.Button(_t("ui.save_the_folder"))
-                open_btn = gr.Button(_t("ui.open_the_folder"))
-            info = gr.Textbox(label=_t("ui.status"), interactive=False)
-            gr.Markdown(_t("ui.openrouter_for_references_with_a_key"))
-            or_key = gr.Textbox(label=_t("ui.openrouter_key"), type="password",
-                                value=("•" * 12) if cfg.get("openrouter_key") else "")
-            with gr.Row():
-                or_img = gr.Textbox(label=_t("ui.model_for_pictures"),
-                                    value=cfg.get("openrouter_image_model", "google/gemini-2.5-flash-image"))
-                or_txt = gr.Textbox(label=_t("ui.model_for_the_style_description"),
-                                    value=cfg.get("openrouter_text_model", "google/gemini-2.5-flash"))
-            or_save = gr.Button(_t("ui.save_the_openrouter_settings"))
-            or_note = gr.Markdown("")
-        with gr.Column(visible=False, elem_classes="dlg") as dlg_help:
-            with gr.Row():
-                gr.Markdown(_t("ui.order_of_work"))
-                dlg_help_x = gr.Button(_t("ui.close"), scale=0, min_width=110, elem_classes="dlg-close")
-            gr.Markdown(HELP_TEXT)
-
-        # ---------------------------------------------------------------- events
-        category.change(on_category, category, preset_note, show_progress="hidden")
-        category.change(lambda c: gr.update(visible=LABEL_TO_KEY.get(c) == "vegetation"), category, veg_kind,
-                        show_progress="hidden")
-        category.change(lambda c: gr.update(value=LABEL_TO_KEY.get(c) in HY_FAST_CATEGORIES), category, hy_fast,
-                        show_progress="hidden")
-        veg_kind.change(lambda k: VEG_STATE.update(kind=VEG_KINDS[k]), veg_kind, None, show_progress="hidden")
-        engine.change(on_engine, engine, [files, hy_views, sf_params, hy_params, tr_params, color_match],
-                      show_progress="hidden")
-        go.click(run,
-                 [engine, files, v_front, v_back, v_left, v_right, category, name, height, width, depth, pivot,
-                  collision, override,
-                  metallic, roughness, tex_res, fg_ratio, remove_bg, remesh, overwrite,
-                  hy_tex, hy_faces, hy_steps, paint, make_preview, color_match, saturation, brightness,
-                  auto_materials, auto_rig, rig_naming, rig_tries, hy_fast, tr_faces, tr_seed],
-                 [logbox, table, viewer, inputs_gallery])
-        gpu_btn.click(gpu_status, None, [gpu_md, gpu_proc])
-        gpu_close.click(gpu_close_proc, [gpu_proc, gpu_force], [gpu_msg, gpu_md, gpu_proc])
-
-        # the current character: its view, what it has, its files in every tab
-        def tab_shown(evt: gr.SelectData):   # its label
-            return evt.value
-
-        tabs_char.select(tab_shown, None, char_tab, show_progress="hidden")
-        char_dd.change(char_info, char_dd, [char_md, char_view], show_progress="hidden")
-        # the character's files changed in place (its skeleton built again: the face, the eyes - a build in «Skeleton»):
-        # its line in the list, its card and its files in the tabs read again when another tab is seen or «Refresh»
-        char_seen = gr.State("")
-        char_dd.change(_char_sig, char_dd, char_seen, show_progress="hidden")
-
-        def char_recheck(v, seen, force=False):
-            sig = _char_sig(v)
-            if sig == seen and not force:
-                return (gr.update(),) * 8 + (seen,)
-            return (gr.update(choices=_characters(), value=v), *char_info(v), *char_for_tabs(v), sig)
-
-        _recheck_out = [char_dd, char_md, char_view, rig_asset, ha_asset, fx_asset, out_body, char_rig, char_seen]
-        tabs_char.select(char_recheck, [char_dd, char_seen], _recheck_out, show_progress="hidden")
-        char_dd.change(char_remember, char_dd, None, show_progress="hidden")
-        # another character: the one-off GLB of the «Skeleton» tab goes (the view, the markup, the build take the character)
-        char_dd.change(lambda: None, None, rig_upload, show_progress="hidden")
-        char_dd.change(char_for_tabs, char_dd, [rig_asset, ha_asset, fx_asset, out_body, char_rig], show_progress="hidden")
-        char_refresh.click(lambda v, sn: char_recheck(v, sn, True), [char_dd, char_seen], _recheck_out)
-        char_up.upload(char_add, char_up, char_dd)
-        char_dir.click(char_open_folder, char_dd, None)
-        char_del.click(char_delete, char_dd, char_dd,   # asked first in the page: «cancel» sends nothing to remove
-                       js="(v) => (v && confirm(%s.replace('{0}', v.split('/').pop()))) ? v : null" % json.dumps(_t("ui.char_delete_confirm")))
-        ui.load(char_for_tabs, char_dd, [rig_asset, ha_asset, fx_asset, out_body, char_rig], show_progress="hidden")
-
-        # rigging
-        rig_refresh_btn.click(rig_refresh, None, rig_asset)
-        rig_upload.change(rig_upload_view, [rig_upload, rig_asset], char_view, show_progress="hidden")
-        rig_upload.clear(lambda v: char_info(v)[1], char_dd, char_view, show_progress="hidden")   # the one-off GLB taken away: the character again
-        # a GLB loaded here becomes a character (its own folder export/character/<name>) and the current one: the bar,
-        # the view, the markup and the build all on it
-        rig_upload.upload(char_add, rig_upload, char_dd)
-
-        # (UniRig: one skeleton at a time, a character's or a creature's - one GPU job)
-        rig_btn.click(rig_run, [rig_upload, rig_asset, rig_naming, rig_tries], [rig_log, char_view],
-                      concurrency_id="unirig", concurrency_limit=1)
-        seam_btn.click(seam_run, [rig_upload, rig_asset], [rig_log, char_view])
-        char_bones_btn.click(rig_viewer, char_rig, char_bones)
-        char_dd.change(lambda: "", None, char_bones, show_progress="hidden")   # another character: open it anew
-
-        # the creatures: the current one, its view, what it has, its files in the section's tabs
-        cr_label, cr_rig_label = _t("cr.section"), _t("ui.skeleton")
-        cr_outs = [cr_rig, cr_jaw_gallery]
-        cr_dd.change(creature_info, cr_dd, [cr_md, cr_view], show_progress="hidden")
-        cr_dd.change(creature_remember, cr_dd, None, show_progress="hidden")
-        cr_dd.change(creature_for_tab, cr_dd, cr_outs, show_progress="hidden")
-        ui.load(creature_for_tab, cr_dd, cr_outs, show_progress="hidden")
-        cr_refresh.click(lambda v: gr.update(choices=_characters(True), value=v), cr_dd, cr_dd)
-        cr_up.upload(creature_add, cr_up, cr_dd)
-        cr_dir.click(char_open_folder, cr_dd, None)
-        cr_del.click(creature_delete, cr_dd, cr_dd,   # asked first in the page: «cancel» sends nothing to remove
-                     js="(v) => (v && confirm(%s.replace('{0}', v.split('/').pop()))) ? v : null" % json.dumps(_t("cr.delete_confirm")))
-        # the skeleton viewer (a heavy 3D page): open while the section and its «Skeleton» tab are shown - entering
-        # them, another creature chosen there, a skeleton made; gone when the section is left
-        main_shown = gr.State("")
-
-        def main_select(value, opened, evt: gr.SelectData):
-            here = evt.value == cr_label
-            if not here:
-                return evt.value, "", ""
-            return evt.value, *((creature_viewer(value), value) if value != opened else (gr.update(), opened))
-
-        main_tabs.select(main_select, [cr_dd, cr_opened], [main_shown, cr_viewer, cr_opened], show_progress="hidden")
-        tabs_cr.select(tab_shown, None, cr_tab, show_progress="hidden")
-        cr_tab_rig.select(lambda v, op: (creature_viewer(v), v) if v != op else (gr.update(), op), [cr_dd, cr_opened],
-                          [cr_viewer, cr_opened], show_progress="hidden")
-        cr_dd.change(lambda v, m, t: (creature_viewer(v), v) if m == cr_label and t in ("", cr_rig_label) else ("", ""),
-                     [cr_dd, main_shown, cr_tab], [cr_viewer, cr_opened], show_progress="hidden")
-        cr_view_btn.click(lambda v: (creature_viewer(v), v), cr_dd, [cr_viewer, cr_opened])
-
-        # the clips: made, then played in the viewer (also when the tab is entered and the creature has them)
-        def cr_anim_go(v, *ps):   # (a generator itself: Gradio streams only those)
-            yield from creature_animate(v, list(cr_srcs), ps)
-
-        cr_anim_btn.click(cr_anim_go, [cr_dd, *cr_picks], [cr_anim_log, cr_anim_view], concurrency_id="creature_markup",
-                          concurrency_limit=1)
-        cr_tab_anim.select(creature_clips_viewer, cr_dd, cr_anim_view, show_progress="hidden")
-
-        def cr_picks_of(v):   # the ticks: the clips the creature has (a transfer again keeps them), else the defaults
-            f = _char_files(v) or {}
-            had = CR.clips_had(f["dir"], f["name"]) if f.get("dir") else None
-            return [gr.update(value=(had.get(k, []) if had is not None else (names if k in CR.CLIP_DEFAULT else [])))
-                    for k, (_p, names) in cr_srcs.items()]
-
-        cr_tab_anim.select(cr_picks_of, cr_dd, cr_picks, show_progress="hidden")
-        cr_tab_paint.select(creature_paint_view, cr_dd, cr_paint_view, show_progress="hidden")
-        cr_paint_btn.click(creature_paint_view, cr_dd, cr_paint_view)
-
-        def cr_mend(v, what):   # the model's defects mended in every file of the creature; the page again on it
-            f = _char_files(v) or {}
-            lines = []
-            try:
-                for line in CR.mend(f["dir"], f["name"], what):
-                    lines.append(line)
-                    yield "\n".join(lines), gr.update()
-                yield "\n".join(lines), creature_paint_view(v)
-            except Exception as e:  # noqa: BLE001
-                lines.append(_t("ui.error_2", e))
-                yield "\n".join(lines), gr.update()
-        def cr_mend_holes(v):   # (generator functions of their own: a lambda's generator was not streamed once)
-            yield from cr_mend(v, "holes")
-
-        def cr_mend_normals(v):
-            yield from cr_mend(v, "normals")
-        cr_holes_btn.click(cr_mend_holes, cr_dd, [cr_paint_log, cr_paint_view], concurrency_id="creature_markup", concurrency_limit=1)
-        cr_normals_btn.click(cr_mend_normals, cr_dd, [cr_paint_log, cr_paint_view], concurrency_id="creature_markup", concurrency_limit=1)
-        cr_paint_go.click(creature_paint_request, [cr_dd, cr_paint_req], [cr_paint_log, cr_paint_view],
-                          concurrency_id="creature_markup", concurrency_limit=1)
-
-        def cr_godot(v):   # the creature with its clips in Godot (a window of its own)
-            f = _char_files(v) or {}
-            try:
-                return CR.godot_view(T.load_config(), f["dir"], f["name"]) if f else _t("cr.none")
-            except Exception as e:  # noqa: BLE001
-                return _t("ui.error_2", e)
-
-        cr_godot_btn.click(cr_godot, cr_dd, cr_anim_log)
-
-        def cr_check(v):   # the creature's clips (<name>_clips.glb) checked: the floor, sliding, the loops' seams
-            import clipcheck
-            f = _char_files(v) or {}
-            glb = f["dir"] / f"{f['name']}_clips.glb" if f else None
-            if glb is None or not glb.exists():
-                yield _t("cr.anim_view_none")
-                return
-            yield _t("cc.running", glb.name)
-            try:
-                cfg = T.load_config()
-                yield clipcheck.check(cfg, glb, Path(cfg["work_dir"]) / "clip_check")[0]
-            except Exception as e:  # noqa: BLE001
-                yield _t("ui.error_2", e)
-        cr_check_btn.click(cr_check, cr_dd, cr_check_md, concurrency_id="creature_markup", concurrency_limit=1)
-        cr_dd.change(lambda: ("", "", "", "", ""), None, [cr_anim_view, cr_anim_log, cr_paint_view, cr_paint_log, cr_check_md], show_progress="hidden")
-
-        def cr_after(v):   # a skeleton made: the list (its mark), what it has, its files, its viewer
-            return (gr.update(choices=_characters(True), value=v), *creature_info(v), *creature_for_tab(v),
-                    creature_viewer(v), v)
-
-        cr_after_outs = [cr_dd, cr_md, cr_view, *cr_outs, cr_viewer, cr_opened]
-        cr_rig_btn.click(creature_rig, cr_dd, [cr_log, cr_view, cr_jaw_gallery],
-                         concurrency_id="unirig", concurrency_limit=1).then(cr_after, cr_dd, cr_after_outs, show_progress="hidden")
-        cr_restore_btn.click(lambda v: creature_steps(v, "restore"), cr_dd, [cr_log, cr_view, cr_jaw_gallery],
-                             concurrency_id="creature_markup", concurrency_limit=1).then(cr_after, cr_dd, cr_after_outs, show_progress="hidden")
-        cr_straight_btn.click(creature_straighten, cr_dd, [cr_log, cr_view, cr_jaw_gallery], concurrency_id="creature_markup",
-                              concurrency_limit=1).then(cr_after, cr_dd, cr_after_outs, show_progress="hidden")
-        cr_go.click(creature_request, [cr_dd, cr_req], [cr_log, cr_view, cr_jaw_gallery], concurrency_id="creature_markup",
-                    concurrency_limit=1).then(cr_after, cr_dd, cr_after_outs, show_progress="hidden")
-        split_btn.click(split_run, [rig_upload, rig_asset], [rig_log, char_view])
-
-        # equipment
-        out_refresh.click(lambda: gr.update(choices=_parts_bodies()), None, out_body)
-        out_model.change(lambda f: (f if isinstance(f, str) else getattr(f, "name", None)) if f else None,
-                         out_model, out_m3d, show_progress="hidden")
-        out_scan_btn.click(outfit_scan, out_model, [out_note, out_thumbs, out_names, out_name, *out_dd])
-        out_btn.click(outfit_run, [out_model, out_body, out_name, out_names, *out_dd], [out_log, out_m3d, out_view])
-
-        # materials
-        mat_refresh_btn.click(mat_refresh, None, mat_asset)
-        mat_asset.change(lambda a: preview_pick(None, a), mat_asset, mat_m3d, show_progress="hidden")
-        mat_analyze_btn.click(mat_analyze, mat_asset, [mat_overlay, mat_note, *mat_dd])
-        mat_apply_btn.click(mat_apply, [mat_asset, *mat_dd], [mat_status, mat_m3d, mat_gallery])
-
-        # reference pictures
-        ui.load(ref_style_load, None, [ref_style_text, ref_style_files])
-        ref_describe_btn.click(ref_describe, [ref_provider, ref_style_files], [ref_style_text, ref_style_note])
-        ref_style_save_btn.click(ref_style_save, [ref_style_text, ref_style_files], ref_style_note)
-        ref_go.click(ref_generate, [ref_provider, ref_obj, ref_cat, ref_n, ref_style_text, ref_style_files],
-                     [ref_log, ref_gallery, ref_paths])
-        ref_gallery.select(ref_pick, ref_paths, [ref_front, ref_choice_note])
-        ref_views_btn.click(ref_views, [ref_provider, ref_front, ref_obj, ref_cat, ref_style_text, ref_style_files,
-                                        ref_want], [ref_log, ref_views_gallery, ref_views_state])
-        ref_send_btn.click(ref_send, [ref_views_state, ref_front, ref_cat, ref_obj],
-                           [engine, files, v_front, v_back, v_left, v_right, category, name, main_tabs, tabs_create])
-        or_save.click(ref_save_keys, [or_key, or_img, or_txt], or_note)
-
-        # surfaces, effects, modular kits
-        surf_btn.click(surface_run, [surf_provider, surf_desc, surf_own, surf_tile, surf_strength, surf_size, surf_name],
-                       [surf_log, surf_gallery])
-        fx_flip_btn.click(fx_flip_run, [fx_kind, fx_color, fx_grid, fx_size, fx_seed, fx_speed, fx_name],
-                          [fx_log, fx_gallery])
-        fx_sprite_btn.click(fx_sprite_run, [fx_provider, fx_desc, fx_sname], [fx_log, fx_gallery])
-        fx_scene_btn.click(fx_build_scenes, None, [fx_log, fx_gallery])
-        kit_mats_btn.click(kit_refresh_mats, None, [kit_wall, kit_floor, kit_wood])
-        kit_build_btn.click(kit_build, [kit_cell, kit_height, kit_seed, kit_wall, kit_floor, kit_wood],
-                            [kit_log, kit_gallery])
-        kit_scene_btn.click(kit_scene, [kit_plan, kit_ceil], [kit_log, kit_gallery])
-
-        # Mixamo FBX animations
-        fx_refresh.click(lambda: gr.update(choices=_rigged_assets()), None, fx_asset)
-        fx_scan_btn.click(fbx_scan, fx_folder, [fx_table, fbx_log])
-        fx_save_btn.click(fbx_save, [fx_folder, fx_table], fbx_log)
-        fx_go.click(fbx_run, [fx_upload, fx_asset, fx_folder, fx_table, fx_weapon], [fbx_log, fx_view, fx_file])
-        ui.load(fbx_scan, fx_folder, [fx_table, fbx_log])
-
-        # humanoid animations
-        ha_refresh_btn.click(lambda: gr.update(choices=_rigged_assets()), None, ha_asset)
-        ha_asset.change(hanim_pick, [ha_upload, ha_asset], ha_view, show_progress="hidden")
-        ha_upload.change(hanim_pick, [ha_upload, ha_asset], ha_view, show_progress="hidden")
-        ha_btn.click(hanim_run, [ha_upload, ha_asset, ha_clips, ha_manner, ha_seed, ha_death], [ha_log, ha_gallery, ha_view])
-
-        def ha_check(view, upload, asset):   # the clips just made (else the current character's <name>_anim.glb) checked
-            import clipcheck
-            cfg = T.load_config()
-            glb = Path(view) if isinstance(view, str) and view else None
-            if glb is None:
-                src = Path(upload if isinstance(upload, str) else upload.name) if upload else (_rigged_path(asset) if asset else None)
-                if src:
-                    glb = _clips_file(src, "anim")
-                    if not glb.exists():   # (made before 2026-11-19: in export/character/<the model's name>/)
-                        name = T.slug(src.stem.replace("_rigged", "").replace("_wings", ""))
-                        glb = Path(cfg["export_dir"]) / "character" / name / f"{name}_anim.glb"
-            if glb is None or not glb.exists():
-                yield _t("cc.none")
-                return
-            yield _t("cc.running", glb.name)
-            try:
-                yield clipcheck.check(cfg, glb, Path(cfg["work_dir"]) / "clip_check")[0]
-            except Exception as e:  # noqa: BLE001
-                yield _t("ui.error_2", e)
-        ha_check_btn.click(ha_check, [ha_view, ha_upload, ha_asset], ha_check_md)
-
-        # destructibles
-        dst_refresh_btn.click(lambda: gr.update(choices=_export_assets()), None, dst_asset)
-        dst_asset.change(preview_pick, [dst_upload, dst_asset], dst_view, show_progress="hidden")
-        dst_upload.change(preview_pick, [dst_upload, dst_asset], dst_view, show_progress="hidden")
-        dst_btn.click(destr_run, [dst_upload, dst_asset, dst_chunks, dst_seed, dst_auto, dst_color, dst_mass,
-                                  dst_health, dst_burst, dst_name], [dst_log, dst_gallery])
-
-        # batch, settings
-        scan_btn.click(on_scan, [batch_dir, batch_cat], [batch_jobs, batch_info])
-        batch_btn.click(batch_run_view, [batch_dir, batch_cat, batch_over, batch_prev, batch_mat, batch_rig,
-                                    rig_naming, rig_tries],
-                        [batch_log, batch_table, batch_view, batch_gallery])
-        save_btn.click(save_settings, export_dir, info)
-        open_btn.click(open_export, export_dir, info)
-        unload_btn.click(unload_model, None, gpu_msg).then(status_html, None, gpu_stat, show_progress="hidden")
-
-        # skeleton: one of two ways at a time
-        rig_mode.change(lambda m: (gr.update(visible=m == RIG_MODES[0]), gr.update(visible=m != RIG_MODES[0])),
-                        rig_mode, [rig_auto_box, rig_manual_box], show_progress="hidden")
-
-        # menu bar, dialogs, GPU strip
-        def open_folder_toast(key, fallback):
-            p = Path(T.load_config().get(key) or fallback)
-            p.mkdir(parents=True, exist_ok=True)
-            os.startfile(str(p))
-            gr.Info(_t("ui.opened_folder", p))
-
-        def unload_toast():
-            gr.Info(unload_model())
-            return status_html()
-
-        def show_dialog(which):
-            return [gr.update(visible=i == which) for i in range(3)]
-
-        dialogs = [dlg_vram, dlg_settings, dlg_help]
-        mi_open_export.click(lambda: open_folder_toast("export_dir", T.ROOT / "export"), None, None)
-        mi_open_input.click(lambda: open_folder_toast("input_dir", T.ROOT / "input"), None, None)
-        mi_batch.click(lambda: (gr.Tabs(selected="g_create"), gr.Tabs(selected="batch")), None,
-                       [main_tabs, tabs_create], show_progress="hidden")
-        mi_vram.click(lambda: show_dialog(0), None, dialogs, show_progress="hidden") \
-            .then(gpu_status, None, [gpu_md, gpu_proc])
-        mi_settings.click(lambda: show_dialog(1), None, dialogs, show_progress="hidden")
-        mi_help.click(lambda: show_dialog(2), None, dialogs, show_progress="hidden")
-        mi_unload.click(unload_toast, None, gpu_stat, show_progress="hidden")
-        for code, btn in mi_langs:
-            if code != i18n.LANG:
-                btn.click(lambda c=code: switch_language(c), None, None, show_progress="hidden").then(None, None, None, js=RESTART_JS)
-        for close_btn in (dlg_vram_x, dlg_settings_x, dlg_help_x):
-            close_btn.click(lambda: show_dialog(None), None, dialogs, show_progress="hidden")
-        ui.load(status_html, None, gpu_stat, show_progress="hidden")
-        gpu_timer.tick(status_html, None, gpu_stat, show_progress="hidden", concurrency_id="gpu_strip",
-                       concurrency_limit=1)
-    return ui
-
-
-if __name__ == "__main__":
-    if os.environ.pop("SF3D_WAIT_PORT", None):
-        _wait_port(PORT)
-    ui = build()
-    ui.queue(default_concurrency_limit=1).launch(
-        server_name="127.0.0.1", server_port=PORT, inbrowser=False, show_api=False,
-        allowed_paths=[T.load_config()["export_dir"], T.load_config()["work_dir"]],
-    )

@@ -1,5 +1,6 @@
 """The web UI's own texts (web.* keys), merged into tool/lang/ru.json and en.json by `python lang_web.py`: new keys
-are appended at the end, changed ones replaced in place; the files keep their CRLF and one-space layout."""
+are appended at the end, changed ones replaced in place, the ones in REMOVED taken out; the files keep their CRLF and
+one-space layout."""
 import json
 import re
 import sys
@@ -95,14 +96,7 @@ TEXTS = {
                             "Test copy: export and work point to temporary folders, the language is not saved into config.json."),
     "web.need_character": ("выберите персонажа сверху", "choose a character on top"),
     "web.need_creature": ("выберите существо сверху", "choose a creature on top"),
-    "web.in_gradio": ("пока в Gradio", "still in Gradio"),
-    "web.in_gradio_tip": ("Этот шаг ещё не перенесён: он открывается в приложении Gradio", "This step is not moved yet: it opens in the Gradio app"),
-    "web.only_ready": ("Только перенесённые шаги", "Only moved steps"),
     "web.collapse": ("Свернуть меню", "Collapse the menu"),
-    "web.works_on": ("Работает на текущем объекте: {}", "Works on the current object: {}"),
-    "web.gradio_path": ("Сейчас в Gradio:", "Now in Gradio:"),
-    "web.open_gradio": ("Открыть приложение Gradio", "Open the Gradio app"),
-    "web.plan_link": ("План переноса", "The moving plan"),
     # dock and tasks
     "web.dock": ("Журнал и задачи", "Log and tasks"),
     "web.gpu_idle": ("видеокарта свободна", "the GPU is free"),
@@ -118,8 +112,8 @@ TEXTS = {
     "web.st_cancelled": ("отменена", "cancelled"),
     "web.busy": ("Сейчас идёт задача SF3D: выгрузить можно после неё.", "An SF3D task is running: unload after it."),
     "web.gpu_util": ("Загрузка ГП: {} %", "GPU load: {} %"),
-    "web.gpu_queue_note": ("Задачи на видеокарте идут по одной: следующая ждёт, пока закончится предыдущая и освободится память (в том числе от приложения Gradio).",
-                           "GPU tasks run one at a time: the next waits until the previous ends and the memory is free (the Gradio app's use included)."),
+    "web.gpu_queue_note": ("Задачи на видеокарте идут по одной: следующая ждёт, пока закончится предыдущая и освободится память (в том числе от других программ).",
+                           "GPU tasks run one at a time: the next waits until the previous ends and the memory is free (other programs' use included)."),
     # 3D view
     "web.view_top": ("Сверху", "Top"),
     "web.v_frame": ("Показать целиком (F)", "Frame it (F)"),
@@ -321,8 +315,6 @@ TEXTS = {
     "web.input_dir": ("Исходные картинки", "Source pictures"),
     "web.key_set": ("ключ задан", "key set"),
     "web.key_unset": ("ключа нет", "no key"),
-    "web.settings_note": ("Папки и ключ пока меняются в приложении Gradio (Параметры → Настройки): обе программы читают один config.json.",
-                          "The folders and the key are still changed in the Gradio app (Options → Settings): both read one config.json."),
 }
 
 
@@ -342,6 +334,8 @@ def merge(path: Path, lang: int):
                               lambda m, line=line: line + m.group(1), body, count=1)
         else:
             added.append(line)
+    for k in REMOVED:   # (none of them the file's last key)
+        body = re.sub(r'(?m)^ ' + re.escape(json.dumps(k, ensure_ascii=False)) + r': ".*?(?<!\\)",\n', "", body, count=1)
     if added:
         head = body[:-1].rstrip()
         body = head + ",\n" + ",\n".join(added) + "\n}"
@@ -349,6 +343,11 @@ def merge(path: Path, lang: int):
     json.loads(out)   # (still valid)
     path.write_bytes(out.encode("utf-8"))
     return len(added)
+
+
+# the texts of the Gradio-era screens (the step «still in Gradio», the settings note), gone from the files too
+REMOVED = ("web.in_gradio", "web.in_gradio_tip", "web.gradio_path", "web.open_gradio", "web.plan_link", "web.works_on",
+           "web.only_ready", "web.settings_note")
 
 
 if __name__ == "__main__":

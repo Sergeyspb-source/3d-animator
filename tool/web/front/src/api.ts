@@ -10,7 +10,7 @@ export interface TaskSummary {
 export interface Gpu { used: number | null; total: number | null; free: number | null; util: number | null; sf3d: boolean }
 export interface AppState {
   lang: string; langs: Record<string, string>; test_bench: boolean;
-  export_dir: string; work_dir: string; input_dir?: string; drafts_dir: string; gradio: string;
+  export_dir: string; work_dir: string; input_dir?: string; drafts_dir: string;
   has_openrouter_key: boolean; gpu: Gpu; tasks: TaskSummary[]; bridges: { equip: [string, string]; markup: string; pose: string; rigface: string; creature: [string, string]; paint: [string, string]; wear: string[] };
 }
 export interface SceneObject {

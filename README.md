@@ -6,7 +6,7 @@ A local Windows toolkit that turns pictures into game-ready 3D assets for Godot 
 
 Everything runs on your own GPU. The only cloud piece is the optional reference-image generator (your ChatGPT subscription through Codex CLI, or an OpenRouter key).
 
-It glues several open-source models together (Stable Fast 3D, Hunyuan3D-2, UniRig) with Blender and Godot scripts. It has a Gradio GUI in English and Russian and two command-line tools.
+It glues several open-source models together (Stable Fast 3D, Hunyuan3D-2, UniRig) with Blender and Godot scripts. It has its own interface (a page in an app window) in English and Russian and two command-line tools.
 
 > **Status: personal tool, shared as is.** It was built and tested on a single machine (Windows 11, RTX 4060 Laptop 8 GB VRAM, 31 GB RAM). Many paths are hardcoded, so read [Hardcoded paths](#hardcoded-paths) before installing.
 
@@ -26,7 +26,7 @@ It glues several open-source models together (Stable Fast 3D, Hunyuan3D-2, UniRi
 
 ## What it does
 
-| GUI tab | What you get | Engine |
+| Interface section | What you get | Engine |
 |---|---|---|
 | Create → Reference | Style card + reference pictures (single view or front/back/left/right) for a model, built from a text prompt | Codex CLI (ChatGPT) or OpenRouter |
 | Create → Make a model | GLB from 1 picture (~20 s), from 1–4 views (7–10 min, ~5 min with the fast shape) or from 1 picture with its own metal/roughness map (1–4 min), with pivot, real-world scale, collision proxy, PBR factors, previews and an icon. Categories: item, prop, building, character, vegetation | SF3D / Hunyuan3D-2mv + Hunyuan3D-Paint / TRELLIS.2 (trellis.cpp) |
@@ -60,7 +60,7 @@ Outputs go to `export\<category>\<name>\` (GLB + JSON stats + icon). Scratch fil
 
 ### Interface language
 
-The **🌐** menu at the top switches between English and Russian. The choice is saved in `tool/config.json` (`"lang"`), the server restarts by itself, and the page comes back in the new language after a few seconds. All texts live in `tool/lang/en.json` and `tool/lang/ru.json`; to add a language, copy one of them, translate the values and add the code to `LANGS` in `tool/i18n.py`.
+The language button at the top switches between English and Russian at once. The choice is saved in `tool/config.json` (`"lang"`). All texts live in `tool/lang/en.json` and `tool/lang/ru.json`; to add a language, copy one of them, translate the values and add the code to `LANGS` in `tool/i18n.py`.
 
 ![The language menu](docs/images/en/ui_language.jpg)
 
@@ -462,33 +462,32 @@ On first start, `tool\config.example.json` is used. To change the paths or the l
 
 | How | What |
 |---|---|
-| `sf3d-ui.vbs` (double-click) | GUI with no console, opens an app window at `http://127.0.0.1:7861`. Closing the window stops the server and frees VRAM |
-| `sf3d-ui.bat` | same GUI with a visible console (for debugging) |
+| `sf3d-ui.vbs` (double-click) | the interface with no console: builds the page if its sources changed, opens an app window at `http://127.0.0.1:7890`. Closing the window stops the server and the programs it runs and frees VRAM |
+| `sf3d-ui.bat` | the same interface with a visible console (for debugging) |
 | `sf3d-tool.bat generate <image or folder> --category prop` | one-off CLI: image(s) → game-ready GLB |
 | `sf3d-tool.bat post work\item\axe\raw.glb --category item --name axe` | re-run post-processing only |
 | `sf3d-batch.bat <folder> [--force] [--no-preview]` | batch: `<folder>\<category>\pic.png` → SF3D; `<folder>\<category>\<asset>\front.png [back/left/right.png]` → Hunyuan3D |
 | `sf3d-gradio.bat` | the original SF3D demo UI (port 7860) |
-| `sf3d-web.bat` | the new web interface at `http://127.0.0.1:7890`, beside Gradio (see below) |
 
-### The new web interface (7890)
+### The interface (7890)
 
-The interface is moving from Gradio to a page of its own, section by section. Gradio on 7861 keeps working as before until a section is moved and checked.
+Since 25.11.2026 the interface is a page of its own; the former Gradio tabs (7861) are gone. Their functions stayed (`tool\sf3d_ui.py` and the modules beside it), and the page calls them.
 
 ![Before: a Gradio tab in a narrow column. After: the new interface on the whole screen, the chains menu on the left, 3D in the middle, properties on the right, the log and tasks at the bottom](docs/images/en/web_ui_before_after.jpg)
 
-- **The left menu follows the chains of work:** Models (reference → make → check → materials → release, batch), Character (overview, skeleton, face, looks, animations, weights, to the game), Equipment (workshop, materials and textures, fitting, check, release), Creatures, Environment. Steps with an external-link icon still open in Gradio; the «Only moved steps» switch hides them, Alt+1…7 switch the section's steps.
-- **On top:** the current character or creature (the same as Gradio's «current character»), video memory in use, the task count, a search over every step (Ctrl+K), the language, light and dark themes.
+- **The left menu follows the chains of work:** Models (reference → make → check → materials → release, batch), Character (overview, skeleton, face, looks, animations, weights, to the game), Equipment (workshop, materials and textures, fitting, check, release), Creatures, Environment. Alt+1…7 switch the section's steps.
+- **On top:** the current character or creature (one for the whole interface), video memory in use, the task count, a search over every step (Ctrl+K), the language, light and dark themes.
 - **At the bottom, the log and the tasks.** Everything that runs on the GPU goes into one queue and runs one task at a time. The log streams in; a task can be cancelled, and the programs it started stop with it. The ` key folds the dock.
-- **Models → Make a model:** SF3D, Hunyuan3D (with the fast shape) and TRELLIS.2 with the same options as the Gradio tab. The result is shown in 3D at once: views, grid, wireframe, the Godot collision, a 1.75 m person for scale, F frames the model. The model lands as a **draft** in `work\web_drafts\export\<category>\<name>\`.
+- **Models → Make a model:** SF3D, Hunyuan3D (with the fast shape) and TRELLIS.2 with every option of the engine. The result is shown in 3D at once: views, grid, wireframe, the Godot collision, a 1.75 m person for scale, F frames the model. The model lands as a **draft** in `work\web_drafts\export\<category>\<name>\`.
 - **Models → Check:** the drafts with their size, face count, time, previews and the source picture. «Release into export» moves the folder to `export\<category>\<name>\`; if a model is there already it asks, and the old one goes to `work\web_drafts\replaced\` (nothing is deleted). «Remove» puts the draft aside in `work\web_drafts\discarded\`.
 - **Models → Release:** what is in export already, by category.
-- **Equipment** and **Character → Looks:** the same procedural editor as in Gradio, on the whole screen and by steps: «Workshop» (the pieces' catalogue and the shape), «Materials and textures», «Fitting» (what is worn and its layers, the gap to the skin, motion, the pinch brush), «Check» (in motion, the Godot fitting room), «Release» (the made pieces, the rebuild by layers, «Generate»). The scene and the piece stay between the steps. «Looks» shows only hairstyles, beards, brows and lashes. A piece's bake, a generator's preview and the check in motion go into the shared task queue; their pictures show in a strip over the editor. The Workshop has three ways to a piece: «Make» (procedurally), «A finished piece (GLB)» (the «Armour» editor: place a finished piece and put it on) and «Off a dressed model» (a dressed model's segments by slot → a set on the body in parts).
-- **Character:** «Overview» — what the character has (the skeleton and its bone count, mouth and eyes, hairstyles and beards, clips, pieces worn), each row opening its step; add a character from a GLB, open its folder, delete it (asked first). «Skeleton» in four modes: «By landmarks» (the markup editor and «Build the skeleton» with the build options; after a build the editor opens in the pose on the new skeleton by itself), «Automatic (UniRig)» (plus the seams between parts and the body in parts), «Pose and fist» (any skeleton; the fist is kept at once), «Bones and weights». «Weights» — the armpits' weight repair (Robust Weight Transfer), «To the game» — the Godot fitting room. «Face»: «The face on the skeleton» (a landmark skeleton gets its face with it; on an auto-rig the face is marked and built here), «Eyes, teeth, tongue» (the shared set with a live 3D preview, saved to `exportace_parts\<name>`), «Speech» (a lip-sync clip from a voice and its text, the line played on the face). «Animations»: «Watch the clips» (own or Mixamo, with a weapon in hand, «Check the clips» — the report over the viewer), «Own clips» (the 12 procedural ones, a manner, a death kind), «Mixamo (FBX)» (the folder's clip table: name, loop, speed, in place, group editable; «Retarget onto the model»).
+- **Equipment** and **Character → Looks:** the procedural editor, on the whole screen and by steps: «Workshop» (the pieces' catalogue and the shape), «Materials and textures», «Fitting» (what is worn and its layers, the gap to the skin, motion, the pinch brush), «Check» (in motion, the Godot fitting room), «Release» (the made pieces, the rebuild by layers, «Generate»). The scene and the piece stay between the steps. «Looks» shows only hairstyles, beards, brows and lashes. A piece's bake, a generator's preview and the check in motion go into the shared task queue; their pictures show in a strip over the editor. The Workshop has three ways to a piece: «Make» (procedurally), «A finished piece (GLB)» (the «Armour» editor: place a finished piece and put it on) and «Off a dressed model» (a dressed model's segments by slot → a set on the body in parts).
+- **Character:** «Overview» — what the character has (the skeleton and its bone count, mouth and eyes, hairstyles and beards, clips, pieces worn), each row opening its step; add a character from a GLB, open its folder, delete it (asked first). «Skeleton» in four modes: «By landmarks» (the markup editor and «Build the skeleton» with the build options; after a build the editor opens in the pose on the new skeleton by itself), «Automatic (UniRig)» (plus the seams between parts and the body in parts), «Pose and fist» (any skeleton; the fist is kept at once), «Bones and weights». «Weights» — the armpits' weight repair (Robust Weight Transfer), «To the game» — the Godot fitting room. «Face»: «The face on the skeleton» (a landmark skeleton gets its face with it; on an auto-rig the face is marked and built here), «Eyes, teeth, tongue» (the shared set with a live 3D preview, saved to `export\face_parts\<name>`), «Speech» (a lip-sync clip from a voice and its text, the line played on the face). «Animations»: «Watch the clips» (own or Mixamo, with a weapon in hand, «Check the clips» — the report over the viewer), «Own clips» (the 12 procedural ones, a manner, a death kind), «Mixamo (FBX)» (the folder's clip table: name, loop, speed, in place, group editable; «Retarget onto the model»).
 - **Creatures:** the current object on top is a character or a creature, one for the whole interface. «Overview» (bones, paws, tail, jaw, clips, colourings), «Skeleton» (UniRig with names and a jaw, «Straighten the rest pose», «Restore», the markup viewer: joints, mouth, the weight brush; the jaw's pictures), «Eyes» (the same viewer's «Eyes» mode), «Animations» (clips by body kind and own ones, «Check the clips», «Open in Godot»), «Colouring and repair» (variants, «Mend holes», «Recompute normals»), «Weights», «To the game».
-- **Environment** («Surfaces», «Effects», «Dungeons», «Destructibles»; «Vegetation» is «Make a model» with that category), **Models → Reference** (variants, back and side views, the project's style; «Send to 3D» fills «Make a model»: one picture — SF3D, with views — Hunyuan3D) and **Models → Model materials** (the colour groups and a material for each) — the same options as the Gradio tabs; the pictures made show as a grid where the 3D view is.
+- **Environment** («Surfaces», «Effects», «Dungeons», «Destructibles»; «Vegetation» is «Make a model» with that category), **Models → Reference** (variants, back and side views, the project's style; «Send to 3D» fills «Make a model»: one picture — SF3D, with views — Hunyuan3D) and **Models → Model materials** (the colour groups and a material for each); the pictures made show as a grid where the 3D view is.
 - **Models → Batch processing:** a folder of pictures as one task; the models go into the drafts, «Check → Release all» releases at once those export does not have yet. **Video memory:** what holds the card (by Windows' counters) and «Close» a program (asked first; system ones are not offered). **Settings:** the export folder and OpenRouter (the key is never shown; an empty field keeps it) are written to `config.json`.
 
-The page is built with Vite + TypeScript + React + Mantine, 3D with three.js. The FastAPI server in the `sf3d` env (`tool\web\server.py`) calls the same functions as Gradio. `sf3d-web.bat` builds the page on the first start and after the page changes (Node.js 18+ and npm needed). The order in which the other sections move is in `docs\ROADMAP.md`, stage 9.
+The page is built with Vite + TypeScript + React + Mantine, 3D with three.js. The FastAPI server in the `sf3d` env (`tool\web\server.py`) calls the app's functions; some of them still answer in Gradio's form (`gr.update`, `gr.Progress`), so the `gradio` package stays installed for now. `sf3d-ui.vbs` / `sf3d-ui.bat` build the page on the first start and after the page changes (Node.js 18+ and npm needed). What is next is in `docs\ROADMAP.md`, stage 9.
 
 **Run one GPU job at a time.** Approximate peak VRAM: SF3D 6.2 GB, Hunyuan shape 5.8 GB (fast 6.5 GB), Hunyuan paint 7.4 GB, TRELLIS.2 1.7–4.2 GB (up to 5.3 GB with the desktop's share), UniRig 4.5 GB. The GUI checks free memory before each job.
 
@@ -558,16 +557,15 @@ D:\conda\envs\sf3d\python.exe tool\anim_gallery.py "<character>_landmarks_rigged
 ## Repository layout
 
 ```
-sf3d-ui.vbs / sf3d-ui.bat     GUI launchers
-sf3d-web.bat                  the new web interface (7890)
+sf3d-ui.vbs / sf3d-ui.bat     the interface's launchers (7890)
 sf3d-tool.bat / sf3d-batch.bat CLI launchers
 sf3d-env.bat                  environment for the sf3d env
 *-install.ps1, *-weights.ps1, *-build.bat   installers for Hunyuan3D, TRELLIS.2 and UniRig
 patches/                      changes applied on top of the third-party repos
 docs/images/                  README screenshots (en/, ru/)
 tool/
-  sf3d_ui.py                  Gradio GUI (all tabs)
-  web/                        the new web interface: server.py (FastAPI), tasks.py (the GPU task queue),
+  sf3d_ui.py                  the app's functions the interface calls (models, characters, creatures, environment)
+  web/                        the interface: server.py (FastAPI), tasks.py (the GPU task queue),
                               models.py (the «Models» chain), equip.py + adapters/ (the equipment editor in the new page),
                               lang_web.py (its texts), front/ (the page: Vite + TypeScript)
   i18n.py, lang/*.json        interface language: every text by key (English, Russian)

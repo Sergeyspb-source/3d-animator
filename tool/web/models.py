@@ -1,6 +1,6 @@
 """«Models» chain of the web UI: picture -> model (SF3D / Hunyuan3D / TRELLIS.2) -> check -> release.
 
-The generators are the Gradio app's own (sf3d_ui.generate, generate_hy, generate_trellis): called with the same
+The generators are the app's own (sf3d_ui.generate, generate_hy, generate_trellis): called with the same
 arguments its tab gives them. One difference: a model is made as a DRAFT - the run sees export_dir pointed at
 <work_dir>/web_drafts/export (a thread-local config override), and «Release» moves the draft's folder into the real
 export (a model there already is moved aside to web_drafts/replaced, never deleted)."""

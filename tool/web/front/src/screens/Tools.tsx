@@ -127,7 +127,6 @@ export function SettingsScreen({ state }: { state: AppState }) {
               <Table.Td w={60}><Button size="xs" variant="subtle" onClick={() => post('/api/open', { path: v })}><IconFolder size={14} /></Button></Table.Td></Table.Tr>))}
           </Table.Tbody>
         </Table>
-        <Button component="a" href={st.gradio} target="_blank" rel="noreferrer" variant="default" w="fit-content">{t('web.open_gradio')}</Button>
       </Stack>
     </ScrollArea>
   );

@@ -1,5 +1,5 @@
 """SF3D web UI: the app's Python (sf3d_ui and the other modules) behind a FastAPI server, the page built by Vite
-(tool/web/front -> front/dist). Runs beside the Gradio app on its own port (7890 by default):
+(tool/web/front -> front/dist). The app's interface, on its own port (7890 by default; sf3d-ui.vbs / sf3d-ui.bat start it):
 
     D:\\conda\\envs\\sf3d\\python.exe tool\\web\\server.py [--port 7890]
 
@@ -111,7 +111,7 @@ def state():
     cfg = T.load_config()
     return {"lang": i18n.LANG, "langs": i18n.LANGS, "test_bench": TEST_BENCH,
             "export_dir": cfg["export_dir"], "work_dir": cfg["work_dir"], "input_dir": cfg.get("input_dir"),
-            "drafts_dir": M.drafts_root(cfg).as_posix(), "gradio": f"http://127.0.0.1:{UI.PORT}",
+            "drafts_dir": M.drafts_root(cfg).as_posix(),
             "has_openrouter_key": bool(cfg.get("openrouter_key") or os.environ.get("OPENROUTER_API_KEY")),
             "gpu": dict(GPU), "tasks": tasks.list(),
             "bridges": {"equip": [UI.armour_gen_ui.TARGET_ID, UI.armour_gen_ui.GO_ID],
@@ -139,7 +139,7 @@ async def set_lang(req: Request):
     code = (await req.json()).get("lang")
     if code not in i18n.LANGS:
         raise HTTPException(400, "unknown language")
-    # the server's own messages switch at once; the setting is shared with the Gradio app (config.json "lang")
+    # the server's own messages switch at once; the setting is config.json "lang" (the handler modules read it too)
     i18n.LANG = code
     i18n._TEXT = i18n._load(code)
     i18n._BASE = i18n._TEXT if code == i18n.DEFAULT else i18n._load(i18n.DEFAULT)
@@ -257,7 +257,7 @@ def objects():
     chars = [o for o in (_obj(v) for _, v in UI._characters()) if o]
     crs = [o for o in (_obj(v, True) for _, v in UI._characters(True)) if o]
     ids = {o["id"] for o in chars + crs}
-    try:   # the one current object of the web UI (a character or a creature), else the Gradio app's current character
+    try:   # the one current object of the web UI (a character or a creature), else the handler modules' current character
         cur = _web_memo().read_text(encoding="utf-8").strip()
     except OSError:
         cur = ""
@@ -274,7 +274,7 @@ async def object_current(req: Request):
     if not v:
         return {"ok": False}
     _web_memo().write_text(v, encoding="utf-8")
-    # the Gradio app's own memo of that kind too (its «current character» / «current creature»)
+    # the handler modules' own memo of that kind too (its «current character» / «current creature»)
     is_creature = any(c == v for _, c in UI._characters(True)) and not any(c == v for _, c in UI._characters())
     (UI.creature_remember if is_creature else UI.char_remember)(v)
     return {"ok": True}

@@ -1,7 +1,7 @@
 """The web UI's task queue: every job that may use the GPU (SF3D, Hunyuan, TRELLIS.2, UniRig, Blender bakes) runs on
 one worker thread, one at a time, in the order asked; the page sees each task's state and log as events.
 
-The jobs themselves are the app's own functions (sf3d_ui.generate ... - generators of the Gradio app). A task's
+The jobs themselves are the app's own functions (sf3d_ui.generate ... - generators in Gradio's form). A task's
 function gets the Task and reports through it: set_lines (the whole log as it is now: the diff goes to the page),
 set_progress, result. Cancelling a running task stops its generator at its next step and kills the programs it
 started (Hunyuan's python, trellis-cli, Blender): subprocess.Popen is wrapped to know whose they are."""

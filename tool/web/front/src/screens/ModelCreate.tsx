@@ -1,4 +1,4 @@
-// Models → Create a model: SF3D / Hunyuan3D (fast shape) / TRELLIS.2, the same options as the Gradio tab, the
+// Models → Create a model: SF3D / Hunyuan3D (fast shape) / TRELLIS.2, the same options as the former Gradio tab, the
 // result straight in the 3D view. It is made as a draft; «Release» puts it into export.
 import { useEffect, useMemo, useState } from 'react';
 import { Accordion, Alert, Button, CloseButton, Group, Image, Kbd, NumberInput, ScrollArea, SegmentedControl, Select, SimpleGrid,

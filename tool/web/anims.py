@@ -1,5 +1,5 @@
 """«Character → Animations» in the web UI: the 12 procedural clips (hanim), Mixamo FBX motions retargeted (fbxanim),
-the clip check (clipcheck) and the clip viewer (viewer_anim.html) - the Gradio app's own functions, long ones as
+the clip check (clipcheck) and the clip viewer (viewer_anim.html) - the app's own functions, long ones as
 tasks of the shared queue."""
 import json
 from pathlib import Path

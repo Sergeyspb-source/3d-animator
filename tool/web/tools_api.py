@@ -1,5 +1,5 @@
 """The menu's bottom in the web UI: batch processing (a folder of pictures into drafts), the video memory (who holds it,
-closing a program), the settings (export folder, OpenRouter) - the Gradio app's own functions where they do not write
+closing a program), the settings (export folder, OpenRouter) - the app's own functions where they do not write
 the config; the config is written here from the file as it is (never from the web server's overridden view of it)."""
 import json
 from pathlib import Path
