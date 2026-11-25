@@ -37,6 +37,7 @@ import character as CH  # noqa: E402
 import face as FC  # noqa: E402
 import anims as AN  # noqa: E402
 import creature as CRW  # noqa: E402
+import env as EV  # noqa: E402
 
 for k, env in (("export_dir", "SF3D_EXPORT_DIR"), ("work_dir", "SF3D_WORK_DIR")):
     if os.environ.get(env):
@@ -622,6 +623,68 @@ async def gradio_upload(files: list[UploadFile] = File(...)):
         dst.write_bytes(await f.read())
         out.append(str(dst))
     return out
+
+
+# ------------------------------------------------------------------ «Environment», «Models → Reference / Model materials»
+ENV_JOBS = {"surface": ("web.task_surface", EV.surface_task), "fx_flip": ("web.task_fx", EV.fx_flip_task),
+            "fx_sprite": ("web.task_fx_sprite", EV.fx_sprite_task), "fx_scenes": ("web.task_fx_scenes", EV.fx_scenes_task),
+            "kit_build": ("web.task_kit", EV.kit_build_task), "kit_scene": ("web.task_kit_scene", EV.kit_scene_task),
+            "destr": ("web.task_destr", EV.destr_task), "ref": ("web.task_ref", EV.ref_task), "ref_views": ("web.task_ref_views", EV.ref_views_task)}
+
+
+@app.get("/api/env/options")
+def env_options():
+    return EV.options()
+
+
+@app.post("/api/env/{job}")
+async def env_job(job: str, req: Request):
+    if job not in ENV_JOBS:
+        raise HTTPException(404, "no such job")
+    p = await req.json()
+    for k in ("own", "front"):
+        if p.get(k):
+            _allowed(p[k])
+    for f in p.get("style_files") or []:
+        _allowed(f)
+    key, make = ENV_JOBS[job]
+    what = (p.get("name") or p.get("asset") or p.get("obj") or p.get("desc") or "").strip()[:40]
+    t = tasks.submit(Task("env", _t(key) + (f" · {what}" if what else ""), make(p), meta={"job": job}))
+    return {"ok": True, "task": t.summary()}
+
+
+@app.get("/api/env/asset_model")
+def env_asset_model(asset: str):
+    return {"model": EV.asset_model(asset)}
+
+
+@app.post("/api/ref/describe")
+async def ref_describe(req: Request):
+    p = await req.json()
+    for f in p.get("files") or []:
+        _allowed(f)
+    return await asyncio.to_thread(EV.ref_describe, p)
+
+
+@app.post("/api/ref/style_save")
+async def ref_style_save(req: Request):
+    p = await req.json()
+    for f in p.get("files") or []:
+        _allowed(f)
+    return EV.ref_style_save(p)
+
+
+@app.get("/api/mat/analyze")
+def mat_analyze(asset: str):
+    return EV.mat_analyze(asset)
+
+
+@app.post("/api/mat/apply")
+async def mat_apply(req: Request):
+    p = await req.json()
+    t = tasks.submit(Task("env", _t("web.task_mat") + " · " + (p.get("asset") or ""), EV.mat_apply_task(p.get("asset") or "", p.get("values") or []),
+                          meta={"job": "mat"}))
+    return {"ok": True, "task": t.summary()}
 
 
 @app.get("/file={rest:path}")

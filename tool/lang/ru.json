@@ -3224,5 +3224,18 @@
  "web.task_cr_clips": "Клипы существа",
  "web.task_cr_godot": "Существо в Godot",
  "web.task_cr_paint": "Раскраска существа",
- "web.task_cr_mend": "Починка модели существа"
+ "web.task_cr_mend": "Починка модели существа",
+ "web.ext_service": "Картинку делает внешний сервис: ChatGPT через Codex (по подписке) или OpenRouter (по ключу в настройках).",
+ "web.env_results_here": "Здесь появятся сделанные листы кадров и спрайты.",
+ "web.ref_chosen": "Вариант выбран: можно сделать виды или сразу отправить в 3D",
+ "web.task_surface": "Поверхность",
+ "web.task_fx": "Лист кадров",
+ "web.task_fx_sprite": "Спрайт",
+ "web.task_fx_scenes": "Сцены эффектов Godot",
+ "web.task_kit": "Детали подземелья",
+ "web.task_kit_scene": "Сцена подземелья",
+ "web.task_destr": "Разрушаемый объект",
+ "web.task_ref": "Референс",
+ "web.task_ref_views": "Виды референса",
+ "web.task_mat": "Материалы модели"
 }

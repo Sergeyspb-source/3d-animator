@@ -58,6 +58,17 @@ export default function ModelCreate({ go, vegetation }: { go: (r: Route) => void
   const task = useStore(live, (s) => (taskId ? s.tasks[taskId] : undefined));
 
   useEffect(() => { get<Options>('/api/models/options').then(setOpt); }, []);
+  useEffect(() => {   // pictures sent here from «Reference» (one picture: SF3D; with views: Hunyuan3D)
+    try {
+      const raw = localStorage.getItem('sf3d.create_prefill');
+      if (!raw) return;
+      localStorage.removeItem('sf3d.create_prefill');
+      const pf = JSON.parse(raw);
+      set({ engine: pf.engine || f.engine, category: pf.category || f.category, name: pf.name || f.name });
+      setPics(pf.pics || []);
+      setViews(pf.views || {});
+    } catch { /* (nothing sent) */ }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => onTaskFinished((tk: TaskSummary) => {
     if (tk.id !== taskId) return;
     const r = tk.result || {};

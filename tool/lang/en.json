@@ -3224,5 +3224,18 @@
  "web.task_cr_clips": "The creature's clips",
  "web.task_cr_godot": "The creature in Godot",
  "web.task_cr_paint": "The creature's colouring",
- "web.task_cr_mend": "The creature's model mended"
+ "web.task_cr_mend": "The creature's model mended",
+ "web.ext_service": "An outside service makes the picture: ChatGPT through Codex (the subscription) or OpenRouter (the key in the settings).",
+ "web.env_results_here": "The sheets and sprites made appear here.",
+ "web.ref_chosen": "A variant is chosen: make its views or send it to 3D at once",
+ "web.task_surface": "Surface",
+ "web.task_fx": "Flipbook sheet",
+ "web.task_fx_sprite": "Sprite",
+ "web.task_fx_scenes": "Godot effect scenes",
+ "web.task_kit": "Dungeon pieces",
+ "web.task_kit_scene": "Dungeon scene",
+ "web.task_destr": "Destructible object",
+ "web.task_ref": "Reference",
+ "web.task_ref_views": "Reference views",
+ "web.task_mat": "Model materials"
 }

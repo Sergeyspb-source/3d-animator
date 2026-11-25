@@ -7,10 +7,10 @@ export interface Section { id: string; key: string; icon: Icon; object?: 'charac
 
 export const SECTIONS: Section[] = [
   { id: 'models', key: 'web.sec_models', icon: IconBox, steps: [
-    { id: 'ref', key: 'ui.reference', gradio: ['ui.create', 'ui.reference'], about: 'web.about_ref' },
+    { id: 'ref', ready: true, key: 'ui.reference', gradio: ['ui.create', 'ui.reference'], about: 'web.about_ref' },
     { id: 'create', key: 'ui.make_a_model', ready: true, about: 'web.about_create' },
     { id: 'check', key: 'web.step_check', ready: true, about: 'web.about_check' },
-    { id: 'materials', key: 'web.step_model_materials', gradio: ['ui.create', 'ui.materials'], about: 'web.about_model_materials' },
+    { id: 'materials', ready: true, key: 'web.step_model_materials', gradio: ['ui.create', 'ui.materials'], about: 'web.about_model_materials' },
     { id: 'release', key: 'web.step_release', ready: true, about: 'web.about_release' },
     { id: 'batch', key: 'ui.batch_processing_2', gradio: ['ui.create', 'ui.batch_processing_2'], about: 'web.about_batch' },
   ] },
@@ -40,10 +40,10 @@ export const SECTIONS: Section[] = [
     { id: 'game', ready: true, key: 'web.step_game', gradio: ['cr.section', 'cr.anim_tab'], about: 'web.about_cr_game' },
   ] },
   { id: 'environment', key: 'ui.environment', icon: IconTrees, steps: [
-    { id: 'surfaces', key: 'web.step_surfaces', gradio: ['ui.environment', 'ui.surfaces_ground_floor_walls'], about: 'web.about_surfaces' },
-    { id: 'fx', key: 'web.step_fx', gradio: ['ui.environment', 'ui.effects_particles'], about: 'web.about_fx' },
-    { id: 'dungeons', key: 'web.step_dungeons', gradio: ['ui.environment', 'ui.modular_kits_dungeon'], about: 'web.about_dungeons' },
-    { id: 'destructibles', key: 'web.step_destructibles', gradio: ['ui.environment', 'ui.destructible_objects'], about: 'web.about_destructibles' },
+    { id: 'surfaces', ready: true, key: 'web.step_surfaces', gradio: ['ui.environment', 'ui.surfaces_ground_floor_walls'], about: 'web.about_surfaces' },
+    { id: 'fx', ready: true, key: 'web.step_fx', gradio: ['ui.environment', 'ui.effects_particles'], about: 'web.about_fx' },
+    { id: 'dungeons', ready: true, key: 'web.step_dungeons', gradio: ['ui.environment', 'ui.modular_kits_dungeon'], about: 'web.about_dungeons' },
+    { id: 'destructibles', ready: true, key: 'web.step_destructibles', gradio: ['ui.environment', 'ui.destructible_objects'], about: 'web.about_destructibles' },
     { id: 'vegetation', key: 'web.step_vegetation', ready: true, about: 'web.about_vegetation' },
   ] },
 ];

@@ -23,6 +23,7 @@ import { CharWeights, CharGame } from './screens/CharMore';
 import CharFace from './screens/CharFace';
 import CharAnims from './screens/CharAnims';
 import { CrOverviewScreen, CrSkeleton, CrAnims, CrPaint, CrGame } from './screens/Creatures';
+import { Surfaces, Effects, Dungeons, Destructibles, Reference, ModelMaterials } from './screens/EnvScreens';
 import { TasksScreen, GpuScreen, SettingsScreen } from './screens/Tools';
 
 export default function App({ initial }: { initial: AppState }) {
@@ -64,6 +65,12 @@ export default function App({ initial }: { initial: AppState }) {
   else if (route.section === 'models' && route.step === 'create') screen = <ModelCreate go={go} />;
   else if (route.section === 'environment' && route.step === 'vegetation') screen = <ModelCreate go={go} vegetation />;
   else if (route.section === 'models' && route.step === 'check') screen = <ModelCheck go={go} />;
+  else if (route.section === 'models' && route.step === 'ref') screen = <Reference go={go} />;
+  else if (route.section === 'models' && route.step === 'materials') screen = <ModelMaterials />;
+  else if (route.section === 'environment' && route.step === 'surfaces') screen = <Surfaces />;
+  else if (route.section === 'environment' && route.step === 'fx') screen = <Effects />;
+  else if (route.section === 'environment' && route.step === 'dungeons') screen = <Dungeons />;
+  else if (route.section === 'environment' && route.step === 'destructibles') screen = <Destructibles />;
   else if (route.section === 'models' && route.step === 'release') screen = <ModelRelease />;
   else if (route.section === 'character' && route.step === 'overview') screen = <CharOverview go={go} />;
   else if (route.section === 'character' && route.step === 'skeleton') screen = <CharSkeleton bridges={initial.bridges} />;
