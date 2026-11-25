@@ -7,7 +7,7 @@ import { useLocalStorage } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { IconMicrophone } from '@tabler/icons-react';
 import { fileUrl, get, live, onTaskFinished, post, upload, useStore } from '../api';
-import { useT } from '../i18n';
+import { plain, useT } from '../i18n';
 import { useCurrent } from '../objects';
 import type { Route } from '../nav';
 import EditorFrame, { fieldValue } from '../components/EditorFrame';
@@ -129,7 +129,7 @@ export default function CharFace({ go, bridges }: { go: (r: Route) => void; brid
       <SegmentedControl size="xs" value={mode} onChange={(m) => setMode(m as Mode)} data={[
         { value: 'face', label: t('web.face_on_rig') }, { value: 'parts', label: t('web.face_parts') }, { value: 'speech', label: t('web.face_speech') }]} />
       <Text size="xs" c="dimmed" truncate style={{ flex: 1 }}>
-        {mode === 'face' ? (st?.auto ? t('lm.rig_face_mark_hint') : '') : mode === 'speech' ? t('lm.the_model_is_taken_from_the_skeleton') : ''}
+        {mode === 'face' ? (st?.auto ? plain(t('lm.rig_face_mark_hint')) : '') : mode === 'speech' ? plain(t('lm.the_model_is_taken_from_the_skeleton')) : ''}
       </Text>
       {mode === 'face' && st?.auto && <Button size="compact-sm" disabled={!hasMarks || running}
         onClick={() => post('/api/face/build', { id, markup: fieldValue(bridges.rigface) })}>{t('lm.rig_face_build')}</Button>}

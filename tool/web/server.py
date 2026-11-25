@@ -36,6 +36,7 @@ import equip as EQ  # noqa: E402
 import character as CH  # noqa: E402
 import face as FC  # noqa: E402
 import anims as AN  # noqa: E402
+import creature as CRW  # noqa: E402
 
 for k, env in (("export_dir", "SF3D_EXPORT_DIR"), ("work_dir", "SF3D_WORK_DIR")):
     if os.environ.get(env):
@@ -113,7 +114,8 @@ def state():
             "gpu": dict(GPU), "tasks": tasks.list(),
             "bridges": {"equip": [UI.armour_gen_ui.TARGET_ID, UI.armour_gen_ui.GO_ID],
                         "markup": UI.landmarks.TARGET_ID, "pose": UI.landmarks.TARGET_ID + "_pose",
-                        "rigface": UI.landmarks.TARGET_ID + "_rigface"}}
+                        "rigface": UI.landmarks.TARGET_ID + "_rigface",
+                        "creature": [UI.CR.REQ_ID, UI.CR.REQ_GO], "paint": [UI.CR.PAINT_ID, UI.CR.PAINT_GO]}}
 
 
 def _lang_file(code):
@@ -251,13 +253,27 @@ def _obj(value, creature=False):
 def objects():
     chars = [o for o in (_obj(v) for _, v in UI._characters()) if o]
     crs = [o for o in (_obj(v, True) for _, v in UI._characters(True)) if o]
-    return {"characters": chars, "creatures": crs, "current": UI._char_default()}
+    ids = {o["id"] for o in chars + crs}
+    try:   # the one current object of the web UI (a character or a creature), else the Gradio app's current character
+        cur = _web_memo().read_text(encoding="utf-8").strip()
+    except OSError:
+        cur = ""
+    return {"characters": chars, "creatures": crs, "current": cur if cur in ids else UI._char_default()}
+
+
+def _web_memo() -> Path:
+    return Path(T.load_config()["work_dir"]) / "web_current_object.txt"
 
 
 @app.post("/api/objects/current")
 async def object_current(req: Request):
     v = (await req.json()).get("id")
-    UI.char_remember(v)   # (work_dir/current_character.txt: the Gradio app's «current character» too)
+    if not v:
+        return {"ok": False}
+    _web_memo().write_text(v, encoding="utf-8")
+    # the Gradio app's own memo of that kind too (its «current character» / «current creature»)
+    is_creature = any(c == v for _, c in UI._characters(True)) and not any(c == v for _, c in UI._characters())
+    (UI.creature_remember if is_creature else UI.char_remember)(v)
     return {"ok": True}
 
 
@@ -547,6 +563,65 @@ async def anim_fbx(req: Request):
 def editor_clips(id: str, kind: str = "fbx", weapon: str = ""):
     v = _char(id)
     return _page_or_note(lambda: AN.viewer_page(v, "anim" if kind == "anim" else "fbx", weapon))
+
+
+# ------------------------------------------------------------------ «Creatures»
+@app.get("/api/cr/overview")
+def cr_overview(id: str):
+    return CRW.overview(_char(id))
+
+
+@app.post("/api/cr/add")
+async def cr_add(req: Request):
+    return CRW.add(str(_allowed((await req.json()).get("path") or "")))
+
+
+def _cr_post(key, what, make):
+    async def handler(req: Request):
+        p = await req.json()
+        v = _char(p.get("id") or "")
+        return _char_task(key, v, make(v, p), what)
+    return handler
+
+
+app.post("/api/cr/rig")(_cr_post("web.task_cr_rig", "rig", lambda v, p: CRW.rig_task(v)))
+app.post("/api/cr/straighten")(_cr_post("web.task_cr_straighten", "straighten", lambda v, p: CRW.straighten_task(v)))
+app.post("/api/cr/restore")(_cr_post("web.task_cr_restore", "restore", lambda v, p: CRW.restore_task(v)))
+app.post("/api/cr/request")(_cr_post("web.task_cr_markup", "markup", lambda v, p: CRW.request_task(v, p.get("text") or "{}")))
+app.post("/api/cr/animate")(_cr_post("web.task_cr_clips", "clips", lambda v, p: CRW.animate_task(v, p.get("picks") or {})))
+app.post("/api/cr/check")(_cr_post("web.task_clipcheck", "clipcheck", lambda v, p: CRW.check_task(v)))
+app.post("/api/cr/godot")(_cr_post("web.task_cr_godot", "godot", lambda v, p: CRW.godot_task(v)))
+app.post("/api/cr/paint")(_cr_post("web.task_cr_paint", "paint", lambda v, p: CRW.paint_task(v, p.get("text") or "{}")))
+app.post("/api/cr/mend")(_cr_post("web.task_cr_mend", "mend", lambda v, p: CRW.mend_task(v, "normals" if p.get("what") == "normals" else "holes")))
+
+
+@app.get("/api/cr/clip_options")
+def cr_clip_options(id: str):
+    return CRW.clip_options(_char(id))
+
+
+@app.get("/editor/creature")
+def editor_creature(id: str, what: str = "viewer", current: str = ""):
+    v = _char(id)
+    make = {"viewer": lambda: CRW.viewer_page(v), "clips": lambda: CRW.clips_page(v),
+            "paint": lambda: CRW.paint_page(v, current)}.get(what, lambda: CRW.viewer_page(v))
+    return _page_or_note(make)
+
+
+@app.post("/upload")
+async def gradio_upload(files: list[UploadFile] = File(...)):
+    """Gradio's /upload as the colouring page uses it: the files land in Gradio's temp folder (creatures.paint_save
+    takes pictures only from there) and their paths come back as a list."""
+    import tempfile
+    root = Path(os.environ.get("GRADIO_TEMP_DIR") or Path(tempfile.gettempdir()) / "gradio") / "sf3d_web" / uuid.uuid4().hex[:12]
+    root.mkdir(parents=True, exist_ok=True)
+    out = []
+    for f in files:
+        name = "".join(c if c.isalnum() or c in "-_." else "_" for c in Path(f.filename or "file").name)[:80] or "file"
+        dst = root / name
+        dst.write_bytes(await f.read())
+        out.append(str(dst))
+    return out
 
 
 @app.get("/file={rest:path}")

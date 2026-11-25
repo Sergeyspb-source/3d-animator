@@ -7,7 +7,7 @@ import { useHotkeys, useLocalStorage } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { IconAdjustments } from '@tabler/icons-react';
 import { fileUrl, get, live, onTaskFinished, post, useStore, type TaskSummary } from '../api';
-import { useT } from '../i18n';
+import { plain, useT } from '../i18n';
 import { useCurrent, useObjects } from '../objects';
 import EditorFrame, { fieldValue } from '../components/EditorFrame';
 import Viewer3D from '../components/Viewer3D';
@@ -79,7 +79,7 @@ export default function CharSkeleton({ bridges }: { bridges: { markup: string; p
         { value: 'markup', label: t('web.rig_markup') }, { value: 'auto', label: t('web.rig_auto') },
         { value: 'pose', label: t('web.rig_pose'), disabled: !cur?.rigged }, { value: 'bones', label: t('web.rig_bones'), disabled: !cur?.rigged }]} />
       <Text size="xs" c="dimmed" truncate style={{ flex: 1 }}>
-        {mode === 'markup' ? t(pageMode === 'pose' ? 'web.rig_markup_pose' : 'web.rig_markup_hint') : mode === 'pose' ? note || t('lm.rig_pose_info') : mode === 'bones' ? t('cr.view_any_info') : ''}
+        {mode === 'markup' ? t(pageMode === 'pose' ? 'web.rig_markup_pose' : 'web.rig_markup_hint') : mode === 'pose' ? note || plain(t('lm.rig_pose_info')) : mode === 'bones' ? plain(t('cr.view_any_info')) : ''}
       </Text>
       {mode === 'markup' && opts && <>
         {pageMode === 'pose' && <Button size="compact-sm" variant="subtle" color="gray" onClick={() => setPageMode('markup')}>{t('web.rig_back_to_markup')}</Button>}

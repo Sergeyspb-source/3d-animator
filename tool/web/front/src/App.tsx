@@ -22,6 +22,7 @@ import CharSkeleton from './screens/CharSkeleton';
 import { CharWeights, CharGame } from './screens/CharMore';
 import CharFace from './screens/CharFace';
 import CharAnims from './screens/CharAnims';
+import { CrOverviewScreen, CrSkeleton, CrAnims, CrPaint, CrGame } from './screens/Creatures';
 import { TasksScreen, GpuScreen, SettingsScreen } from './screens/Tools';
 
 export default function App({ initial }: { initial: AppState }) {
@@ -68,6 +69,12 @@ export default function App({ initial }: { initial: AppState }) {
   else if (route.section === 'character' && route.step === 'skeleton') screen = <CharSkeleton bridges={initial.bridges} />;
   else if (route.section === 'character' && route.step === 'face') screen = <CharFace go={go} bridges={initial.bridges} />;
   else if (route.section === 'character' && route.step === 'anim') screen = <CharAnims />;
+  else if (route.section === 'creatures' && route.step === 'overview') screen = <CrOverviewScreen go={go} />;
+  else if (route.section === 'creatures' && (route.step === 'skeleton' || route.step === 'eyes')) screen = <CrSkeleton bridge={initial.bridges.creature} eyes={route.step === 'eyes'} />;
+  else if (route.section === 'creatures' && route.step === 'anim') screen = <CrAnims />;
+  else if (route.section === 'creatures' && route.step === 'paint') screen = <CrPaint bridge={initial.bridges.paint} />;
+  else if (route.section === 'creatures' && route.step === 'weights') screen = <CharWeights creature />;
+  else if (route.section === 'creatures' && route.step === 'game') screen = <CrGame />;
   else if (route.section === 'character' && route.step === 'weights') screen = <CharWeights />;
   else if (route.section === 'character' && route.step === 'game') screen = <CharGame go={go} />;
   else if (route.section === 'equipment' || (route.section === 'character' && route.step === 'look'))   // (one editor: kept between the steps)

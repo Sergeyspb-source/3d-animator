@@ -11,10 +11,10 @@ import type { Route } from '../nav';
 import Viewer3D from '../components/Viewer3D';
 import { useOverview } from './CharOverview';
 
-export function CharWeights() {
+export function CharWeights({ creature = false }: { creature?: boolean }) {
   const t = useT();
   const cur = useCurrent();
-  const id = cur && !cur.creature ? cur.id : undefined;
+  const id = cur && cur.creature === creature ? cur.id : undefined;
   const [mesh, setMesh] = useState('');
   const [region, setRegion] = useState('auto');
   const [group, setGroup] = useState('');
@@ -28,7 +28,7 @@ export function CharWeights() {
     if (tk.status === 'done' && tk.result?.model) setResult(tk.result);
     if (tk.status === 'error') notifications.show({ color: 'rust', title: tk.title, message: tk.error || '' });
   }), [id]);
-  if (!id) return <div className="placeholder"><Text c="ember.3">{t('web.need_character')}</Text></div>;
+  if (!id) return <div className="placeholder"><Text c="ember.3">{t(creature ? 'web.need_creature' : 'web.need_character')}</Text></div>;
   const go = () => post('/api/char/weights', { id, mesh, group: region === 'group' ? group : '', strength, size });
   return (
     <div className="work two">

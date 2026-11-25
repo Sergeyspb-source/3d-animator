@@ -35,3 +35,5 @@ export function I18nProvider({ initial, langs, children }: { initial: string; la
 }
 export const useI18n = () => useContext(Ctx);
 export const useT = () => useContext(Ctx).t;
+// a Gradio text written in Markdown, shown as plain text (its **bold** and `code` marks dropped)
+export const plain = (s: string) => s.replace(/\*\*|`/g, '');

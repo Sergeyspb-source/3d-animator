@@ -3210,5 +3210,19 @@
  "web.anim_has": "The character has own clips already: {}. New ones replace them.",
  "web.task_anim": "Own clips",
  "web.task_clipcheck": "Clip check",
- "web.task_fbx": "Mixamo clips"
+ "web.task_fbx": "Mixamo clips",
+ "web.cr_rig_state": "{} bones; paws: {}; tail: {}",
+ "web.cr_jaw": "a jaw",
+ "web.cr_no_jaw": "no jaw",
+ "web.cr_clips": "clips: {}",
+ "web.cr_eyes_hint": "The eyes are put in the viewer: its «Eyes» mode — the cut, the eyeball, the colours; «Apply» sends them to the build.",
+ "web.cr_game_intro": "The creature opens in Godot with its clips: it shows how it moves in the game.",
+ "web.task_cr_rig": "The creature's skeleton",
+ "web.task_cr_straighten": "The creature's rest pose",
+ "web.task_cr_restore": "The creature's skeleton: restore",
+ "web.task_cr_markup": "The creature's markup",
+ "web.task_cr_clips": "The creature's clips",
+ "web.task_cr_godot": "The creature in Godot",
+ "web.task_cr_paint": "The creature's colouring",
+ "web.task_cr_mend": "The creature's model mended"
 }

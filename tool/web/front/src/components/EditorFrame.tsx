@@ -7,8 +7,11 @@ export function fieldValue(id: string): string {
   return document.querySelector<HTMLTextAreaElement>(`#${id} textarea`)?.value || '';
 }
 
-export default function EditorFrame({ src, fields = [], onField, title, allow }:
-  { src: string; fields?: string[]; onField?: (id: string, value: string) => void; title: string; allow?: string }) {
+// go: the hidden buttons a page «clicks» after writing its request into a field (its id, that field's id, what to do)
+export interface Go { id: string; field: string; onGo: (value: string) => void }
+
+export default function EditorFrame({ src, fields = [], onField, title, allow, go = [] }:
+  { src: string; fields?: string[]; onField?: (id: string, value: string) => void; title: string; allow?: string; go?: Go[] }) {
   const host = useRef<HTMLDivElement>(null);
   const cb = useRef(onField);
   cb.current = onField;
@@ -26,7 +29,10 @@ export default function EditorFrame({ src, fields = [], onField, title, allow }:
   return (
     <>
       <iframe key={src} src={src} className="equip-frame" title={title} allow={allow} />
-      <div ref={host} hidden>{fields.map((id) => <div key={id} id={id}><textarea defaultValue="" /></div>)}</div>
+      <div ref={host} hidden>
+        {fields.map((id) => <div key={id} id={id}><textarea defaultValue="" /></div>)}
+        {go.map((g) => <button key={g.id} id={g.id} type="button" onClick={() => g.onGo(fieldValue(g.field))} />)}
+      </div>
     </>
   );
 }
