@@ -34,6 +34,7 @@ from fastapi.staticfiles import StaticFiles  # noqa: E402
 import models as M  # noqa: E402  (patches sf3d_tool.load_config first)
 import equip as EQ  # noqa: E402
 import character as CH  # noqa: E402
+import face as FC  # noqa: E402
 
 for k, env in (("export_dir", "SF3D_EXPORT_DIR"), ("work_dir", "SF3D_WORK_DIR")):
     if os.environ.get(env):
@@ -110,7 +111,8 @@ def state():
             "has_openrouter_key": bool(cfg.get("openrouter_key") or os.environ.get("OPENROUTER_API_KEY")),
             "gpu": dict(GPU), "tasks": tasks.list(),
             "bridges": {"equip": [UI.armour_gen_ui.TARGET_ID, UI.armour_gen_ui.GO_ID],
-                        "markup": UI.landmarks.TARGET_ID, "pose": UI.landmarks.TARGET_ID + "_pose"}}
+                        "markup": UI.landmarks.TARGET_ID, "pose": UI.landmarks.TARGET_ID + "_pose",
+                        "rigface": UI.landmarks.TARGET_ID + "_rigface"}}
 
 
 def _lang_file(code):
@@ -445,6 +447,48 @@ async def char_weights(req: Request):
 async def char_wardrobe(req: Request):
     v = _char((await req.json()).get("id") or "")
     return _char_task("web.task_wardrobe", v, CH.wardrobe_task(v), "wardrobe")
+
+
+# ------------------------------------------------------------------ «Character → Face»
+@app.get("/api/face/state")
+def face_state(id: str):
+    return FC.state(_char(id))
+
+
+@app.get("/editor/face")
+def editor_face(id: str, mode: str = "mark", clip: str = ""):
+    v = _char(id)
+    return _page_or_note(lambda: FC.say_page(v, clip) if mode == "say" else FC.mark_page(v))
+
+
+@app.post("/api/face/build")
+async def face_build(req: Request):
+    p = await req.json()
+    v = _char(p.get("id") or "")
+    return _char_task("web.task_face", v, FC.build_task(v, p.get("markup") or ""), "face")
+
+
+@app.post("/api/face/parts/preview")
+async def face_parts_preview(req: Request):
+    r = FC.preview(await req.json())
+    return r if isinstance(r, dict) else await asyncio.wrap_future(r)
+
+
+@app.post("/api/face/parts/save")
+async def face_parts_save(req: Request):
+    p = await req.json()
+    name = (p.get("name") or "face_parts").strip()
+    t = tasks.submit(Task("face_parts", _t("web.task_face_parts") + " · " + name, FC.save_task(p.get("params") or {}, name),
+                          meta={"name": name}))
+    return {"ok": True, "task": t.summary()}
+
+
+@app.post("/api/face/lipsync")
+async def face_lipsync(req: Request):
+    p = await req.json()
+    v = _char(p.get("id") or "")
+    audio = str(_allowed(p.get("audio") or ""))
+    return _char_task("web.task_lipsync", v, FC.lipsync_task(v, audio, p.get("text") or "", p.get("lang") or "ru"), "lipsync")
 
 
 @app.get("/file={rest:path}")

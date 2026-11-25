@@ -17,7 +17,7 @@ export const SECTIONS: Section[] = [
   { id: 'character', key: 'web.sec_character', icon: IconUser, object: 'character', steps: [
     { id: 'overview', ready: true, key: 'web.step_overview', gradio: ['ui.character'], about: 'web.about_char_overview' },
     { id: 'skeleton', ready: true, key: 'ui.skeleton', gradio: ['ui.character', 'ui.skeleton'], about: 'web.about_char_skeleton' },
-    { id: 'face', key: 'web.step_face', gradio: ['ui.character', 'ui.face_parts'], about: 'web.about_char_face' },
+    { id: 'face', ready: true, key: 'web.step_face', gradio: ['ui.character', 'ui.face_parts'], about: 'web.about_char_face' },
     { id: 'look', ready: true, key: 'web.step_look', gradio: ['ui.character', 'ui.equipment_procedural'], about: 'web.about_char_look' },
     { id: 'anim', key: 'cr.anim_tab', gradio: ['ui.character', 'ui.animations_procedural'], about: 'web.about_char_anim' },
     { id: 'weights', ready: true, key: 'web.step_weights', gradio: ['ui.character', 'ui.weight_fixing'], about: 'web.about_weights' },

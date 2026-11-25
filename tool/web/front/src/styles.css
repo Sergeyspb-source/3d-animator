@@ -143,3 +143,6 @@ body { overflow: hidden; font-variant-numeric: tabular-nums; background: var(--r
 /* a panel's buttons with long labels wrap instead of being cut (the Gradio texts are full sentences) */
 .panel .mantine-Button-root { height: auto; min-height: 34px; padding-block: 6px; }
 .panel .mantine-Button-label { white-space: normal; text-align: center; line-height: 1.3; }
+
+/* an editor shown inside a 3D stage (the speech line): it fills the stage */
+.stage > .equip-frame { position: absolute; inset: 0; height: 100%; }

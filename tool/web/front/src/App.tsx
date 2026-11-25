@@ -20,6 +20,7 @@ import EquipWorkspace from './screens/EquipWorkspace';
 import CharOverview from './screens/CharOverview';
 import CharSkeleton from './screens/CharSkeleton';
 import { CharWeights, CharGame } from './screens/CharMore';
+import CharFace from './screens/CharFace';
 import { TasksScreen, GpuScreen, SettingsScreen } from './screens/Tools';
 
 export default function App({ initial }: { initial: AppState }) {
@@ -64,6 +65,7 @@ export default function App({ initial }: { initial: AppState }) {
   else if (route.section === 'models' && route.step === 'release') screen = <ModelRelease />;
   else if (route.section === 'character' && route.step === 'overview') screen = <CharOverview go={go} />;
   else if (route.section === 'character' && route.step === 'skeleton') screen = <CharSkeleton bridges={initial.bridges} />;
+  else if (route.section === 'character' && route.step === 'face') screen = <CharFace go={go} bridges={initial.bridges} />;
   else if (route.section === 'character' && route.step === 'weights') screen = <CharWeights />;
   else if (route.section === 'character' && route.step === 'game') screen = <CharGame go={go} />;
   else if (route.section === 'equipment' || (route.section === 'character' && route.step === 'look'))   // (one editor: kept between the steps)

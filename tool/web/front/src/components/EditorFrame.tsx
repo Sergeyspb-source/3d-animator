@@ -7,8 +7,8 @@ export function fieldValue(id: string): string {
   return document.querySelector<HTMLTextAreaElement>(`#${id} textarea`)?.value || '';
 }
 
-export default function EditorFrame({ src, fields = [], onField, title }:
-  { src: string; fields?: string[]; onField?: (id: string, value: string) => void; title: string }) {
+export default function EditorFrame({ src, fields = [], onField, title, allow }:
+  { src: string; fields?: string[]; onField?: (id: string, value: string) => void; title: string; allow?: string }) {
   const host = useRef<HTMLDivElement>(null);
   const cb = useRef(onField);
   cb.current = onField;
@@ -25,7 +25,7 @@ export default function EditorFrame({ src, fields = [], onField, title }:
   }, [fields.join('|')]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <>
-      <iframe key={src} src={src} className="equip-frame" title={title} />
+      <iframe key={src} src={src} className="equip-frame" title={title} allow={allow} />
       <div ref={host} hidden>{fields.map((id) => <div key={id} id={id}><textarea defaultValue="" /></div>)}</div>
     </>
   );

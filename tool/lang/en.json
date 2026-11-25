@@ -3189,5 +3189,16 @@
  "web.task_weights": "Weight repair",
  "web.task_wardrobe": "Godot fitting room",
  "web.game_intro": "The fitting room is built in Godot with every piece worn and every clip of the character: it shows how it all moves in the game.",
- "web.game_files_note": "The game takes the files from the character's folder: the model with its skeleton, the clips, the pieces with their masks."
+ "web.game_files_note": "The game takes the files from the character's folder: the model with its skeleton, the clips, the pieces with their masks.",
+ "web.face_on_rig": "The face on the skeleton",
+ "web.face_parts": "Eyes, teeth, tongue",
+ "web.face_speech": "Speech",
+ "web.face_eyes": "Eyes",
+ "web.face_teeth": "Teeth",
+ "web.face_parts_note": "The set goes to export/face_parts/<name>; it is chosen in the skeleton's build options («Face parts set»).",
+ "web.face_landmark_title": "The face is built with the skeleton by landmarks",
+ "web.face_no_rig_title": "A skeleton first",
+ "web.task_face": "The face on the skeleton",
+ "web.task_face_parts": "Face parts",
+ "web.task_lipsync": "Lip sync"
 }
