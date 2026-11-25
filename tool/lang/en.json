@@ -3251,5 +3251,9 @@
  "web.key_set_keep": "a key is set; an empty field keeps it",
  "web.settings_save": "Save the settings",
  "web.settings_saved": "The settings are saved to config.json. A new export folder is seen after the server restarts.",
- "web.settings_test_bench": "The settings are not saved on a test copy."
+ "web.settings_test_bench": "The settings are not saved on a test copy.",
+ "web.eq_make": "Make",
+ "web.task_wear": "Armour: put the piece on",
+ "web.task_outfit": "A set off a dressed model",
+ "web.outfit_needs_parts": "The set is carried onto the body in parts: make it in «Character → Skeleton → Automatic» («Split the body into parts»)."
 }

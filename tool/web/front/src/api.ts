@@ -11,7 +11,7 @@ export interface Gpu { used: number | null; total: number | null; free: number |
 export interface AppState {
   lang: string; langs: Record<string, string>; test_bench: boolean;
   export_dir: string; work_dir: string; input_dir?: string; drafts_dir: string; gradio: string;
-  has_openrouter_key: boolean; gpu: Gpu; tasks: TaskSummary[]; bridges: { equip: [string, string]; markup: string; pose: string; rigface: string; creature: [string, string]; paint: [string, string] };
+  has_openrouter_key: boolean; gpu: Gpu; tasks: TaskSummary[]; bridges: { equip: [string, string]; markup: string; pose: string; rigface: string; creature: [string, string]; paint: [string, string]; wear: string[] };
 }
 export interface SceneObject {
   id: string; name: string; creature: boolean; dir: string; rigged: string | null; source: string | null;

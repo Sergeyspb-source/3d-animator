@@ -86,7 +86,7 @@ export default function App({ initial }: { initial: AppState }) {
   else if (route.section === 'character' && route.step === 'weights') screen = <CharWeights />;
   else if (route.section === 'character' && route.step === 'game') screen = <CharGame go={go} />;
   else if (route.section === 'equipment' || (route.section === 'character' && route.step === 'look'))   // (one editor: kept between the steps)
-    screen = <EquipWorkspace step={route.section === 'character' ? 'look' : route.step} info={step} gradio={initial.gradio} bridge={initial.bridges.equip} />;
+    screen = <EquipWorkspace step={route.section === 'character' ? 'look' : route.step} info={step} gradio={initial.gradio} bridge={initial.bridges.equip} wear={initial.bridges.wear} />;
   else screen = <Placeholder section={sec!} step={step!} gradio={initial.gradio} />;
 
   return (

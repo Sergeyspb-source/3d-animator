@@ -231,3 +231,55 @@ def wardrobe_task(value: str):
         task.set_lines(str(log or "").splitlines())
         return {"log": log}
     return run
+
+
+# ------------------------------------------------------------------ «Equipment → Workshop»: a finished piece, a whole set
+def wear_ids() -> tuple:
+    """The armour mode's hidden field and button (its request), and the field its markup state goes to (unused)."""
+    return LM.WEAR_ID + "_tab", LM.WEAR_GO + "_tab", LM.TARGET_ID + "_wear"
+
+
+def wear_page(value: str) -> str:
+    """«Броня»: the markup editor's armour mode on the current character - a finished GLB piece placed and put on."""
+    rigged = (UI._char_files(value) or {}).get("rigged")
+    if not rigged or not LM.is_rig(rigged):
+        raise ValueError(_t("lm.wear_needs_landmarks"))
+    ids = wear_ids()
+    return inject(LM.editor_page(Path(rigged), LM.rig_state(Path(rigged)), Path(rigged), mode="wear", wear_ids=ids[:2], target=ids[2]))
+
+
+def wear_task(text: str):
+    def run(task):
+        log = LM.wear(T.load_config(), text)
+        task.set_lines(str(log or "").splitlines())
+        return {"log": log}
+    return run
+
+
+def outfit_scan(model: str) -> dict:
+    import outfit as OF
+    out = UI.outfit_scan(model)
+    note, pics, names, set_name, dds = out[0], out[1], out[2], out[3], out[4:]
+    segs = [{"name": n, "slot": d.get("value"), "title": d.get("label", n)} for n, d in zip(names or [], dds) if isinstance(d, dict)]
+    return {"log": note, "pics": [{"path": str(p[0]), "caption": str(p[1])} for p in pics or []], "segs": segs,
+            "set_name": set_name, "slots": list(OF.SLOTS)}
+
+
+def outfit_task(value: str, model: str, set_name: str, names: list, slots: list):
+    def run(task):
+        parts = (UI._char_files(value) or {}).get("parts")
+        if not parts:
+            raise ValueError(_t("ui.choose_the_body_to_dress_a_parts_glb"))
+        res = None
+        gen = UI.outfit_run(model, str(parts), set_name, names, *slots)
+        try:
+            for out in gen:
+                if isinstance(out, tuple) and len(out) == 3 and isinstance(out[0], str):
+                    task.set_lines(out[0].split("\n"))
+                    res = {"model": out[1] if isinstance(out[1], str) else None,
+                           "pics": [{"path": str(p[0]), "caption": str(p[1])} for p in out[2] or []]}
+                    task.result = res
+        finally:
+            gen.close()
+        return res
+    return run

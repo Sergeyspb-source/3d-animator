@@ -214,6 +214,11 @@ TEXTS = {
     "web.settings_saved": ("Настройки сохранены в config.json. Новая папка export видна после перезапуска сервера.",
                            "The settings are saved to config.json. A new export folder is seen after the server restarts."),
     "web.settings_test_bench": ("На тестовой копии настройки не сохраняются.", "The settings are not saved on a test copy."),
+    "web.eq_make": ("Сделать", "Make"),
+    "web.task_wear": ("Броня: надеть вещь", "Armour: put the piece on"),
+    "web.task_outfit": ("Комплект с одетой модели", "A set off a dressed model"),
+    "web.outfit_needs_parts": ("Комплект переносится на тело по частям: сделайте его в «Персонаж → Скелет → Автоматически» («Разделить тело на части»).",
+                               "The set is carried onto the body in parts: make it in «Character → Skeleton → Automatic» («Split the body into parts»)."),
     # character
     "web.open": ("открыть", "open"),
     "web.files": ("Файлы в папке: {}", "Files in the folder: {}"),

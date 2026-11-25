@@ -117,7 +117,8 @@ def state():
             "bridges": {"equip": [UI.armour_gen_ui.TARGET_ID, UI.armour_gen_ui.GO_ID],
                         "markup": UI.landmarks.TARGET_ID, "pose": UI.landmarks.TARGET_ID + "_pose",
                         "rigface": UI.landmarks.TARGET_ID + "_rigface",
-                        "creature": [UI.CR.REQ_ID, UI.CR.REQ_GO], "paint": [UI.CR.PAINT_ID, UI.CR.PAINT_GO]}}
+                        "creature": [UI.CR.REQ_ID, UI.CR.REQ_GO], "paint": [UI.CR.PAINT_ID, UI.CR.PAINT_GO],
+                        "wear": list(CH.wear_ids())}}
 
 
 def _lang_file(code):
@@ -446,6 +447,42 @@ async def char_keep_fist(req: Request):
         return {"ok": CH.keep_fist(v, p.get("markup") or "")}
     except Exception as e:  # noqa: BLE001  (the markup's own field: never in the way of editing)
         return {"ok": False, "log": str(e)}
+
+
+@app.get("/editor/wear")
+def editor_wear(id: str):
+    v = _char(id)
+    return _page_or_note(lambda: CH.wear_page(v))
+
+
+@app.post("/api/char/wear")
+async def char_wear(req: Request):
+    text = (await req.body()).decode("utf-8")
+    try:
+        r = json.loads(text)
+    except ValueError:
+        raise HTTPException(400, "bad request")
+    _allowed(r.get("rigged") or "")
+    v = next((c for _, c in UI._characters() if (UI._char_files(c) or {}).get("rigged") and
+              Path(UI._char_files(c)["rigged"]).resolve() == Path(r["rigged"]).resolve()), "")
+    key = "web.task_wardrobe" if r.get("action") == "wardrobe" else "web.task_wear"
+    t = tasks.submit(Task("char", _t(key) + " · " + str(r.get("item") or Path(r["rigged"]).stem), CH.wear_task(text),
+                          meta={"char": v, "what": "wear"}))
+    return {"ok": True, "task": t.summary()}
+
+
+@app.post("/api/outfit/scan")
+async def outfit_scan(req: Request):
+    model = str(_allowed((await req.json()).get("model") or ""))
+    return await asyncio.to_thread(CH.outfit_scan, model)
+
+
+@app.post("/api/outfit/run")
+async def outfit_run(req: Request):
+    p = await req.json()
+    v = _char(p.get("id") or "")
+    model = str(_allowed(p.get("model") or ""))
+    return _char_task("web.task_outfit", v, CH.outfit_task(v, model, p.get("set_name") or "", p.get("names") or [], p.get("slots") or []), "outfit")
 
 
 @app.get("/editor/bones")
