@@ -1,0 +1,71 @@
+/* Layout: the shell is the whole window; a step's work area is a grid of [list] | 3D stage | properties panel,
+   the panel and the list grow with the screen (laptop -> wide monitor), and stack under the stage when narrow. */
+:root {
+  --panel-w: clamp(320px, 25vw, 460px);
+  --list-w: clamp(210px, 15vw, 300px);
+  --stage-a: #e7ebf0; --stage-b: #d3dae2;
+  --line: var(--mantine-color-default-border);
+}
+[data-mantine-color-scheme='dark'] { --stage-a: #20262e; --stage-b: #121519; }
+html, body, #root { height: 100%; }
+body { overflow: hidden; }
+
+.topbar .brand { font-size: 15px; letter-spacing: .08em; color: var(--mantine-color-bronze-5); }
+.topbar .crumbs { max-width: 32vw; }
+.topbar .gpu { cursor: pointer; }
+
+.main { height: 100dvh; display: flex; flex-direction: column; }
+.main > * { flex: 1; min-height: 0; }
+
+.work { display: grid; min-height: 0; height: 100%; }
+.work.two { grid-template-columns: minmax(0, 1fr) var(--panel-w); }
+.work.three { grid-template-columns: var(--list-w) minmax(0, 1fr) var(--panel-w); }
+.work.tasks { grid-template-columns: clamp(300px, 26vw, 440px) minmax(0, 1fr); }
+.work > * { min-width: 0; min-height: 0; }
+@media (max-width: 860px) {
+  .work.two, .work.three, .work.tasks { grid-template-columns: 1fr; grid-template-rows: auto; overflow-y: auto; }
+  .work .stage { min-height: 55vh; }
+  .work .side { max-height: 30vh; }
+}
+
+.stage { position: relative; background: radial-gradient(120% 90% at 50% 20%, var(--stage-a), var(--stage-b)); overflow: hidden; }
+.panel { border-left: 1px solid var(--line); background: var(--mantine-color-body); }
+.side { border-right: 1px solid var(--line); display: flex; flex-direction: column; background: var(--mantine-color-body); }
+.side .list { flex: 1; }
+.side-title { padding: 10px 12px 4px; letter-spacing: .06em; }
+.page { height: 100%; }
+
+.viewer { position: absolute; inset: 0; }
+.viewer-canvas { position: absolute; inset: 0; }
+.viewer-canvas canvas { display: block; outline: none; }
+.viewer-tools { position: absolute; top: 10px; left: 10px; right: 10px; pointer-events: none; }
+.viewer-tools > * { pointer-events: auto; }
+.viewer-badge { position: absolute; left: 10px; bottom: 10px; }
+.viewer-empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; pointer-events: none; }
+.viewer-busy { position: absolute; top: 50%; left: 50%; }
+.stage-strip { position: absolute; right: 10px; bottom: 10px; max-width: 60%; justify-content: flex-end; }
+.stage-strip .thumb { background: var(--mantine-color-body); border: 1px solid var(--line); border-radius: 6px; padding: 3px; }
+.stage-next { position: absolute; top: 54px; right: 10px; }
+
+.drop { border-width: 1px; }
+.slot { border: 1px solid var(--line); border-radius: 6px; padding: 4px; background: var(--mantine-color-default); position: relative; }
+.slot.small { padding: 2px; }
+.slot-x { position: absolute; top: -6px; right: -6px; background: var(--mantine-color-body); border-radius: 50%; }
+
+.list-item { display: block; width: 100%; padding: 6px 8px; border-radius: 6px; }
+.list-item:hover { background: var(--mantine-color-default-hover); }
+.list-item.on { background: var(--mantine-color-bronze-light); }
+.list-item .icon { width: 40px; height: 40px; border-radius: 4px; background: var(--mantine-color-default); flex-shrink: 0; }
+
+.dock { height: 100%; display: flex; flex-direction: column; }
+.dock-head { height: 34px; flex-shrink: 0; padding: 0 12px; cursor: pointer; border-bottom: 1px solid var(--line); user-select: none; }
+.dock-body { flex: 1; min-height: 0; display: grid; grid-template-columns: clamp(280px, 26vw, 440px) minmax(0, 1fr); }
+.dock-tasks { border-right: 1px solid var(--line); }
+.task-row { display: block; width: 100%; padding: 5px 10px; border-bottom: 1px solid var(--line); }
+.task-row:hover { background: var(--mantine-color-default-hover); }
+.task-row.on { background: var(--mantine-color-bronze-light); }
+.log { min-height: 0; }
+.log pre { margin: 0; padding: 8px 12px; font: 12px/1.45 var(--mantine-font-family-monospace); white-space: pre-wrap; word-break: break-word; }
+.log-stage { display: flex; flex-direction: column; background: var(--mantine-color-body); }
+
+.placeholder { display: grid; place-items: start center; padding: 6vh 24px; overflow: auto; }

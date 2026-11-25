@@ -1,0 +1,225 @@
+"""The web UI's own texts (web.* keys), merged into tool/lang/ru.json and en.json by `python lang_web.py`: new keys
+are appended at the end, changed ones replaced in place; the files keep their CRLF and one-space layout."""
+import json
+import re
+import sys
+from pathlib import Path
+
+TEXTS = {
+    # menu: sections and steps
+    "web.sec_models": ("Модели", "Models"),
+    "web.sec_character": ("Персонаж", "Character"),
+    "web.sec_equipment": ("Экипировка", "Equipment"),
+    "web.step_check": ("Проверка", "Check"),
+    "web.step_model_materials": ("Материалы модели", "Model materials"),
+    "web.step_release": ("Выпуск", "Release"),
+    "web.step_overview": ("Обзор", "Overview"),
+    "web.step_face": ("Лицо", "Face"),
+    "web.step_look": ("Внешность", "Looks"),
+    "web.step_weights": ("Веса", "Weights"),
+    "web.step_game": ("В игру", "To the game"),
+    "web.step_workshop": ("Мастерская", "Workshop"),
+    "web.step_eq_materials": ("Материалы и текстуры", "Materials and textures"),
+    "web.step_fit": ("Подгонка", "Fitting"),
+    "web.step_eyes": ("Глаза", "Eyes"),
+    "web.step_paint": ("Раскраска и починка", "Colouring and repair"),
+    "web.step_surfaces": ("Поверхности", "Surfaces"),
+    "web.step_fx": ("Эффекты", "Effects"),
+    "web.step_dungeons": ("Подземелья", "Dungeons"),
+    "web.step_destructibles": ("Разрушаемые", "Destructibles"),
+    "web.step_vegetation": ("Растительность", "Vegetation"),
+    "web.tool_tasks": ("Задачи и журнал", "Tasks and log"),
+    "web.tool_gpu": ("Видеопамять", "Video memory"),
+    # what each step holds
+    "web.about_ref": ("Картинка-референс по описанию в стиле проекта и виды сзади и сбоку для Hunyuan3D.",
+                      "A reference picture from a description in the project's style, plus back and side views for Hunyuan3D."),
+    "web.about_create": ("Модель по одной или нескольким картинкам: SF3D, Hunyuan3D или TRELLIS.2.",
+                         "A model from one or more pictures: SF3D, Hunyuan3D or TRELLIS.2."),
+    "web.about_check": ("Черновики: модель рядом с человеком 1,75 м, её размеры, грани, превью; выпуск в export.",
+                        "Drafts: the model beside a 1.75 m person, its size, faces, previews; release into export."),
+    "web.about_model_materials": ("Группы цвета модели и материал каждой: металл, дерево, камень, ткань.",
+                                  "The model's colour groups and a material for each: metal, wood, stone, cloth."),
+    "web.about_release": ("Что уже лежит в export, откуда его берёт игра.", "What is in export already, where the game takes it from."),
+    "web.about_batch": ("Целая папка картинок одной очередью, со скелетами и материалами в конце.",
+                        "A whole folder of pictures in one queue, with skeletons and materials at the end."),
+    "web.about_char_overview": ("Что есть у текущего персонажа: скелет, лицо, клипы, вещи, и куда идти дальше.",
+                                "What the current character has: skeleton, face, clips, pieces, and where to go next."),
+    "web.about_char_skeleton": ("Скелет автоматически (UniRig) или по ориентирам; поза, кулак, кости и веса.",
+                                "A skeleton automatically (UniRig) or by landmarks; the pose, the fist, the bones and weights."),
+    "web.about_char_face": ("Разметка лица, глаза, зубы и язык, клипы речи (липсинк).",
+                            "The face markup, eyes, teeth and tongue, speech clips (lip sync)."),
+    "web.about_char_look": ("Волосы, борода, брови и ресницы на голове персонажа.", "Hair, beard, brows and lashes on the character's head."),
+    "web.about_char_anim": ("Свои процедурные клипы, клипы Mixamo, галерея и проверка клипов.",
+                            "Own procedural clips, Mixamo clips, the gallery and the clip check."),
+    "web.about_weights": ("Починка весов кожи там, где она тянется не за той костью.", "Mending skin weights where the skin follows the wrong bone."),
+    "web.about_char_game": ("Примерочная в Godot со всеми вещами и клипами.", "The Godot fitting room with every piece and clip."),
+    "web.about_eq_workshop": ("Создать вещь: процедурно по коже персонажа, из готового GLB или снять весь комплект с одетой модели.",
+                              "Make a piece: procedurally on the character's skin, from a finished GLB, or the whole set off a dressed model."),
+    "web.about_eq_materials": ("Материалы частей вещи: библиотека, проекция концепта, текстура по развёртке, роспись и износ.",
+                               "Materials of the piece's parts: the library, a concept projection, a texture by the unwrap, painting and wear."),
+    "web.about_eq_fit": ("Слои надетого, зазор до кожи, позы, щипок, ткань, хват оружия.",
+                         "Layers of what is worn, the gap to the skin, poses, the pinch brush, cloth, the weapon's grip."),
+    "web.about_eq_check": ("Проверка в движении по всем клипам и примерочная в Godot.", "The check in motion over every clip and the Godot fitting room."),
+    "web.about_eq_release": ("Запекание в Blender, очередь, готовые вещи персонажа.", "The Blender bake, its queue, the character's finished pieces."),
+    "web.about_cr_overview": ("Что есть у текущего существа: скелет, челюсть, глаза, клипы, раскраски.",
+                              "What the current creature has: skeleton, jaw, eyes, clips, colourings."),
+    "web.about_cr_skeleton": ("Скелет UniRig с именами и челюстью, выпрямление позы покоя.", "A UniRig skeleton with names and a jaw, the rest pose straightened."),
+    "web.about_cr_eyes": ("Глаза существа: вырез, глазное яблоко, цвета.", "The creature's eyes: the cut, the eyeball, the colours."),
+    "web.about_cr_anim": ("Клипы по виду тела и свои, проверка клипов.", "Clips by body kind and own ones, the clip check."),
+    "web.about_cr_paint": ("Зоны цвета, тона и узоры; починка дыр и нормалей.", "Colour zones, tones and patterns; mending holes and normals."),
+    "web.about_cr_game": ("Существо в Godot с его клипами.", "The creature in Godot with its clips."),
+    "web.about_surfaces": ("Бесшовные материалы земли, пола и стен.", "Seamless ground, floor and wall materials."),
+    "web.about_fx": ("Листы кадров и светящиеся спрайты для эффектов Godot.", "Flipbook sheets and glowing sprites for Godot effects."),
+    "web.about_dungeons": ("Модульный набор подземелья и сцена по плану.", "A modular dungeon kit and a scene from a plan."),
+    "web.about_destructibles": ("Разрушаемые предметы: куски, масса, разлёт.", "Destructible objects: chunks, mass, burst."),
+    "web.about_vegetation": ("Деревья, кусты и трава по картинке, с картой ветра для Godot.", "Trees, bushes and grass from a picture, with a wind map for Godot."),
+    # the shell
+    "web.characters": ("Персонажи", "Characters"),
+    "web.creatures": ("Существа", "Creatures"),
+    "web.current_object": ("Текущий персонаж или существо", "Current character or creature"),
+    "web.object_short": ("Объект", "Object"),
+    "web.no_object": ("не выбран", "none chosen"),
+    "web.nothing_found": ("Ничего не найдено", "Nothing found"),
+    "web.gpu": ("ГП", "GPU"),
+    "web.gpu_tip": ("Видеопамять: занято {} из {} МБ, загрузка {} %", "Video memory: {} of {} MB used, load {} %"),
+    "web.sf3d_loaded": ("SF3D в видеопамяти", "SF3D is in video memory"),
+    "web.sf3d_not_loaded": ("SF3D не в видеопамяти", "SF3D is not in video memory"),
+    "web.tasks_running": ("Задач: {}", "Tasks: {}"),
+    "web.tasks_none": ("Задач нет", "No tasks"),
+    "web.offline": ("нет связи с сервером", "server unreachable"),
+    "web.search_tip": ("Поиск по шагам (Ctrl+K)", "Search the steps (Ctrl+K)"),
+    "web.search_ph": ("Шаг или раздел…", "A step or a section…"),
+    "web.theme": ("Светлая / тёмная тема", "Light / dark theme"),
+    "web.test_bench": ("тестовая копия", "test copy"),
+    "web.test_bench_note": ("Тестовая копия: export и work указывают во временные папки, язык не сохраняется в config.json.",
+                            "Test copy: export and work point to temporary folders, the language is not saved into config.json."),
+    "web.need_character": ("выберите персонажа сверху", "choose a character on top"),
+    "web.need_creature": ("выберите существо сверху", "choose a creature on top"),
+    "web.in_gradio": ("пока в Gradio", "still in Gradio"),
+    "web.in_gradio_tip": ("Этот шаг ещё не перенесён: он открывается в приложении Gradio", "This step is not moved yet: it opens in the Gradio app"),
+    "web.only_ready": ("Только перенесённые шаги", "Only moved steps"),
+    "web.collapse": ("Свернуть меню", "Collapse the menu"),
+    "web.works_on": ("Работает на текущем объекте: {}", "Works on the current object: {}"),
+    "web.gradio_path": ("Сейчас в Gradio:", "Now in Gradio:"),
+    "web.open_gradio": ("Открыть приложение Gradio", "Open the Gradio app"),
+    "web.plan_link": ("План переноса", "The moving plan"),
+    # dock and tasks
+    "web.dock": ("Журнал и задачи", "Log and tasks"),
+    "web.gpu_idle": ("видеокарта свободна", "the GPU is free"),
+    "web.waiting": ("ждут: {}", "waiting: {}"),
+    "web.no_tasks": ("Задач ещё не было", "No tasks yet"),
+    "web.log_empty": ("(журнал пуст)", "(the log is empty)"),
+    "web.log_pick": ("Выберите задачу слева", "Pick a task on the left"),
+    "web.cancel": ("Отменить", "Cancel"),
+    "web.st_queued": ("ждёт", "waiting"),
+    "web.st_running": ("идёт", "running"),
+    "web.st_done": ("готово", "done"),
+    "web.st_error": ("ошибка", "error"),
+    "web.st_cancelled": ("отменена", "cancelled"),
+    "web.busy": ("Сейчас идёт задача SF3D: выгрузить можно после неё.", "An SF3D task is running: unload after it."),
+    "web.gpu_util": ("Загрузка ГП: {} %", "GPU load: {} %"),
+    "web.gpu_queue_note": ("Задачи на видеокарте идут по одной: следующая ждёт, пока закончится предыдущая и освободится память (в том числе от приложения Gradio).",
+                           "GPU tasks run one at a time: the next waits until the previous ends and the memory is free (the Gradio app's use included)."),
+    # 3D view
+    "web.view_top": ("Сверху", "Top"),
+    "web.v_frame": ("Показать целиком (F)", "Frame it (F)"),
+    "web.v_grid": ("Сетка пола, клетка 0,5 м", "Floor grid, 0.5 m cells"),
+    "web.v_wire": ("Каркас", "Wireframe"),
+    "web.v_collision": ("Коллизия для Godot", "Godot collision"),
+    "web.v_person": ("Человек 1,75 м для масштаба", "A 1.75 m person for scale"),
+    "web.v_faces": ("{} граней", "{} faces"),
+    "web.v_failed": ("Модель не открылась: {}", "The model did not open: {}"),
+    "web.m": ("м", "m"),
+    # create a model
+    "web.views": ("Виды объекта (обязателен «Спереди»)", "The object's views (Front is required)"),
+    "web.views_hint": ("Одна и та же модель с разных сторон; «слева» и «справа» — со стороны левой и правой руки объекта.",
+                       "One and the same model from different sides; left and right are the object's own left and right hand."),
+    "web.drop_pictures": ("Перетащите картинки сюда или щёлкните", "Drop pictures here or click"),
+    "web.name": ("Имя", "Name"),
+    "web.name_hint": ("Латиницей; если картинок несколько, имя берётся из файла", "Latin letters; with several pictures the file name is used"),
+    "web.preset": ("Категория задаёт: высота {} м, опора {}, коллизия {}", "The category sets: height {} m, pivot {}, collision {}"),
+    "web.gpu_need": ("нужно около {} ГБ видеопамяти", "needs about {} GB of video memory"),
+    "web.engine_missing": ("Движок не установлен: {}", "The engine is not installed: {}"),
+    "web.overwrite_draft": ("Перезаписать черновик с тем же именем", "Overwrite a draft of the same name"),
+    "web.queue_another": ("Ещё одну в очередь", "Queue another"),
+    "web.draft_note": ("Модель ляжет в черновики. В export (и в игру) она попадёт на шаге «Проверка» кнопкой «Выпустить».",
+                       "The model goes into the drafts. It reaches export (and the game) from the Check step, with Release."),
+    "web.create_empty": ("Добавьте картинку справа и нажмите «Создать модель»: результат появится здесь.",
+                         "Add a picture on the right and press Make a model: the result appears here."),
+    "web.made_drafts": ("Черновики готовы: {}", "Drafts ready: {}"),
+    "web.made_none": ("Модель не сделана: см. журнал", "No model was made: see the log"),
+    "web.to_check": ("К проверке", "To the check"),
+    # check and release
+    "web.drafts": ("Черновики", "Drafts"),
+    "web.no_drafts": ("Черновиков нет: сделайте модель на шаге «Создать модель».", "No drafts: make a model in the Make a model step."),
+    "web.check_empty": ("Выберите черновик слева", "Pick a draft on the left"),
+    "web.in_export": ("есть в export", "in export"),
+    "web.engine": ("Движок", "Engine"),
+    "web.peak_vram": ("Пик видеопамяти", "Peak video memory"),
+    "web.folder": ("Папка", "Folder"),
+    "web.source_picture": ("Исходная картинка", "The source picture"),
+    "web.has_skeleton": ("со скелетом", "with a skeleton"),
+    "web.release_btn": ("Выпустить в export", "Release into export"),
+    "web.release_to": ("Ляжет в {}", "Goes to {}"),
+    "web.discard": ("Убрать", "Remove"),
+    "web.make_again": ("Сделать заново", "Make it again"),
+    "web.replace_title": ("Модель уже есть в export", "The model is in export already"),
+    "web.replace_text": ("В {} уже лежит модель с этим именем. Заменить её? Старая не удаляется: она уходит в work/web_drafts/replaced.",
+                         "{} already holds a model of this name. Replace it? The old one is not deleted: it goes to work/web_drafts/replaced."),
+    "web.replace_btn": ("Заменить", "Replace"),
+    "web.released": ("Выпущено: {} → {}", "Released: {} → {}"),
+    "web.released_old": ("Прежняя версия отложена в {}", "The previous version is put aside in {}"),
+    "web.release_exists": ("В export уже есть {}", "export already has {}"),
+    "web.no_draft": ("Черновика {} нет", "There is no draft {}"),
+    "web.bad_name": ("Неверное имя модели", "A bad model name"),
+    "web.discarded": ("Черновик {} отложен в {}", "The draft {} is put aside in {}"),
+    "web.no_released": ("В export пока нет моделей", "No models in export yet"),
+    "web.all": ("Все", "All"),
+    "web.cat_short_item": ("Предметы", "Items"),
+    "web.cat_short_prop": ("Окружение", "Props"),
+    "web.cat_short_building": ("Здания", "Buildings"),
+    "web.cat_short_character": ("Персонажи", "Characters"),
+    "web.cat_short_vegetation": ("Растения", "Plants"),
+    "web.release_game_note": ("Игра берёт модели из export; копирование в проект игры будет отдельным шагом.",
+                              "The game takes models from export; copying into the game project will be a step of its own."),
+    # settings
+    "web.export_dir": ("Папка export", "The export folder"),
+    "web.work_dir": ("Рабочая папка", "The work folder"),
+    "web.drafts_dir": ("Черновики", "Drafts"),
+    "web.input_dir": ("Исходные картинки", "Source pictures"),
+    "web.key_set": ("ключ задан", "key set"),
+    "web.key_unset": ("ключа нет", "no key"),
+    "web.settings_note": ("Папки и ключ пока меняются в приложении Gradio (Параметры → Настройки): обе программы читают один config.json.",
+                          "The folders and the key are still changed in the Gradio app (Options → Settings): both read one config.json."),
+}
+
+
+def merge(path: Path, lang: int):
+    raw = path.read_bytes().decode("utf-8")
+    nl = "\r\n" if "\r\n" in raw else "\n"
+    data = json.loads(raw)
+    body = raw.replace("\r\n", "\n").rstrip()   # (worked on with \n, written back with the file's own line ending)
+    assert body.endswith("}"), path
+    added = []
+    for k, v in TEXTS.items():
+        text = v[lang]
+        line = f' {json.dumps(k, ensure_ascii=False)}: {json.dumps(text, ensure_ascii=False)}'
+        if k in data:
+            if data[k] != text:   # replaced in place
+                body = re.sub(r'(?m)^ ' + re.escape(json.dumps(k, ensure_ascii=False)) + r': ".*?(?<!\\)"(,?)$',
+                              lambda m, line=line: line + m.group(1), body, count=1)
+        else:
+            added.append(line)
+    if added:
+        head = body[:-1].rstrip()
+        body = head + ",\n" + ",\n".join(added) + "\n}"
+    out = (body + "\n").replace("\n", nl)
+    json.loads(out)   # (still valid)
+    path.write_bytes(out.encode("utf-8"))
+    return len(added)
+
+
+if __name__ == "__main__":
+    root = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).resolve().parent.parent / "lang"
+    for code, i in (("ru", 0), ("en", 1)):
+        print(code, "added", merge(root / f"{code}.json", i))

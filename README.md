@@ -468,6 +468,22 @@ On first start, `tool\config.example.json` is used. To change the paths or the l
 | `sf3d-tool.bat post work\item\axe\raw.glb --category item --name axe` | re-run post-processing only |
 | `sf3d-batch.bat <folder> [--force] [--no-preview]` | batch: `<folder>\<category>\pic.png` → SF3D; `<folder>\<category>\<asset>\front.png [back/left/right.png]` → Hunyuan3D |
 | `sf3d-gradio.bat` | the original SF3D demo UI (port 7860) |
+| `sf3d-web.bat` | the new web interface at `http://127.0.0.1:7890`, beside Gradio (see below) |
+
+### The new web interface (7890)
+
+The interface is moving from Gradio to a page of its own, section by section. Gradio on 7861 keeps working as before until a section is moved and checked.
+
+![Before: a Gradio tab in a narrow column. After: the new interface on the whole screen, the chains menu on the left, 3D in the middle, properties on the right, the log and tasks at the bottom](docs/images/en/web_ui_before_after.jpg)
+
+- **The left menu follows the chains of work:** Models (reference → make → check → materials → release, batch), Character (overview, skeleton, face, looks, animations, weights, to the game), Equipment (workshop, materials and textures, fitting, check, release), Creatures, Environment. Steps marked «G» still open in Gradio; the «Only moved steps» switch hides them, Alt+1…7 switch the section's steps.
+- **On top:** the current character or creature (the same as Gradio's «current character»), video memory in use, the task count, a search over every step (Ctrl+K), the language, light and dark themes.
+- **At the bottom, the log and the tasks.** Everything that runs on the GPU goes into one queue and runs one task at a time. The log streams in; a task can be cancelled, and the programs it started stop with it. The ` key folds the dock.
+- **Models → Make a model:** SF3D, Hunyuan3D (with the fast shape) and TRELLIS.2 with the same options as the Gradio tab. The result is shown in 3D at once: views, grid, wireframe, the Godot collision, a 1.75 m person for scale, F frames the model. The model lands as a **draft** in `work\web_drafts\export\<category>\<name>\`.
+- **Models → Check:** the drafts with their size, face count, time, previews and the source picture. «Release into export» moves the folder to `export\<category>\<name>\`; if a model is there already it asks, and the old one goes to `work\web_drafts\replaced\` (nothing is deleted). «Remove» puts the draft aside in `work\web_drafts\discarded\`.
+- **Models → Release:** what is in export already, by category.
+
+The page is built with Vite + TypeScript + React + Mantine, 3D with three.js. The FastAPI server in the `sf3d` env (`tool\web\server.py`) calls the same functions as Gradio. `sf3d-web.bat` builds the page on the first start and after the page changes (Node.js 18+ and npm needed). The order in which the other sections move is in `docs\ROADMAP.md`, stage 9.
 
 **Run one GPU job at a time.** Approximate peak VRAM: SF3D 6.2 GB, Hunyuan shape 5.8 GB (fast 6.5 GB), Hunyuan paint 7.4 GB, TRELLIS.2 1.7–4.2 GB (up to 5.3 GB with the desktop's share), UniRig 4.5 GB. The GUI checks free memory before each job.
 
@@ -538,6 +554,7 @@ D:\conda\envs\sf3d\python.exe tool\anim_gallery.py "<character>_landmarks_rigged
 
 ```
 sf3d-ui.vbs / sf3d-ui.bat     GUI launchers
+sf3d-web.bat                  the new web interface (7890)
 sf3d-tool.bat / sf3d-batch.bat CLI launchers
 sf3d-env.bat                  environment for the sf3d env
 *-install.ps1, *-weights.ps1, *-build.bat   installers for Hunyuan3D, TRELLIS.2 and UniRig
@@ -545,6 +562,8 @@ patches/                      changes applied on top of the third-party repos
 docs/images/                  README screenshots (en/, ru/)
 tool/
   sf3d_ui.py                  Gradio GUI (all tabs)
+  web/                        the new web interface: server.py (FastAPI), tasks.py (the GPU task queue),
+                              models.py (the «Models» chain), lang_web.py (its texts), front/ (the page: Vite + TypeScript)
   i18n.py, lang/*.json        interface language: every text by key (English, Russian)
   sf3d_tool.py, batch_cli.py  CLI and post-processing (pivot, scale, collision, materials)
   hy_*.py                     Hunyuan3D workers (run in the hunyuan env)

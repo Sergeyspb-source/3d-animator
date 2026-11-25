@@ -1,0 +1,332 @@
+"""SF3D web UI: the app's Python (sf3d_ui and the other modules) behind a FastAPI server, the page built by Vite
+(tool/web/front -> front/dist). Runs beside the Gradio app on its own port (7890 by default):
+
+    D:\\conda\\envs\\sf3d\\python.exe tool\\web\\server.py [--port 7890]
+
+Test bench: SF3D_EXPORT_DIR / SF3D_WORK_DIR point export and work elsewhere (the user's export is never touched),
+and the language is then not saved into config.json.
+
+API: /api/state, /api/i18n, /api/gpu, /api/events (SSE: task, log, gpu), /api/tasks, /api/upload, /api/file,
+/api/open, /api/objects, /api/models/... ."""
+import argparse
+import asyncio
+import json
+import mimetypes
+import os
+import subprocess
+import sys
+import threading
+import time
+import uuid
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+TOOL = HERE.parent
+sys.path.insert(0, str(TOOL))
+sys.path.insert(0, str(HERE))
+os.environ.setdefault("GRADIO_ANALYTICS_ENABLED", "False")
+
+import uvicorn  # noqa: E402
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile  # noqa: E402
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse  # noqa: E402
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+
+import models as M  # noqa: E402  (patches sf3d_tool.load_config first)
+
+for k, env in (("export_dir", "SF3D_EXPORT_DIR"), ("work_dir", "SF3D_WORK_DIR")):
+    if os.environ.get(env):
+        M.ENV_OVER[k] = os.environ[env]
+TEST_BENCH = bool(M.ENV_OVER)
+
+import i18n  # noqa: E402
+import sf3d_tool as T  # noqa: E402
+import sf3d_ui as UI  # noqa: E402
+from i18n import t as _t  # noqa: E402
+from tasks import Bus, Task, TaskQueue, NO_WINDOW  # noqa: E402
+
+DIST = HERE / "front" / "dist"
+bus = Bus()
+tasks = TaskQueue(bus)
+app = FastAPI(title="SF3D", docs_url=None, redoc_url=None)
+for ext, typ in ((".glb", "model/gltf-binary"), (".gltf", "model/gltf+json"), (".webp", "image/webp"), (".json", "application/json")):
+    mimetypes.add_type(typ, ext)
+
+
+# ------------------------------------------------------------------ paths the page may read
+def _roots():
+    cfg = T.load_config()
+    roots = [Path(cfg["export_dir"]), Path(cfg["work_dir"])]
+    if cfg.get("input_dir"):
+        roots.append(Path(cfg["input_dir"]))
+    return [r.resolve() for r in roots]
+
+
+def _allowed(path: str) -> Path:
+    try:
+        p = Path(path).resolve()
+    except (OSError, ValueError):
+        raise HTTPException(400, "bad path")
+    if not any(p == r or r in p.parents for r in _roots()):
+        raise HTTPException(403, "outside export / work / input")
+    return p
+
+
+# ------------------------------------------------------------------ GPU
+GPU = {"used": None, "total": None, "free": None, "util": None, "sf3d": False, "t": 0}
+
+
+def _gpu_read():
+    try:
+        out = subprocess.run(["nvidia-smi", "--query-gpu=memory.used,memory.total,utilization.gpu", "--format=csv,noheader,nounits"],
+                             capture_output=True, text=True, timeout=10, creationflags=NO_WINDOW).stdout
+        used, total, util = (int(x) for x in out.strip().splitlines()[0].split(","))
+        return {"used": used, "total": total, "free": total - used, "util": util}
+    except Exception:  # noqa: BLE001
+        return {"used": None, "total": None, "free": None, "util": None}
+
+
+def _gpu_loop():
+    while True:
+        g = {**_gpu_read(), "sf3d": bool(UI._state.get("model") is not None and UI._state.get("on_gpu"))}
+        changed = any(g[k] != GPU.get(k) for k in g)
+        GPU.update(g, t=time.time())
+        if changed:
+            bus.publish({"type": "gpu", "gpu": dict(GPU)})
+        time.sleep(3)
+
+
+threading.Thread(target=_gpu_loop, name="gpu-monitor", daemon=True).start()
+
+
+# ------------------------------------------------------------------ state, texts, events
+@app.get("/api/state")
+def state():
+    cfg = T.load_config()
+    return {"lang": i18n.LANG, "langs": i18n.LANGS, "test_bench": TEST_BENCH,
+            "export_dir": cfg["export_dir"], "work_dir": cfg["work_dir"], "input_dir": cfg.get("input_dir"),
+            "drafts_dir": M.drafts_root(cfg).as_posix(), "gradio": f"http://127.0.0.1:{UI.PORT}",
+            "has_openrouter_key": bool(cfg.get("openrouter_key") or os.environ.get("OPENROUTER_API_KEY")),
+            "gpu": dict(GPU), "tasks": tasks.list()}
+
+
+def _lang_file(code):
+    try:
+        return json.loads((TOOL / "lang" / f"{code}.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+@app.get("/api/i18n")
+def texts(lang: str = ""):
+    code = lang if lang in i18n.LANGS else i18n.LANG
+    return {"lang": code, "text": {**_lang_file(i18n.DEFAULT), **_lang_file(code)}}
+
+
+@app.post("/api/lang")
+async def set_lang(req: Request):
+    code = (await req.json()).get("lang")
+    if code not in i18n.LANGS:
+        raise HTTPException(400, "unknown language")
+    # the server's own messages switch at once; the setting is shared with the Gradio app (config.json "lang")
+    i18n.LANG = code
+    i18n._TEXT = i18n._load(code)
+    i18n._BASE = i18n._TEXT if code == i18n.DEFAULT else i18n._load(i18n.DEFAULT)
+    if not TEST_BENCH:
+        i18n.set_lang(code)
+    return {"ok": True, "lang": code}
+
+
+@app.get("/api/gpu")
+def gpu():
+    return dict(GPU)
+
+
+@app.post("/api/gpu/unload")
+def gpu_unload():
+    if tasks.running is not None and tasks.running.meta.get("engine") == "sf3d":
+        return {"ok": False, "log": _t("web.busy")}
+    return {"ok": True, "log": UI.unload_model()}
+
+
+@app.get("/api/events")
+async def events(request: Request):
+    loop = asyncio.get_running_loop()
+    q = bus.subscribe(loop)
+
+    async def stream():
+        try:
+            yield "retry: 2000\n\n"
+            yield "data: " + json.dumps({"type": "hello", "tasks": tasks.list(), "gpu": dict(GPU)}, ensure_ascii=False) + "\n\n"
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    ev = await asyncio.wait_for(q.get(), timeout=15)
+                    yield "data: " + json.dumps(ev, ensure_ascii=False) + "\n\n"
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"
+        finally:
+            bus.unsubscribe(q)
+
+    return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
+
+# ------------------------------------------------------------------ tasks
+@app.get("/api/tasks")
+def task_list():
+    return tasks.list()
+
+
+@app.get("/api/tasks/{tid}")
+def task_get(tid: str):
+    t = tasks.get(tid)
+    if t is None:
+        raise HTTPException(404, "no such task")
+    return {**t.summary(), "lines": t.lines}
+
+
+@app.post("/api/tasks/{tid}/cancel")
+def task_cancel(tid: str):
+    return {"ok": tasks.cancel(tid)}
+
+
+# ------------------------------------------------------------------ files
+@app.post("/api/upload")
+async def upload(files: list[UploadFile] = File(...)):
+    cfg = T.load_config()
+    folder = Path(cfg["work_dir"]) / "web_uploads" / time.strftime("%Y%m%d") / uuid.uuid4().hex[:8]
+    folder.mkdir(parents=True, exist_ok=True)
+    out = []
+    for f in files:
+        name = Path(f.filename or "file").name
+        stem, suf = Path(name).stem, Path(name).suffix.lower()
+        safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in stem)[:60] or "file"
+        dst = folder / f"{safe}{suf}"
+        dst.write_bytes(await f.read())
+        out.append({"name": name, "path": dst.as_posix()})
+    return out
+
+
+@app.get("/api/file")
+def file(path: str):
+    p = _allowed(path)
+    if not p.is_file():
+        raise HTTPException(404, "no such file")
+    return FileResponse(p, headers={"Cache-Control": "no-cache"}, content_disposition_type="inline")
+
+
+@app.post("/api/open")
+async def open_folder(req: Request):
+    p = _allowed((await req.json()).get("path") or "")
+    if p.is_file():
+        p = p.parent
+    if not p.exists():
+        raise HTTPException(404, "no such folder")
+    os.startfile(str(p))  # noqa: S606  (Windows: the folder in Explorer)
+    return {"ok": True}
+
+
+# ------------------------------------------------------------------ the current object (character / creature)
+def _obj(value, creature=False):
+    f = UI._char_files(value)
+    if not f:
+        return None
+    clips, worn = UI._char_counts(f)
+    return {"id": value, "name": f["name"], "creature": creature, "dir": f["dir"].as_posix(),
+            "rigged": f["rigged"].as_posix() if f["rigged"] else None,
+            "source": f["source"].as_posix() if f["source"] else None,
+            "landmark": bool(f["landmark"]), "auto": bool(f["auto"]), "parts": bool(f["parts"]),
+            "speech": clips, "worn": worn,
+            "tags": UI._char_tags(f) if not creature else (UI.CR_ICON["rig"] if f["rigged"] else UI.ICON["none"])}
+
+
+@app.get("/api/objects")
+def objects():
+    chars = [o for o in (_obj(v) for _, v in UI._characters()) if o]
+    crs = [o for o in (_obj(v, True) for _, v in UI._characters(True)) if o]
+    return {"characters": chars, "creatures": crs, "current": UI._char_default()}
+
+
+@app.post("/api/objects/current")
+async def object_current(req: Request):
+    v = (await req.json()).get("id")
+    UI.char_remember(v)   # (work_dir/current_character.txt: the Gradio app's «current character» too)
+    return {"ok": True}
+
+
+# ------------------------------------------------------------------ «Models»
+ENGINE_NAMES = {"sf3d": "SF3D", "hunyuan": "Hunyuan3D", "trellis": "TRELLIS.2"}
+
+
+@app.get("/api/models/options")
+def model_options():
+    return M.options(T.load_config())
+
+
+@app.post("/api/models/generate")
+async def model_generate(req: Request):
+    p = await req.json()
+    engine = p.get("engine") or "sf3d"
+    if engine not in M.ENGINES:
+        raise HTTPException(400, "unknown engine")
+    for f in [*(p.get("files") or []), *((p.get("views") or {}).values())]:
+        if f:
+            _allowed(f)
+    if engine == "hunyuan" and not (p.get("views") or {}).get("front"):
+        return JSONResponse({"ok": False, "log": _t("ui.at_least_the_front_picture_is_needed")})
+    if engine != "hunyuan" and not p.get("files"):
+        return JSONResponse({"ok": False, "log": _t("ui.add_at_least_one_picture_first")})
+    name = (p.get("name") or "").strip() or Path((p.get("files") or [None])[0] or (p.get("views") or {}).get("front") or "model").stem
+    title = f"{ENGINE_NAMES[engine]} · {name}"
+    t = tasks.submit(Task("model", title, M.generate_task(p), meta={"engine": engine, "name": name, "category": p.get("category")}))
+    return {"ok": True, "task": t.summary()}
+
+
+@app.get("/api/models/drafts")
+def model_drafts():
+    return M.drafts()
+
+
+@app.get("/api/models/released")
+def model_released():
+    return M.released()
+
+
+@app.post("/api/models/release")
+async def model_release(req: Request):
+    p = await req.json()
+    return M.release(p.get("category") or "", p.get("stem") or "", bool(p.get("replace")))
+
+
+@app.post("/api/models/discard")
+async def model_discard(req: Request):
+    p = await req.json()
+    return M.discard(p.get("category") or "", p.get("stem") or "")
+
+
+# ------------------------------------------------------------------ the page
+if (DIST / "assets").is_dir():
+    app.mount("/assets", StaticFiles(directory=DIST / "assets"), name="assets")
+
+
+@app.get("/{rest:path}")
+def page(rest: str = ""):
+    f = DIST / rest
+    if rest and f.is_file() and DIST in f.resolve().parents:
+        return FileResponse(f)
+    index = DIST / "index.html"
+    if not index.exists():
+        return JSONResponse({"error": "the page is not built: cd tool\\web\\front && npm install && npm run build"}, 503)
+    return FileResponse(index, headers={"Cache-Control": "no-cache"})
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--port", type=int, default=int(os.environ.get("SF3D_WEB_PORT", 7890)))
+    ap.add_argument("--host", default="127.0.0.1")
+    a = ap.parse_args()
+    uvicorn.run(app, host=a.host, port=a.port, log_level="warning")
+
+
+if __name__ == "__main__":
+    main()
