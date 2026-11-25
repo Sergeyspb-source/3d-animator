@@ -878,6 +878,10 @@ if job.get("mask"):   # what of the body the piece hides (the game takes it away
             from body_mask import keep_band                          # the waist, the hips, the shoulder blades open far in the clips)
             zs = [(o.matrix_world @ v.co).z for o in body for v in o.data.vertices]
             keys = {tuple(x) for x in keep_band(body, [list(k) for k in keys], [obj], float(mj["limb_keep"]) / 1750 * (max(zs) - min(zs)))}
+            if float(mj.get("press_in") or 0) > 0:   # (the skin under it pressed in instead of hidden: the belly came out through its rigid lower
+                from body_mask import press_under   # edge in a step; pressed, it stays under it, and with nothing hidden no hole opens -
+                H_ = max(zs) - min(zs)               # what was still hidden opened at its rim once the skin round it went in; 3 cm of fade)
+                keys = {tuple(m) for m in press_under(body, [obj], float(mj["press_in"]) / 1750 * H_, 30 / 1750 * H_)}
     if mj.get("mask_free"):   # (a sleeve's end: the arm inside it left - the editor's clothPiece; within a thousandth: the import moves it)
         free = {(x + i, y + j, z + k) for x, y, z in (tuple(int(c) for c in q) for q in mj["mask_free"]) for i in (-1, 0, 1) for j in (-1, 0, 1) for k in (-1, 0, 1)}
         keys -= free

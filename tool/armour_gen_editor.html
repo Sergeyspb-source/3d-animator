@@ -7232,6 +7232,7 @@ const SPEC = [
     ['thickness', 2, 30, 1, '{{js:ag.thickness}}', '', 'rad'],
     ['relief', 0, 1, .05, '{{js:ag.relief}}', '{{js:ag.relief_info}}', '', () => !['glove', 'undercloth', ...GARB].includes(S.piece)],
     ['limb_keep', 0, 120, 5, '{{js:ag.limb_keep}}', '{{js:ag.limb_keep_info}}', '', isP(...TUBED, 'cuirass')],
+    ['press_in', 0, 40, 1, '{{js:ag.press_in}}', '{{js:ag.press_in_info}}', '', isP('cuirass')],
     ['top_cut', 0, 30, 1, '{{js:ag.top_cut}}', '{{js:ag.top_cut_info}}', 'pc', isLimb],
     ['bottom_cut', 0, 30, 1, '{{js:ag.bottom_cut}}', '{{js:ag.bottom_cut_info}}', 'pc', isLimb],
     ['neckline', 0, 25, 1, '{{js:ag.neckline}}', '{{js:ag.neckline_info}}', 'pc', isP('cuirass')],
@@ -7422,7 +7423,7 @@ const DEFAULTS = Object.assign({ gap: 8, thickness: 12, relief: .35, step: 5, ri
   overlap: 40, cell: 5, anatomy: 0, splits: 4, flare: .3, loose: .3, folds: .3, cuffs: false, waist: .9, low_surface: 'same', split: 55,
   two_plates: false, spaulders: 0, sp_start: 30, sp_reach: 45, sp_span: 260, neckline: 8, armhole: 40, point: 0, ridge: 0, cap: 1.6, trim: '', hammer: .5, arm_share: .7, mail_under: false, hem: 15, sleeves: 30, top_cut: 0, bottom_cut: 0, splints: 6, stitch: false,
   closure: 'across', hinges: false, opening: 'none', shoulders: 'straps', yoke: 70, thigh: 'none', knee: 'none', fly: false, wrap: false,
-  front_panel: false, hem_band: false, made_mat: '', helmet: 'barbute', head_gap: 7, head_keep: 20, limb_keep: 20, visor_angle: 0, cheek_angle: 0, tail: 100, brim: 100,
+  front_panel: false, hem_band: false, made_mat: '', helmet: 'barbute', head_gap: 7, head_keep: 20, limb_keep: 20, press_in: 25, visor_angle: 0, cheek_angle: 0, tail: 100, brim: 100,
   strap: 0, strap_fwd: 0, elbow: 'elbow_winged_plate', poleyn: 'poleyn_winged_plate', made_slide: 0, made_twist: 0, made_size: 100, codpiece: 'cod_plate', cod_size: 100, cod_proj: 100, cod_top: 0, cod_belt: false, gorget_lames: 4, gorget_low: 40, gorget_high: 60, bevor: false, bevor_high: 100, w_magnet: true, rondel: 'rondel_plain', ailette: 'ailette_square', pel_len: 11, pel_point: 4, pel_lift: 0, pel_gap: .4, hauberk: 'hauberk_long', hb_hem: 90, hb_sleeve: 100, hb_slits: 45, hb_ease: 5, coif: 'coif_short', coif_cape: 5, limb_gap: 8, wing: 100, footwear: 'foot_ankle_boot', foot_gap: 6, foot_keep: 20, foot_spring: 10, foot_width: 100, glove: 'plain_leather', cuff: 14,
   cloth_style: 'shirt', cloth_quilt: false, quilt_lines: false, pinches: [], paints: [],
   weapon: 'sword', shield: 'round', w_len: 100, w_width: 100, w_guard: 100, w_grip: 100, w_grip_r: 100, w_head: 100, grip_along: 0, grip_out: 0,
@@ -9317,7 +9318,10 @@ function payload() {   // every part in one mesh: positions (glTF axes), faces (
     mask_free: parts.flatMap((x) => x.maskFree || []).map((k) => k.split(',').map(Number)),
     // a bracer, a greave, a cuisse, a rerebrace, a cuirass: the limb, the body in it hidden but for this much skin round what is
     // seen (mm on a man 1.75 m tall)
-    limb_keep: [...TUBED, 'cuirass'].includes(S.piece) ? (S.p.limb_keep ?? LIMB_KEEP[S.piece]) : null };
+    limb_keep: [...TUBED, 'cuirass'].includes(S.piece) ? (S.p.limb_keep ?? LIMB_KEEP[S.piece]) : null,
+    // a cuirass: the skin under it pressed this far into the body (mm on a man 1.75 m tall) - the belly came out through a
+    // rigid cuirass's lower edge in a step (body_mask.press_under)
+    press_in: S.piece === 'cuirass' ? (S.p.press_in ?? 25) : null };
 }
 let busy = false;
 // one request at a time: they go through the one hidden field of the app's page, a second one sent at once would take

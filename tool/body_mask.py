@@ -625,22 +625,14 @@ def limb_cover(body, pieces, band, arm, share=.5, slip=25):
     return [list(x) for x in sorted(hide)]
 
 
-def keep_band(body, keys, pieces, band, reach=.06, deg=30):
-    """keys (body_mask's list) with `band` of skin given back round the piece's edge (2026-11-25): a cuirass is rigid on the
-    chest; the waist, the hips, the shoulder blades, the armpits bend away from its rims in the clips and opened hollows far
-    under it (measured on the guards' 61 clips: work/wear_test/torso_band). The edge: where the skin stops being under the
-    piece - a body vertex near it is under it when its normal and four rays `deg` round it all meet the piece within `reach`
-    (a share of the body's height); not the skin body_mask left in a groove under it (it is under the piece all the same).
-    The band given back: the hidden vertices nearer than `band` to a vertex not under it. Moved vertices stay as they are."""
-    from mathutils.kdtree import KDTree
-    hid = {tuple(k[:3]) for k in keys if len(k) == 3}
-    if band <= 0 or not hid:
-        return keys
+def _under(body, pieces, margin, reach=.06, deg=30):
+    """the body near the piece: [(key, world point, outward normal, under it)], H. Under it: its normal and four rays `deg`
+    round it all meet the piece within `reach` (a share of the body's height)."""
     zs = [(o.matrix_world @ v.co).z for o in body for v in o.data.vertices]
     H = max(zs) - min(zs)
     lo = Vector((min(min((o.matrix_world @ v.co)[i] for v in o.data.vertices) for o in pieces) for i in range(3)))
     hi = Vector((max(max((o.matrix_world @ v.co)[i] for v in o.data.vertices) for o in pieces) for i in range(3)))
-    m = band * 1.5 + .05 * H
+    m = margin + .05 * H
     tree, R, e = _bvh(pieces), reach * H, 1e-3 * H
     key_of = lambda c: (round(c.x * 1000), round(c.z * 1000), round(-c.y * 1000))  # noqa: E731
     pts = []
@@ -650,8 +642,6 @@ def keep_band(body, keys, pieces, band, reach=.06, deg=30):
             p = W @ v.co
             if lo.x - m <= p.x <= hi.x + m and lo.y - m <= p.y <= hi.y + m and lo.z - m <= p.z <= hi.z + m:
                 pts.append((key_of(v.co), p, (N @ v.normal).normalized()))
-    if not pts:
-        return keys
     by_z = {}   # (a Tripo mesh's normals may point in: out from the body's middle at that height)
     for _, p, _n in pts:
         by_z.setdefault(round(p.z / (.02 * H)), []).append(p)
@@ -659,21 +649,64 @@ def keep_band(body, keys, pieces, band, reach=.06, deg=30):
     out = []
     for k, p, n in pts:
         c = mid[round(p.z / (.02 * H))]
-        r = Vector((p.x - c.x, p.y - c.y, 0))
-        if abs(n.z) < .9 and r.dot(n) < 0:
+        if abs(n.z) < .9 and Vector((p.x - c.x, p.y - c.y, 0)).dot(n) < 0:
             n = -n
         q = p + n * e
-        under = all(tree.ray_cast(q, d, R)[0] is not None for d in _cone(n, deg))
-        if not under:
-            out.append(p)
+        out.append((k, p, n, all(tree.ray_cast(q, d, R)[0] is not None for d in _cone(n, deg))))
+    return out, H
+
+
+def keep_band(body, keys, pieces, band, reach=.06, deg=30):
+    """keys (body_mask's list) with `band` of skin given back round the piece's edge (2026-11-25): a cuirass is rigid on the
+    chest; the waist, the hips, the shoulder blades, the armpits bend away from its rims in the clips and opened hollows far
+    under it (measured on the guards' 61 clips: work/wear_test/torso_band). The edge: where the skin stops being under the
+    piece (_under) - not the skin body_mask left in a groove under it (it is under the piece all the same). The band given
+    back: the hidden vertices nearer than `band` to a vertex not under it. Moved vertices stay as they are."""
+    from mathutils.kdtree import KDTree
+    hid = {tuple(k[:3]) for k in keys if len(k) == 3}
+    if band <= 0 or not hid:
+        return keys
+    pts, _H = _under(body, pieces, band * 1.5, reach, deg)
+    out = [p for _k, p, _n, u in pts if not u]
     if not out:
         return keys
     kd = KDTree(len(out))
     for i, q in enumerate(out):
         kd.insert(q, i)
     kd.balance()
-    back = {k for k, p, _n in pts if k in hid and kd.find(p)[2] < band}
+    back = {k for k, p, _n, _u in pts if k in hid and kd.find(p)[2] < band}
     return [k for k in keys if len(k) != 3 or tuple(k[:3]) not in back]
+
+
+def press_under(body, pieces, depth, fade, reach=.06, deg=30):
+    """The skin under a rigid piece pressed `depth` into the body along its normal (2026-11-25, the user's idea: the belly came
+    out through the steel cuirass's lower edge in a step - pressed in, it stays under it, and no hole opens: the skin is
+    there, only deeper), the skin shown beside the piece less and less over `fade` from the skin under it (the edge seems to
+    bite into the body a little). Returns body_mask's move entries [x, y, z, dx, dy, dz] (glTF thousandths)."""
+    from mathutils.kdtree import KDTree
+    if depth <= 0:
+        return []
+    pts, _H = _under(body, pieces, fade, reach, deg)
+    under = [p for _k, p, _n, u in pts if u]
+    if not under:
+        return []
+    kd = KDTree(len(under))
+    for i, q in enumerate(under):
+        kd.insert(q, i)
+    kd.balance()
+    out = []
+    for k, p, n, u in pts:
+        if u:
+            s = 1.0
+        else:
+            d = kd.find(p)[2]
+            if fade <= 0 or d >= fade:
+                continue
+            x = 1 - d / fade
+            s = x * x * (3 - 2 * x)
+        mv = -n * depth * s   # (Blender's axes; the mask's: glTF x, y up, z forward)
+        out.append([*k, round(mv.x * 1000, 2), round(mv.z * 1000, 2), round(-mv.y * 1000, 2)])
+    return out
 
 
 if __name__ == "__main__":   # a piece put on before masks were made: blender -b -P body_mask.py -- rigged.glb piece.glb out.json
