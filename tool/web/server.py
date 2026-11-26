@@ -1,4 +1,4 @@
-"""SF3D web UI: the app's Python (sf3d_ui and the other modules) behind a FastAPI server, the page built by Vite
+"""3d-animator's web UI: the app's Python (sf3d_ui and the other modules) behind a FastAPI server, the page built by Vite
 (tool/web/front -> front/dist). The app's interface, on its own port (7890 by default; sf3d-ui.vbs / sf3d-ui.bat start it):
 
     D:\\conda\\envs\\sf3d\\python.exe tool\\web\\server.py [--port 7890]
@@ -53,7 +53,7 @@ from tasks import Bus, Task, TaskQueue, NO_WINDOW  # noqa: E402
 DIST = HERE / "front" / "dist"
 bus = Bus()
 tasks = TaskQueue(bus)
-app = FastAPI(title="SF3D", docs_url=None, redoc_url=None)
+app = FastAPI(title="3d-animator", docs_url=None, redoc_url=None)
 for ext, typ in ((".glb", "model/gltf-binary"), (".gltf", "model/gltf+json"), (".webp", "image/webp"), (".json", "application/json")):
     mimetypes.add_type(typ, ext)
 

@@ -34,7 +34,7 @@ export default function TopBar({ route, go, testBench }: { route: Route; go: (r:
 
   return (
     <Group h="100%" px="sm" gap="sm" wrap="nowrap" className="topbar">
-      <Text className="brand">SF3D</Text>
+      <Text className="brand">3d-animator</Text>
       {testBench && <Badge color="yellow" variant="light">{t('web.test_bench')}</Badge>}
       <div style={{ flex: 1 }} />
       {kind && <Select size="xs" w={300} data={objData} value={objData.some((g) => g.items.some((x) => x.value === objs.current)) ? objs.current : null}

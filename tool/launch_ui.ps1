@@ -1,4 +1,4 @@
-﻿# Hidden launcher for the SF3D web interface: builds the page when its sources are newer than the built one, starts
+﻿# Hidden launcher for the 3d-animator web interface: builds the page when its sources are newer than the built one, starts
 # the server with no console, opens an app window, and stops the server (freeing VRAM) when that window is closed.
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
@@ -11,7 +11,7 @@ $log    = 'D:\conda\tmp\ui.log'
 $errlog = 'D:\conda\tmp\ui.err.log'
 
 function Test-Up { try { Invoke-WebRequest "$url/api/state" -UseBasicParsing -TimeoutSec 2 | Out-Null; $true } catch { $false } }
-function Show-Error($text) { [System.Windows.Forms.MessageBox]::Show($text, 'SF3D') | Out-Null }
+function Show-Error($text) { [System.Windows.Forms.MessageBox]::Show($text, '3d-animator') | Out-Null }
 
 $server = $null
 if (-not (Test-Up)) {
@@ -33,9 +33,9 @@ if (-not (Test-Up)) {
                     -RedirectStandardOutput $log -RedirectStandardError $errlog -Wait -PassThru
                 $ok = $p.ExitCode -eq 0
             }
-            if (-not $ok -and -not $built) { Show-Error "Не удалось собрать страницу интерфейса SF3D.`n`nЖурнал: $errlog"; exit 1 }
+            if (-not $ok -and -not $built) { Show-Error "Не удалось собрать страницу интерфейса 3d-animator.`n`nЖурнал: $errlog"; exit 1 }
         } elseif (-not $built) {
-            Show-Error "Страница интерфейса SF3D не собрана, а Node.js не найден. Установите Node.js 18+ и запустите снова."
+            Show-Error "Страница интерфейса 3d-animator не собрана, а Node.js не найден. Установите Node.js 18+ и запустите снова."
             exit 1
         }
     }
@@ -53,7 +53,7 @@ if (-not (Test-Up)) {
     }
     if (-not $up) {
         $tail = if (Test-Path $errlog) { (Get-Content $errlog -Tail 8) -join "`n" } else { '' }
-        Show-Error "Не удалось запустить интерфейс SF3D.`n`n$tail`n`nЖурнал: $errlog"
+        Show-Error "Не удалось запустить интерфейс 3d-animator.`n`n$tail`n`nЖурнал: $errlog"
         if ($server -and -not $server.HasExited) { Start-Process taskkill.exe -ArgumentList '/PID', $server.Id, '/T', '/F' -WindowStyle Hidden -Wait }
         exit 1
     }

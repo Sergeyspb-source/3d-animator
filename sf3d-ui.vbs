@@ -1,4 +1,4 @@
-' Double-click to start the SF3D GUI with no console windows.
+' Double-click to start 3d-animator (the interface) with no console windows.
 ' Closing the app window also stops the server and frees GPU memory.
 ' For debugging with a visible console use sf3d-ui.bat instead.
 Dim sh, here
