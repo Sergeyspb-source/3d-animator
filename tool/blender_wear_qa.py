@@ -277,7 +277,7 @@ edge_r = .025 * size
 edge = {x for x in covered if free and kd.find(verts0[x[0]][x[1]][0])[2] < edge_r}
 
 step = max(1, int(job.get("step", 3)))
-clips, out_pts, worst_mid = [], set(), {}
+clips, out_pts, worst_mid, hole_pts = [], set(), {}, set()
 for act in actions:
     f0, f1 = set_clip(act)
     worst = (0, f0, 0, 0)   # pokes in the middle, frame, holes, pokes by the edge
@@ -289,7 +289,14 @@ for act in actions:
         for oi, vi in covered:
             if poked(tree, *verts[oi][vi]):
                 pokes.append((oi, vi))
-        holes = sum(1 for oi, vi in hidden if tree.ray_cast(verts[oi][vi][0] + verts[oi][vi][1] * e, verts[oi][vi][1], far)[0] is None)
+        # (a hole: hidden skin with the piece neither in front of it nor behind it - one that came out through the piece is
+        # not drawn, the piece behind it is seen: no hole; counted so, a mask hiding more read as more holes)
+        hl = [(oi, vi) for oi, vi in hidden if tree.ray_cast(verts[oi][vi][0] + verts[oi][vi][1] * e, verts[oi][vi][1], far)[0] is None
+              and not poked(tree, *verts[oi][vi])]
+        holes = len(hl)
+        for oi, vi in hl:
+            c = body[oi].data.vertices[vi].co
+            hole_pts.add((round(c.x, 4), round(c.z, 4), round(-c.y, 4)))
         holes_max = max(holes_max, holes)
         mid = [x for x in pokes if x not in edge]
         if len(mid) > worst[0] or (worst[0] == 0 and len(pokes) - len(mid) > worst[3]):
@@ -361,6 +368,6 @@ if job.get("shots", True) and worst_mid:
         shots.append([fn, f"{name} · {f}"])
         bpy.data.objects.remove(mo, do_unlink=True)
 report = {"covered": len(covered), "edge": len(edge), "hidden": len(hidden), "clips": clips, "shots": shots,
-          "points": [list(x) for x in sorted(out_pts)][:3000]}
+          "points": [list(x) for x in sorted(out_pts)][:3000], "hole_points": [list(x) for x in sorted(hole_pts)][:3000]}
 Path(job["out"]).write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
 print("WEAR_QA_OK " + json.dumps({k: report[k] for k in ("covered", "hidden", "clips")}), flush=True)

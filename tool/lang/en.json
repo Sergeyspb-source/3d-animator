@@ -3051,6 +3051,7 @@
  "ag.hd_point_info": "how much longer the edges by the clasp",
  "ag.hd_cowl": "Hood",
  "ag.hd_cowl_info": "the lowered hood's bulk behind the neck; 0 none",
+ "ag.hd_up": "Hood up",
  "ag.wr_from": "From",
  "ag.wr_from_info": "down the shin from the knee (on the forearms: from the elbow)",
  "ag.wr_to": "To",

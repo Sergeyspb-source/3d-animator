@@ -924,8 +924,10 @@ def generate(cfg, req) -> dict:
            "uv_prev": str(uv_dir(rigged, item, piece))}   # (its unwrap kept there: the same mesh unwrapped as before)
     if piece == "undercloth":
         job["style"] = params.get("cloth_style")
-    if piece in ("tunic", "vest") or params.get(piece) == "wraps_arm":   # (a sleeve's cuff, an armhole move off the skin as a
-        job["mask_erode"] = 5          # wrist turns, a fist closes: the skin hidden up to their very edge showed as holes there - more of it given back)
+    if params.get(piece) == "wraps_arm":   # (a sleeve's cuff, an armhole move off the skin as a wrist turns, a fist closes:
+        job["mask_erode"] = 5          # the skin hidden up to their very edge showed as holes there - more of it given back)
+    elif piece in ("tunic", "vest") or params.get("cloth_style") == "shirt":   # (theirs: the skin by the open edges given back by the editor, mask_free -
+        job["mask_erode"] = 0          # given back by rings from every gap, half the skin under a shirt was shown: it came through)
     # held, not worn (the fingers round a grip stay); a cloak swings off the body; a belt, an apron, a hooded capelet go
     # over a shirt (the skin hidden under them would open holes as they move off it: a strap, a hanging apron, a cape)
     if PIECES[piece][5] in ("held", "cloak") or piece in ("belt", "apron", "hood"):

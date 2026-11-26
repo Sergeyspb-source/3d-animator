@@ -1674,13 +1674,15 @@ const GARMENTS = {
   // ones get a short skirt, not a dress; negative: above the crotch; null: none); waist: the body in with the waist (0:
   // straight down from the chest); ease: how loose (in the limbs' radii, over the gap); open: the front fastened with
   // 'ties' or 'lace'; collar: a standing collar's height (along the neck); slits: [angle from the front (deg), depth (of
-  // the skirt's length), half width (deg)]
-  shirt: { top: .02, hem: .25, waist: .6, ease: .06, flare: .08, folds: .1, sleeves: true, neckTie: true, slits: [[90, .45, 6], [-90, .45, 6]] },
-  aketon: { top: .02, hem: .12, waist: .8, ease: .05, flare: .06, folds: .05, sleeves: true, open: 'ties', ties: 5, collar: .3, cuffTies: true,
+  // the skirt's length), half width (deg)]; pitWrap, sleeveTa: the sleeve's top from further up the shoulder, over the
+// folds where the arm meets the chest and the back (as the tunics had it: there the skin showed between the sleeve and
+// the armhole)
+  shirt: { top: .02, hem: .25, waist: .85, ease: .04, flare: .03, folds: .1, sleeves: true, pitWrap: true, sleeveTa: -.3, neckTie: true, slits: [[90, .45, 6], [-90, .45, 6]] },
+  aketon: { top: .02, hem: .12, waist: .85, ease: .04, flare: .03, folds: .05, sleeves: true, pitWrap: true, sleeveTa: -.3, open: 'ties', ties: 5, collar: .3, cuffTies: true,
     slits: [[90, .5, 6], [-90, .5, 6]] },
-  gambeson: { top: .02, hem: .4, waist: .85, ease: .05, flare: .3, folds: .1, sleeves: true, open: 'ties', ties: 6, collar: .35, slits: [[180, .5, 6]] },
-  doublet: { top: -.04, hem: null, waist: 1, ease: .04, sleeves: true, open: 'lace', collar: .35, points: true },
-  voider: { top: -.04, hem: null, waist: 1, ease: .04, sleeves: true, open: 'lace', collar: .35, points: true, voiders: true },
+  gambeson: { top: .02, hem: .4, waist: .85, ease: .04, flare: .15, folds: .1, sleeves: true, pitWrap: true, sleeveTa: -.3, open: 'ties', ties: 6, collar: .35, slits: [[180, .5, 6]] },
+  doublet: { top: -.04, hem: null, waist: 1, ease: .04, sleeves: true, pitWrap: true, sleeveTa: -.3, open: 'lace', collar: .35, points: true },
+  voider: { top: -.04, hem: null, waist: 1, ease: .04, sleeves: true, pitWrap: true, sleeveTa: -.3, open: 'lace', collar: .35, points: true, voiders: true },
   vest: { top: .14, hem: -.05, waist: .85, ease: .05, flare: .4, folds: .05, sleeves: false, open: 'ties', ties: 5, collar: .3, slits: [[90, .7, 6], [-90, .7, 6]] },
 };
 // a bow (a tie, an arming point): a knot, two loops and two ends hanging, s its size, on the surface at c (normal n)
@@ -1786,7 +1788,8 @@ function garment(p, G) {
   const { limb: tl } = limbOf('cuirass', 'C'), down = cast(tl.a, tl.u.clone().negate(), tl.len), tcr = down ? -down.distance / tl.len : -.12;
   const thighs = ['L', 'R'].filter((s) => PB['upleg_' + s] && PB['leg_' + s]).map((s) => joint('upleg_' + s).distanceTo(joint('leg_' + s)));
   const thigh = (thighs.length ? thighs.reduce((x, y) => x + y) / thighs.length : .25 * HEIGHT) / tl.len;
-  if (G.hem !== null) out.push(...buildPiece('tassets', ['C'], { ...q, t0: Math.min(tcr - G.hem * thigh, G.top - .1), t1: G.top + (G.skirtOver ?? .05),   // (G.skirtOver: how far up under the body)
+  // (its skirt closer than the body - half its gap: it hangs on the hips, the user: «the cloth stands off the hips as a dome»)
+  if (G.hem !== null) out.push(...buildPiece('tassets', ['C'], { ...q, gap: .5 * q.gap, t0: Math.min(tcr - G.hem * thigh, G.top - .1), t1: G.top + (G.skirtOver ?? .05),   // (G.skirtOver: how far up under the body)
     splits: 0, sector: 360, flare: G.flare, folds: G.folds,
     wrap: false, front_panel: false, hem_band: false, relief: .95, rigidity: .1, floor: (a) => body.ring(G.top, a), tuck: G.top,
     skirt_open: G.frontGap ? D(G.frontGap / 2) : G.open ? D(2) : 0, slits: (G.slits || []).map(([a, d, w]) => [D(a), d, D(w)]), ragged: G.ragged || 0 }));
@@ -2207,6 +2210,27 @@ function clipSkin(S, f, partOf, key, disp = null) {
   return res;
 }
 function normalsOf(pos, tris) { return normalsOfMesh(pos, tris); }
+// a piece's points' weights from the skin right under each (along its normal, in; the hit triangle's corners blended by
+// where it was hit): a shirt's points, smoothed and relaxed, drift along the body off the skin point they were made of -
+// over a shoulder blade, at an armpit, where the weights change fast, the cloth moved by other bones than the skin under
+// it and the skin came out through it in motion (2-4 % of it)
+function weightsUnder(pos, nrm, fallback, far = MM(60)) {
+  const PA = bodyGeo.attributes.position, A = new V3(), B = new V3(), C = new V3(), bc = new V3();
+  return pos.map((P, i) => {
+    const N = nrm[i], h = castAll(P.clone().addScaledVector(N, MM(3)), N.clone().negate(), far + MM(3)).find((q) => q.face.a < SKIN_VERTS);
+    if (!h) return fallback[i];
+    A.fromBufferAttribute(PA, h.face.a); B.fromBufferAttribute(PA, h.face.b); C.fromBufferAttribute(PA, h.face.c);
+    THREE.Triangle.getBarycoord(h.point, A, B, C, bc);
+    const m = new Map();
+    for (const [v, sh] of [[h.face.a, bc.x], [h.face.b, bc.y], [h.face.c, bc.z]]) for (let k = 0; k < 4; k++) {
+      const w = vW[4 * v + k] * Math.max(0, sh); if (w > 0) m.set(vBone[4 * v + k], (m.get(vBone[4 * v + k]) || 0) + w);
+    }
+    const top = [...m.entries()].sort((x, y) => y[1] - x[1]).slice(0, 4), tot = top.reduce((z, x) => z + x[1], 0);
+    if (!(tot > 1e-6)) return fallback[i];
+    while (top.length < 4) top.push([top[0][0], 0]);
+    return [top.map((x) => x[0]), top.map((x) => x[1] / tot)];
+  });
+}
 function normalsOfMesh(pos, tris) {
   const n = pos.map(() => new V3()), e1 = new V3(), e2 = new V3(), fn = new V3();
   for (const [a, b, c] of tris) { fn.crossVectors(e1.subVectors(pos[b], pos[a]), e2.subVectors(pos[c], pos[a])); n[a].add(fn); n[b].add(fn); n[c].add(fn); }
@@ -2411,6 +2435,7 @@ function skinCloth(p, parts, keep, o = {}) {
     rimC = new Uint8Array(pos.length); for (const [kk, c] of ec2) if (c === 1) for (const x of kk.split(',')) rimC[+x] = 1;
   }
   if (o.snapRim) for (let i = 0; i < pos.length; i++) if (rimC[i]) { const q2 = o.snapRim(pos[i], i, S); if (q2) pos[i].copy(q2); }   // (its cut edges onto their lines: no staircase)
+  if (o.projW) S = { ...S, w: weightsUnder(pos, normalsOf(pos, S.tris, S.pos), S.w) };
   const H = { pos, n: normalsOf(pos, S.tris, S.pos), w: S.w, tris: S.tris };
   const R = .02 * HEIGHT, gap = MM(1) + p.gap * R, thick = MM(1.2) + p.thickness * R, acc = new Acc();
   acc.w = (q) => q.direct;
@@ -2447,6 +2472,9 @@ function undercloth(p) {
   if (st === 'coif') return coif(p);
   if (st === 'fitted') return fittedShirt(p);
   if (st === 'braies' || st === 'braies_long') return braies(p, st === 'braies_long');
+  // the plain linen shirt: cut as the everyday shirt is, one piece (clothPiece) - in from the waist, its skirt hanging on the
+  // hips (of a body and a skirt apart it stood off the hips as a dome, no waist: the user), laced at the neck, slit at the sides
+  if (st === 'shirt') return clothPiece({ ...p }, { ...TUNICS.shirt, sleeve: 1, hem: GARMENTS.shirt.hem, ease: .08 * 1.2, folds: .6 });
   return GARMENTS[st] ? garment(p, GARMENTS[st]) : [];
 }
 
@@ -2903,6 +2931,9 @@ const CLOTH_OPEN = 12;   // mm: the skin's bumps narrower than twice this go und
 const MASK_CONE = 30;   // degrees: a shirt's or vest's skin hidden only where the cloth is over it along its normal and so far round it
 const NECK_CUT = 1.45;   // a shirt's or vest's neckline: so many times the neck's radius from its line (at its base)
 const CUFF_FREE = 50;   // mm of the arm inside a sleeve's end left unhidden (the user: the arm going on into it, not a doll's)
+const HOOD_SPREAD = 10;   // degrees each way a hooded capelet's front edges open more at its hem than at the throat
+const HOOD_UP_GAP = 12;   // mm a hood up stands off the head and the neck (the hair under it)
+const EDGE_FREE = 30;   // mm of the skin in from a shirt's or vest's open edges left unhidden (the rest under it all hidden)
 const CLOTH_SINK_IN = -2;   // mm: away from its edges no deeper either (sunk 40 into a goblin's shoulders, they came through as the arms rose; the field is smooth: over the muscles, not into each)
 const CLOTH_BALL = 55;   // mm: its smoothing's reach (SKIN_BALL's: each of a goblin's muscles showed through)
 function clothPiece(p, o) {
@@ -3017,7 +3048,7 @@ function clothPiece(p, o) {
     return null;
   };
   const out = skinCloth(q, ['torso', 'upper_arm', 'forearm', 'neck'], keep, { mat: PLATE, role: 'plate', uv, over: true, rim: true, fold, edge: CLOTH_EDGE, sinkEdge: CLOTH_SINK, sinkIn: CLOTH_SINK_IN, ball: CLOTH_BALL,
-    mainOnly: true, ownAll: true, snapRim, cut: cutF, partOf, open: CLOTH_OPEN });
+    mainOnly: true, ownAll: true, snapRim, cut: cutF, partOf, open: CLOTH_OPEN, projW: true });
   const sh0 = out[0], rim = sh0 && sh0.rim;
   if (!rim || !rim.loops || !rim.loops.length) return out;
   { // the skin hidden only where the cloth covers it - along its normal and 30 degrees round it (as the bake's mask,
@@ -3069,6 +3100,23 @@ function clothPiece(p, o) {
     run = Array.from({ length: best[1] }, (_, k) => loop[(best[0] + k) % loop.length]);
   }
   let cols = run.map(colOf).filter(Boolean);
+  { // the skin by its open edges (the neckline, a slit, the cuffs; a vest's front edges and armholes - not its bottom edge,
+    // going on into the skirt) never hidden, EDGE_FREE in from them: in motion an edge lifts off the skin, the skin hidden
+    // up to it showed as a hole. Away from them all the skin under it is hidden (the bake's mask given back by rings from
+    // every gap in it lost half of it: the skin came out through the middle of a shirt in motion, 2-4 %)
+    const SS = rim.S, inRun = new Set(closed ? loop : run), m = SS.pos.length, nbS = Array.from({ length: m }, () => []);
+    for (const [a, b, c] of SS.tris) for (const [x, y] of [[a, b], [b, c], [c, a]]) { nbS[x].push(y); nbS[y].push(x); }
+    const dist = new Float64Array(m).fill(Infinity), q = [], lim = MM(EDGE_FREE);
+    for (const i of rim.loops.flat()) if (!inRun.has(i)) { dist[i] = 0; q.push(i); }
+    for (let h = 0; h < q.length; h++) { const i = q[h]; for (const j of nbS[i]) { const d = dist[i] + SS.pos[i].distanceTo(SS.pos[j]); if (d < dist[j] && d < lim) { dist[j] = d; q.push(j); } } }
+    const near = new Set(); for (let i = 0; i < m; i++) if (dist[i] < lim) for (const k of SS.lks[i] || []) near.add(k);
+    // (and nothing under its skirt: it swings off the thighs and the seat as the legs move - hidden there, holes opened
+    // on them in a walk, a run; seen through the skirt as it goes against them is the lesser fault)
+    const below = (v, part) => part === 'thigh' || (part === 'torso' && torsoT(v) < tcut + .01); below.key = 'cloth_below' + Math.round(tcut * 1000);
+    const SB = bodySkin(new Set(['torso', 'thigh']), below);
+    for (const ks of SB.lks || []) for (const k of ks) near.add(k);
+    if (near.size) { sh0.mask = new Set([...sh0.mask].filter((k) => !near.has(k))); sh0.maskFree = [...(sh0.maskFree || []), ...near]; }
+  }
   const angOfP = (P) => { const d = P.clone().sub(tl.a), t = d.dot(tl.u); d.addScaledVector(tl.u, -t); return tl.angOf(d.normalize()); };
   if (closed) { let inc = 0; for (let j = 0; j < cols.length; j++) inc += Math.sign(((angOfP(vx(cols[(j + 1) % cols.length].o)) - angOfP(vx(cols[j].o)) + 3 * Math.PI) % TAU) - Math.PI); if (inc < 0) cols.reverse(); }
   else if (relF(vx(cols[0].o)) < relF(vx(cols[cols.length - 1].o))) cols.reverse();   // (an open run: from the left front edge round the back to the right)
@@ -3499,15 +3547,21 @@ function hood(p) {
   const s0 = circ(f0), s1 = circ(f1);
   const nv = 18, gap = MM(6) + p.gap * .02 * H, thm = Math.max(MM(2), p.thickness * .02 * H), U = LOOK.U;
   const fiOf = (i, j) => s0[j] + (s1[j] - s0[j]) * i / (nv - 1);
-  const base = Array.from({ length: nv }, (_, i) => Array.from({ length: NT }, (_, j) => {
-    const fi = fiOf(i, j), d = dir(ths[j], E0 + (E1 - E0) * fi / (NE - 1));
+  // its front edges apart more and more going down (HOOD_SPREAD at the hem: a cape hangs open from the toggle, it was cut
+  // straight down); each row's columns spread round again, their radii read at their new angles
+  const spread = p._drape ? 0 : D_(HOOD_SPREAD), openAt = (i) => gapA + spread * (i / (nv - 1)) ** 1.4;
+  const thOf = (i, j) => openAt(i) + (ths[j] - gapA) / (TAU - 2 * gapA) * (TAU - 2 * openAt(i));
+  const jfOf = (th) => Math.max(0, Math.min(NT - 1.001, (th - gapA) / (TAU - 2 * gapA) * (NT - 1)));
+  const atJ = (g, fi, jf) => { const j = Math.floor(jf), k = jf - j; return at(g, fi, j) * (1 - k) + at(g, fi, Math.min(NT - 1, j + 1)) * k; };
+  const base = Array.from({ length: nv }, (_, i) => Array.from({ length: NT }, (_, j0) => {
+    const th = thOf(i, j0), jf = jfOf(th), j = Math.round(jf), fi = fiOf(i, j), d = dir(th, E0 + (E1 - E0) * fi / (NE - 1));
     // a little flare out to the hem (cloth stands off the shoulders' ends), never into what is under it
     // (and more air round the shoulders: an arm raised swells the deltoid, lifts the chest's edge by the armpit - they came through the cloth)
-    const P0 = C.clone().addScaledVector(d, at(sm, fi, j)), tip = smooth(.15 * H, .04 * H, Math.min(P0.distanceTo(aL), P0.distanceTo(aR)));
-    const X = C.clone().addScaledVector(d, at(sm, fi, j) + gap + .012 * H * (i / (nv - 1)) ** 2 + MM(14) * tip), c = clearanceAt(bodyGeo, X);
+    const P0 = C.clone().addScaledVector(d, atJ(sm, fi, jf)), tip = smooth(.15 * H, .04 * H, Math.min(P0.distanceTo(aL), P0.distanceTo(aR)));
+    const X = C.clone().addScaledVector(d, atJ(sm, fi, jf) + gap + .012 * H * (i / (nv - 1)) ** 2 + MM(14) * tip), c = clearanceAt(bodyGeo, X);
     if (c && c.d < gap) X.addScaledVector(c.n, gap - c.d);
     const w = castOuter(C, d, .6 * H), r = X.clone().sub(C).dot(d);
-    if (w && w.distance < r + 2 * thm) X.addScaledVector(d, Math.max(w.distance - 2 * thm, at(raw, fi, j)) - r);
+    if (w && w.distance < r + 2 * thm) X.addScaledVector(d, Math.max(w.distance - 2 * thm, atJ(raw, fi, jf)) - r);
     return { X, d, f: face[j][Math.round(fi)] };
   }));
   // weights: as the skin under it (held to the chest, the shoulders came through it as an arm was raised); over a
@@ -3538,7 +3592,8 @@ function hood(p) {
   // a sack on the neck): its body from the neck down to a rounded point; the rim of its face opening a soft roll sagging
   // in a U across the upper back; under the rim a few folds hanging in swags, and folds running down to the point;
   // inside the U its lining, flatter
-  const cowl = Math.max(0, p.hd_cowl ?? 1);
+  const up = p.hd_up && !p._drape ? hoodUp(p, thm) : null;   // (a hood up: not lying down on the back too)
+  const cowl = up ? 0 : Math.max(0, p.hd_cowl ?? 1);
   if (cowl > 0) {
     const jOf = (u) => ((Math.PI + u * D_(66)) - gapA) / (TAU - 2 * gapA) * (NT - 1);   // u -1..1 across the back: its column
     const iMax = (nv - 1) * .85;
@@ -3574,9 +3629,34 @@ function hood(p) {
   const T = Pm.clone().addScaledVector(fwd, .012 * H);
   itemMesh(acc, { C: T.clone().addScaledVector(across, -.016 * H), A: across, E: UP.clone(), S: fwd }).lathe([[0, .002 * H], [.003 * H, .0045 * H], [.029 * H, .0045 * H], [.032 * H, .002 * H]], WOOD, 'wood', 10);
   for (const [E2, s2] of [[Pa, -1], [Pb, 1]]) tubeAlong(acc, [E2, E2.clone().lerp(T, .5).addScaledVector(fwd, .006 * H), T.clone().addScaledVector(across, s2 * .006 * H)], .0018 * H, LEATHER, 'strap', a.f, 6);
-  return [{ side: 'C', acc, R: .1 * H }];
+  return [{ side: 'C', acc, R: .1 * H }, ...(up ? [up] : [])];
 }
 
+// a hood up (a capelet's, hd_up): a cloth bag round the head and the neck - their convex hull, off them by HOOD_UP_GAP,
+// the ears past the skull's sides inside it and hidden (a goblin's came out through its sides), the face cut out of it
+// (before the ears, from the brow to the chin), its top drawn back and up into a soft point (a liripipe: «колпак»).
+// The head's weights; what is nearest the face moves with the jaw as the face does
+function hoodUp(p, thm) {
+  const J = (k) => joint(k), HJ = J('head'), NK = J('neck'); if (!HJ || !NK) return null;
+  const eyes = ['eye_L', 'eye_R'].map(J).filter(Boolean), E = eyes.length ? eyes.reduce((a, b) => a.add(b), new V3()).multiplyScalar(1 / eyes.length) : HJ.clone();
+  const H = HEIGHT, d = HJ.distanceTo(E) || .05 * H;
+  const ys = Array.from({ length: 12 }, (_, i) => NK.y + (HJ.y + 2.5 * d - NK.y) * i / 11);
+  const half = ys.map((y) => { const h2 = [1, -1].map((x) => cast(new V3(HJ.x, y, HJ.z), new V3(x, 0, 0), H)); return h2.every(Boolean) ? Math.max(h2[0].distance, h2[1].distance) : d; });
+  const halfAt = (y) => { const f = Math.max(0, Math.min(ys.length - 1.001, (y - ys[0]) / (ys[1] - ys[0]))), i = Math.floor(f); return half[i] * (1 - (f - i)) + half[i + 1] * (f - i); };
+  const keep = (v) => Math.abs(v.x - HJ.x) < 1.1 * halfAt(v.y); keep.key = 'hood_up';
+  const S = bodySkin(new Set(['head', 'neck']), keep); if (S.pos.length < 8) return null;
+  const hi = boneNames.indexOf(PB.head.name), face = (v) => v.clone().sub(E).dot(FRONT) > -.3 * d && v.y < E.y + .55 * d && v.y > E.y - 1.1 * d;
+  const B = convexBag(S.pos, S.w.map((w, i) => face(S.pos[i]) ? w : [[hi, hi, hi, hi], [1, 0, 0, 0]]), 3); if (!B) return null;
+  // the point: the bag's top back drawn out back and up, smoothly (cos to the way it points, to the 6th)
+  const way = UP.clone().addScaledVector(FRONT, -.9).normalize(), Cn = HJ.clone().addScaledVector(UP, .6 * d), L = .9 * d;
+  B.pos = B.pos.map((P) => { const k = Math.max(0, P.clone().sub(Cn).normalize().dot(way)) ** 6; return P.clone().addScaledVector(way, k * L); });
+  B.n = normalsOfMesh(B.pos, B.tris);
+  const ids = B.tris.map((_, t) => t).filter((t) => { const [a, b2, c2] = B.tris[t]; return ![a, b2, c2].some((k) => face(B.pos[k])); });
+  const acc = new Acc(); acc.w = (q) => q.direct;
+  shellOf(acc, B, ids, MM(HOOD_UP_GAP), thm, PLATE, 'plate', (i) => ({ direct: B.w[i] }), null, 4);
+  const ear = (v) => Math.abs(v.x - HJ.x) >= 1.1 * halfAt(v.y) && v.y > NK.y; ear.key = 'hood_up_ears';
+  return { side: 'C', acc, R: .1 * H, mask: bodySkin(new Set(['head']), ear).keys };
+}
 // ---- leg wraps: linen wound round the shins from under the knee to the ankle, crossed: a wrap close on the leg and
 // two bands spiralling round it either way over it (each a little over the other). On the forearms (wraps_arm: the
 // concept sheets' mages - leather strips round the wrists over a shirt's sleeves): the same from the elbow's way down to
@@ -6484,7 +6564,9 @@ function buildPiece(kind, sides, p) {
       // bottom (above tuck) it goes in under it
       if (p.floor) {
         const fl = Array.from({ length: P.NA }, (_, j) => p.floor(j / P.NA * TAU)), th = p.thickness * P.R;
-        drape = drape.map((row, i) => row.map((x, j) => (P.ts[i] <= p.tuck ? Math.max(x, fl[j]) : Math.max(P.inner[i][j], Math.min(x, fl[j] - 1.6 * th)))));
+        // (below the body's bottom on from under it, as above: from its very edge it jumped out to the body's own ring - the
+        // skirt went through the body's hem there, a seam of ragged patches, or stood off as a box round the hips)
+        drape = drape.map((row, i) => row.map((x, j) => (P.ts[i] <= p.tuck ? Math.max(x, fl[j] - 1.6 * th) : Math.max(P.inner[i][j], Math.min(x, fl[j] - 1.6 * th)))));
       }
       const iTop = P.ts.findIndex((t) => t > tcr + .12) - 1;   // from the hips down: hanging
       for (let i = Math.min(iTop, drape.length - 1) - 1; i >= 0; i--) for (let j = 0; j < P.NA; j++) {
@@ -7109,8 +7191,8 @@ Object.assign(STYLES, {
     belt_rope: { belt: 'belt_rope', material: 'leather', tint: '#6a4a2a', cloth2: '#b8a47e', trim: '', bl_at: 22, bl_width: 100, bl_pouch: false, bl_purse: true, bl_satchel: false, bl_rag: false, bl_coil: false },
   },
   hood: {
-    hood_capelet: { hood: 'hood_capelet', material: 'cloth', cloth: '#8a4428', weave: 'herring', tint: '#5a3a22', trim: '', hd_len: 10, hd_point: 2, hd_cowl: 1, gap: 2, thickness: 3 },
-    hood_pointed: { hood: 'hood_pointed', material: 'cloth', cloth: '#5e4630', weave: 'twill', tint: '#5a3a22', trim: '', hd_len: 10, hd_point: 7, hd_cowl: .8, gap: 2, thickness: 3 },
+    hood_capelet: { hood: 'hood_capelet', material: 'cloth', cloth: '#8a4428', weave: 'herring', tint: '#5a3a22', trim: '', hd_len: 10, hd_point: 2, hd_cowl: 1, hd_up: false, gap: 2, thickness: 3 },
+    hood_pointed: { hood: 'hood_pointed', material: 'cloth', cloth: '#5e4630', weave: 'twill', tint: '#5a3a22', trim: '', hd_len: 10, hd_point: 7, hd_cowl: .8, hd_up: false, gap: 2, thickness: 3 },
   },
   wraps: {
     wraps_cross: { wraps: 'wraps_cross', material: 'cloth', cloth: '#d2c6a6', cloth2: '#b3a07a', weave: 'plain', trim: '', wr_from: 6, wr_to: 88, wr_turns: 4, gap: 2.5, thickness: 2.5, cell: 3 },
@@ -7500,7 +7582,7 @@ function buildPanel() {
       `<label class="chk" style="margin-left:8px"><input type="checkbox" id="i_csym" checked> {{js:ag.contour_sym}}</label></div><div class="note" id="contourNote">{{js:ag.contour_info}}</div></div>` : '') +
     (gi === GARB_GI ? `<div id="r_weave"><div class="note">{{js:ag.weave}}</div><div class="row" style="margin:2px 0 6px"><span class="seg" id="weaveSeg">` +
       ['', 'plain', 'twill', 'herring'].map((m) => `<button data-weave="${m}">${'{{js:ag.weave_none}}|{{js:ag.weave_plain}}|{{js:ag.weave_twill}}|{{js:ag.weave_herring}}'.split('|')[['', 'plain', 'twill', 'herring'].indexOf(m)]}</button>`).join('') + `</span></div></div>` +
-      [['ap_tools', '{{js:ag.ap_tools}}'], ['bl_pouch', '{{js:ag.bl_pouch}}'], ['bl_purse', '{{js:ag.bl_purse}}'], ['bl_satchel', '{{js:ag.bl_satchel}}'], ['bl_rag', '{{js:ag.bl_rag}}'], ['bl_coil', '{{js:ag.bl_coil}}'], ['tr_ties', '{{js:ag.tr_ties}}']]
+      [['ap_tools', '{{js:ag.ap_tools}}'], ['bl_pouch', '{{js:ag.bl_pouch}}'], ['bl_purse', '{{js:ag.bl_purse}}'], ['bl_satchel', '{{js:ag.bl_satchel}}'], ['bl_rag', '{{js:ag.bl_rag}}'], ['bl_coil', '{{js:ag.bl_coil}}'], ['tr_ties', '{{js:ag.tr_ties}}'], ['hd_up', '{{js:ag.hd_up}}']]
         .map(([k, l]) => `<label class="chk" id="r_${k}"><input type="checkbox" id="i_${k}"> ${l}</label>`).join('') : '') +
     (gi === GOR_GI ? `<label class="chk" id="r_bevor" title="{{js:ag.bevor_info}}"><input type="checkbox" id="i_bevor"> {{js:ag.bevor}}</label>` : '') +
     (gi === HELD_GI ? `<label class="chk" id="r_w_magnet" title="{{js:ag.w_magnet_info}}"><input type="checkbox" id="i_w_magnet"> {{js:ag.w_magnet}}</label>` +
@@ -7558,7 +7640,7 @@ function buildPanel() {
   $('i_s_hand').addEventListener('change', (e) => { S.p.s_hand = e.target.checked; if (S.p.s_hand) fistPose(); changed('s_hand'); });
   $('i_cod_belt').addEventListener('change', (e) => { S.p.cod_belt = e.target.checked; changed('cod_belt'); });
   $('i_bevor').addEventListener('change', (e) => { S.p.bevor = e.target.checked; changed('bevor'); });
-  for (const k of ['ap_tools', 'bl_pouch', 'bl_purse', 'bl_satchel', 'bl_rag', 'bl_coil', 'tr_ties']) $('i_' + k).addEventListener('change', (e) => { S.p[k] = e.target.checked; changed(k); });
+  for (const k of ['ap_tools', 'bl_pouch', 'bl_purse', 'bl_satchel', 'bl_rag', 'bl_coil', 'tr_ties', 'hd_up']) $('i_' + k).addEventListener('change', (e) => { S.p[k] = e.target.checked; changed(k); });
   $('weaveSeg').addEventListener('click', (e) => { const m = e.target.dataset.weave; if (m !== undefined) { S.p.weave = m; changed('weave'); } });
   $('i_cloth2').addEventListener('input', (e) => { S.p.cloth2 = e.target.value; changed('look'); });
   $('i_thread').addEventListener('input', (e) => { S.p.thread = e.target.value; changed('look'); });
@@ -7649,7 +7731,8 @@ function syncPanel() {
   $('i_cod_belt').checked = !!S.p.cod_belt; $('i_bevor').checked = !!S.p.bevor; $('r_bevor').hidden = S.piece !== 'gorget';
   { const g = GARB.includes(S.piece);   // (everyday clothes: their ticks, their weave, their second cloth and thread)
     for (const [k, on] of [['ap_tools', S.piece === 'apron'], ['bl_pouch', S.piece === 'belt'], ['bl_purse', S.piece === 'belt'], ['bl_satchel', S.piece === 'belt'],
-      ['bl_rag', S.piece === 'belt'], ['bl_coil', S.piece === 'belt'], ['tr_ties', S.piece === 'trousers']]) { $('r_' + k).hidden = !on; $('i_' + k).checked = S.p[k] !== false && !!S.p[k]; }
+      ['bl_rag', S.piece === 'belt'], ['bl_coil', S.piece === 'belt'], ['tr_ties', S.piece === 'trousers'],
+      ['hd_up', S.piece === 'hood' && ['hood_capelet', 'hood_pointed'].includes(S.p.hood)]]) { $('r_' + k).hidden = !on; $('i_' + k).checked = S.p[k] !== false && !!S.p[k]; }
     $('r_weave').hidden = !((g || S.piece === 'trousers') && S.p.material === 'cloth');
     for (const b of $('weaveSeg').children) b.classList.toggle('on', b.dataset.weave === (S.p.weave || ''));
     $('r_garbcols').hidden = !g; $('i_cloth2').value = S.p.cloth2 || '#8a3c30'; $('i_thread').value = S.p.thread || '#c9903a';
