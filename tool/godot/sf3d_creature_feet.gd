@@ -25,6 +25,9 @@ class_name SF3DCreatureFeet
 @export var follow := 14.0
 ## bodies the rays ignore (the creature's own collider)
 @export var exclude: Array[RID] = []
+## the ground's height at a world x, z instead of a physics ray (a game's own height map: rays at a HeightMapShape miss);
+## NAN there - the clip's pose kept (in the air, on a wall walk, dead)
+var ground_height: Callable = Callable()
 
 var _legs: Array = []      # [{upper, lower, paw, toe, ball_rest: Vector3, h: float}]
 var _hips := -1
@@ -146,9 +149,7 @@ func _process_modification_with_delta(delta: float) -> void:
 	for leg in _legs:
 		var ball: Vector3 = sk.get_bone_global_pose(leg["toe"] if leg["toe"] >= 0 else leg["paw"]).origin
 		var flat := xf * Vector3(ball.x, _floor, ball.z)
-		var q := PhysicsRayQueryParameters3D.create(flat + up_w * ray_above * _h * xf.basis.get_scale().y,
-				flat - up_w * ray_below * _h * xf.basis.get_scale().y, collision_mask, exclude)
-		var hit := space.intersect_ray(q)
+		var hit := _ground_at(space, flat, up_w * _h * xf.basis.get_scale().y)
 		if hit.is_empty():
 			ground.append(0.0)
 			normal.append(up_s)
@@ -186,6 +187,22 @@ func _process_modification_with_delta(delta: float) -> void:
 		var Bt: Vector3 = B + up_s * float(_raise[i])
 		var Wt: Vector3 = Bt + tq * (W - B)
 		_reach(sk, leg, A, K, W, Wt, Basis(tq) * paw_t.basis)
+
+
+# The ground under a world point `flat` (the clips' flat ground there): {position, normal}, empty where there is none. By `ground_height`
+# when it is set (its slope from two more heights a hand apart), else a physics ray from `up` (a leg's height, world) above to below.
+func _ground_at(space: PhysicsDirectSpaceState3D, flat: Vector3, up: Vector3) -> Dictionary:
+	if ground_height.is_valid():
+		var y: float = ground_height.call(flat.x, flat.z)
+		if is_nan(y):
+			return {}
+		var d := maxf(up.length() * 0.25, 1e-3)
+		var yx: float = ground_height.call(flat.x + d, flat.z)
+		var yz: float = ground_height.call(flat.x, flat.z + d)
+		var n := Vector3(y - (yx if not is_nan(yx) else y), d, y - (yz if not is_nan(yz) else y)).normalized()
+		return {"position": Vector3(flat.x, y, flat.z), "normal": n}
+	var q := PhysicsRayQueryParameters3D.create(flat + up * ray_above, flat - up * ray_below, collision_mask, exclude)
+	return space.intersect_ray(q)
 
 
 func _reach(sk: Skeleton3D, leg: Dictionary, A: Vector3, K: Vector3, W: Vector3, Wt: Vector3, paw_basis: Basis) -> void:
