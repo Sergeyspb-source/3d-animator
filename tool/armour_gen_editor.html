@@ -2462,10 +2462,42 @@ function skinCloth(p, parts, keep, o = {}) {
 }
 const torsoT = (v) => { const { limb } = limbOf('cuirass', 'C'); return v.clone().sub(limb.a).dot(limb.u) / limb.len; };
 function fittedShirt(p) {   // the body down to the hips (in under the trousers' waist), the arms to the wrists; the neck, the hands bare
-  const keep = (v, part) => part !== 'torso' || torsoT(v) > .04;
-  keep.key = 'shirt';
-  return skinCloth(p, ['torso', 'upper_arm', 'forearm'], keep);
+  // (2026-11-26, the user: «as if the character were in torn cloth» at the cuffs and the waist - its edges were where the
+  // skin's weights change, ragged, and the skin up to them hidden but by a ring came out through it: cut on their lines
+  // as the everyday shirts' (clipSkin), each point with the skin right under it, all the skin under it hidden but for
+  // FIT_EDGE_FREE in from its edges)
+  const { limb: tl } = limbOf('cuirass', 'C'), H = HEIGHT;
+  const sideOf = (v) => (v.x >= tl.a.x ? 'L' : 'R');
+  const along = (v, s) => { const A = joint('forearm_' + s), B = joint('hand_' + s); if (!A || !B) return 0; const d = B.clone().sub(A); return v.clone().sub(A).dot(d) / d.lengthSq(); };
+  const flen = (s) => (joint('forearm_' + s) && joint('hand_' + s) ? joint('forearm_' + s).distanceTo(joint('hand_' + s)) : .1 * H);
+  const partOf = (i, S) => { const [bi, bw] = S.w[i]; let k = 0; for (let j = 1; j < 4; j++) if (bw[j] > bw[k]) k = j; return bodyPart(boneNames[bi[k]]); };
+  const cutF = (v, part) => {
+    if (part === 'torso') return (torsoT(v) - .04) * tl.len;
+    if (part === 'forearm') { const s = sideOf(v); return (FIT_CUFF - along(v, s)) * flen(s); }
+    return 1;
+  };
+  const keep = (v, part) => {
+    if (part === 'torso') return cutF(v, part) > -MM(40);
+    if (part === 'forearm') return along(v, sideOf(v)) <= FIT_CUFF + .12;
+    return part === 'upper_arm';
+  };
+  keep.key = 'shirt_fit';
+  // (over the character's own briefs, top: their edges came out through it at the waist - torn-looking patches)
+  const out = skinCloth(p, ['torso', 'upper_arm', 'forearm'], keep, { cut: cutF, partOf, projW: true, mainOnly: true, rim: true, ownAll: true,
+    edge: CLOTH_EDGE, sinkEdge: CLOTH_SINK });
+  const sh0 = out[0], rim = sh0 && sh0.rim;
+  if (rim && rim.loops && rim.S.lks) {   // (all its edges open: the neckline, the cuffs, the bottom under the trousers)
+    const SS = rim.S, m = SS.pos.length, nbS = Array.from({ length: m }, () => []);
+    for (const [a2, b2, c2] of SS.tris) for (const [x, y] of [[a2, b2], [b2, c2], [c2, a2]]) { nbS[x].push(y); nbS[y].push(x); }
+    const dist = new Float64Array(m).fill(Infinity), q = [], lim = MM(FIT_EDGE_FREE);
+    for (const i of rim.loops.flat()) { dist[i] = 0; q.push(i); }
+    for (let h = 0; h < q.length; h++) { const i = q[h]; for (const j of nbS[i]) { const d = dist[i] + SS.pos[i].distanceTo(SS.pos[j]); if (d < dist[j] && d < lim) { dist[j] = d; q.push(j); } } }
+    const near = new Set(); for (let i = 0; i < m; i++) if (dist[i] < lim) for (const k of SS.lks[i] || []) near.add(k);
+    if (near.size) { sh0.mask = new Set([...sh0.mask].filter((k) => !near.has(k))); sh0.maskFree = [...near]; }
+  }
+  return out;
 }
+const FIT_CUFF = .95, FIT_EDGE_FREE = 12;   // a fitted shirt's sleeve ends so far down the forearm; mm of the skin in from its edges left unhidden
 function fittedTights(p) {   // from the waist (up over the shirt's bottom) down to the ankles; the feet bare
   const keep = (v, part) => part !== 'torso' || torsoT(v) < .16;
   keep.key = 'tights';

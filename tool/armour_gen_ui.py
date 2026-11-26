@@ -926,7 +926,7 @@ def generate(cfg, req) -> dict:
         job["style"] = params.get("cloth_style")
     if params.get(piece) == "wraps_arm":   # (a sleeve's cuff, an armhole move off the skin as a wrist turns, a fist closes:
         job["mask_erode"] = 5          # the skin hidden up to their very edge showed as holes there - more of it given back)
-    elif piece in ("tunic", "vest") or params.get("cloth_style") == "shirt":   # (theirs: the skin by the open edges given back by the editor, mask_free -
+    elif piece in ("tunic", "vest") or params.get("cloth_style") in ("shirt", "fitted"):   # (theirs: the skin by the open edges given back by the editor, mask_free -
         job["mask_erode"] = 0          # given back by rings from every gap, half the skin under a shirt was shown: it came through)
     # held, not worn (the fingers round a grip stay); a cloak swings off the body; a belt, an apron, a hooded capelet go
     # over a shirt (the skin hidden under them would open holes as they move off it: a strap, a hanging apron, a cape)
