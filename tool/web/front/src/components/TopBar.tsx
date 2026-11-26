@@ -19,9 +19,13 @@ export default function TopBar({ go, testBench }: { route: Route; go: (r: Route)
   const running = Object.values(tasks).filter((x) => x.status === 'running');
   const queued = Object.values(tasks).filter((x) => x.status === 'queued');
   const pct = gpu.total ? (100 * (gpu.used || 0)) / gpu.total : 0;
+  // a model can be listed both as a character and as a creature (export\character\front, nurgls_medium); Mantine's
+  // Select throws on a value given twice and the whole page went black - each id once, under the first group it is in
+  const seen = new Set<string>();
+  const once = (list: typeof objs.characters) => list.filter((o) => !seen.has(o.id) && !!seen.add(o.id));
   const objData = [
-    { group: t('web.characters'), items: objs.characters.map((o) => ({ value: o.id, label: `${o.name}   ${o.tags}` })) },
-    { group: t('web.creatures'), items: objs.creatures.map((o) => ({ value: o.id, label: `${o.name}   ${o.tags}` })) },
+    { group: t('web.characters'), items: once(objs.characters).map((o) => ({ value: o.id, label: `${o.name}   ${o.tags}` })) },
+    { group: t('web.creatures'), items: once(objs.creatures).map((o) => ({ value: o.id, label: `${o.name}   ${o.tags}` })) },
   ].filter((g) => g.items.length);
 
   return (
