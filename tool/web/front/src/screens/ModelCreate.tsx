@@ -27,7 +27,7 @@ const FORM0 = {
   height: 0, width: 0, depth: 0, pivot: 'auto', collision: 'auto',
   override: false, metallic: 0, roughness: 0.8, color_match: 0, saturation: 1, brightness: 1, auto_materials: false,
   tex_res: '1024', fg_ratio: 0.85, remove_bg: true, remesh: 'none',
-  paint: true, hy_tex: '2048', hy_faces: 50000, hy_steps: 50, hy_fast: false,
+  paint: true, hy_tex: '2048', hy_faces: 50000, hy_steps: 50, hy_fast: false, hy_fast_set: false,   // (set: flipped by hand)
   tr_faces: 50000, tr_seed: 42,
   preview: true, overwrite: false, auto_rig: false, naming: 'mixamo', rig_tries: 3,
 };
@@ -48,7 +48,10 @@ export default function ModelCreate({ go, vegetation }: { go: (r: Route) => void
   const t = useT();
   const [opt, setOpt] = useState<Options | null>(null);
   const [saved, setSaved] = useLocalStorage<Form>({ key: 'sf3d.create_form', defaultValue: FORM0 });
-  const f: Form = { ...FORM0, ...saved, ...(vegetation ? { category: 'vegetation' } : {}) };
+  const f0: Form = { ...FORM0, ...saved, ...(vegetation ? { category: 'vegetation' } : {}) };
+  // the fast shape follows the category until it is flipped by hand (a form opened on «Character» had it off: the
+  // shape took the full 50 steps, ~200 s instead of ~23)
+  const f: Form = f0.hy_fast_set || !opt ? f0 : { ...f0, hy_fast: opt.hy_fast_categories.includes(f0.category) };
   const set = (patch: Partial<Form>) => setSaved({ ...f, ...patch });
   const [pics, setPics] = useState<Pic[]>([]);
   const [views, setViews] = useState<Record<string, Pic | undefined>>({});
@@ -64,7 +67,7 @@ export default function ModelCreate({ go, vegetation }: { go: (r: Route) => void
       if (!raw) return;
       localStorage.removeItem('sf3d.create_prefill');
       const pf = JSON.parse(raw);
-      set({ engine: pf.engine || f.engine, category: pf.category || f.category, name: pf.name || f.name });
+      set({ engine: pf.engine || f.engine, category: pf.category || f.category, name: pf.name || f.name, ...(pf.category ? { hy_fast_set: false } : {}) });
       setPics(pf.pics || []);
       setViews(pf.views || {});
     } catch { /* (nothing sent) */ }
@@ -165,7 +168,7 @@ export default function ModelCreate({ go, vegetation }: { go: (r: Route) => void
           )}
 
           <Select label={t('ui.category_2')} data={choices(opt.categories)} value={f.category} allowDeselect={false}
-            onChange={(v) => v && set({ category: v, hy_fast: opt.hy_fast_categories.includes(v) })} disabled={vegetation} />
+            onChange={(v) => v && set({ category: v, hy_fast: opt.hy_fast_categories.includes(v), hy_fast_set: false })} disabled={vegetation} />
           {f.category === 'vegetation' && (
             <div><Text size="sm" fw={500} mb={4}>{t('ui.what_plant_it_is_for_the_wind_in')}</Text>
               <SegmentedControl fullWidth size="xs" value={f.veg} data={choices(opt.veg)} onChange={(v) => set({ veg: v })} /></div>)}
@@ -209,7 +212,7 @@ export default function ModelCreate({ go, vegetation }: { go: (r: Route) => void
               <Accordion.Control>{t(f.engine === 'hunyuan' ? 'ui.hunyuan3d_options' : f.engine === 'trellis' ? 'ui.trellis_options' : 'ui.sf3d_generation_options')}</Accordion.Control>
               <Accordion.Panel><Stack gap="xs">
                 {f.engine === 'hunyuan' && <>
-                  <Switch label={t('ui.hy_fast_shape')} description={t('ui.hy_fast_shape_info')} checked={f.hy_fast} onChange={(e) => set({ hy_fast: e.currentTarget.checked })} />
+                  <Switch label={t('ui.hy_fast_shape')} description={t('ui.hy_fast_shape_info')} checked={f.hy_fast} onChange={(e) => set({ hy_fast: e.currentTarget.checked, hy_fast_set: true })} />
                   <Switch label={t('ui.paint_a_texture_without_it_a_grey')} checked={f.paint} onChange={(e) => set({ paint: e.currentTarget.checked })} />
                   <Select label={t('ui.texture_size')} data={['1024', '2048']} value={f.hy_tex} allowDeselect={false} onChange={(v) => v && set({ hy_tex: v })} />
                   <Text size="xs">{t('ui.target_face_count_after_simplifying')}: {f.hy_faces.toLocaleString()}</Text>
