@@ -826,14 +826,29 @@ def run(engine, files, f_front, f_back, f_left, f_right, category, name, height,
 # ------------------------------------------------------------------ пакетная обработка
 IMAGE_EXT = T.IMAGE_EXT
 VIEW_NAMES = ("front", "back", "left", "right")
+# the batch's engine by category (by_category on): TRELLIS.2 for characters and items - its shape from one picture
+# beat Hunyuan's from four (work/trellis_test/REPORT.md) - Hunyuan3D for buildings, even from one picture; props and
+# vegetation as the folder says (a picture -> SF3D, a folder of views -> Hunyuan3D). No TRELLIS.2 here -> as the folder says
+BATCH_ENGINE = {"character": "trellis", "item": "trellis", "building": "hy"}
+BATCH_ENGINE_NAME = {"sf3d": "SF3D", "trellis": "TRELLIS.2", "hy": "Hunyuan3D"}
+BATCH_MINUTES = {"sf3d": 0.5, "trellis": 2.5, "hy": 10}  # per job, for the estimate
 
 
-def scan_batch(root, default_category="prop"):
+def trellis_ready(cfg=None):
+    """trellis-cli and all its weights are where config.json (or the defaults) says"""
+    cfg = cfg or T.load_config()
+    models = Path(cfg.get("trellis_models") or TRELLIS_MODELS)
+    return Path(cfg.get("trellis_exe") or TRELLIS_EXE).exists() and all(
+        (models / f"{w}.gguf").exists() for w in TRELLIS_WEIGHTS)
+
+
+def scan_batch(root, default_category="prop", by_category=True):
     """Find jobs under root.
 
     Layout:  <root>/<category>/<image>            -> SF3D job (one picture)
              <root>/<category>/<asset>/front.png  -> Hunyuan job (front/back/left/right.png)
     <category> is item / prop / building / character. Folders with other names use default_category.
+    by_category: the engine from BATCH_ENGINE instead (a TRELLIS.2 job takes the front picture of a views folder).
     """
     cfg = T.load_config()
     cats = set(cfg["categories"])
@@ -865,7 +880,18 @@ def scan_batch(root, default_category="prop"):
     # an asset folder placed directly in root was already picked up by scan_dir(root, ...)
     # drop duplicates (a category folder is never itself an asset)
     jobs = [j for j in jobs if not (j["kind"] == "hy" and j["name"] in cats)]
-    jobs.sort(key=lambda j: j["kind"] != "sf3d")  # all SF3D jobs first: one model load, then Hunyuan
+    if by_category:
+        tr_ok = trellis_ready(cfg)
+        for j in jobs:
+            want = BATCH_ENGINE.get(j["category"])
+            if want == "trellis" and tr_ok:
+                j["files"] = j.get("files") or [j["views"]["front"]]
+                j["kind"] = "trellis"
+            elif want == "hy" and j["kind"] == "sf3d":
+                j["views"] = {"front": j["files"][0]}
+                j["kind"] = "hy"
+    # SF3D first (its model is loaded once), then TRELLIS.2, then Hunyuan (each a separate process)
+    jobs.sort(key=lambda j: ("sf3d", "trellis", "hy").index(j["kind"]))
     return jobs
 
 
@@ -876,25 +902,26 @@ def batch_table(jobs):
         done = (Path(cfg["export_dir"]) / j["category"] / j["name"] / f"{j['name']}.glb").exists()
         src = ", ".join(j["views"]) if j["kind"] == "hy" else Path(j["files"][0]).name
         rows.append([j["name"], CATEGORY_LABELS[j["category"]],
-                     "Hunyuan3D" if j["kind"] == "hy" else "SF3D", src, _t("ui.already_done") if done else _t("ui.queued")])
+                     BATCH_ENGINE_NAME[j["kind"]], src, _t("ui.already_done") if done else _t("ui.queued")])
     return rows
 
 
-def on_scan(root, default_label):
-    jobs = scan_batch(root, LABEL_TO_KEY[default_label])
+def on_scan(root, default_label, by_category=True):
+    jobs = scan_batch(root, LABEL_TO_KEY[default_label], by_category)
     if not jobs:
         return [], _t("ui.nothing_found_a_folder_like_this_is")
-    n_hy = sum(j["kind"] == "hy" for j in jobs)
-    est = (len(jobs) - n_hy) * 0.5 + n_hy * 10
-    return batch_table(jobs), _t("ui.found_sf3d_hunyuan3d_estimated_time", len(jobs), len(jobs) - n_hy, n_hy, est)
+    n = {k: sum(j["kind"] == k for j in jobs) for k in BATCH_MINUTES}
+    est = sum(n[k] * BATCH_MINUTES[k] for k in n)
+    return batch_table(jobs), _t("ui.batch_found_engines", len(jobs), n["sf3d"], n["trellis"], n["hy"], est)
 
 
 def batch_run(root, default_label, overwrite, make_preview, auto_materials=False,
-              auto_rig=False, rig_naming_label=None, rig_tries=3, progress=None):
+              auto_rig=False, rig_naming_label=None, rig_tries=3, progress=None, by_category=True):
     """Run every job found under root, one after another; a failure does not stop the queue.
-    With auto_rig, characters get a skeleton in a last phase (after every model is generated)."""
+    With auto_rig, characters get a skeleton in a last phase (after every model is generated).
+    by_category: the engine from BATCH_ENGINE (TRELLIS.2 for characters and items, Hunyuan3D for buildings)."""
     cfg = T.load_config()
-    jobs = scan_batch(root, LABEL_TO_KEY[default_label])
+    jobs = scan_batch(root, LABEL_TO_KEY[default_label], by_category)
     log, results, last_glb, previews = [], [], None, []
     if not jobs:
         yield _t("ui.nothing_found_check_the_folder_and"), results, last_glb, previews
@@ -908,7 +935,7 @@ def batch_run(root, default_label, overwrite, make_preview, auto_materials=False
     for i, j in enumerate(jobs, 1):
         cat_label = CATEGORY_LABELS[j["category"]]
         final = Path(cfg["export_dir"]) / j["category"] / j["name"] / f"{j['name']}.glb"
-        head = f"[{i}/{len(jobs)}] {j['name']} ({'Hunyuan3D' if j['kind'] == 'hy' else 'SF3D'}, {cat_label})"
+        head = f"[{i}/{len(jobs)}] {j['name']} ({BATCH_ENGINE_NAME[j['kind']]}, {cat_label})"
         if final.exists() and not overwrite:
             log.append(_t("ui.already_done_skipping", head))
             skipped += 1
@@ -920,6 +947,10 @@ def batch_run(root, default_label, overwrite, make_preview, auto_materials=False
             inner = generate(j["files"], cat_label, j["name"], 0, 0, 0, _t("ui.auto_by_category"), _t("ui.by_category"),
                              False, 0.0, 0.8, cfg["texture_resolution"], cfg["foreground_ratio"], True, "none",
                              overwrite, make_preview, 0.0, 1.0, 1.0, auto_materials, progress=quiet)
+        elif j["kind"] == "trellis":   # the skeleton, if asked, comes in the last phase below
+            inner = generate_trellis(j["files"], cat_label, j["name"], 0, 0, 0, _t("ui.auto_by_category"),
+                                     _t("ui.by_category"), False, 0.0, 0.8, overwrite, make_preview,
+                                     TRELLIS_COLOR_MATCH, 1.0, 1.0, auto_materials)
         else:
             v = j["views"]
             inner = generate_hy(v.get("front"), v.get("back"), v.get("left"), v.get("right"), cat_label,

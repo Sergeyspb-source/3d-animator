@@ -3,7 +3,8 @@
     sf3d-batch.bat [folder] [--category prop] [--force] [--no-preview] [--scan]
 
 Folder layout: see scan_batch() in sf3d_ui.py (<folder>/<category>/<image> for SF3D,
-<folder>/<category>/<asset>/front.png [back/left/right.png] for Hunyuan3D).
+<folder>/<category>/<asset>/front.png [back/left/right.png] for Hunyuan3D). By default the engine goes by category
+(characters and items -> TRELLIS.2 from the front picture, buildings -> Hunyuan3D); --classic turns that off.
 """
 import argparse
 import sys
@@ -24,11 +25,14 @@ ap.add_argument("--materials", action="store_true", help="recognise materials an
 ap.add_argument("--rig", action="store_true", help="auto-rig characters in a last phase (UniRig)")
 ap.add_argument("--rig-tries", type=int, default=3, help="skeleton attempts per character (1-6)")
 ap.add_argument("--rig-names", choices=["mixamo", "godot"], default="mixamo")
+ap.add_argument("--classic", action="store_true",
+                help="engines by the folder only (a picture -> SF3D, views -> Hunyuan3D) instead of by category "
+                     "(characters and items -> TRELLIS.2, buildings -> Hunyuan3D)")
 a = ap.parse_args()
 
 label = U.CATEGORY_LABELS[a.category]
 if a.scan:
-    for row in U.batch_table(U.scan_batch(a.folder, a.category)):
+    for row in U.batch_table(U.scan_batch(a.folder, a.category, not a.classic)):
         print(" | ".join(map(str, row)))
     sys.exit(0)
 
@@ -36,7 +40,7 @@ printed = 0
 final_table = []
 rig_label = next(k for k, v in U.RIG_NAMINGS.items() if v == a.rig_names)
 for log, table, glb, prev in U.batch_run(a.folder, label, a.force, not a.no_preview, a.materials,
-                                         a.rig, rig_label, a.rig_tries):
+                                         a.rig, rig_label, a.rig_tries, by_category=not a.classic):
     lines = log.splitlines()
     # print only lines that are new; the last few lines of a running job are rewritten, so skip those
     stable = lines if not lines or not lines[-1].startswith("   ") else [x for x in lines if not x.startswith("   ")]
