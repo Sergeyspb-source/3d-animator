@@ -47,7 +47,7 @@ def collect_images(paths: list[str]) -> list[Path]:
     return found
 
 
-def welded_normals(vertices, faces):
+def welded_normals(vertices, faces, fallback=None):
     """Vertex normals over faces sharing a POSITION (area-weighted): a mesh cut along its UV seams (each side its own
     vertices) shaded as the one surface it is. trimesh's own normals see every cut as an edge, and it drops a GLB's own
     NORMAL on loading a TRELLIS.2 model (50/90/99 % of the knight's vertices 23/91/157 deg off - blotchy faces along
@@ -61,7 +61,15 @@ def welded_normals(vertices, faces):
     acc = np.zeros((inv.max() + 1, 3))
     np.add.at(acc, inv[f].ravel(), np.repeat(fn, 3, axis=0))
     n = acc[inv]
-    return n / np.linalg.norm(n, axis=1, keepdims=True).clip(1e-12)
+    ln = np.linalg.norm(n, axis=1)
+    n = n / ln.clip(1e-12)[:, None]
+    bad = ln < 1e-12   # a vertex of degenerate faces only: no direction from them - glTF wants unit normals
+    if bad.any():
+        fb = np.asarray(fallback, np.float64)[bad] if fallback is not None else np.zeros((int(bad.sum()), 3))
+        fl = np.linalg.norm(fb, axis=1)
+        fb = np.where(fl[:, None] > 1e-6, fb / fl.clip(1e-12)[:, None], np.array([0.0, 1.0, 0.0]))
+        n[bad] = fb
+    return n
 
 
 def tune_colors(tex, saturation: float = 1.0, brightness: float = 1.0):
@@ -301,7 +309,7 @@ def postprocess(src: Path, dst: Path, preset: dict, height, pivot, metallic, rou
         if getattr(mat, "normalTexture", None) is None:
             # smooth over the UV seams (TRELLIS.2, Hunyuan); a model with a normal map (SF3D) keeps the normals it
             # was baked against
-            m.vertex_normals = welded_normals(m.vertices, m.faces)
+            m.vertex_normals = welded_normals(m.vertices, m.faces, fallback=m.vertex_normals)
         if mat is not None and hasattr(mat, "metallicFactor"):
             # a generator's own metal/roughness map (TRELLIS.2): the factors multiply it, so the category preset's
             # metallic 0 would wipe the metal out - the map stays as made (factors 1) unless set by hand
