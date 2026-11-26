@@ -814,24 +814,35 @@ def template_source(d: Path, name: str) -> Path | None:
                              d / f"{name}_landmarks_rigged.glb") if p.exists()), None)
 
 
-def template_markup(d: Path, name: str, template: str | None = None, yaw=None, fresh: bool = False) -> dict:
-    """the markup as kept in the passport, else (or when asked: another template, a turn, fresh) a first guess, kept"""
+def _template_draft(d: Path, name: str) -> Path:
+    """a markup not built yet (another template picked, a turn): beside the model, not in its passport - a look at the
+    page or a guess must not make a model a creature (one without a skeleton is in both sections until one is built)"""
+    return Path(d) / f"{name}_template.json"
+
+
+def template_markup(d: Path, name: str, template: str | None = None, yaw=None, fresh: bool = False,
+                    save: bool = False) -> dict:
+    """the markup as built (the passport's), else the draft, else (or when asked: another template, a turn, fresh) a
+    first guess - kept as the draft only when `save` (the user asked for it on the page); nothing written on a look"""
     import creature_templates as CT
     d = Path(d)
-    meta = passport(d, name)
-    kept = meta.get("template") or {}
-    if kept.get("joints") and not fresh and template in (None, kept.get("id")) and yaw in (None, kept.get("yaw")):
-        return kept
+    kept = passport(d, name).get("template") or {}
+    try:
+        draft = json.loads(_template_draft(d, name).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        draft = {}
+    for mk in (draft, kept):   # (a draft is newer than the built markup: made after it)
+        if mk.get("joints") and not fresh and template in (None, mk.get("id")) and yaw in (None, mk.get("yaw")):
+            return mk
     src = template_source(d, name)
     if src is None:
         raise RuntimeError(_t("cr.none"))
-    tpl = template or kept.get("id") or "quadruped"
+    tpl = template or draft.get("id") or kept.get("id") or "quadruped"
     g = CT.guess(src, tpl, yaw=None if yaw is None else float(yaw) % 360)
     mk = {"id": tpl, "yaw": g["yaw"], "cx": g["cx"], "joints": g["joints"], "built": False}
-    meta["template"] = mk
-    meta["kind"] = "creature"
-    d.mkdir(parents=True, exist_ok=True)
-    (d / f"{name}_rig.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+    if save:
+        d.mkdir(parents=True, exist_ok=True)
+        _template_draft(d, name).write_text(json.dumps(mk, indent=2, ensure_ascii=False), encoding="utf-8")
     return mk
 
 
@@ -876,7 +887,7 @@ def template_request(cfg, d: Path, name: str, req: dict):
     if tpl not in TEMPLATE_IDS:
         raise RuntimeError(f"template {tpl}")
     if act == "guess":
-        mk = template_markup(d, name, tpl, req.get("yaw"), fresh=True)
+        mk = template_markup(d, name, tpl, req.get("yaw"), fresh=True, save=True)
         yield _t("cr.tpl_guessed", _t(f"ct.tpl_{tpl}"), mk["yaw"])
         return
     yield from template_build(cfg, d, name, tpl, req.get("joints") or {}, float(req.get("yaw") or 0.0))
@@ -926,6 +937,7 @@ def template_build(cfg, d: Path, name: str, tpl: str, joints: dict, yaw: float):
                 meta.pop(k)
                 yield _t("cr.tpl_forgot", k)
     (d / f"{name}_rig.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+    _template_draft(d, name).unlink(missing_ok=True)   # (built: the passport holds it now)
     shutil.copy2(auto, rigged)
     for stale in (rigged.with_name(rigged.stem + ".noeyes.glb"), rigged.with_name(rigged.stem + ".nojaw.glb")):
         stale.unlink(missing_ok=True)
