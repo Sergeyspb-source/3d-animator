@@ -11,6 +11,7 @@ import { IconPhoto } from '@tabler/icons-react';
 import { fileUrl, onTaskFinished } from '../api';
 import { useI18n } from '../i18n';
 import { asCharacter, useCurrent } from '../objects';
+import LoadingVeil, { useFrameLoading } from '../components/LoadingVeil';
 import type { Step } from '../nav';
 
 interface Shot { path: string; caption: string }
@@ -32,6 +33,7 @@ export default function EquipWorkspace({ step, info, bridge, wear }: { step: str
   const src = useMemo(() => (rigged ? `/editor/equip?rigged=${encodeURIComponent(rigged)}&step=${stepNow.current}&theme=${colorScheme}&lang=${lang}` : null),
     [rigged, colorScheme, lang]);
 
+  const loading = useFrameLoading(frame, way === 'make' ? src : null);
   useEffect(() => { frame.current?.contentWindow?.postMessage({ type: 'sf3d-step', step }, location.origin); }, [step]);
   useEffect(() => {
     const on = (e: MessageEvent) => { if (e.origin === location.origin && e.data?.type === 'sf3d-piece') setPiece(e.data); };
@@ -70,7 +72,7 @@ export default function EquipWorkspace({ step, info, bridge, wear }: { step: str
           <a key={s.path} href={fileUrl(s.path)} target="_blank" rel="noreferrer" title={s.caption}><Image src={fileUrl(s.path)} h={150} w="auto" fit="contain" /></a>))}
         </div>)}
       {way === 'ready' ? <WearPanel ids={wear} /> : way === 'outfit' ? <OutfitPanel /> :
-        src ? <iframe ref={frame} key={src} src={src} className="equip-frame" title={t('web.editor_title')} />
+        src ? <div className="frame-box"><iframe ref={frame} key={src} src={src} className="equip-frame" title={t('web.editor_title')} />{loading && <LoadingVeil text={t('web.loading_model')} />}</div>
         : <div className="placeholder"><Text c="ember.3">{asCharacter(cur) ? t('web.need_rig', cur.name) : t('web.need_character')}</Text></div>}
       <div id={bridge[0]} hidden><textarea defaultValue="" /></div>
       <button id={bridge[1]} type="button" hidden onClick={send} />

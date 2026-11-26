@@ -4,12 +4,12 @@ import { IconLanguage, IconMoon, IconSearch, IconSun, IconSettings, IconRefresh 
 import { live, useStore } from '../api';
 import { useI18n } from '../i18n';
 import { useObjects } from '../objects';
-import type { Route } from '../nav';
+import { SECTIONS, type Route } from '../nav';
 
 // the card's memory as heat: cold iron while there is room, ember when it fills, yellow heat when nearly full
 const heatOf = (pct: number) => (pct > 85 ? '#f2c14e' : pct > 55 ? '#e0782e' : '#6f7c88');
 
-export default function TopBar({ go, testBench }: { route: Route; go: (r: Route) => void; testBench: boolean }) {
+export default function TopBar({ route, go, testBench }: { route: Route; go: (r: Route) => void; testBench: boolean }) {
   const { t, lang, langs, setLang } = useI18n();
   const { colorScheme, setColorScheme } = useMantineColorScheme();
   const gpu = useStore(live, (s) => s.gpu);
@@ -23,9 +23,13 @@ export default function TopBar({ go, testBench }: { route: Route; go: (r: Route)
   // Select throws on a value given twice and the whole page went black - each id once, under the first group it is in
   const seen = new Set<string>();
   const once = (list: typeof objs.characters) => list.filter((o) => !seen.has(o.id) && !!seen.add(o.id));
+  // the current object only where a section works on one (Character, Equipment, Creatures), and only its kind there;
+  // Models and Environment make new things: no object to choose
+  const kind = SECTIONS.find((s) => s.id === route.section)?.object;
+  const fits = (o: (typeof objs.characters)[number]) => (kind === 'creature' ? o.as_creature : o.as_character);
   const objData = [
-    { group: t('web.characters'), items: once(objs.characters).map((o) => ({ value: o.id, label: `${o.name}   ${o.tags}` })) },
-    { group: t('web.creatures'), items: once(objs.creatures).map((o) => ({ value: o.id, label: `${o.name}   ${o.tags}` })) },
+    { group: t('web.characters'), items: once(objs.characters.filter(fits)).map((o) => ({ value: o.id, label: `${o.name}   ${o.tags}` })) },
+    { group: t('web.creatures'), items: once(objs.creatures.filter(fits)).map((o) => ({ value: o.id, label: `${o.name}   ${o.tags}` })) },
   ].filter((g) => g.items.length);
 
   return (
@@ -33,10 +37,11 @@ export default function TopBar({ go, testBench }: { route: Route; go: (r: Route)
       <Text className="brand">SF3D</Text>
       {testBench && <Badge color="yellow" variant="light">{t('web.test_bench')}</Badge>}
       <div style={{ flex: 1 }} />
-      <Select size="xs" w={300} data={objData} value={objs.current} onChange={(v) => objs.choose(v)} searchable
+      {kind && <Select size="xs" w={300} data={objData} value={objData.some((g) => g.items.some((x) => x.value === objs.current)) ? objs.current : null}
+        onChange={(v) => objs.choose(v)} searchable
         placeholder={t('web.no_object')} aria-label={t('web.current_object')} nothingFoundMessage={t('web.nothing_found')}
-        comboboxProps={{ width: 380 }} leftSection={<Text size="xs" c="dimmed" pl={4}>{t('web.object_short')}</Text>} leftSectionWidth={64} />
-      <Tooltip label={t('ui.refresh')}><ActionIcon variant="subtle" color="gray" onClick={objs.refresh} aria-label={t('ui.refresh')}><IconRefresh size={16} /></ActionIcon></Tooltip>
+        comboboxProps={{ width: 380 }} leftSection={<Text size="xs" c="dimmed" pl={4}>{t('web.object_short')}</Text>} leftSectionWidth={64} />}
+      {kind && <Tooltip label={t('ui.refresh')}><ActionIcon variant="subtle" color="gray" onClick={objs.refresh} aria-label={t('ui.refresh')}><IconRefresh size={16} /></ActionIcon></Tooltip>}
       <Tooltip label={t('web.gpu_tip', gpu.used ?? '—', gpu.total ?? '—', gpu.util ?? '—') + (gpu.sf3d ? '. ' + t('web.sf3d_loaded') : '')}>
         <UnstyledButton className="gpu" onClick={() => go({ section: 'gpu', step: '' })}>
           <Group gap={6} wrap="nowrap">

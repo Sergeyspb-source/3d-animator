@@ -1,7 +1,7 @@
 // Environment (surfaces, effects, dungeons, destructibles), Models → Reference and Models → Model materials: each a
 // panel of the former Gradio tab's settings on the right and its pictures (or the model) on the stage; long jobs are tasks.
 import { useEffect, useState } from 'react';
-import { Button, Checkbox, ColorInput, FileButton, Group, Image, NumberInput, ScrollArea, SegmentedControl, Select, Slider, Stack, Switch,
+import { Anchor, Button, Checkbox, ColorInput, FileButton, Group, Image, NumberInput, ScrollArea, Select, Slider, Stack, Switch,
   Text, TextInput, Textarea, UnstyledButton } from '@mantine/core';
 import { useLocalStorage } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
@@ -13,7 +13,7 @@ import Viewer3D from '../components/Viewer3D';
 
 type Pic = { path: string; caption: string };
 interface Opts {
-  providers: { id: string; key: string }[]; ref_cats: { id: string; key: string }[]; fx: { id: string; key: string }[]; views: { id: string; key: string }[];
+  providers: { id: string; key: string; ok: boolean; model: string | null }[]; ref_cats: { id: string; key: string }[]; fx: { id: string; key: string }[]; views: { id: string; key: string }[];
   materials: string[]; kit_sample: string; assets: string[]; mat_assets: string[]; mat_choices: { id: string; label: string }[];
   has_key: boolean; style: { text: string; refs: string[] | null };
 }
@@ -55,12 +55,26 @@ export function Gallery({ pics, empty, onPick, picked }: { pics: Pic[]; empty: s
   );
 }
 
+// «Settings → Picture providers», opened from a provider list (the section scrolled to and lit)
+export const openProviders = () => {
+  try { localStorage.setItem('sf3d.settings_focus', 'providers'); } catch { /* (no storage: the settings open at the top) */ }
+  location.hash = '#settings';
+};
+
+// the picture provider: a list with each one's state (Codex found, the key set, the model), the last item opening the
+// providers' settings
 const Provider = ({ o, value, onChange }: { o: Opts; value: string; onChange: (v: string) => void }) => {
   const t = useT();
+  const cur = o.providers.find((p) => p.id === value) ?? o.providers[0];
+  const name = (p: Opts['providers'][number]) => (p.id === 'codex' ? t('web.prov_codex') : t('web.prov_openrouter', p.model || ''))
+    + (p.ok ? '' : ` — ${t(p.id === 'codex' ? 'web.prov_no_codex_short' : 'web.prov_no_key_short')}`);
   return (
     <div>
-      <Text size="sm" fw={500} mb={4}>{t('ui.generate_with')}</Text>
-      <SegmentedControl fullWidth size="xs" value={value} onChange={onChange} data={o.providers.map((p) => ({ value: p.id, label: t(p.key) }))} />
+      <Select label={t('ui.generate_with')} value={cur.id} allowDeselect={false} comboboxProps={{ withinPortal: true }}
+        data={[...o.providers.map((p) => ({ value: p.id, label: name(p) })), { value: '__add', label: t('web.prov_add') }]}
+        onChange={(v) => { if (v === '__add') openProviders(); else if (v) onChange(v); }} />
+      {!cur.ok && <Text size="xs" c="yellow.5" mt={4}>{t(cur.id === 'codex' ? 'web.prov_no_codex' : 'web.prov_no_key')}{' '}
+        <Anchor size="xs" component="button" type="button" onClick={openProviders}>{t('web.prov_settings')}</Anchor></Text>}
       <div className="field-note" style={{ marginTop: 4 }}>{t('web.ext_service')}</div>
     </div>
   );

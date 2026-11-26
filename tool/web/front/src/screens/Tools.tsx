@@ -1,6 +1,6 @@
 // The menu's bottom: tasks with their logs on the whole screen, the video memory, the settings.
-import { useEffect, useState } from 'react';
-import { Alert, Button, Card, Group, Modal, PasswordInput, Progress, ScrollArea, Select, Stack, Switch, Table, Text, TextInput, Title } from '@mantine/core';
+import { useEffect, useRef, useState } from 'react';
+import { Alert, Autocomplete, Button, Card, Code, Group, Modal, PasswordInput, Paper, Progress, ScrollArea, Select, Stack, Switch, Table, Text, TextInput, Title } from '@mantine/core';
 import { useLocalStorage } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { IconFolder } from '@tabler/icons-react';
@@ -88,13 +88,38 @@ export function GpuScreen() {
   );
 }
 
-interface Settings { export_dir: string; input_dir: string; has_key: boolean; image_model: string; text_model: string; godot_exe: string; blender_exe: string }
+interface Settings { export_dir: string; input_dir: string; has_key: boolean; image_model: string; text_model: string; godot_exe: string; blender_exe: string; codex: string | null }
+interface OrModel { id: string; name: string }
 
 export function SettingsScreen({ state }: { state: AppState }) {
   const t = useT();
   const [st, setSt] = useState(state);
   const [cfg, setCfg] = useState<Settings | null>(null);
   const [key, setKey] = useState('');
+  const [models, setModels] = useState<{ image: OrModel[]; text: OrModel[] } | null>(null);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const prov = useRef<HTMLDivElement>(null);
+  const [lit, setLit] = useState(false);
+  useEffect(() => {   // opened from a provider list: that section in view, lit for a moment
+    let focus: string | null = null;
+    try { focus = localStorage.getItem('sf3d.settings_focus'); localStorage.removeItem('sf3d.settings_focus'); } catch { /* */ }
+    if (focus !== 'providers' || !cfg) return;
+    prov.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setLit(true);
+    const h = window.setTimeout(() => setLit(false), 2200);
+    return () => window.clearTimeout(h);
+  }, [cfg === null]); // eslint-disable-line react-hooks/exhaustive-deps
+  const loadModels = async () => {
+    setLoadingModels(true);
+    try {
+      const r = await get<{ image: OrModel[]; text: OrModel[] }>('/api/settings/openrouter_models');
+      setModels(r);
+      notifications.show({ color: 'patina', message: t('web.or_models_loaded', r.image.length, r.text.length) });
+    } catch (e) {
+      notifications.show({ color: 'rust', message: t('web.or_models_failed', String(e)) });
+    } finally { setLoadingModels(false); }
+  };
+  const opts = (list: OrModel[] | undefined, cur: string) => [...new Set([cur, ...(list ?? []).map((m) => m.id)].filter(Boolean))];
   const load = () => { get<AppState>('/api/state').then(setSt); get<Settings>('/api/settings').then(setCfg); };
   useEffect(load, []);
   const save = async () => {
@@ -112,13 +137,33 @@ export function SettingsScreen({ state }: { state: AppState }) {
             <TextInput style={{ flex: 1 }} label={t('ui.export_folder_later_point_it_to_the')} value={cfg.export_dir} onChange={(e) => setCfg({ ...cfg, export_dir: e.currentTarget.value })} />
             <Button variant="default" onClick={() => post('/api/open', { path: st.export_dir })}><IconFolder size={16} /></Button>
           </Group>
-          <Text size="sm" fw={600} mt="sm">OpenRouter</Text>
-          <div className="field-note">{plain(t('ui.openrouter_for_references_with_a_key'))}</div>
-          <PasswordInput label={t('ui.openrouter_key')} placeholder={cfg.has_key ? t('web.key_set_keep') : t('web.key_unset')} value={key} onChange={(e) => setKey(e.currentTarget.value)} autoComplete="off" />
-          <Group grow>
-            <TextInput label={t('ui.model_for_pictures')} value={cfg.image_model} onChange={(e) => setCfg({ ...cfg, image_model: e.currentTarget.value })} />
-            <TextInput label={t('ui.model_for_the_style_description')} value={cfg.text_model} onChange={(e) => setCfg({ ...cfg, text_model: e.currentTarget.value })} />
-          </Group>
+          <div ref={prov} style={{ scrollMarginTop: 16 }}>
+            <Title order={4} mt="md">{t('web.providers')}</Title>
+            <div className="field-note">{t('web.providers_note')}</div>
+          </div>
+          <Paper withBorder p="md" radius="md" className={lit ? 'lit' : undefined}>
+            <Stack gap={6}>
+              <Group justify="space-between"><Text fw={600}>{t('web.prov_codex')}</Text>
+                <Text size="xs" c={cfg.codex ? 'patina.4' : 'yellow.5'}>{cfg.codex ? t('web.codex_found') : t('web.prov_no_codex_short')}</Text></Group>
+              {cfg.codex ? <Code style={{ wordBreak: 'break-all' }}>{cfg.codex}</Code> : <Text size="sm">{t('web.codex_missing')}</Text>}
+            </Stack>
+          </Paper>
+          <Paper withBorder p="md" radius="md" className={lit ? 'lit' : undefined}>
+            <Stack gap="sm">
+              <Group justify="space-between"><Text fw={600}>OpenRouter</Text>
+                <Text size="xs" c={cfg.has_key ? 'patina.4' : 'yellow.5'}>{cfg.has_key ? t('web.key_set') : t('web.key_unset')}</Text></Group>
+              <div className="field-note">{plain(t('ui.openrouter_for_references_with_a_key'))}</div>
+              <PasswordInput label={t('ui.openrouter_key')} placeholder={cfg.has_key ? t('web.key_set_keep') : t('web.key_unset')} value={key} onChange={(e) => setKey(e.currentTarget.value)} autoComplete="off" />
+              <Group grow align="flex-start">
+                <Autocomplete label={t('ui.model_for_pictures')} value={cfg.image_model} data={opts(models?.image, cfg.image_model)} limit={60}
+                  onChange={(v) => setCfg({ ...cfg, image_model: v })} />
+                <Autocomplete label={t('ui.model_for_the_style_description')} value={cfg.text_model} data={opts(models?.text, cfg.text_model)} limit={60}
+                  onChange={(v) => setCfg({ ...cfg, text_model: v })} />
+              </Group>
+              <Group gap="xs"><Button size="xs" variant="default" loading={loadingModels} onClick={loadModels}>{t('web.or_models_load')}</Button>
+                <Text size="xs" c="dimmed">{t('web.or_models_note')}</Text></Group>
+            </Stack>
+          </Paper>
           <Group><Button onClick={save} disabled={st.test_bench}>{t('web.settings_save')}</Button></Group>
         </>}
         <Table>

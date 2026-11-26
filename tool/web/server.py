@@ -783,6 +783,14 @@ async def settings_save(req: Request):
     return TA.save_settings(await req.json(), TEST_BENCH)
 
 
+@app.get("/api/settings/openrouter_models")
+async def openrouter_models():
+    try:
+        return await asyncio.to_thread(TA.openrouter_models)
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+
 @app.get("/file={rest:path}")
 def page_file(rest: str):
     """The paths the app's editors ask for (/file=<absolute path>, the form Gradio had): export, work, input only."""

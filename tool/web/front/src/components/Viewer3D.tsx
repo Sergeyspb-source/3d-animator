@@ -1,15 +1,33 @@
 // A GLB in three.js (the same library as the app's editors): orbit, views, grid, wireframe, the collision proxy
-// (Godot's <name>-colonly / -convcolonly nodes: hidden unless asked), a 1.75 m person beside it for scale.
+// (Godot's <name>-colonly / -convcolonly nodes: hidden unless asked), a 1.75 m person beside it for scale (a capsule
+// labelled so; the camera looks level from the model's middle, so it stands upright), «Loading… %» while it comes.
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { Loader, Text, Tooltip } from '@mantine/core';
+import { Text, Tooltip } from '@mantine/core';
 import { IconFocusCentered, IconGridDots, IconBox, IconUser, IconShape } from '@tabler/icons-react';
 import { useT } from '../i18n';
+import LoadingVeil from './LoadingVeil';
 
 const COLLISION = /-(conv)?colonly$/;
+
+// the gauge's label: a sprite over the capsule, its text drawn on a canvas
+function drawTag(sprite: THREE.Sprite, text: string) {
+  const cv = document.createElement('canvas');
+  cv.width = 512; cv.height = 112;
+  const g = cv.getContext('2d')!;
+  g.fillStyle = 'rgba(20, 24, 28, 0.72)';
+  g.beginPath(); g.roundRect(4, 8, 504, 96, 22); g.fill();
+  g.fillStyle = '#e8edf2'; g.font = '600 46px "Golos Text", "Segoe UI", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(text, 256, 58);
+  const old = sprite.material.map;
+  sprite.material.map = new THREE.CanvasTexture(cv);
+  sprite.material.map.colorSpace = THREE.SRGBColorSpace;
+  sprite.material.needsUpdate = true;
+  old?.dispose();
+}
 type View = 'front' | 'side' | 'back' | 'top';
 export interface Measured { faces: number; size: [number, number, number] }
 
@@ -20,6 +38,7 @@ export default function Viewer3D({ url, empty, onMeasured, person: personDefault
   const host = useRef<HTMLDivElement>(null);
   const ctx = useRef<any>(null);
   const [busy, setBusy] = useState(false);
+  const [pct, setPct] = useState<number | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [view, setView] = useState<View>('front');
   const [grid, setGrid] = useState(true);
@@ -53,6 +72,10 @@ export default function Viewer3D({ url, empty, onMeasured, person: personDefault
       new THREE.MeshStandardMaterial({ color: 0x6f8fb0, transparent: true, opacity: 0.35, roughness: 0.9 }));
     man.visible = false;
     scene.add(man);
+    const tag = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthWrite: false }));
+    tag.scale.set(0.82, 0.18, 1);
+    tag.position.set(0, 1.75 / 2 + 0.16, 0);   // (over the capsule's top: it moves and hides with it)
+    man.add(tag);
     const root = new THREE.Group();
     scene.add(root);
     const resize = () => {
@@ -70,7 +93,7 @@ export default function Viewer3D({ url, empty, onMeasured, person: personDefault
     let raf = 0;
     const tick = () => { controls.update(); renderer.render(scene, cam); raf = requestAnimationFrame(tick); };
     tick();
-    ctx.current = { renderer, scene, cam, controls, gridH, man, root, box: new THREE.Box3(), loader: new GLTFLoader() };
+    ctx.current = { renderer, scene, cam, controls, gridH, man, tag, root, box: new THREE.Box3(), loader: new GLTFLoader() };
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();
@@ -89,7 +112,8 @@ export default function Viewer3D({ url, empty, onMeasured, person: personDefault
     const centre = box.getCenter(new THREE.Vector3());
     const r = box.getSize(new THREE.Vector3()).length() / 2 || 1;
     const d = r / Math.sin(THREE.MathUtils.degToRad(c.cam.fov / 2)) * 1.05;
-    const dir = { front: [0, 0.12, 1], side: [1, 0.12, 0], back: [0, 0.12, -1], top: [0, 1, 0.001] }[v];
+    // (level from the middle: what stands upright on the screen stands upright, the capsule too)
+    const dir = { front: [0, 0, 1], side: [1, 0, 0], back: [0, 0, -1], top: [0, 1, 0.001] }[v];
     c.cam.position.copy(centre).add(new THREE.Vector3(...dir).normalize().multiplyScalar(d));
     c.cam.near = d / 100;
     c.cam.far = d * 20;
@@ -110,6 +134,7 @@ export default function Viewer3D({ url, empty, onMeasured, person: personDefault
     if (!url) { frame(); return; }
     let alive = true;
     setBusy(true);
+    setPct(null);
     c.loader.load(url, (g: any) => {
       if (!alive) return;
       const scene: THREE.Object3D = g.scene;
@@ -143,7 +168,8 @@ export default function Viewer3D({ url, empty, onMeasured, person: personDefault
       applyLook();
       frame();
       setBusy(false);
-    }, undefined, (e: any) => { if (alive) { setErr(String(e?.message || e)); setBusy(false); } });
+    }, (e: ProgressEvent) => { if (alive && e.total) setPct(Math.round((100 * e.loaded) / e.total)); },
+    (e: any) => { if (alive) { setErr(String(e?.message || e)); setBusy(false); } });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url]);
@@ -162,6 +188,7 @@ export default function Viewer3D({ url, empty, onMeasured, person: personDefault
       }
     });
   };
+  useEffect(() => { if (ctx.current) drawTag(ctx.current.tag, t('web.v_person_tag')); }, [t]);
   useEffect(applyLook, [grid, wire, col, person]);
   useEffect(() => { frame(view); }, [view, person]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -196,7 +223,7 @@ export default function Viewer3D({ url, empty, onMeasured, person: personDefault
         </div>
       )}
       {!url && empty && <Text className="viewer-empty">{empty}</Text>}
-      {busy && <Loader className="viewer-busy" size="sm" />}
+      {busy && <LoadingVeil text={t('web.loading_model')} pct={pct} />}
       {err && <Text className="viewer-empty" c="rust.4">{t('web.v_failed', err)}</Text>}
     </div>
   );

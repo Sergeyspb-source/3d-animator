@@ -24,7 +24,10 @@ def _label(table: dict, value):
 
 def options() -> dict:
     cfg = T.load_config()
-    return {"providers": [{"id": i, "key": k} for i, k in PROVIDERS], "ref_cats": [{"id": i, "key": k} for i, k in REF_CATS],
+    import refgen as RF
+    ready = {"codex": bool(RF.codex_exe()), "openrouter": bool(cfg.get("openrouter_key"))}   # (whether each can work now)
+    model = {"openrouter": cfg.get("openrouter_image_model", "google/gemini-2.5-flash-image")}
+    return {"providers": [{"id": i, "key": k, "ok": ready[i], "model": model.get(i)} for i, k in PROVIDERS], "ref_cats": [{"id": i, "key": k} for i, k in REF_CATS],
             "fx": [{"id": i, "key": k} for i, k in FX], "views": [{"id": i, "key": k} for i, k in VIEWS],
             "materials": UI._mat_folders(), "kit_sample": UI._kit_sample(), "assets": UI._export_assets(),
             "mat_assets": UI._mat_assets(), "mat_choices": [{"id": k, "label": lab} for lab, k in UI.MAT_CHOICES],

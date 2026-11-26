@@ -58,7 +58,33 @@ def settings() -> dict:
             "has_key": bool(cfg.get("openrouter_key")),
             "image_model": cfg.get("openrouter_image_model", "google/gemini-2.5-flash-image"),
             "text_model": cfg.get("openrouter_text_model", "google/gemini-2.5-flash"),
-            "godot_exe": cfg.get("godot_exe", ""), "blender_exe": cfg.get("blender_exe", "")}
+            "godot_exe": cfg.get("godot_exe", ""), "blender_exe": cfg.get("blender_exe", ""),
+            "codex": _codex()}
+
+
+def _codex():
+    import refgen as RF
+    return RF.codex_exe()
+
+
+def openrouter_models() -> dict:
+    """OpenRouter's public catalogue (no key needed), for the model fields: the ones that make pictures and the ones that
+    read pictures and answer in text, ids with their names."""
+    import urllib.request
+    req = urllib.request.Request("https://openrouter.ai/api/v1/models", headers={"User-Agent": "sf3d-toolkit"})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        data = json.loads(r.read().decode("utf-8")).get("data") or []
+    image, text = [], []
+    for m in data:
+        arch = m.get("architecture") or {}
+        ins, outs = arch.get("input_modalities") or [], arch.get("output_modalities") or []
+        row = {"id": m.get("id"), "name": m.get("name") or m.get("id")}
+        if "image" in outs:
+            image.append(row)
+        elif "image" in ins and "text" in outs:
+            text.append(row)
+    key = lambda r: r["id"] or ""
+    return {"image": sorted(image, key=key), "text": sorted(text, key=key)}
 
 
 def save_settings(p: dict, test_bench: bool) -> dict:

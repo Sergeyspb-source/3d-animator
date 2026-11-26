@@ -1434,7 +1434,7 @@ def creature_clips_viewer(value):
     clips = f["dir"] / f"{f['name']}_clips.glb" if f else None
     if not clips or not clips.exists():
         return _t("cr.anim_view_none")
-    return landmarks_ui._frame(CR.viewer_page(clips, title=f["name"], kind=_t("cr.kind_creature"), edit={"play": "walk"}))
+    return _viewer_frame(CR.viewer_page(clips, title=f["name"], kind=_t("cr.kind_creature"), edit={"play": "walk"}))
 
 
 def creature_animate(value, keys, picks):
@@ -1461,7 +1461,7 @@ def creature_paint_view(value, current=""):
     if not f or not f.get("rigged"):
         return _t("cr.view_needs_skeleton")
     try:
-        return landmarks_ui._frame(CR.paint_page(f["dir"], f["name"], current))
+        return _viewer_frame(CR.paint_page(f["dir"], f["name"], current))
     except Exception as e:  # noqa: BLE001
         return _t("ui.error_2", e)
 

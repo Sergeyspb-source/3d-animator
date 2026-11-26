@@ -136,6 +136,13 @@ body { overflow: hidden; font-variant-numeric: tabular-nums; background: var(--r
 .main > .equip { flex: 1; min-height: 0; }
 .equip-head { height: 38px; flex-shrink: 0; padding: 0 12px; border-bottom: 1px solid var(--seam); background: var(--rail); }
 .equip-frame { flex: 1; width: 100%; min-height: 0; border: 0; display: block; background: var(--panel); }
+/* an editor's frame with its «Loading…» veil over it (LoadingVeil) */
+.frame-box { position: relative; flex: 1; min-height: 0; display: flex; }
+.stage > .frame-box { position: absolute; inset: 0; }
+.loading-veil { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; pointer-events: none;
+  background: color-mix(in srgb, var(--panel) 55%, transparent); }
+.loading-veil-box { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 18px 26px; border-radius: 8px;
+  background: var(--panel); border: 1px solid var(--seam); box-shadow: 0 6px 24px rgb(0 0 0 / 25%); }
 .shots { display: flex; gap: 6px; padding: 6px 12px; overflow-x: auto; background: var(--rail); border-bottom: 1px solid var(--seam); flex-shrink: 0; }
 .shots a { flex-shrink: 0; border: 1px solid var(--seam); border-radius: 4px; overflow: hidden; background: var(--lift); }
 .placeholder { display: grid; place-items: start center; padding: 6vh 24px; overflow: auto; background: var(--panel); }
@@ -161,3 +168,6 @@ body { overflow: hidden; font-variant-numeric: tabular-nums; background: var(--r
 .gal-item.on { border-color: var(--mantine-color-ember-5); box-shadow: inset 0 0 0 1px var(--mantine-color-ember-5); }
 .panel .gallery { position: static; }
 .panel .gallery-grid { grid-template-columns: 1fr 1fr; padding: 0; }
+
+/* a section opened from elsewhere (Settings → Picture providers): lit for a moment */
+.lit { border-color: var(--mantine-color-ember-5) !important; box-shadow: 0 0 0 2px color-mix(in srgb, var(--mantine-color-ember-5) 35%, transparent); transition: box-shadow .4s, border-color .4s; }

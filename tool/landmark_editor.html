@@ -1092,8 +1092,12 @@ const FACE_MARKS = { eye_L: '{{js:ed.centre_of_the_left_eye_pupil_on_the}}', eye
   eye_in_R: '{{js:ed.right_eye_inner_corner}}', eye_top_R: '{{js:ed.right_eye_upper_eyelid}}', eye_out_R: '{{js:ed.right_eye_outer_corner}}',
   eye_bot_R: '{{js:ed.right_eye_lower_eyelid}}' };
 const EYE_RIM = ['eye_in', 'eye_top', 'eye_out', 'eye_bot'];
-const faceKeys = () => (FSYM() ? ['eye_L', 'mouth_corner_L', 'mouth_mid_L', 'mouth_c'] : ['eye_L', 'eye_R', 'mouth_corner_L', 'mouth_mid_L', 'mouth_c', 'mouth_mid_R', 'mouth_corner_R'])
-  .concat(faceMode && faceMode.eyes ? EYE_RIM.map((k) => k + '_L').concat(FSYM() ? [] : EYE_RIM.map((k) => k + '_R')) : []);
+// in the order one clicks them: each eye (its centre, then its rim when asked), then the mouth
+const faceKeys = () => {
+  const eye = (s) => [`eye_${s}`].concat(faceMode && faceMode.eyes ? EYE_RIM.map((k) => `${k}_${s}`) : []);
+  return (FSYM() ? eye('L') : eye('L').concat(eye('R')))
+    .concat(FSYM() ? ['mouth_corner_L', 'mouth_mid_L', 'mouth_c'] : ['mouth_corner_L', 'mouth_mid_L', 'mouth_c', 'mouth_mid_R', 'mouth_corner_R']);
+};
 function faceView(side) {   // the head close, from the front (or from the character's left: the teeth's depth)
   const hd = V(S.pos.head), top = V(S.pos.head_top), chin = S.marks.chin ? V(S.marks.chin) : hd;
   const c = new THREE.Vector3(hd.x, (top.y + chin.y) / 2 - (top.y - chin.y) * .1, hd.z), len = (top.y - chin.y) * 1.5;
