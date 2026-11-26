@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="{{raw:lang.code}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ct.title}}</title>
+<style>
+  /* Embedded in the SF3D app: a creature's skeleton template (a quadruped, a bird, a serpent) placed on its model -
+     the joints dragged in the view's plane, the middle ones kept on the middle plane, the left side mirrored to the
+     right; the requests (a new guess, the build) go to the app through its hidden field. The skeleton viewer's look. */
+  :root { --bg:#ece8e1; --panel:#f6f3ee; --stage:#cfc8bc; --fg:#231d17; --muted:#6b6258; --line:#d0c9bd; --accent:#a8451d;
+          --accent-fg:#fff6ec; --ui:"Segoe UI",system-ui,sans-serif; --mono:ui-monospace,Consolas,monospace; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#15110d; --panel:#1e1913; --stage:#0f0c09;
+    --fg:#eadfca; --muted:#a39580; --line:#352d23; --accent:#d9622f; --accent-fg:#1a0e06; color-scheme:dark; } }
+  :root[data-theme="dark"] { --bg:#15110d; --panel:#1e1913; --stage:#0f0c09; --fg:#eadfca; --muted:#a39580; --line:#352d23;
+    --accent:#d9622f; --accent-fg:#1a0e06; color-scheme:dark; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; }
+  body { background:var(--bg); color:var(--fg); font:13px/1.4 var(--ui); padding:10px; }
+  .wrap { display:grid; grid-template-columns:minmax(0,1fr) 290px; gap:10px; height:100%; min-height:520px; }
+  @media (max-width: 760px) { .wrap { grid-template-columns:minmax(0,1fr); grid-template-rows:auto auto; height:auto; } .stage { min-height:60vh; } }
+  .main { display:flex; flex-direction:column; gap:8px; min-height:0; min-width:0; }
+  .toolbar { display:flex; flex-wrap:wrap; gap:6px; align-items:center; background:var(--panel); border:1px solid var(--line);
+    border-radius:10px; padding:6px 8px; }
+  .seg { display:inline-flex; }
+  .seg button { border-radius:0; margin-left:-1px; } .seg button:first-child { border-radius:7px 0 0 7px; margin-left:0; }
+  .seg button:last-child { border-radius:0 7px 7px 0; }
+  .sep { width:1px; align-self:stretch; background:var(--line); margin:0 2px; }
+  .stage { position:relative; flex:1; background:var(--stage); border:1px solid var(--line); border-radius:10px; overflow:hidden; min-height:320px; }
+  canvas { position:absolute; inset:0; width:100%; height:100%; display:block; touch-action:none; }
+  .labels { position:absolute; inset:0; pointer-events:none; overflow:hidden; }
+  .lbl { position:absolute; font:11px var(--mono); color:#fff; background:rgba(0,0,0,.55); padding:1px 5px; border-radius:4px; white-space:nowrap;
+    transform:translate(8px,-50%); }
+  .badge { position:absolute; left:10px; top:8px; font:12px var(--mono); color:var(--muted); background:color-mix(in srgb,var(--panel) 85%,transparent);
+    padding:3px 8px; border-radius:6px; pointer-events:none; }
+  .msg { position:absolute; inset:0; display:grid; place-items:center; color:var(--muted); padding:16px; text-align:center; }
+  [hidden] { display:none !important; }
+  .rail { display:flex; flex-direction:column; gap:8px; min-height:0; overflow:auto; }
+  .box { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:9px; min-width:0; }
+  .grp { font-size:12px; font-weight:600; color:var(--muted); margin:2px 0 6px; }
+  .row { display:flex; flex-wrap:wrap; gap:5px; align-items:center; }
+  button { font:inherit; color:var(--fg); background:transparent; border:1px solid var(--line); border-radius:7px; padding:5px 8px; cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  button.on { background:var(--accent); color:var(--accent-fg); border-color:var(--accent); }
+  button.primary { background:var(--accent); color:var(--accent-fg); border-color:var(--accent); font-weight:600; }
+  button:disabled { opacity:.45; cursor:default; }
+  label.chk { display:flex; gap:6px; align-items:center; cursor:pointer; }
+  .small { color:var(--muted); font-size:12px; }
+  .pts { display:grid; gap:2px; max-height:320px; overflow:auto; }
+  .pts .g { font-size:11px; color:var(--muted); margin-top:5px; }
+  .pts button { text-align:left; display:flex; align-items:center; gap:6px; border:0; padding:2px 5px; border-radius:5px; }
+  .pts button.sel { background:color-mix(in srgb,var(--accent) 25%,transparent); }
+  .sw { display:inline-block; width:10px; height:10px; border-radius:50%; border:1px solid rgba(0,0,0,.35); flex:none; }
+  .status { font:12px var(--mono); color:var(--muted); margin-top:6px; white-space:pre-wrap; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="main">
+    <div class="toolbar">
+      <div class="seg" id="tpls"></div>
+      <div class="sep"></div>
+      <div class="seg" id="views">
+        <button data-v="side">{{ct.side}}</button><button data-v="front">{{ct.front}}</button><button data-v="top">{{ct.top}}</button><button data-v="back">{{ct.back}}</button>
+      </div>
+      <div class="sep"></div>
+      <label class="chk"><input type="checkbox" id="xray" checked> {{ct.xray}}</label>
+      <label class="chk"><input type="checkbox" id="labels"> {{ct.labels}}</label>
+      <label class="chk"><input type="checkbox" id="mirror" checked> {{ct.mirror}}</label>
+      <div class="sep"></div>
+      <button id="undo" title="Ctrl+Z">↶ {{ct.undo}}</button>
+      <button id="redo" title="Ctrl+Y">↷ {{ct.redo}}</button>
+    </div>
+    <div class="stage" id="stage">
+      <div class="labels" id="labelLayer"></div>
+      <div class="badge" id="badge"></div>
+      <div class="msg" id="msg">{{ct.loading}}</div>
+    </div>
+  </div>
+  <div class="rail">
+    <div class="box">
+      <div class="grp" id="title"></div>
+      <div class="small" id="about"></div>
+    </div>
+    <div class="box">
+      <div class="grp">{{ct.joints}}</div>
+      <div class="small">{{ct.joints_hint}}</div>
+      <div class="pts" id="pts"></div>
+    </div>
+    <div class="box">
+      <div class="row">
+        <button id="turn" title="{{ct.turn_tip}}">⟳ {{ct.turn}}</button>
+        <button id="guess" title="{{ct.guess_tip}}">{{ct.guess}}</button>
+      </div>
+      <div class="row" style="margin-top:6px"><button id="build" class="primary" style="flex:1">{{ct.build}}</button></div>
+      <div class="status" id="status"></div>
+    </div>
+  </div>
+</div>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+               "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const DATA = @@DATA@@;
+const GLB = "@@GLB@@";
+const $ = (id) => document.getElementById(id);
+const V3 = THREE.Vector3;
+const TPL = DATA.template;                 // {id, joints: [{id, kind}], all, lines, between}
+const MK = DATA.markup;                    // {template, yaw, cx, joints: {id: [x, y, z]}}
+const NAMES = {
+  hips: '{{js:ct.j_hips}}', spine: '{{js:ct.j_spine}}', chest: '{{js:ct.j_chest}}', neck: '{{js:ct.j_neck}}', head: '{{js:ct.j_head}}',
+  nose: '{{js:ct.j_nose}}', beak: '{{js:ct.j_beak}}', tail: '{{js:ct.j_tail}}', tail_end: '{{js:ct.j_tail_end}}',
+  scapula: '{{js:ct.j_scapula}}', shoulder: '{{js:ct.j_shoulder}}', elbow: '{{js:ct.j_elbow}}', wrist: '{{js:ct.j_wrist}}',
+  fpaw: '{{js:ct.j_fpaw}}', ftoe: '{{js:ct.j_ftoe}}', pelvis: '{{js:ct.j_pelvis}}', hip: '{{js:ct.j_hip}}', knee: '{{js:ct.j_knee}}',
+  hock: '{{js:ct.j_hock}}', hpaw: '{{js:ct.j_hpaw}}', htoe: '{{js:ct.j_htoe}}', ankle: '{{js:ct.j_ankle}}', foot: '{{js:ct.j_foot}}',
+  toe: '{{js:ct.j_toe}}', wshoulder: '{{js:ct.j_wshoulder}}', welbow: '{{js:ct.j_welbow}}', wwrist: '{{js:ct.j_wwrist}}',
+  wtip: '{{js:ct.j_wtip}}', body: '{{js:ct.j_body}}',
+};
+const SIDE = { L: '{{js:ct.left}}', R: '{{js:ct.right}}' };
+function nameOf(id) {
+  if (id === 'tail_end') return NAMES.tail_end;
+  const m = /^(.*?)(?:_(\d+))?(?:_([LR]))?$/.exec(id);
+  const base = NAMES[m[1]] || m[1];
+  return base + (m[2] ? ' ' + m[2] : '') + (m[3] ? ' · ' + SIDE[m[3]] : '');
+}
+// a joint's group (its colour, its place in the list)
+function groupOf(id) {
+  if (/^(scapula|shoulder|elbow|wrist|fpaw|ftoe)_/.test(id)) return 'front';
+  if (/^(pelvis|hip|knee|hock|hpaw|htoe|ankle|foot|toe)_/.test(id)) return 'hind';
+  if (/^w(shoulder|elbow|wrist|tip)_/.test(id)) return 'wing';
+  if (/^tail/.test(id)) return 'tail';
+  if (/^(neck|head|nose|beak)/.test(id)) return 'head';
+  return 'body';
+}
+const GCOL = { body: '#e39b20', head: '#d93a2f', tail: '#9b4fd6', front: '#2f6fe0', hind: '#22a352', wing: '#4fa3d6' };
+const GNAME = { body: '{{js:ct.g_body}}', head: '{{js:ct.g_head}}', tail: '{{js:ct.g_tail}}', front: '{{js:ct.g_front}}',
+  hind: '{{js:ct.g_hind}}', wing: '{{js:ct.g_wing}}' };
+const KIND = Object.fromEntries(TPL.joints.map((j) => [j.id, j.kind]));
+const kindOf = (id) => KIND[id] || (id.endsWith('_R') ? 'R' : 'free');
+const mirrorId = (id) => id.endsWith('_L') ? id.slice(0, -2) + '_R' : id.endsWith('_R') ? id.slice(0, -2) + '_L' : null;
+
+// ---------------------------------------------------------------- the page's texts
+const TPLS = DATA.templates || [];
+$('tpls').innerHTML = TPLS.map((t) => `<button data-t="${t.id}" class="${t.id === TPL.id ? 'on' : ''}">${t.label}</button>`).join('');
+$('title').textContent = DATA.title || '';
+$('about').textContent = (TPLS.find((t) => t.id === TPL.id) || {}).about || '';
+if (DATA.status) $('status').textContent = DATA.status;
+
+// ---------------------------------------------------------------- scene
+const stage = $('stage');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+stage.prepend(renderer.domElement);
+const scene = new THREE.Scene();
+const darkUI = document.documentElement.dataset.theme === 'dark' || (document.documentElement.dataset.theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+scene.background = new THREE.Color(darkUI ? 0x0f0c09 : 0xcfc8bc);
+const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -100, 100);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444034, 1.7));
+const sun = new THREE.DirectionalLight(0xffffff, 1.4);
+sun.position.set(2, 4, 3);
+scene.add(sun);
+const model = new THREE.Group();
+scene.add(model);
+const overlay = new THREE.Group();
+scene.add(overlay);
+let H = 1, centre = new V3(), half = 1;
+const mats = [];
+
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  renderer.setSize(w, h, false);
+  const a = w / Math.max(h, 1);
+  camera.left = -half * a; camera.right = half * a; camera.top = half; camera.bottom = -half;
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage);
+
+function view(v) {
+  const d = { side: [1, 0, 0], front: [0, 0, 1], top: [0, 1, 0.0001], back: [0, 0, -1] }[v] || [1, 0.4, 1];
+  controls.target.copy(centre);
+  camera.position.copy(centre).add(new V3(...d).normalize().multiplyScalar(H * 4));
+  camera.zoom = 1;
+  camera.updateProjectionMatrix();
+  controls.update();
+  document.querySelectorAll('#views button').forEach((b) => b.classList.toggle('on', b.dataset.v === v));
+}
+document.querySelectorAll('#views button').forEach((b) => b.onclick = () => view(b.dataset.v));
+
+// ---------------------------------------------------------------- joints
+const P = {};          // id -> V3 (the markup's frame: the model turned by yaw)
+const off = {};        // between joints: their offset from their line
+const spheres = {};
+let lines = null;
+const cx = MK.cx || 0;
+let sel = null;
+const hist = [], redo = [];
+const snap = () => JSON.stringify(Object.fromEntries(Object.entries(P).map(([k, v]) => [k, v.toArray()])));
+function restore(s) {
+  const o = JSON.parse(s);
+  for (const k in o) P[k].fromArray(o[k]);
+  betweenOffsets();
+  draw();
+}
+function push() { hist.push(snap()); if (hist.length > 100) hist.shift(); redo.length = 0; }
+$('undo').onclick = () => { if (hist.length) { redo.push(snap()); restore(hist.pop()); } };
+$('redo').onclick = () => { if (redo.length) { hist.push(snap()); restore(redo.pop()); } };
+addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); (e.shiftKey ? $('redo') : $('undo')).click(); }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); $('redo').click(); }
+});
+
+for (const id of TPL.all) {
+  const p = MK.joints[id];
+  P[id] = p ? new V3(...p) : new V3(cx, 0, 0);
+}
+function betweenOffsets() {
+  for (const [j, [a, b, t]] of Object.entries(TPL.between || {})) {
+    if (P[j] && P[a] && P[b]) off[j] = P[j].clone().sub(P[a].clone().lerp(P[b], t));
+  }
+}
+betweenOffsets();
+function follow(moved) {   // the between joints on a moved joint's lines keep their place on them
+  for (const [j, [a, b, t]] of Object.entries(TPL.between || {})) {
+    if (j !== moved && (a === moved || b === moved || moved === '*')) P[j].copy(P[a].clone().lerp(P[b], t).add(off[j]));
+  }
+}
+
+const sphereGeo = new THREE.SphereGeometry(1, 16, 12);
+function buildMarks() {
+  overlay.clear();
+  const r = H * 0.012;
+  for (const id of TPL.all) {
+    const g = groupOf(id);
+    const right = id.endsWith('_R');
+    const col = new THREE.Color(GCOL[g]);
+    if (right) col.lerp(new THREE.Color(0xffffff), 0.45);
+    const m = new THREE.Mesh(sphereGeo, new THREE.MeshBasicMaterial({ color: col, depthTest: false, transparent: true, opacity: right ? 0.7 : 1 }));
+    m.scale.setScalar(KIND[id] === 'mid' || KIND[id] === 'free' ? r * 1.15 : r);
+    m.renderOrder = 10;
+    m.userData.id = id;
+    overlay.add(m);
+    spheres[id] = m;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(TPL.lines.length * 6), 3));
+  lines = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: darkUI ? 0xf2e6d0 : 0x231d17, depthTest: false, transparent: true, opacity: 0.85 }));
+  lines.renderOrder = 9;
+  overlay.add(lines);
+}
+function draw() {
+  for (const id of TPL.all) {
+    spheres[id].position.copy(P[id]);
+    spheres[id].material.opacity = id === sel ? 1 : (id.endsWith('_R') ? 0.7 : 1);
+    spheres[id].scale.setScalar(H * (id === sel ? 0.018 : (KIND[id] === 'mid' || KIND[id] === 'free' ? 0.0138 : 0.012)));
+  }
+  const a = lines.geometry.attributes.position;
+  TPL.lines.forEach(([u, v], i) => { a.setXYZ(2 * i, ...P[u].toArray()); a.setXYZ(2 * i + 1, ...P[v].toArray()); });
+  a.needsUpdate = true;
+  lines.geometry.computeBoundingSphere();
+  drawLabels();
+  list();
+}
+
+// the list of joints by group
+function list() {
+  const groups = {};
+  for (const id of TPL.all) {
+    if (id.endsWith('_R') && $('mirror').checked) continue;
+    (groups[groupOf(id)] = groups[groupOf(id)] || []).push(id);
+  }
+  const html = Object.entries(groups).map(([g, ids]) => `<div class="g">${GNAME[g]}</div>` + ids.map((id) =>
+    `<button data-j="${id}" class="${id === sel ? 'sel' : ''}"><span class="sw" style="background:${GCOL[g]}"></span>${nameOf(id)}</button>`).join('')).join('');
+  if ($('pts').dataset.html !== html) {
+    $('pts').innerHTML = html;
+    $('pts').dataset.html = html;
+    $('pts').querySelectorAll('button').forEach((b) => b.onclick = () => { sel = b.dataset.j; draw(); });
+  }
+}
+$('mirror').onchange = () => draw();
+
+// labels
+const labelEls = {};
+function drawLabels() {
+  const on = $('labels').checked;
+  const layer = $('labelLayer');
+  if (!on) { layer.innerHTML = ''; for (const k in labelEls) delete labelEls[k]; return; }
+  const w = stage.clientWidth, h = stage.clientHeight;
+  for (const id of TPL.all) {
+    if (id.endsWith('_R') && $('mirror').checked) continue;
+    let el = labelEls[id];
+    if (!el) { el = document.createElement('div'); el.className = 'lbl'; el.textContent = nameOf(id); layer.appendChild(el); labelEls[id] = el; }
+    const p = P[id].clone().project(camera);
+    el.style.left = ((p.x + 1) / 2 * w) + 'px';
+    el.style.top = ((1 - p.y) / 2 * h) + 'px';
+  }
+}
+$('labels').onchange = () => drawLabels();
+controls.addEventListener('change', drawLabels);
+
+// ---------------------------------------------------------------- dragging in the view's plane
+const ray = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+let drag = null;
+function pick(e) {
+  const r = renderer.domElement.getBoundingClientRect();
+  ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  const vis = Object.values(spheres).filter((s) => !(s.userData.id.endsWith('_R') && $('mirror').checked && camera.position.x > centre.x + H * 0.5));
+  const hit = ray.intersectObjects(vis, false);
+  return hit.length ? hit[0].object.userData.id : null;
+}
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0) return;
+  const id = pick(e);
+  if (!id) return;
+  e.stopPropagation();
+  sel = id;
+  push();
+  const n = new V3();
+  camera.getWorldDirection(n);
+  drag = { id, plane: new THREE.Plane().setFromNormalAndCoplanarPoint(n, P[id]) };
+  controls.enabled = false;
+  renderer.domElement.setPointerCapture(e.pointerId);
+  draw();
+}, true);
+renderer.domElement.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  const r = renderer.domElement.getBoundingClientRect();
+  ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  const q = new V3();
+  if (!ray.ray.intersectPlane(drag.plane, q)) return;
+  move(drag.id, q);
+  draw();
+});
+const endDrag = () => { if (drag) { drag = null; controls.enabled = true; status(''); } };
+renderer.domElement.addEventListener('pointerup', endDrag);
+renderer.domElement.addEventListener('pointercancel', endDrag);
+
+function move(id, q) {
+  const k = kindOf(id);
+  if (k === 'mid') q.x = cx;
+  P[id].copy(q);
+  const m = mirrorId(id);
+  if (m && P[m] && $('mirror').checked) P[m].set(2 * cx - q.x, q.y, q.z);
+  if (TPL.between && TPL.between[id]) {
+    const [a, b, t] = TPL.between[id];
+    off[id] = P[id].clone().sub(P[a].clone().lerp(P[b], t));
+  }
+  follow(id);
+}
+
+// ---------------------------------------------------------------- the model
+function b64ToBuf(s) {
+  const bin = atob(s);
+  const u = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  return u.buffer;
+}
+new GLTFLoader().parse(b64ToBuf(GLB), '', (gltf) => {
+  const root = gltf.scene;
+  root.traverse((o) => {
+    if (o.isMesh || o.isSkinnedMesh) {
+      const ms = Array.isArray(o.material) ? o.material : [o.material];
+      ms.forEach((m) => { m.transparent = true; m.depthWrite = true; mats.push(m); });
+    }
+  });
+  model.add(root);
+  model.rotation.y = THREE.MathUtils.degToRad(MK.yaw || 0);
+  model.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(model);
+  box.getCenter(centre);
+  const sz = box.getSize(new V3());
+  H = Math.max(sz.x, sz.y, sz.z);
+  half = H * 0.62;
+  const grid = new THREE.GridHelper(H * 3, 30, 0x6a6e75, 0x44474c);
+  grid.position.set(centre.x, box.min.y, centre.z);
+  grid.material.transparent = true; grid.material.opacity = 0.5;
+  scene.add(grid);
+  // the way it looks: an arrow along +Z from the front of the model
+  const arrow = new THREE.ArrowHelper(new V3(0, 0, 1), new V3(centre.x, box.min.y + H * 0.002, box.max.z + H * 0.03), H * 0.15, 0xd9622f, H * 0.05, H * 0.03);
+  scene.add(arrow);
+  xray();
+  buildMarks();
+  resize();
+  view('side');
+  draw();
+  $('msg').hidden = true;
+  $('badge').textContent = '{{js:ct.badge}}';
+}, (err) => { $('msg').textContent = '{{js:ct.load_failed}} ' + err; });
+function xray() { mats.forEach((m) => { m.opacity = $('xray').checked ? 0.45 : 1; m.depthWrite = !$('xray').checked; m.needsUpdate = true; }); }
+$('xray').onchange = xray;
+
+(function loop() {
+  requestAnimationFrame(loop);
+  controls.update();
+  renderer.render(scene, camera);
+})();
+
+// ---------------------------------------------------------------- requests to the app
+function status(s) { $('status').textContent = s; }
+function send(req) {
+  try {
+    const doc = window.parent.document;
+    const ta = doc.querySelector('#' + DATA.req_target + ' textarea');
+    ta.value = JSON.stringify(req);
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    setTimeout(() => doc.querySelector('#' + DATA.req_go).click(), 300);
+    status('{{js:ct.sent}}');
+  } catch (e) { status('{{js:ct.send_failed}} ' + e.message); }
+}
+const joints = () => Object.fromEntries(Object.entries(P).map(([k, v]) => [k, [+v.x.toFixed(5), +v.y.toFixed(5), +v.z.toFixed(5)]]));
+document.querySelectorAll('#tpls button').forEach((b) => b.onclick = () => {
+  if (b.dataset.t !== TPL.id) send({ action: 'guess', template: b.dataset.t });
+});
+$('guess').onclick = () => send({ action: 'guess', template: TPL.id, yaw: MK.yaw || 0 });
+$('turn').onclick = () => send({ action: 'guess', template: TPL.id, yaw: ((MK.yaw || 0) + 90) % 360 });
+$('build').onclick = () => send({ action: 'build', template: TPL.id, yaw: MK.yaw || 0, cx, joints: joints() });
+window.ct = { P, move, draw, send, joints, view };   // (tests)
+</script>
+</body>
+</html>

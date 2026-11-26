@@ -646,6 +646,7 @@ app.post("/api/cr/check")(_cr_post("web.task_clipcheck", "clipcheck", lambda v, 
 app.post("/api/cr/godot")(_cr_post("web.task_cr_godot", "godot", lambda v, p: CRW.godot_task(v)))
 app.post("/api/cr/paint")(_cr_post("web.task_cr_paint", "paint", lambda v, p: CRW.paint_task(v, p.get("text") or "{}")))
 app.post("/api/cr/mend")(_cr_post("web.task_cr_mend", "mend", lambda v, p: CRW.mend_task(v, "normals" if p.get("what") == "normals" else "holes")))
+app.post("/api/cr/template")(_cr_post("ct.task_template", "template", lambda v, p: CRW.template_task(v, p.get("text") or "{}")))
 
 
 @app.get("/api/cr/clip_options")
@@ -657,7 +658,7 @@ def cr_clip_options(id: str):
 def editor_creature(id: str, what: str = "viewer", current: str = ""):
     v = _char(id)
     make = {"viewer": lambda: CRW.viewer_page(v), "clips": lambda: CRW.clips_page(v),
-            "paint": lambda: CRW.paint_page(v, current)}.get(what, lambda: CRW.viewer_page(v))
+            "paint": lambda: CRW.paint_page(v, current), "template": lambda: CRW.template_page(v)}.get(what, lambda: CRW.viewer_page(v))
     return _page_or_note(make)
 
 

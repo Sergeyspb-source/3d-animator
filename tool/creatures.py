@@ -270,6 +270,9 @@ CLIP_DEFAULT = ("fox", "horse")   # (picked at first: the four-legged's; the oth
 # the nurgle's leap, paw strike and wall climb read off the user's videos (the game project's); on any creature with four
 # legs (leg_FL_.. leg_BR_), hips and jaw, scaled to its size
 KEYED = {"nurgle": ROOT / "creature_keys" / "nurgle.py"}
+# the creature's own procedural clips made from its skeleton (creature_gait.py, by its body: a quadruped's idle, walk,
+# trot, run, attack; a bird's step, wing beat, glide; a serpent's wave): one more source, "proc"
+PROC = "proc"
 
 
 def clip_sources() -> dict:
@@ -285,6 +288,9 @@ def clip_sources() -> dict:
         except Exception:  # noqa: BLE001
             continue
         out[k] = (p, [n for n in names if n and "rest" not in n.lower()])
+    import creature_templates as CT
+    out[PROC] = (ROOT / "creature_gait.py", sorted({c for v in CT.PROC_CLIPS.values() for c in v},
+                                                     key=lambda c: ["idle", "walk", "trot", "run", "flap", "glide", "attack"].index(c)))
     for k, p in KEYED.items():   # (a creature's own clips, keyed from key poses: named as they are)
         try:
             spec = importlib.util.spec_from_file_location(f"creature_keys_{k}", str(p))
@@ -299,6 +305,9 @@ def clip_sources() -> dict:
 def clip_key(source: str, clip: str) -> str:
     if source in KEYED:
         return clip
+    if source == PROC:
+        import creature_templates as CT
+        return CT.proc_name(clip)
     return f"{source}_{clip}".lower().replace(" ", "_")
 
 
@@ -342,20 +351,30 @@ def animate(cfg, d: Path, name: str, picks: dict):
     clips = [{"source": str(src[k][0]), "action": c, "name": clip_key(k, c), "loop": c in CLIP_SOURCES[k][1]}
              for k, cs in picks.items() if k in src and k in CLIP_SOURCES for c in cs]
     keyed = [{"poses": str(src[k][0]), "clips": list(cs)} for k, cs in picks.items() if k in src and k in KEYED and cs]
-    if not clips and not keyed:
+    proc = list(picks.get(PROC) or [])
+    if not clips and not keyed and not proc:
         raise RuntimeError(_t("cr.anim_none_picked"))
     work = Path(cfg["work_dir"]) / "creature_clips"
     work.mkdir(parents=True, exist_ok=True)
     out = d / f"{name}_clips.glb"
     job = work / f"{name}.json"
-    job.write_text(json.dumps({"target": str(rigged), "clips": clips, "keyed": keyed, "out": str(out), "mesh": True,
+    job.write_text(json.dumps({"target": str(rigged), "clips": clips, "keyed": keyed, "procedural": {"clips": proc} if proc else None,
+                               "out": str(out), "mesh": True,
                                "close_deg": (passport(d, name).get("jaw") or {}).get("close_deg")}), encoding="utf-8")
-    yield _t("cr.anim_running", len(clips) + sum(len(k["clips"]) for k in keyed))
+    yield _t("cr.anim_running", len(clips) + sum(len(k["clips"]) for k in keyed) + len(proc))
     _run(cfg, "blender_creature_retarget.py", [job], "RETARGET_OK")
     made = json.loads(Path(str(out) + ".json").read_text(encoding="utf-8"))
     lost = [c for k in keyed for c in k["clips"] if c not in {m["name"] for m in made}]
     if lost:   # (the creature has not the bones the key poses turn: four legs, hips, jaw ...)
         yield _t("cr.anim_keyed_skipped", ", ".join(lost))
+    import creature_templates as CT
+    got = {m["name"]: m for m in made}
+    lost = [c for c in proc if CT.proc_name(c) not in got]
+    if lost:   # (not this body's clips: a quadruped has no wing beat)
+        yield _t("cr.proc_skipped", ", ".join(lost))
+    moving = [f"{m['name']} {m['speed']:.2f}" for m in made if m.get("speed")]
+    if moving:   # (in place: the game moves the creature this fast for its feet not to slide)
+        yield _t("cr.proc_speeds", ", ".join(moving))
     yield _t("cr.anim_done", out.name, len(made), ", ".join(c["name"] for c in made))
     if paint_variants(d, name):   # (the colouring's variants on the new model)
         yield _t("cr.paint_refreshed", len(paint_refresh(d, name)))
@@ -773,3 +792,160 @@ variant_names = PackedStringArray({names})
     gui = Path(godot).with_name(Path(godot).name.replace("_console", ""))   # the window build, without a console
     subprocess.Popen([str(gui if gui.exists() else godot), "--path", str(proj)], cwd=str(proj))
     return _t("cr.godot_open", rigged.name, proj)
+
+
+# ---------------------------------------------------------------- the skeleton by a template (creature_templates.py)
+# The template's joints (a quadruped's, a bird's, a serpent's) placed on the model: a first guess by its shape, moved by
+# the user on the markup page (creature_markup.html); the skeleton built from them with heat weights
+# (blender_creature_template.py) into <name>_auto.glb (named, no jaw) and <name>_rigged.glb; the passport keeps the
+# markup ("template": {id, yaw, cx, joints}). The jaw and the eyes are marked as ever in the skeleton viewer; a jaw or
+# eyes marked before stay when the model's frame is the same, the clips are made again.
+MARKUP_PAGE = ROOT / "creature_markup.html"
+TPL_ID = "sf3d_template_req"   # the markup page's hidden textbox and button
+TPL_GO = "sf3d_template_go"
+TEMPLATE_IDS = ("quadruped", "bird", "serpent")
+
+
+def template_source(d: Path, name: str) -> Path | None:
+    """the model a template is placed on: the source (<name>.glb), else the rigged one (its skeleton dropped)"""
+    d = Path(d)
+    return next((p for p in (d / f"{name}.glb", d / f"{name}_rigged.glb", d / f"{name}_auto.glb",
+                             d / f"{name}_landmarks_rigged.glb") if p.exists()), None)
+
+
+def template_markup(d: Path, name: str, template: str | None = None, yaw=None, fresh: bool = False) -> dict:
+    """the markup as kept in the passport, else (or when asked: another template, a turn, fresh) a first guess, kept"""
+    import creature_templates as CT
+    d = Path(d)
+    meta = passport(d, name)
+    kept = meta.get("template") or {}
+    if kept.get("joints") and not fresh and template in (None, kept.get("id")) and yaw in (None, kept.get("yaw")):
+        return kept
+    src = template_source(d, name)
+    if src is None:
+        raise RuntimeError(_t("cr.none"))
+    tpl = template or kept.get("id") or "quadruped"
+    g = CT.guess(src, tpl, yaw=None if yaw is None else float(yaw) % 360)
+    mk = {"id": tpl, "yaw": g["yaw"], "cx": g["cx"], "joints": g["joints"], "built": False}
+    meta["template"] = mk
+    meta["kind"] = "creature"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / f"{name}_rig.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+    return mk
+
+
+def template_page(d: Path, name: str, status: str = "") -> str:
+    """the markup page on the creature's model (embedded whole) with its markup"""
+    import creature_templates as CT
+    d = Path(d)
+    src = template_source(d, name)
+    if src is None:
+        raise RuntimeError(_t("cr.none"))
+    mk = template_markup(d, name)
+    page = i18n.fill(MARKUP_PAGE.read_text(encoding="utf-8"))
+    data = {"title": name, "template": CT.page_data(mk["id"]), "markup": mk, "req_target": TPL_ID, "req_go": TPL_GO,
+            "status": status or (_t("ct.built") if mk.get("built") else ""),
+            "templates": [{"id": k, "label": _t(f"ct.tpl_{k}"), "about": _t(f"ct.about_{k}")} for k in TEMPLATE_IDS]}
+    return (page.replace("@@DATA@@", json.dumps(data, ensure_ascii=False).replace("</", "<\\/"))
+                .replace("@@GLB@@", base64.b64encode(src.read_bytes()).decode("ascii")))
+
+
+def _glb_box(glb: Path):
+    """the model's box from its POSITION accessors (min, max per axis) - without loading it"""
+    import landmarks
+    try:
+        j = landmarks._glb_json(glb)
+    except Exception:  # noqa: BLE001
+        return None
+    lo, hi = [math.inf] * 3, [-math.inf] * 3
+    for m in j.get("meshes", []):
+        for pr in m.get("primitives", []):
+            a = j["accessors"][pr["attributes"]["POSITION"]]
+            if "min" in a and "max" in a:
+                lo = [min(x, y) for x, y in zip(lo, a["min"])]
+                hi = [max(x, y) for x, y in zip(hi, a["max"])]
+    return (lo, hi) if lo[0] < math.inf else None
+
+
+def template_request(cfg, d: Path, name: str, req: dict):
+    """the markup page's request: "guess" (a fresh first guess: another template, a turn) or "build". Yields log lines."""
+    d = Path(d)
+    act = req.get("action")
+    tpl = req.get("template") or "quadruped"
+    if tpl not in TEMPLATE_IDS:
+        raise RuntimeError(f"template {tpl}")
+    if act == "guess":
+        mk = template_markup(d, name, tpl, req.get("yaw"), fresh=True)
+        yield _t("cr.tpl_guessed", _t(f"ct.tpl_{tpl}"), mk["yaw"])
+        return
+    yield from template_build(cfg, d, name, tpl, req.get("joints") or {}, float(req.get("yaw") or 0.0))
+
+
+def template_build(cfg, d: Path, name: str, tpl: str, joints: dict, yaw: float):
+    """the skeleton built from the template's joints and the model skinned (blender_creature_template.py); the
+    skeleton it replaces kept once (<name>_auto.unirig.glb: «Restore» brings it back); then the jaw and the eyes again
+    if the model's frame is the one they were marked in, and the clips. Yields log lines."""
+    import creature_templates as CT
+    d = Path(d)
+    src = template_source(d, name)
+    if src is None:
+        raise RuntimeError(_t("cr.none"))
+    need = set(CT.joint_ids(CT.TEMPLATES[tpl]))
+    missing = sorted(need - set(joints))
+    if missing:
+        raise RuntimeError(_t("cr.tpl_missing", ", ".join(missing)))
+    auto, rigged = d / f"{name}_auto.glb", d / f"{name}_rigged.glb"
+    keep = d / f"{name}_auto.unirig.glb"
+    if auto.exists() and not keep.exists() and not (passport(d, name).get("template") or {}).get("built"):
+        shutil.copy2(auto, keep)
+    old_box = _glb_box(auto) if auto.exists() else None
+    work = Path(cfg["work_dir"]) / "creature_rebuild"
+    work.mkdir(parents=True, exist_ok=True)
+    job = work / f"{name}_template.json"
+    job.write_text(json.dumps({"src": str(src), "out": str(auto), "template": tpl, "joints": joints, "yaw": yaw,
+                               "preview": str(d / f"{name}_tpl")}), encoding="utf-8")
+    yield _t("cr.tpl_building", _t(f"ct.tpl_{tpl}"), len(joints))
+    rep = json.loads(_run(cfg, "blender_creature_template.py", [job], "TEMPLATE_OK").split(" ", 1)[1])
+    yield _t("cr.tpl_built", auto.name, rep.get("bones", 0), rep.get("fallback_vertices", 0), rep.get("loose_vertices", 0))
+    if rep.get("empty"):
+        yield _t("cr.tpl_empty", ", ".join(rep["empty"]))
+    # the jaw and the eyes marked before: kept when the model stands where it stood (the same box), else forgotten
+    new_box = _glb_box(auto)
+    same = bool(old_box and new_box and all(abs(a - b) < 0.01 * max(1e-6, max(h - l for l, h in zip(*new_box)))
+                                            for a, b in zip(old_box[0] + old_box[1], new_box[0] + new_box[1])))
+    meta = passport(d, name)
+    meta["kind"] = "creature"
+    meta["names"] = {}
+    meta.pop("ends", None)
+    meta["template"] = {"id": tpl, "yaw": yaw, "cx": joints.get("hips", [0])[0] if tpl != "serpent" else (meta.get("template") or {}).get("cx", 0.0),
+                        "joints": joints, "built": True}
+    if not same:
+        for k in ("jaw", "eyes"):
+            if meta.get(k):
+                meta.pop(k)
+                yield _t("cr.tpl_forgot", k)
+    (d / f"{name}_rig.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+    shutil.copy2(auto, rigged)
+    for stale in (rigged.with_name(rigged.stem + ".noeyes.glb"), rigged.with_name(rigged.stem + ".nojaw.glb")):
+        stale.unlink(missing_ok=True)
+    mouth = mouth_marks(meta) if (meta.get("jaw") or {}).get("mouth") else None
+    if mouth:   # (it puts the eyes back and makes the clips again itself)
+        yield from mark_jaw(cfg, d, name, mouth)
+        return
+    if meta.get("eyes"):
+        yield from set_eyes(cfg, d, name, meta["eyes"], rigged=rigged)
+        return
+    if (d / f"{name}_clips.glb").exists():
+        yield from reclip(cfg, d, name)
+    elif paint_variants(d, name):
+        yield _t("cr.paint_refreshed", len(paint_refresh(d, name)))
+
+
+def template_pictures(d: Path, name: str) -> list:
+    return [str(p) for p in (Path(d) / f"{name}_tpl_{v}.png" for v in ("side", "front", "top")) if p.exists()]
+
+
+def proc_clips_for(rigged: Path) -> list:
+    """the procedural clips this skeleton takes (by its body: none when it is not a quadruped, a bird or a serpent)"""
+    import creature_templates as CT
+    return list(CT.PROC_CLIPS.get(CT.body_kind(bone_names(rigged)) or "", []))

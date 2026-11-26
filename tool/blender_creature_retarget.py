@@ -493,6 +493,19 @@ for kd in job.get("keyed") or []:
     done += made
     for c in made:
         print("RETARGET_CLIP", c["name"], c["frames"], flush=True)
+# a creature's procedural clips made from its own skeleton (creature_gait.py: a quadruped's gaits, a bird's step, beat
+# and glide, a serpent's wave)
+if job.get("procedural"):
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import creature_gait
+    try:
+        made = creature_gait.make_clips(tgt, tmeshes, job["procedural"].get("clips") or [], FPS, job.get("close_deg"))
+    except RuntimeError as e:
+        print("RETARGET_PROC_SKIPPED", e, flush=True)
+        made = []
+    done += made
+    for c in made:
+        print("RETARGET_CLIP", c["name"], c["frames"], flush=True)
 for S in sources.values():
     bpy.data.objects.remove(S["src"], do_unlink=True)
 bpy.ops.object.select_all(action="DESELECT")

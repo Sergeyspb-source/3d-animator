@@ -16,12 +16,14 @@ def _seg_dist(p, a, c):
     return (p - (a + ab * t)).length
 
 
-def proxy_heat(meshes, rig, skip=(), smooth=6):
+def proxy_heat(meshes, rig, skip=(), smooth=6, size="height"):
     """meshes: the skinned meshes (their vertex groups are replaced); rig: their armature object; skip: bone names that
-    get no heat weights (set later by other rules). Returns a report {proxy_vertices, heat_failed, fallback_vertices}."""
+    get no heat weights (set later by other rules); size: what is brought to ~10 units - "height", or "max" (the
+    largest side: a snake lying flat is long and low). Returns a report {proxy_vertices, heat_failed, fallback_vertices}."""
     scene = bpy.context.scene
-    lows = [(o.matrix_world @ Vector(c)).z for o in meshes for c in o.bound_box]
-    height = max(lows) - min(lows)
+    corners = [o.matrix_world @ Vector(c) for o in meshes for c in o.bound_box]
+    sides = [max(p[i] for p in corners) - min(p[i] for p in corners) for i in range(3)]
+    height = max(sides) if size == "max" else sides[2]
     scale = 10.0 / max(height, 1e-6)
     if bpy.context.object and bpy.context.object.mode != "OBJECT":
         bpy.ops.object.mode_set(mode="OBJECT")

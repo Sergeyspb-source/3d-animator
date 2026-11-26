@@ -42,6 +42,8 @@ def overview(value: str) -> dict:
             "humanoid": bool(r and CR.is_humanoid(r)),
             "clips": n_clips, "clips_file": clips.as_posix() if clips.exists() else None,
             "paints": [{"id": k, "title": (v or {}).get("title", k)} for k, v in (paints or {}).items()],
+            "template": ({"id": tpl.get("id"), "built": bool(tpl.get("built"))} if (tpl := CR.passport(d, nm).get("template")) else None),
+            "tpl_pictures": CR.template_pictures(d, nm),
             "jaw_pictures": [str(p[0] if isinstance(p, (list, tuple)) else p) for p in CR.jaw_pictures(d, nm)],
             "files": [{"name": x.name, "when": _when(x)} for x in sorted(d.iterdir()) if x.is_file()]}
 
@@ -106,22 +108,29 @@ def clip_options(value: str) -> dict:
     f = _f(value)
     srcs = CR.clip_sources()
     had = CR.clips_had(f["dir"], f["name"])
+    # the procedural clips: only this body's (a quadruped's, a bird's, a serpent's), picked at first for a skeleton made
+    # by a template
+    proc = CR.proc_clips_for(f["rigged"]) if f.get("rigged") else []
+    srcs = {k: (p, proc if k == CR.PROC else names) for k, (p, names) in srcs.items() if k != CR.PROC or proc}
+    first = (CR.PROC,) if proc and (CR.passport(f["dir"], f["name"]).get("template") or {}).get("built") else CR.CLIP_DEFAULT
     return {"sources": [{"id": k, "key": "cr.anim_src_" + k, "clips": names,
-                         "picked": (had.get(k, []) if had is not None else (names if k in CR.CLIP_DEFAULT else []))}
-                        for k, (_p, names) in srcs.items()]}
+                         "picked": (had.get(k, []) if had is not None else (names if k in first else []))}
+                        for k, (_p, names) in sorted(srcs.items(), key=lambda kv: kv[0] != CR.PROC)]}
 
 
 def animate_task(value, picks: dict):
+    # (creatures.animate itself: sf3d_ui.creature_animate ends by making a Gradio viewer frame - gone with Gradio)
     def run(task):
-        keys = list(CR.clip_sources())
         res = None
-        gen = UI.creature_animate(value, keys, [picks.get(k) or [] for k in keys])
-        try:
-            for log, _view in gen:
-                task.set_lines(str(log or "").split("\n"))
-        finally:
-            gen.close()
         f = _f(value)
+        if not f.get("rigged"):
+            raise ValueError(_t("cr.view_needs_skeleton"))
+        if CR.is_humanoid(f["rigged"]):
+            raise ValueError(_t("cr.anim_humanoid"))
+        lines = []
+        for line in CR.animate(T.load_config(), f["dir"], f["name"], {k: list(v or []) for k, v in picks.items()}):
+            lines.append(str(line))
+            task.set_lines(lines)
         clips = f["dir"] / f"{f['name']}_clips.glb"
         if clips.exists():
             res = {"model": clips.as_posix()}
@@ -192,4 +201,24 @@ def mend_task(value, what):
             lines.append(str(line))
             task.set_lines(lines)
         return {}
+    return run
+
+
+# ------------------------------------------------------------------ the skeleton by a template (a quadruped, a bird, a serpent)
+def template_page(value: str) -> str:
+    f = _f(value)
+    return inject(CR.template_page(f["dir"], f["name"]))
+
+
+def template_task(value, text):
+    """the markup page's request: a fresh guess (another template, a turn) or the build (creatures.template_request)"""
+    def run(task):
+        f = _f(value)
+        req = json.loads(text or "{}")
+        lines = []
+        for line in CR.template_request(T.load_config(), f["dir"], f["name"], req):
+            lines.append(str(line))
+            task.set_lines(lines)
+        rigged = f["dir"] / f"{f['name']}_rigged.glb"
+        return {"model": rigged.as_posix()} if req.get("action") == "build" and rigged.exists() else {}
     return run

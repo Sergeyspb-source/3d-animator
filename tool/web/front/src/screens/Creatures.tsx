@@ -2,7 +2,7 @@
 // the markup viewer whose requests move the joints, mark the jaw and put the eyes in), its clips, its colouring, the
 // Godot view. Each page of the app works here unchanged; its requests come through the hidden fields below it.
 import { useEffect, useRef, useState } from 'react';
-import { Button, Checkbox, FileButton, Group, Image, Modal, ScrollArea, Stack, Text, UnstyledButton, useMantineColorScheme } from '@mantine/core';
+import { Button, Checkbox, FileButton, Group, Image, Modal, ScrollArea, SegmentedControl, Stack, Text, UnstyledButton, useMantineColorScheme } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconFolder, IconPlus, IconTrash } from '@tabler/icons-react';
 import { fileUrl, get, live, onTaskFinished, post, upload, useStore, type TaskSummary } from '../api';
@@ -16,6 +16,7 @@ interface CrOverview {
   id: string; name: string; dir: string; source: string | null; rigged: string | null;
   rig: { file: string; when: string; bones: number; paws: Record<string, number>; tail: number; head: boolean; jaw: boolean } | null;
   humanoid: boolean; clips: number; clips_file: string | null; paints: { id: string; title: string }[]; jaw_pictures: string[];
+  template?: { id: string; built: boolean } | null; tpl_pictures?: string[];
   files: { name: string; when: string }[];
 }
 
@@ -100,29 +101,50 @@ export function CrOverviewScreen({ go }: { go: (r: Route) => void }) {
   );
 }
 
+// the template markup page's hidden field and button (creatures.TPL_ID / TPL_GO)
+const TPL_BRIDGE: [string, string] = ['sf3d_template_req', 'sf3d_template_go'];
+
 export function CrSkeleton({ bridge, eyes }: { bridge: [string, string]; eyes?: boolean }) {
   const t = useT();
   const { colorScheme } = useMantineColorScheme();
   const { id, o, running } = useCreature();
   const [v, setV] = useState(0);
+  // the skeleton by a template (a quadruped, a bird, a serpent: its joints placed on the model) or the viewer of the
+  // skeleton there is (UniRig's or a template's: bones, weights, the jaw); at first the template while there is none
+  const [how, setHow] = useState<string | null>(null);
+  useEffect(() => setHow(null), [id]);
+  // (chosen once a creature's overview comes: a build does not switch the page under the user)
+  useEffect(() => { if (o && o.id === id && how === null) setHow(o.rigged ? 'viewer' : 'template'); }, [o, id, how]);
   useDone(id, () => setV(Date.now()));
   if (!id) return <Need />;
   const q = `id=${encodeURIComponent(id)}&theme=${colorScheme}&v=${v}`;
+  const mode = eyes ? 'viewer' : how ?? (o && !o.rigged ? 'template' : 'viewer');
   return (
     <div className="equip">
       <Group className="equip-head" gap="sm" wrap="nowrap">
-        {!eyes && <>
+        {!eyes && <SegmentedControl size="xs" value={mode} onChange={setHow}
+          data={[{ value: 'template', label: t('ct.mode_template') }, { value: 'viewer', label: t('ct.mode_viewer') }]} />}
+        {mode === 'template' && <Text size="xs" c="dimmed" truncate style={{ flex: 1 }}>{plain(t('ct.mode_template_hint'))}</Text>}
+        {mode === 'viewer' && !eyes && <>
           <Button size="compact-sm" disabled={running} onClick={() => post('/api/cr/rig', { id })}>{t('ui.make_the_skeleton_3_6_minutes_3_5_gb')}</Button>
           <Button size="compact-sm" variant="default" disabled={running || !o?.rigged} onClick={() => post('/api/cr/straighten', { id })}>{t('cr.straighten')}</Button>
           <Button size="compact-sm" variant="subtle" color="gray" disabled={running || !o?.rigged} onClick={() => post('/api/cr/restore', { id })}>{t('cr.restore')}</Button>
         </>}
-        <Text size="xs" c="dimmed" truncate style={{ flex: 1 }}>{plain(t(eyes ? 'web.cr_eyes_hint' : 'cr.view_info'))}</Text>
+        {mode === 'viewer' && <Text size="xs" c="dimmed" truncate style={{ flex: 1 }}>{plain(t(eyes ? 'web.cr_eyes_hint' : 'cr.view_info'))}</Text>}
       </Group>
+      {mode === 'template' && o && (o.tpl_pictures || []).length > 0 && (
+        <div className="shots">{(o.tpl_pictures || []).map((s) => <a key={s} href={fileUrl(s)} target="_blank" rel="noreferrer"><Image src={fileUrl(s, v)} h={110} w="auto" fit="contain" /></a>)}</div>)}
+      {mode === 'template' ? (o?.source || o?.rigged
+        ? <EditorFrame src={`/editor/creature?${q}&what=template`} fields={[TPL_BRIDGE[0]]} title={t('ct.title')}
+          go={[{ id: TPL_BRIDGE[1], field: TPL_BRIDGE[0], onGo: (text) => post('/api/cr/template', { id, text }) }]} />
+        : <div className="placeholder"><Text c="dimmed">{t('web.ov_no_model')}</Text></div>)
+      : <>
       {!eyes && o && o.jaw_pictures.length > 0 && (
         <div className="shots">{o.jaw_pictures.map((s) => <a key={s} href={fileUrl(s)} target="_blank" rel="noreferrer"><Image src={fileUrl(s, v)} h={110} w="auto" fit="contain" /></a>)}</div>)}
       {o?.rigged ? <EditorFrame src={`/editor/creature?${q}&what=viewer`} fields={[bridge[0]]} title={t('cr.section')}
         go={[{ id: bridge[1], field: bridge[0], onGo: (text) => post('/api/cr/request', { id, text }) }]} />
         : <div className="placeholder"><Text c="dimmed">{plain(t('cr.rig_intro'))}</Text></div>}
+      </>}
     </div>
   );
 }
