@@ -61,49 +61,109 @@ def tune_colors(tex, saturation: float = 1.0, brightness: float = 1.0):
     return Image.fromarray((np.clip(color.lab2rgb(lab), 0, 1) * 255 + 0.5).astype(np.uint8))
 
 
-def match_colors(tex, mesh, ref_paths, strength: float):
-    """Pull the texture's colour statistics toward those of the reference images (Reinhard transfer in Lab).
+# which side of the model a reference picture shows (glTF: +Z front, +X the object's own left - Hunyuan's view_left);
+# any other picture (input.png, raw_cutout.png, source.png) is the one the model was made from: the front
+VIEW_DIRS = {"front": (0.0, 0.0, 1.0), "back": (0.0, 0.0, -1.0), "left": (1.0, 0.0, 0.0), "right": (-1.0, 0.0, 0.0)}
 
-    Only texels covered by UV islands are measured, and only opaque pixels of the references (the
-    background-removed images the model was generated from). strength 0 = untouched, 1 = full transfer.
-    """
+
+def _view_dir(path):
+    stem = Path(path).stem.lower()
+    return next((d for k, d in VIEW_DIRS.items() if stem.endswith(k)), VIEW_DIRS["front"])
+
+
+def _lch_stats(lab, w=None):
+    """lightness mean / spread, the chroma-weighted mean hue (radians), the mean chroma"""
+    import numpy as np
+    w = np.ones(len(lab)) if w is None else w
+    sw = w.sum()
+    L = lab[:, 0]
+    mu = float((L * w).sum() / sw)
+    sd = float(np.sqrt(((L - mu) ** 2 * w).sum() / sw)) + 1e-6
+    C = np.hypot(lab[:, 1], lab[:, 2])
+    hue = float(np.arctan2((lab[:, 2] * w).sum(), (lab[:, 1] * w).sum()))
+    return {"L": mu, "Lsd": sd, "C": float((C * w).sum() / sw) + 1e-6, "h": hue}
+
+
+def seen_texels(mesh, W, H, dirs):
+    """(H, W) weights: how squarely each texel faces one of the pictures' views (the face's normal . the view's
+    direction, below 0.25 dropped - the sides and the back a front picture does not show)"""
     import numpy as np
     from PIL import Image, ImageDraw
+    uv = getattr(mesh.visual, "uv", None)
+    if uv is None:
+        return None
+    n = np.asarray(mesh.face_normals)
+    face_w = np.max(n @ np.asarray(dirs, float).T, axis=1)
+    img = Image.new("L", (W, H), 0)
+    draw = ImageDraw.Draw(img)
+    for tri, wv in zip(uv[mesh.faces], face_w):
+        if wv >= 0.25:
+            draw.polygon([(float(u) * (W - 1), (1 - float(v)) * (H - 1)) for u, v in tri], fill=int(wv * 255))
+    return np.asarray(img, np.float32) / 255
+
+
+def color_match_fn(meshes, ref_paths):
+    """The albedo pulled to the pictures the model was made from: hue, saturation (chroma) and lightness of the texels
+    each picture's view shows (weighted by how squarely they face it) against the picture's object pixels (its alpha).
+    In LCh: lightness mean and spread matched, the hue turned by the difference of the chroma-weighted mean hues,
+    chroma scaled - greys stay grey. One transform for all the model's textures. -> (apply(tex, strength) or None, info)"""
+    import numpy as np
+    from PIL import Image
     from skimage import color
 
-    refs = []
+    refs, dirs = [], []
     for p in ref_paths:
-        im = Image.open(p).convert("RGBA")
-        a = np.asarray(im)
+        a = np.asarray(Image.open(p).convert("RGBA"))
         px = a[a[..., 3] > 200][:, :3]
-        if len(px):
+        if len(px) > 500:
             refs.append(px)
-    uv = getattr(mesh.visual, "uv", None)
-    if not refs or uv is None or strength <= 0:
-        return tex
+            dirs.append(_view_dir(p))
+    if not refs:
+        return None, {}
     ref = np.concatenate(refs)
     ref = ref[np.random.default_rng(0).choice(len(ref), min(len(ref), 200_000), replace=False)]
+    sr = _lch_stats(color.rgb2lab(ref.reshape(-1, 1, 3) / 255.0).reshape(-1, 3))
+    labs, ws = [], []
+    for m in meshes:
+        tex = getattr(getattr(m.visual, "material", None), "baseColorTexture", None)
+        if tex is None:
+            continue
+        rgb = np.asarray(tex.convert("RGB"))
+        wmap = seen_texels(m, rgb.shape[1], rgb.shape[0], dirs)
+        if wmap is None:
+            continue
+        sel = wmap > 0
+        if sel.sum() < 500:
+            continue
+        labs.append(color.rgb2lab(rgb[sel].reshape(-1, 1, 3) / 255.0).reshape(-1, 3))
+        ws.append(wmap[sel])
+    if not labs:
+        return None, {}
+    st = _lch_stats(np.concatenate(labs), np.concatenate(ws))
+    gain = float(np.clip(sr["Lsd"] / st["Lsd"], 0.6, 1.6))
+    c_gain = float(np.clip(sr["C"] / st["C"], 0.5, 2.0))
+    dh = float((sr["h"] - st["h"] + np.pi) % (2 * np.pi) - np.pi)
+    info = {"picture": {k: round(v, 2) for k, v in sr.items()}, "model": {k: round(v, 2) for k, v in st.items()},
+            "hue_turn_deg": round(float(np.degrees(dh)), 1), "chroma_x": round(c_gain, 3), "light_gain": round(gain, 3)}
 
-    rgb = np.asarray(tex.convert("RGB"))
-    H, W = rgb.shape[:2]
-    mask_img = Image.new("L", (W, H), 0)
-    draw = ImageDraw.Draw(mask_img)
-    for tri in uv[mesh.faces]:
-        draw.polygon([(float(u) * (W - 1), (1 - float(v)) * (H - 1)) for u, v in tri], fill=255)
-    mask = np.asarray(mask_img) > 0
-    if mask.sum() < 1000:
-        return tex
+    def apply(tex, strength=1.0):
+        if strength <= 0:
+            return tex
+        lab = color.rgb2lab(np.asarray(tex.convert("RGB")) / 255.0)
+        L = (lab[..., 0] - st["L"]) * gain + sr["L"]
+        C = np.hypot(lab[..., 1], lab[..., 2]) * c_gain
+        h = np.arctan2(lab[..., 2], lab[..., 1]) + dh
+        moved = np.stack([L, C * np.cos(h), C * np.sin(h)], -1)
+        out = lab + strength * (moved - lab)
+        out[..., 0] = np.clip(out[..., 0], 0, 100)
+        return Image.fromarray((np.clip(color.lab2rgb(out), 0, 1) * 255 + 0.5).astype(np.uint8))
+    return apply, info
 
-    lab_ref = color.rgb2lab(ref.reshape(-1, 1, 3) / 255.0).reshape(-1, 3)
-    lab_tex = color.rgb2lab(rgb / 255.0)
-    used = lab_tex[mask]
-    mu_t, sd_t = used.mean(0), used.std(0) + 1e-6
-    mu_r, sd_r = lab_ref.mean(0), lab_ref.std(0) + 1e-6
-    gain = np.clip(sd_r / sd_t, 0.6, 1.6)
-    moved = (lab_tex - mu_t) * gain + mu_r
-    out = lab_tex + strength * (moved - lab_tex)
-    out_rgb = np.clip(color.lab2rgb(out), 0, 1)
-    return Image.fromarray((out_rgb * 255 + 0.5).astype(np.uint8))
+
+def match_colors(tex, mesh, ref_paths, strength: float):
+    """One texture pulled to its pictures (color_match_fn on this mesh alone)."""
+    fn, _ = color_match_fn([mesh], ref_paths)
+    return fn(tex, strength) if fn else tex
 
 
 def render_previews(glb: Path, work: Path, icon_dest: Path, cfg: dict) -> dict:
@@ -214,6 +274,9 @@ def postprocess(src: Path, dst: Path, preset: dict, height, pivot, metallic, rou
 
     out = trimesh.Scene(base_frame=dst.stem)  # root node named after the asset, not 'world'
     material_report = []
+    # the palette pulled to the pictures: one transform from every texture's texels the pictures show (turned to face
+    # +Z already), applied to each texture below
+    recolor, color_info = (color_match_fn(merged, color_refs) if color_refs and color_strength > 0 else (None, {}))
     for i, m in enumerate(merged):
         m.apply_scale(scale)
         m.apply_translation(offset)
@@ -254,7 +317,7 @@ def postprocess(src: Path, dst: Path, preset: dict, height, pivot, metallic, rou
                 tex = getattr(mat, attr, None)
                 if tex is not None:
                     if attr == "baseColorTexture" and color_refs and color_strength > 0:
-                        tex = match_colors(tex, m, color_refs, color_strength)
+                        tex = recolor(tex, color_strength) if recolor else tex
                     if attr == "baseColorTexture":
                         tex = tune_colors(tex, saturation, brightness)
                     tex = tex.convert("RGB")
@@ -282,6 +345,7 @@ def postprocess(src: Path, dst: Path, preset: dict, height, pivot, metallic, rou
         "collision": collision if collision and collision != "none" else None,
         "collision_faces": col_faces,
         "materials": material_report,
+        **({"color_match": {**color_info, "strength": color_strength}} if color_info else {}),
     }
 
 

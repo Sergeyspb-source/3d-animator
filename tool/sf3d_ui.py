@@ -42,9 +42,10 @@ TRELLIS_MODELS = r"D:\conda\hf\trellis2-gguf\q8"
 TRELLIS_CUDA_BIN = r"D:\conda\envs\hunyuan\bin"  # the CUDA 12.1 runtime + cuBLAS it was built against
 TRELLIS_WEIGHTS = ("ss_flow", "ss_dec", "shape_flow_512", "shape_dec", "tex_flow_512", "tex_dec", "dinov3", "birefnet")
 TRELLIS_VRAM_MB = 5500
-# its albedo comes out 1.4-2.2x darker (Lab L) than the picture; the palette pulled 0.7 of the way to the picture
-# lands at Hunyuan's lightness (work/trellis_test/REPORT.md)
-TRELLIS_COLOR_MATCH = 0.7
+# its albedo comes out 1.4-2.2x darker (Lab L) than the picture and its hue drifts (a green-olive goblin came out
+# orange, 65 deg against 85): the palette match (sf3d_tool.color_match_fn: LCh of the texels the picture shows against
+# the picture's object) at full strength brings them back (work/trellis_test/colormatch)
+TRELLIS_COLOR_MATCH = 1.0
 
 # Ключ категории в config.json -> подпись в интерфейсе
 CATEGORY_LABELS = {
