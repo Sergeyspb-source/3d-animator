@@ -3,6 +3,7 @@ extends Node3D
 ## speed, looping, a floor grid at the paws with shadows, an orbiting camera (left button turns, right one pans, the
 ## wheel zooms). For checks: godot --path <proj> -- --anim=<clip> --at=<seconds> --yaw=<deg> --pitch=<rad>
 ## --zoom=<k> --target=<x,y,z> --variant=<name> --blink=<0..1> --shot=<png> (the clip played from its start for «at» seconds, the frame saved, quit).
+## --ground=flat|slope|steps (uneven ground to stand on), --feet=0|1 (the paws onto it: sf3d_creature_feet.gd, on by default).
 
 @export var creature: PackedScene
 ## the colouring's variants (creatures.paint_save: the same model, other pictures) and their names
@@ -24,19 +25,28 @@ var _variant: OptionButton
 var _lids: Array = []   # [mesh, blend shape index] of the eyelids' blink keys (blender_creature_eyes.py)
 var _blink_in := 2.0
 var _blink_t := -1.0
+var _feet_on := true       # the paws put on the ground (sf3d_creature_feet.gd, a child of the skeleton)
+var _ground: Node3D        # a slope or a step to stand on (with a collider), or none (the flat grid)
+var _grid: MeshInstance3D
+var _box := AABB()
+var _h := 1.0
 
 
 func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		var kv := a.trim_prefix("--").split("=", true, 1)
 		_args[kv[0]] = kv[1] if kv.size() > 1 else ""
+	_feet_on = String(_args.get("feet", "1")) != "0"
 	_load(creature)
 	var box := _bounds(_model)
 	var h := maxf(box.size.y, maxf(box.size.x, box.size.z))
+	_box = box
+	_h = h
 	_target = box.get_center()
 	_dist = h * 1.6
 	_world(box, h)
 	_ui()
+	_make_ground(String(_args.get("ground", "flat")))
 	_cam = Camera3D.new()
 	_cam.near = h / 500.0
 	_cam.far = h * 100.0
@@ -78,6 +88,12 @@ func _load(scene: PackedScene) -> void:   # the model (the base or a variant) in
 	add_child(_model)
 	var found := _model.find_children("*", "AnimationPlayer", true, false)
 	_player = found[0] if found.size() > 0 else null
+	var sks := _model.find_children("*", "Skeleton3D", true, false)
+	if sks.size() > 0:   # (the paws onto the ground: the modifier runs after the clip)
+		var feet: SkeletonModifier3D = load("res://sf3d_creature_feet.gd").new()
+		feet.name = "Feet"
+		feet.active = _feet_on
+		(sks[0] as Skeleton3D).add_child(feet)
 	_lids.clear()
 	for m in _model.find_children("*", "MeshInstance3D", true, false):
 		var mi := m as MeshInstance3D
@@ -165,6 +181,56 @@ void fragment() {
 	plane.material_override = mat
 	plane.position = Vector3(0, floor_y, 0)
 	add_child(plane)
+	_grid = plane
+
+
+# uneven ground to check the paws on: a slope (uphill ahead, 12 degrees) or a step under the front paws, with colliders
+func _make_ground(kind: String) -> void:
+	if _ground:
+		_ground.queue_free()
+		_ground = null
+	if _grid:
+		_grid.visible = kind == "flat"
+	if kind == "flat":
+		return
+	_ground = Node3D.new()
+	add_child(_ground)
+	var c := _box.get_center()
+	var floor_y := _box.position.y
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.42, 0.44, 0.47)
+	mat.roughness = 0.95
+	var parts := []
+	if kind == "slope":
+		var size := Vector3(_h * 3.0, _h * 0.2, _h * 4.0)
+		var rot := Basis(Vector3.RIGHT, deg_to_rad(-12.0))
+		parts.append([size, Transform3D(rot, Vector3(c.x, floor_y, c.z) - rot * Vector3(0, size.y / 2, 0))])
+	else:
+		var size := Vector3(_h * 3.0, _h * 0.12 + _h * 0.1, _h * 2.0)
+		parts.append([size, Transform3D(Basis(), Vector3(c.x, floor_y + _h * 0.12 - size.y / 2, c.z + size.z / 2))])
+		var low := Vector3(_h * 3.0, _h * 0.1, _h * 2.0)
+		parts.append([low, Transform3D(Basis(), Vector3(c.x, floor_y - low.y / 2, c.z - low.z / 2))])
+	for pr in parts:
+		var body := StaticBody3D.new()
+		body.transform = pr[1]
+		var col := CollisionShape3D.new()
+		var bs := BoxShape3D.new()
+		bs.size = pr[0]
+		col.shape = bs
+		body.add_child(col)
+		var mi := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = pr[0]
+		mi.mesh = bm
+		mi.material_override = mat
+		body.add_child(mi)
+		_ground.add_child(body)
+
+
+func _set_feet(on: bool) -> void:
+	_feet_on = on
+	for f in _model.find_children("Feet", "SkeletonModifier3D", true, false):
+		(f as SkeletonModifier3D).active = on
 
 
 func _ui() -> void:
@@ -210,6 +276,20 @@ func _ui() -> void:
 	_speed.value = 1.0
 	_speed.value_changed.connect(func(x): if _player: _player.speed_scale = x)
 	v.add_child(_speed)
+	var gl := Label.new()
+	gl.text = "{{js:gd.creature_ground}}"
+	v.add_child(gl)
+	var ground := OptionButton.new()
+	for it in ["{{js:gd.creature_ground_flat}}", "{{js:gd.creature_ground_slope}}", "{{js:gd.creature_ground_steps}}"]:
+		ground.add_item(it)
+	ground.selected = ["flat", "slope", "steps"].find(String(_args.get("ground", "flat")))
+	ground.item_selected.connect(func(i): _make_ground(["flat", "slope", "steps"][i]))
+	v.add_child(ground)
+	var feet := CheckBox.new()
+	feet.text = "{{js:gd.creature_feet}}"
+	feet.button_pressed = _feet_on
+	feet.toggled.connect(_set_feet)
+	v.add_child(feet)
 	var hint := Label.new()
 	hint.text = "{{js:gd.creature_mouse}}"
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD

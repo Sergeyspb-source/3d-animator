@@ -91,10 +91,10 @@ SERPENT = {
 TEMPLATES = {"quadruped": QUADRUPED, "bird": BIRD, "serpent": SERPENT}
 
 # ---------------------------------------------------------------- the procedural clips (creature_gait.py) by body kind
-PROC_CLIPS = {"quadruped": ["idle", "walk", "trot", "run", "attack"],
+PROC_CLIPS = {"quadruped": ["idle", "walk", "walk_left", "walk_right", "trot", "run", "run_left", "run_right", "jump", "attack"],
               "bird": ["idle", "walk", "run", "flap", "glide", "attack"],
               "serpent": ["idle", "walk", "run", "attack"]}
-PROC_LOOPS = {"idle", "walk", "trot", "run", "flap", "glide"}
+PROC_LOOPS = {"idle", "walk", "walk_left", "walk_right", "trot", "run", "run_left", "run_right", "flap", "glide"}
 
 
 def proc_name(c: str) -> str:

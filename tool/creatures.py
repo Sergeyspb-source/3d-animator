@@ -289,8 +289,7 @@ def clip_sources() -> dict:
             continue
         out[k] = (p, [n for n in names if n and "rest" not in n.lower()])
     import creature_templates as CT
-    out[PROC] = (ROOT / "creature_gait.py", sorted({c for v in CT.PROC_CLIPS.values() for c in v},
-                                                     key=lambda c: ["idle", "walk", "trot", "run", "flap", "glide", "attack"].index(c)))
+    out[PROC] = (ROOT / "creature_gait.py", list(dict.fromkeys(c for v in CT.PROC_CLIPS.values() for c in v)))
     for k, p in KEYED.items():   # (a creature's own clips, keyed from key poses: named as they are)
         try:
             spec = importlib.util.spec_from_file_location(f"creature_keys_{k}", str(p))
@@ -747,6 +746,8 @@ def godot_view(cfg, d: Path, name: str) -> str:
     if not dst.exists() or dst.stat().st_mtime < rigged.stat().st_mtime or dst.stat().st_size != rigged.stat().st_size:
         shutil.copy2(rigged, dst)
     (proj / "sf3d_creature.gd").write_text(i18n.fill((ROOT / "godot" / "sf3d_creature.gd").read_text(encoding="utf-8")), encoding="utf-8")
+    # (the paws onto uneven ground: the skeleton modifier the window puts under the creature's skeleton)
+    (proj / "sf3d_creature_feet.gd").write_text((ROOT / "godot" / "sf3d_creature_feet.gd").read_text(encoding="utf-8"), encoding="utf-8")
     (proj / "project.godot").write_text(f"""config_version=5
 
 [application]
