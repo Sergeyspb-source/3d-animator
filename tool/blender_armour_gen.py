@@ -714,6 +714,106 @@ if kind in CLOTH_KINDS:
             if w > 1e-4:
                 cloth[(cc, kk)].add([vi], w / tw, "ADD")
     bones = sorted(set(bones) | {f"Cloth_{c}_{k}" for c in range(NC) for k in range(NS)})
+
+# an everyday garment's hem on spring bones (job «hem_spring», the editor's tick): below the hip joints it hangs on NC
+# chains round the body «Hem_<column>_<joint>» (from the hips' bone down to its lowest edge, the mean of its cloth in each
+# column and height), swung in the game by Godot's spring bones (SF3DEquip: SpringBoneSimulator3D, the legs as capsules).
+# A vertex there goes over from its own weights (the thighs') to its column's chain: none at the hip joints' height, all
+# of it a quarter of the way down; between two links and two columns by where it is. The skin under the hem is not hidden.
+HEM_KINDS = ("tunic", "vest", "apron")
+hem_top = None
+if kind in HEM_KINDS and job.get("hem_spring"):
+    hb_ = arm.data.bones.get(names.get("hips", ""))
+    if hb_ is not None:
+        HP = arm.matrix_world @ hb_.head_local
+        P_ = [v.co.copy() for v in mesh.vertices]
+        zt, zb = HP.z, min(p.z for p in P_)
+        Hb = max((o.matrix_world @ v.co).z for o in body for v in o.data.vertices) - min((o.matrix_world @ v.co).z for o in body for v in o.data.vertices)
+        if zt - zb > .06 * Hb:   # (a short vest: nothing hangs below the hips)
+            NC, NS = 12, 4
+            dz = (zt - zb) / NS
+            az = [math.atan2(p.x - HP.x, -(p.y - HP.y)) for p in P_]
+            col_of = [round((a + math.pi) / (2 * math.pi) * NC) % NC for a in az]   # (column c's middle at -pi + c 2pi/NC: one
+            # straight behind, one straight in front - between the legs)
+            chains = {}
+            for c in range(NC):
+                ac = -math.pi + c * 2 * math.pi / NC   # (the column's own middle angle)
+                J, r_prev = [], None
+                for k in range(NS + 1):
+                    zk = zt - dz * k
+                    rs = [math.hypot(P_[i].x - HP.x, P_[i].y - HP.y) for i in range(len(P_)) if col_of[i] == c and abs(P_[i].z - zk) <= .6 * dz]
+                    r = sum(rs) / len(rs) if rs else r_prev
+                    if r is None:
+                        break
+                    J.append(Vector((HP.x + r * math.sin(ac), HP.y - r * math.cos(ac), zk)))
+                    r_prev = r
+                if len(J) == NS + 1 and sum(1 for i in range(len(P_)) if col_of[i] == c and P_[i].z < zt - .5 * dz) > 6:
+                    chains[c] = J
+            if chains:
+                Wi = arm.matrix_world.inverted()
+                bpy.context.view_layer.objects.active = arm
+                bpy.ops.object.mode_set(mode="EDIT")
+                eb = arm.data.edit_bones
+                legs = {s: names.get(f"upleg_{s}") for s in "LR" if names.get(f"upleg_{s}") in eb}
+                col_side = {}
+                for c, J in chains.items():
+                    # a column over a thigh hangs from that thigh (it goes with the leg, swinging round it: spring chains
+                    # on the hips alone slid off a thigh coming forward and it went through the cloth); the middle ones,
+                    # front and back between the legs, from the hips (the thighs push them as capsules)
+                    ac = -math.pi + c * 2 * math.pi / NC
+                    side = ("L" if math.sin(ac) > 0 else "R") if abs(math.sin(ac)) > .3 else None
+                    parent = eb[legs[side]] if side in legs else eb[hb_.name]
+                    col_side[c] = side if side in legs else None
+                    for k in range(NS + 1):
+                        b = eb.new(f"Hem_{c}_{k}")
+                        b.head = Wi @ J[k]
+                        b.tail = Wi @ (J[k + 1] if k < NS else J[k] + (J[k] - J[k - 1]) * .5)
+                        b.parent = parent
+                        b.use_connect = k > 0
+                        parent = b
+                bpy.ops.object.mode_set(mode="OBJECT")
+                bpy.context.view_layer.objects.active = obj
+                hg = {}
+                cols = sorted(chains)
+                Wm = arm.matrix_world
+                leg_dx = max([abs((Wm @ arm.data.bones[legs[sd]].head_local).x - HP.x) for sd in legs] or [.05])
+                for vi, p in enumerate(P_):
+                    if p.z >= zt:
+                        continue
+                    t = (zt - p.z) / (zt - zb)
+                    w = min(1., t / .25) ** 2 * (3 - 2 * min(1., t / .25))
+                    if w <= 1e-4:
+                        continue
+                    x = (az[vi] + math.pi) / (2 * math.pi) * NC   # (between the two columns' middles round it)
+                    c0 = int(math.floor(x)) % NC
+                    c1, fc = (c0 + 1) % NC, x - math.floor(x)
+                    wc = {cc: ww for cc, ww in ((c0, 1 - fc), (c1, fc)) if cc in chains and ww > 1e-4}
+                    if not wc:   # (no chain either side: the nearest one round)
+                        cn = min(cols, key=lambda cc: min(abs(cc - x) % NC, NC - abs(cc - x) % NC))
+                        wc = {cn: 1.}
+                    dx = p.x - HP.x   # (off the middle more than a quarter of the way to a thigh's axis: that thigh's columns
+                    vs = "L" if dx > 0 else "R"   # only - half on the middle one, the thigh came forward through the cloth)
+                    if abs(dx) > .25 * leg_dx and any(col_side.get(cc) == vs for cc in cols):
+                        keep = {cc: ww for cc, ww in wc.items() if col_side.get(cc) == vs}
+                        wc = keep or {min((cc for cc in cols if col_side.get(cc) == vs), key=lambda cc: min(abs(cc - x) % NC, NC - abs(cc - x) % NC)): 1.}
+                    tw = sum(wc.values())
+                    u = t * NS
+                    k0 = min(int(u), NS - 1)
+                    fk = u - k0
+                    wk = {k0: 1 - fk, k0 + 1: fk} if k0 + 1 <= NS else {k0: 1.}
+                    for g in list(mesh.vertices[vi].groups):   # its own weights (the thighs') by what the chain does not take
+                        g.weight *= (1 - w)
+                    for cc, wcc in wc.items():
+                        for kk, wkk in wk.items():
+                            x_ = w * wcc / tw * wkk
+                            if x_ > 1e-4:
+                                nm = f"Hem_{cc}_{kk}"
+                                g = hg.get(nm) or obj.vertex_groups.new(name=nm)
+                                hg[nm] = g
+                                g.add([vi], x_, "ADD")
+                bones = sorted(set(bones) | set(hg))
+                hem_top = zt
+                print("hem springs", len(chains), "chains", flush=True)
 mesh.uv_layers.remove(mesh.uv_layers["pattern"])   # baked in: the game gets the one unwrap
 mod = obj.modifiers.new("Armature", "ARMATURE")
 mod.object = arm
@@ -887,6 +987,14 @@ if job.get("mask"):   # what of the body the piece hides (the game takes it away
                 from body_mask import press_under   # edge in a step; pressed, it stays under it, and with nothing hidden no hole opens -
                 H_ = max(zs) - min(zs)               # what was still hidden opened at its rim once the skin round it went in; 3 cm of fade)
                 keys = {tuple(m) for m in press_under(body, [obj], float(mj["press_in"]) / 1750 * H_, 30 / 1750 * H_)}
+        elif kind in ("pauldron", "brayette", "tassets", "pelerine", "hauberk") and float(mj.get("press_in") or 0) > 0:
+            from body_mask import press_under   # (a pauldron, a codpiece, tassets, a mail cape, a mail shirt: their body_mask masks left
+            zs = [(o.matrix_world @ v.co).z for o in body for v in o.data.vertices]   # 360-3650 hole vertices in the clips; pressed
+            H_ = max(zs) - min(zs)               # in by the bone line, nothing hidden - 0 holes, a half to a third of the skin out)
+            keys = {tuple(m) for m in press_under(body, [obj], float(mj["press_in"]) / 1750 * H_, 30 / 1750 * H_, by_bone=True)}
+    if hem_top is not None:   # (a hem on springs swings off the thighs: the skin under it stays - hidden it showed as holes)
+        mz = (body[0].matrix_world.inverted() @ Vector((0, 0, hem_top))).z * 1000   # (the keys: mesh-local, glTF axes, mm)
+        keys = {k for k in keys if k[1] >= mz}
     if mj.get("mask_free"):   # (a sleeve's end: the arm inside it left - the editor's clothPiece; within a thousandth: the import moves it)
         free = {(x + i, y + j, z + k) for x, y, z in (tuple(int(c) for c in q) for q in mj["mask_free"]) for i in (-1, 0, 1) for j in (-1, 0, 1) for k in (-1, 0, 1)}
         keys -= free

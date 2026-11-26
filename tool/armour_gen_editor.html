@@ -7448,7 +7448,8 @@ const TUBED = ['bracer', 'greave', 'cuisse', 'rerebrace'];
 const LIMB_KEEP = { bracer: 20, greave: 20, cuisse: 55, rerebrace: 30, cuirass: 110 };
 // the skin under it pressed into the body instead of hidden (mm on a man 1.75 m tall): 0 holes, the skin coming out through it
 // a third or less on the guards' clips (2026-11-25; cuisse 180 -> 66 vertices, rerebrace 17 -> 0)
-const PRESS_IN = { cuirass: 25, cuisse: 25, rerebrace: 18, bracer: 12, greave: 15 };   // (bracer, greave: their limb_cover masks left 344, 396 holes)   // (0 holes in the clips: old masks left 2071 hole vertices on a cuisse, 1341 on a steel cuirass)
+const PRESS_IN = { cuirass: 25, cuisse: 25, rerebrace: 18, bracer: 12, greave: 15,
+  pauldron: 40, brayette: 40, hauberk: 40, tassets: 25, pelerine: 25 };   // (their body_mask masks left 361-3648 holes; pressed: 0 holes, skin out 139 / 219 / 174 / 90 / 333 - a mail cape 40 mm deep broke the shoulder coming out of it into shards)   // (bracer, greave: their limb_cover masks left 344, 396 holes)   // (0 holes in the clips: old masks left 2071 hole vertices on a cuisse, 1341 on a steel cuirass)
 function applyStyle(k) {
   const set = styleSet(); if (!set || !set[k]) return;
   // a shield of another shape is another shield: the last one's pictures, dents, pinches, its place on the arm and its
@@ -7960,8 +7961,8 @@ function setPiece(k, keep) {
     if (k !== 'trousers' && was === 'trousers' && S.armour) Object.assign(S.p, S.armour);
     S.p.fitted = false;   // (tights chosen before: not the next trousers' unless chosen again)
     Object.assign(S.p, PIECES[k].defaults);
-    if (LIMB_KEEP[k] != null) S.p.limb_keep = LIMB_KEEP[k];   // (the skin kept under it: each its own, also with no style picked)
-    if (PRESS_IN[k] != null) S.p.press_in = PRESS_IN[k];
+    if (LIMB_KEEP[k] != null) S.p.limb_keep = LIMB_KEEP[k]; else delete S.p.limb_keep;   // (the skin kept under it: each its own, also with no style picked;
+    if (PRESS_IN[k] != null) S.p.press_in = PRESS_IN[k]; else delete S.p.press_in;       //  none carried on from the piece before - a codpiece made after a greave saved its 15 mm)
     if (HAIRY.includes(k)) S.p[k] = '';   // (no style chosen yet: Blender makes none until one is picked)
     S.p.pinches = []; S.p.paints = [];
   }
