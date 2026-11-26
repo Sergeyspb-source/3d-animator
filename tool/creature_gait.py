@@ -102,6 +102,26 @@ class Rig:
             rest = ch[1:] if root else ch
             self.legs[k] = {"root": root, "upper": rest[0], "lower": rest[1], "paw": rest[2],
                             "toe": rest[3] if len(rest) > 3 else None}
+        # a paw with no toe bone (a foot on the ground): its length along its own bone by the skin it leads (the GLB's
+        # leaf bone length is a guess), so the heel can rise about the toes' tip when the leg would not reach
+        self.foot = {}
+        to_arm = arm.matrix_world.inverted()
+        for k, c in self.legs.items():
+            if c["toe"]:
+                continue
+            h0, d0 = self.H[c["paw"]], (self.T[c["paw"]] - self.H[c["paw"]]).normalized()
+            proj = []
+            for o in meshes:
+                g = o.vertex_groups.get(c["paw"])
+                if g is None:
+                    continue
+                mw = to_arm @ o.matrix_world
+                for v in o.data.vertices:
+                    if v.groups and max(v.groups, key=lambda x: x.weight).group == g.index:
+                        proj.append((mw @ v.co - h0).dot(d0))
+            proj.sort()
+            ln = proj[int(0.95 * (len(proj) - 1))] if len(proj) > 10 else (self.T[c["paw"]] - h0).length
+            self.foot[k] = d0 * max(ln, 1e-4)
         self.wings = {}
         for s in "LR":
             ch = sorted((n for n in names if n.startswith(f"wing_{s}_") and n.split("_")[-1].isdigit()), key=lambda n: int(n.split("_")[-1]))
@@ -162,9 +182,31 @@ class Rig:
         K = A + (u * math.cos(a) + p * math.sin(a)) * l1
         return K, Tr
 
+    def ball(self, k):
+        """where leg k stands at rest: its toe's joint (the ball of a paw with a toe bone), else the paw's own head - a
+        paw with no toe bone is the foot lying on the ground itself (UniRig's hind legs of four bones): it is kept flat,
+        its ankle led (a GLB keeps no leaf bone's length either: its tip would be a guess)"""
+        c = self.legs[k]
+        return (self.H[c["toe"]] if c["toe"] else self.H[c["paw"]]).copy()
+
+    def heel_rise(self, k, behind):
+        """how high a foot with no toe bone lifts its ankle when it is `behind` (0 under the hip .. 1 the stride's back
+        end) - the heel rising as the leg goes back (on a crouching beast the hock's skin went under the floor)"""
+        if k not in self.foot:
+            return 0.0
+        return 0.3 * self.foot[k].length * min(1.0, max(0.0, behind)) ** 1.5
+
+    def foot_len(self, k):
+        """the length a paw curls by: its toe bone's parent part, or a whole foot (no toe bone)"""
+        c = self.legs[k]
+        if c["toe"]:
+            return 0.4 * (self.H[c["toe"]] - self.H[c["paw"]]).length
+        return 0.8 * self.foot[k].length
+
     def leg(self, D, k, ball, tilt=0.0, curl=0.0, root_q=None):
         """leg k with its paw's ball at `ball` (armature space), the paw tilted back by `tilt` radians about the left
-        axis (a paw flipped in the swing), the toe curled by `curl`; the root bone (scapula / pelvis) turned by root_q"""
+        axis (a paw flipped in the swing), the toe curled by `curl`; the root bone (scapula / pelvis) turned by root_q.
+        A paw with no toe bone: `ball` is its ankle, the foot kept flat, turned down by `tilt` in the swing."""
         c = self.legs[k]
         if c["root"]:
             self.fk(D, c["root"], root_q)
@@ -174,15 +216,38 @@ class Rig:
             Dp = D[p] if p else Matrix.Identity(4)
         up_, lo_, paw_, toe_ = c["upper"], c["lower"], c["paw"], c["toe"]
         A0, K0, W0 = self.H[up_], self.H[lo_], self.H[paw_]
-        B0 = self.H[toe_] if toe_ else self.T[paw_]
         A = Dp @ A0
         Qp = Dp.to_quaternion()
-        dm = B0 - W0
-        Wt = ball - Quaternion(self.LAT, tilt) @ dm
         e0 = (W0 - A0).normalized()
         pole0 = (K0 - A0) - e0 * (K0 - A0).dot(e0)
-        if pole0.length < 1e-4 * self.size:   # (a straight leg at rest: front legs bend back, hind ones forward)
+        # the knee / elbow bends along the body (its sideways part dropped: a leg splayed at rest bent its knee down
+        # under the floor); a straight leg at rest: the front ones bend back, the hind ones forward
+        pole0 -= self.LAT * pole0.dot(self.LAT)
+        if pole0.length < 0.05 * (K0 - A0).length:
             pole0 = -self.FWD if k[0] == "F" else self.FWD
+        if not toe_:   # the foot itself on the ground: the ankle to `ball`, the foot flat (turned down in the swing)
+            l1, l2 = (K0 - A0).length, (W0 - K0).length
+            heel = 0.0
+            if (ball - A).length > 0.985 * (l1 + l2):   # out of reach: the heel up about the toes' tip
+                tip = ball + self.foot[k]
+                b_lo, b_hi = 0.0, math.radians(75)
+                for _ in range(20):
+                    mid = (b_lo + b_hi) / 2
+                    if (tip + Quaternion(self.LAT, mid) @ (-self.foot[k]) - A).length > 0.985 * (l1 + l2):
+                        b_lo = mid
+                    else:
+                        b_hi = mid
+                if (tip + Quaternion(self.LAT, b_hi) @ (-self.foot[k]) - A).length < (ball - A).length:
+                    heel = b_hi
+                    ball = tip + Quaternion(self.LAT, heel) @ (-self.foot[k])
+            K, W = self.two_bone(A, ball, l1, l2, Qp @ pole0)
+            Qu = self.aim(D, up_, A, K - A, Qp)
+            self.aim(D, lo_, K, W - K, Qu)
+            self.place(D, paw_, W, Quaternion(self.LAT, max(tilt, curl, heel)))
+            return (W - ball).length
+        B0 = self.H[toe_]
+        dm = B0 - W0
+        Wt = ball - Quaternion(self.LAT, tilt) @ dm
         l1, l2 = (K0 - A0).length, (W0 - K0).length
         if (Wt - A).length > 0.985 * (l1 + l2):
             # out of reach with the paw's lower bone as asked: it turns about the ball toward the hip (a fetlock, a
@@ -262,6 +327,7 @@ def key_clip(rig, name, n, loop, pose, fps):
 
 
 # ---------------------------------------------------------------- a quadruped
+SWEEP = 32.0  # the most a leg turns from under its shoulder / hip either way in a gait, degrees
 LEAN = 0.7    # how much of the leg's sweep the paw's lower bone takes (1: the leg turns as one piece)
 GAITS = {   # Froude number, duty factor (the share of the cycle a paw is down), touch-down phases, paw lift (of the leg)
     "walk": dict(fr=0.18, duty=0.68, phase={"BL": 0.0, "FL": 0.25, "BR": 0.5, "FR": 0.75}, lift=0.13, flip=0.9, crouch=0.03),
@@ -279,21 +345,27 @@ def quad_pose_fn(rig, gait, close, turn=0):
     lam = 2.3 * g["fr"] ** 0.3                         # stride length / leg height
     v = math.sqrt(g["fr"] * G * h)
     E = g["duty"] * lam * h                            # the paw's sweep under the body in a stance
-    balls = {k: (rig.H[c["toe"]] if c["toe"] else rig.T[c["paw"]]).copy() for k, c in rig.legs.items()}
+    balls = {k: rig.ball(k) for k in rig.legs}
     hip_h = {k: max((rig.H[c["upper"]] - balls[k]).dot(rig.UP), 0.2 * h) for k, c in rig.legs.items()}
 
     crouch = g["crouch"] * h
 
-    def reach_ok(E):   # the ball from the shoulder / hip (crouched) at the sweep's ends: within the whole leg
-        for k, c in rig.legs.items():
-            A0, K0, W0 = rig.H[c["upper"]], rig.H[c["lower"]], rig.H[c["paw"]]
-            far = ((K0 - A0).length + (W0 - K0).length + (balls[k] - W0).length) * 0.97
-            for x in (E / 2, -E / 2):
-                if (balls[k] + rig.FWD * x - (A0 - rig.UP * crouch)).length > far:
-                    return False
-        return True
-    while E > 0.3 * h and not reach_ok(E):
-        E *= 0.92
+    # each paw's sweep where its leg reaches it: along the forward line through its rest place the shoulder / hip
+    # (crouched) reaches x0 +- r; the stride is the shortest leg's, centred at the rest place when it fits, else moved
+    # toward the shoulder (a crouching beast's paws, far forward at rest, step under it)
+    reach = {}
+    for k, c in rig.legs.items():
+        A0, K0, W0 = rig.H[c["upper"]], rig.H[c["lower"]], rig.H[c["paw"]]
+        far = ((K0 - A0).length + (W0 - K0).length + (balls[k] - W0).length
+               + (0.5 * rig.foot[k].length if k in rig.foot else 0.0)) * 0.97   # (a foot: the heel rises)
+        rel = (A0 - rig.UP * crouch) - balls[k]
+        x0 = rel.dot(rig.FWD)
+        perp = (rel - rig.FWD * x0).length
+        # (and no further than 32 degrees either way from under the shoulder / hip: a leg swept further back laid a
+        # crouching beast's shin on the floor)
+        reach[k] = (x0, min(math.sqrt(max(far * far - perp * perp, 0.0)), perp * math.tan(math.radians(SWEEP))))
+    E = max(min(E, 0.95 * min(2 * r for _x, r in reach.values())), 0.3 * h)
+    mid = {k: min(max(0.0, x0 - r + E / 2), x0 + r - E / 2) if 2 * r > E else x0 for k, (x0, r) in reach.items()}
     T = E / (g["duty"] * v)
     fps = 30
     n = max(8, int(round(T * fps)))
@@ -307,10 +379,11 @@ def quad_pose_fn(rig, gait, close, turn=0):
     C = centre + L * (R * turn)
 
     def at(k, u):   # a planted paw's place at the stance's share u (a circle's arc about C; straight without a turn)
+        b = balls[k] + F * mid[k]
         if not turn:
-            return balls[k] + F * (E / 2 - E * u)
+            return b + F * (E / 2 - E * u)
         a = omega * g["duty"] * T * (0.5 - u)
-        return C + Quaternion(U, a) @ (balls[k] - C)
+        return C + Quaternion(U, a) @ (b - C)
 
     def foot(k, ph):
         """(the paw's ball offset from its rest, lift, flip, stance share or -1)"""
@@ -364,16 +437,20 @@ def quad_pose_fn(rig, gait, close, turn=0):
         body(rig, D, off - U * crouch, q_h, spine_q, neck_q, head_q, tail_q, close, level=level)
         for k, c in rig.legs.items():
             d, lift, flip, st = foot(k, ph)
-            x = d.dot(F)
+            x = d.dot(F) - mid[k]
             # the paw leans with the leg's sweep (a leg turns at its top as a whole), flipped back in the swing; the
             # ball raised as much as the lean would press the heel into the ground; the toe curled no lower than the
             # ground (a GLB keeps no toe's length: about 0.4 of the paw's lower bone)
             lean = -LEAN * math.atan2(x, hip_h[k])
             tilt = lean + g["flip"] * flip * (0.75 if k[0] == "B" else 1.0)
-            dm_len = (balls[k] - rig.H[c["paw"]]).length
-            lift += 0.3 * dm_len * abs(math.sin(lean))
-            curl = min(0.9 * flip, math.asin(min(1.0, lift / max(0.4 * dm_len, 1e-6))))
-            sweep = x / max(E / 2, 1e-6)
+            if not c["toe"]:   # (a foot with no toe bone: it lies flat, no lean of a lower paw bone; behind the hip
+                tilt = g["flip"] * flip * 0.6   # the heel rises - the hock's skin went under the floor there)
+                lift += rig.heel_rise(k, -x / max(E / 2, 1e-6))
+            lift += 0.3 * (balls[k] - rig.H[c["paw"]]).length * abs(math.sin(lean))
+            curl = min(0.9 * flip, math.asin(min(1.0, lift / max(rig.foot_len(k), 1e-6))))
+            if not c["toe"]:
+                tilt = min(tilt, curl)
+            sweep = max(-1.0, min(1.0, x / max(E / 2, 1e-6)))
             root_q = Quaternion(L, math.radians(-12 if k[0] == "F" else -4) * sweep) if c["root"] else None
             rig.leg(D, k, balls[k] + d + U * lift, tilt=tilt, curl=curl, root_q=root_q)
         rest_fk(rig, D)
@@ -396,7 +473,7 @@ def quad_jump(rig, close):
     th = tl + 0.08 * k_t                                       # the hind paws down
     end = tl + 0.45 * k_t
     n = int(round(end * fps))
-    balls = {k: (rig.H[c["toe"]] if c["toe"] else rig.T[c["paw"]]).copy() for k, c in rig.legs.items()}
+    balls = {k: rig.ball(k) for k in rig.legs}
     y_push = 0.08 * h
     v0 = G * t_fl / 2
 
@@ -439,8 +516,8 @@ def quad_jump(rig, close):
             else:       # extended back with the push, then tucked forward
                 ang = track([(off_t, 0.0), (off_t + 0.1 * k_t, 35.0), (on_t - 0.15 * k_t, -25.0), (on_t, 0.0)], tt)
                 shrink = track([(off_t, 1.0), (off_t + 0.1 * k_t, 0.95), (on_t - 0.15 * k_t, 0.72), (on_t, 1.0)], tt)
-            if tt <= off_t or tt >= on_t:
-                ball, flip = planted, 0.0
+            if tt <= off_t or tt >= on_t:   # (planted: a hind foot's heel rising as the body goes over it)
+                ball, flip = planted + U * (rig.heel_rise(k, -(pitch(tt)) / 12.0) if not front else 0.0), 0.0
             else:
                 air = body_target(D, k, ang, shrink)
                 w = min(smooth((tt - off_t) / (0.06 * k_t)), smooth((on_t - tt) / (0.06 * k_t)))
@@ -448,8 +525,9 @@ def quad_jump(rig, close):
                 flip = w * (1.0 if front else 0.6)
                 ball = ball if ball.dot(U) >= planted.dot(U) else ball + U * (planted.dot(U) - ball.dot(U))
             lift = (ball - planted).dot(U)
-            dm_len = (balls[k] - rig.H[c["paw"]]).length
-            curl = min(0.8 * flip, math.asin(min(1.0, max(0.0, lift) / max(0.4 * dm_len, 1e-6))))
+            curl = min(0.8 * flip, math.asin(min(1.0, max(0.0, lift) / max(rig.foot_len(k), 1e-6))))
+            if not c["toe"]:
+                flip = min(flip, curl)
             rig.leg(D, k, ball, tilt=flip, curl=curl, root_q=Quaternion() if c["root"] else None)
         rest_fk(rig, D)
         return D
@@ -488,7 +566,7 @@ def rest_fk(rig, D):
 def quad_idle(rig, close):
     h, n = rig.leg_h, 90
     F, U, L = rig.FWD, rig.UP, rig.LAT
-    balls = {k: (rig.H[c["toe"]] if c["toe"] else rig.T[c["paw"]]).copy() for k, c in rig.legs.items()}
+    balls = {k: rig.ball(k) for k in rig.legs}
 
     def pose(t, ph):
         D = {}
@@ -513,7 +591,7 @@ def quad_attack(rig, close, open_deg):
     h, fps = rig.leg_h, 30
     n = 36
     F, U, L = rig.FWD, rig.UP, rig.LAT
-    balls = {k: (rig.H[c["toe"]] if c["toe"] else rig.T[c["paw"]]).copy() for k, c in rig.legs.items()}
+    balls = {k: rig.ball(k) for k in rig.legs}
     T_ = [0.0, 0.35, 0.52, 0.7, 1.2]
     offs = [Vector(), -F * 0.07 * h - U * 0.06 * h, F * 0.14 * h + U * 0.01 * h, F * 0.06 * h, Vector()]
     pitch = [0.0, 6.0, -8.0, -2.0, 0.0]          # the hips' (+ nose down)
@@ -532,8 +610,9 @@ def quad_attack(rig, close, open_deg):
         tail_q = [Quaternion(L, math.radians(-12) * smooth(tt / 0.4)) for _ in rig.tail]
         body(rig, D, off, q_h, [Quaternion(L, math.radians(-val(pitch)) / 3)], neck_q, head_q, tail_q, close,
              jaw_open=math.radians(val(jaw)))
-        for k in rig.legs:
-            rig.leg(D, k, balls[k], root_q=Quaternion() if rig.legs[k]["root"] else None)
+        for k in rig.legs:   # (a foot's heel rising as the body goes forward over it)
+            heel = rig.heel_rise(k, off.dot(F) / (0.1 * h)) if k[0] == "B" else 0.0
+            rig.leg(D, k, balls[k] + U * heel, root_q=Quaternion() if rig.legs[k]["root"] else None)
         rest_fk(rig, D)
         return D
     return pose, n, 0.0
@@ -543,7 +622,7 @@ def quad_attack(rig, close, open_deg):
 def bird_fns(rig, clip, close):
     h = rig.leg_h or 0.3 * rig.size
     F, U, L = rig.FWD, rig.UP, rig.LAT
-    balls = {k: (rig.H[c["toe"]] if c["toe"] else rig.T[c["paw"]]).copy() for k, c in rig.legs.items()}
+    balls = {k: rig.ball(k) for k in rig.legs}
     fps = 30
 
     def legs_down(D, ph=None, gait=None):

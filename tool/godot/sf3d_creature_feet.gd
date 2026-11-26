@@ -5,7 +5,9 @@ class_name SF3DCreatureFeet
 ## body goes up or down to the lowest of them (so a downhill leg still reaches), each leg's two upper bones turn to
 ## reach (two-bone IK, bending the way the clip bends them) and a standing paw tilts to the ground under it; the clip's
 ## own lift is kept (a paw in its swing stays as high over the new ground). By the bones' names of SF3D creatures:
-## hips, leg_FL_1 .. leg_BR_5 (any number of bones a leg, three at least; a bird's leg_BL / leg_BR).
+## hips, leg_FL_1 .. leg_BR_5 (any number of bones a leg, three at least; a bird's leg_BL / leg_BR) - or a humanoid's
+## two legs (Mixamo's LeftUpLeg / LeftLeg / LeftFoot / LeftToeBase, Godot's LeftUpperLeg / LeftLowerLeg / LeftFoot /
+## LeftToes, any prefix: a monster rigged as a person, the nurgles' leader).
 ## Use: a child of the creature's Skeleton3D (modifiers run after the AnimationPlayer). The rays hit what is in
 ## `collision_mask`; put the creature's own collider in another layer, or its RID in `exclude`.
 
@@ -40,6 +42,7 @@ func _setup() -> void:
 		return
 	_legs.clear()
 	_hips = sk.find_bone("hips")
+	_humanoid_legs(sk)
 	for k in ["FL", "FR", "BL", "BR"]:
 		var chain := []
 		var i := 1
@@ -87,6 +90,32 @@ func _setup() -> void:
 		_raise[i] = 0.0
 		_tilt[i] = Quaternion()
 	_ready_done = true
+
+
+func _bone_ending(sk: Skeleton3D, ends: Array) -> int:
+	for i in sk.get_bone_count():
+		var n := sk.get_bone_name(i)
+		for e in ends:
+			if n.ends_with(e):
+				return i
+	return -1
+
+
+func _humanoid_legs(sk: Skeleton3D) -> void:   # a person's legs (Mixamo, Godot's humanoid profile), any prefix
+	if _hips < 0:
+		_hips = _bone_ending(sk, ["Hips"])
+	for side in ["Left", "Right"]:
+		var up := _bone_ending(sk, [side + "UpLeg", side + "UpperLeg"])
+		var lo := _bone_ending(sk, [side + "Leg", side + "LowerLeg"])
+		var foot := _bone_ending(sk, [side + "Foot"])
+		if up < 0 or lo < 0 or foot < 0 or lo == up:
+			continue
+		var toe := _bone_ending(sk, [side + "ToeBase", side + "Toes"])
+		var leg := {"upper": up, "lower": lo, "paw": foot, "toe": toe}
+		var ball: Vector3 = _rest_global(sk, toe if toe >= 0 else foot)
+		leg["ball_rest"] = ball
+		leg["h"] = _rest_global(sk, up).y - ball.y
+		_legs.append(leg)
 
 
 func _rest_global(sk: Skeleton3D, b: int) -> Vector3:
