@@ -78,7 +78,7 @@ export function CharGame({ go }: { go: (r: Route) => void }) {
           <Button onClick={() => post('/api/char/wardrobe', { id })} disabled={running || !o?.rigged}>{t('ed.fitting_room_in_godot')}</Button>
           <div className="field-note">{o ? t('web.ov_worn', o.worn) : ''}</div>
           <Group grow>
-            <Button variant="default" onClick={() => go({ section: 'equipment', step: 'workshop' })}>{t('web.sec_equipment')}</Button>
+            <Button variant="default" onClick={() => go({ section: 'equipment', step: 'release' })}>{t('web.sec_equipment')}</Button>
             {o && <Button variant="default" leftSection={<IconFolder size={16} />} onClick={() => post('/api/open', { path: o.dir })}>{t('ui.char_open_folder')}</Button>}
           </Group>
           <div className="field-note">{t('web.game_files_note')}</div>

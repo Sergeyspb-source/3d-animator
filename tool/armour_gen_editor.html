@@ -257,6 +257,10 @@ scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnviron
 scene.add(new THREE.HemisphereLight(0xffffff, 0x554433, .6));
 const sun = new THREE.DirectionalLight(0xffffff, 1.6); sun.position.set(2, 4, 3); scene.add(sun);
 const backLight = new THREE.DirectionalLight(0xffffff, .9); backLight.position.set(-2, 3, -3); scene.add(backLight);   // the back is not black
+// the floor: half-metre cells at the feet (y = 0), as in the web UI's other 3D views; no pick ray takes the scene whole
+const floorGrid = new THREE.GridHelper(10, 20, 0x9a8462, 0x55606c);
+floorGrid.material.transparent = true; floorGrid.material.opacity = .45; floorGrid.material.depthWrite = false;
+scene.add(floorGrid);
 const camera = new THREE.PerspectiveCamera(30, 1, .01, 100);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;

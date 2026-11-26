@@ -353,6 +353,18 @@ def editor_equip(rigged: str):
     return HTMLResponse(EQ.page(str(p)), headers={"Cache-Control": "no-store"})
 
 
+@app.get("/api/equip/made")
+def equip_made(rigged: str):
+    _allowed(rigged)
+    return EQ.made(rigged)
+
+
+@app.get("/api/equip/qa")
+def equip_qa(rigged: str, item: str):
+    _allowed(rigged)
+    return EQ.qa_report(rigged, item)
+
+
 @app.post("/api/equip/action")
 async def equip_action(req: Request):
     text = (await req.body()).decode("utf-8")
@@ -368,7 +380,7 @@ async def equip_action(req: Request):
             task.set_lines(str(res.get("log") or "").splitlines())   # (the editor's answer, in the dock's log too)
             return res
         t = tasks.submit(Task("equip", EQ.title(r, key), job,
-                              meta={"action": r.get("action") or "generate", "rigged": r["rigged"]}))
+                              meta={"action": r.get("action") or "generate", "rigged": r["rigged"], "item": EQ.item_of(r)}))
         return {"ok": True, "queued": True, "task": t.summary()}
     return {"ok": True, **(await asyncio.wrap_future(EQ.quick(text)))}
 

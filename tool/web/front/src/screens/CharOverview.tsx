@@ -94,7 +94,7 @@ export default function CharOverview({ go }: { go: (r: Route) => void }) {
             <Row title={t('web.step_look')} ok={o.hair.length > 0} onOpen={step('character', 'look')}
               state={o.hair.length ? o.hair.map((x) => x.replace(/\.glb$/, '')).join(', ') : t('web.ov_none')} />
             <Row title={t('cr.anim_tab')} ok={!!clipText} onOpen={step('character', 'anim')} state={clipText || t('web.ov_none')} />
-            <Row title={t('web.sec_equipment')} ok={o.worn > 0} onOpen={step('equipment', 'workshop')} state={o.worn ? t('web.ov_worn', o.worn) : t('web.ov_none')} />
+            <Row title={t('web.sec_equipment')} ok={o.worn > 0} onOpen={step('equipment', o.worn ? 'release' : 'catalog')} state={o.worn ? t('web.ov_worn', o.worn) : t('web.ov_none')} />
             <Row title={t('web.step_game')} onOpen={step('character', 'game')} state={t('ed.fitting_room_in_godot')} />
           </>}
           <Group grow>

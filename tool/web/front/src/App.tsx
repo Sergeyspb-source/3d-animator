@@ -92,7 +92,7 @@ export default function App({ initial }: { initial: AppState }) {
   else if (route.section === 'character' && route.step === 'weights') screen = <CharWeights />;
   else if (route.section === 'character' && route.step === 'game') screen = <CharGame go={go} />;
   else if (route.section === 'equipment' || (route.section === 'character' && route.step === 'look'))   // (one editor: kept between the steps)
-    screen = <EquipWorkspace step={route.section === 'character' ? 'look' : route.step} info={step} bridge={initial.bridges.equip} wear={initial.bridges.wear} />;
+    screen = <EquipWorkspace step={route.section === 'character' ? 'look' : route.step} info={step} bridge={initial.bridges.equip} wear={initial.bridges.wear} go={go} />;
   else screen = <ModelCreate go={go} />;   // (parseHash leaves no other route)
 
   return (
@@ -103,7 +103,8 @@ export default function App({ initial }: { initial: AppState }) {
         <AppShell.Navbar className="navrail"><Guard compact><NavMenu route={route} go={go} small={small} toggle={() => setNavSmall(!navSmall)} canToggle={!narrow} /></Guard></AppShell.Navbar>
         <AppShell.Main className="main">
           {hot && <div className={'heat' + (hot.progress == null || hot.progress < 0.05 ? ' unknown' : '')} style={{ ['--p' as string]: hot.progress ?? 1 }} title={hot.title}><i /></div>}
-          <Screen route={hashOf(route)}>{screen}</Screen>
+          {/* (the equipment's steps and Looks share one editor, kept loaded between them: one boundary for all of them) */}
+          <Screen route={route.section === 'equipment' || (route.section === 'character' && route.step === 'look') ? 'equip' : hashOf(route)}>{screen}</Screen>
         </AppShell.Main>
         <AppShell.Footer><Guard compact><Dock open={dockOpen} toggle={() => setDockOpen(!dockOpen)} /></Guard></AppShell.Footer>
       </AppShell>

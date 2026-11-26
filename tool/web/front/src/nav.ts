@@ -23,9 +23,8 @@ export const SECTIONS: Section[] = [
     { id: 'game', key: 'web.step_game', about: 'web.about_char_game' },
   ] },
   { id: 'equipment', key: 'web.sec_equipment', icon: IconShield, object: 'character', steps: [
+    { id: 'catalog', key: 'web.step_catalog', about: 'web.about_eq_catalog' },
     { id: 'workshop', key: 'web.step_workshop', about: 'web.about_eq_workshop' },
-    { id: 'materials', key: 'web.step_eq_materials', about: 'web.about_eq_materials' },
-    { id: 'fit', key: 'web.step_fit', about: 'web.about_eq_fit' },
     { id: 'check', key: 'web.step_check', about: 'web.about_eq_check' },
     { id: 'release', key: 'web.step_release', about: 'web.about_eq_release' },
   ] },
@@ -54,8 +53,11 @@ export const TOOLS = [
 ] as const;
 
 export interface Route { section: string; step: string }
+// steps that were merged into another (a link kept from before still lands on its work)
+const MOVED: Record<string, string> = { 'equipment-fit': 'workshop', 'equipment-materials': 'workshop' };
 export function parseHash(h: string): Route {
-  const [section, step] = h.replace(/^#/, '').split('-');
+  const [section, step0] = h.replace(/^#/, '').split('-');
+  const step = MOVED[`${section}-${step0}`] ?? step0;
   const sec = SECTIONS.find((s) => s.id === section);
   if (sec) return { section, step: sec.steps.some((x) => x.id === step) ? step : sec.steps[0].id };
   if (TOOLS.some((x) => x.id === section)) return { section, step: '' };
