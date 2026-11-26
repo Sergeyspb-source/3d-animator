@@ -147,7 +147,9 @@ def mat_analyze(asset: str) -> dict:
         d.mkdir(parents=True, exist_ok=True)
         path = d / f"mat_overlay_{T.slug(asset)}.png"
         (img if hasattr(img, "save") else Image.fromarray(np.asarray(img))).save(path)
-    gs = [{"value": g.get("value"), "label": g.get("label", "")} for g in groups if isinstance(g, dict) and g.get("visible")]
+    pal = ["#e6194b", "#3cb44b", "#ffe119", "#0082c8", "#f58230", "#911eb4", "#46f0f0", "#f032e6"]   # (materials.overlay's, in its order)
+    gs = [{"value": g.get("value"), "label": g.get("label", ""), "color": pal[i % len(pal)]}
+          for i, g in enumerate(x for x in groups if isinstance(x, dict) and x.get("visible"))]
     return {"overlay": path.as_posix() if path else None, "log": note, "groups": gs}
 
 

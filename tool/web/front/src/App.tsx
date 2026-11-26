@@ -78,7 +78,7 @@ export default function App({ initial }: { initial: AppState }) {
   else if (route.section === 'environment' && route.step === 'fx') screen = <Effects />;
   else if (route.section === 'environment' && route.step === 'dungeons') screen = <Dungeons />;
   else if (route.section === 'environment' && route.step === 'destructibles') screen = <Destructibles />;
-  else if (route.section === 'models' && route.step === 'release') screen = <ModelRelease />;
+  else if (route.section === 'models' && route.step === 'release') screen = <ModelRelease go={go} />;
   else if (route.section === 'character' && route.step === 'overview') screen = <CharOverview go={go} />;
   else if (route.section === 'character' && route.step === 'skeleton') screen = <CharSkeleton bridges={initial.bridges} />;
   else if (route.section === 'character' && route.step === 'face') screen = <CharFace go={go} bridges={initial.bridges} />;

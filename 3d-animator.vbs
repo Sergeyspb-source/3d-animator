@@ -1,6 +1,6 @@
 ' Double-click to start 3d-animator (the interface) with no console windows.
 ' Closing the app window also stops the server and frees GPU memory.
-' For debugging with a visible console use sf3d-ui.bat instead.
+' For debugging with a visible console use 3d-animator.bat instead.
 Dim sh, here
 Set sh = CreateObject("WScript.Shell")
 here = CreateObject("Scripting.FileSystemObject").GetParentFolderName(WScript.ScriptFullName)

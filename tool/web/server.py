@@ -1,5 +1,5 @@
 """3d-animator's web UI: the app's Python (sf3d_ui and the other modules) behind a FastAPI server, the page built by Vite
-(tool/web/front -> front/dist). The app's interface, on its own port (7890 by default; sf3d-ui.vbs / sf3d-ui.bat start it):
+(tool/web/front -> front/dist). The app's interface, on its own port (7890 by default; 3d-animator.vbs / 3d-animator.bat start it):
 
     D:\\conda\\envs\\sf3d\\python.exe tool\\web\\server.py [--port 7890]
 

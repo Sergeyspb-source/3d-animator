@@ -41,7 +41,7 @@ export function CatalogPage({ catalog, made, current, pick, open }:
             <Text fw={600}>{t('web.eq_made')}</Text>
             <Group gap={6}>
               {mine.map((r) => (
-                <Button key={r.item} size="compact-sm" variant="default" leftSection={<PieceIcon piece={r.piece} size={20} />} onClick={() => open(r.item)}
+                <Button key={r.item} size="compact-sm" variant="default" leftSection={<PieceIcon piece={r.piece} style={r.style} size={20} />} onClick={() => open(r.item)}
                   title={r.label}>{r.item}</Button>))}
             </Group>
           </Stack>)}
@@ -53,7 +53,7 @@ export function CatalogPage({ catalog, made, current, pick, open }:
                 const on = current?.piece === it.piece && (current?.style || null) === (it.style || null);
                 return (
                   <UnstyledButton key={it.piece + (it.style || '')} className={'piece-tile' + (on ? ' on' : '')} onClick={() => pick(it.piece, it.style)}>
-                    <PieceIcon piece={it.piece} size={46} />
+                    <PieceIcon piece={it.piece} style={it.style} size={46} />
                     <span>{it.label}</span>
                   </UnstyledButton>);
               })}
@@ -184,7 +184,7 @@ export function ReleasePage({ made, reload, open, check, press, toCatalog }:
             </Table.Tr></Table.Thead>
             <Table.Tbody>{rows.map((r) => (
               <Table.Tr key={r.item}>
-                <Table.Td><Group gap={8} wrap="nowrap"><PieceIcon piece={r.piece} size={30} /><Text size="sm" fw={500}>{r.item}</Text></Group></Table.Td>
+                <Table.Td><Group gap={8} wrap="nowrap"><PieceIcon piece={r.piece} style={r.style} size={30} /><Text size="sm" fw={500}>{r.item}</Text></Group></Table.Td>
                 <Table.Td><Text size="sm">{r.label || '—'}</Text>{!r.editable && <Text size="xs" c="dimmed">{t('web.eq_rel_fitted')}</Text>}</Table.Td>
                 <Table.Td>{r.layer ?? '—'}</Table.Td>
                 <Table.Td><QaBadge qa={r.qa} /></Table.Td>

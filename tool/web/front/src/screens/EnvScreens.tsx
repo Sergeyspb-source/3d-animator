@@ -1,7 +1,7 @@
 // Environment (surfaces, effects, dungeons, destructibles), Models → Reference and Models → Model materials: each a
 // panel of the former Gradio tab's settings on the right and its pictures (or the model) on the stage; long jobs are tasks.
 import { useEffect, useState } from 'react';
-import { Anchor, Button, Checkbox, ColorInput, FileButton, Group, Image, NumberInput, ScrollArea, Select, Slider, Stack, Switch,
+import { Anchor, Button, Checkbox, List, ColorInput, FileButton, Group, Image, NumberInput, ScrollArea, Select, Slider, Stack, Switch,
   Text, TextInput, Textarea, UnstyledButton } from '@mantine/core';
 import { useLocalStorage } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
@@ -10,6 +10,17 @@ import { fileUrl, get, live, onTaskFinished, post, upload, useStore } from '../a
 import { plain, useT } from '../i18n';
 import type { Route } from '../nav';
 import Viewer3D from '../components/Viewer3D';
+import LoadingVeil from '../components/LoadingVeil';
+
+// a button waiting for the server's answer: it spins meanwhile (one can see it was pressed), a failure shows
+function useWait(): [boolean, (f: () => Promise<void>) => Promise<void>] {
+  const [on, setOn] = useState(false);
+  const run = async (f: () => Promise<void>) => {
+    setOn(true);
+    try { await f(); } catch (e) { notifications.show({ color: 'rust', message: String(e) }); } finally { setOn(false); }
+  };
+  return [on, run];
+}
 
 type Pic = { path: string; caption: string };
 interface Opts {
@@ -229,6 +240,8 @@ export function Reference({ go }: { go: (r: Route) => void }) {
   const [style, setStyle] = useState<string | null>(null);
   const [refs, setRefs] = useState<{ name: string; path: string }[] | null>(null);
   const [front, setFront] = useState<string | null>(null);
+  const [describing, describe] = useWait();
+  const [saving, save] = useWait();
   const [res, setRes] = useJobResult(['ref', 'ref_views']);
   const [variants, setVariants] = useState<Pic[]>([]);
   const [views, setViews] = useState<Record<string, string>>({});
@@ -272,8 +285,8 @@ export function Reference({ go }: { go: (r: Route) => void }) {
               {(b) => <Button {...b} variant="default" size="xs">{t('ui.style_reference_pictures')}: {refs?.length || 0}</Button>}
             </FileButton>
             <Group grow>
-              <Button size="xs" variant="default" disabled={!refs?.length} onClick={async () => { const r = await post<{ text?: string; log: string }>('/api/ref/describe', { provider: p.provider, files: refPaths }); if (r.text) setStyle(r.text); notifications.show({ message: r.log }); }}>{t('ui.describe_from_the_pictures')}</Button>
-              <Button size="xs" variant="default" onClick={async () => { const r = await post<{ log: string }>('/api/ref/style_save', { text: style, files: refPaths }); notifications.show({ message: r.log }); }}>{t('ui.save_the_style')}</Button>
+              <Button size="xs" variant="default" disabled={!refs?.length || saving} loading={describing} onClick={() => describe(async () => { const r = await post<{ text?: string; log: string }>('/api/ref/describe', { provider: p.provider, files: refPaths }); if (r.text) setStyle(r.text); notifications.show({ message: r.log }); })}>{t('ui.describe_from_the_pictures')}</Button>
+              <Button size="xs" variant="default" disabled={describing} loading={saving} onClick={() => save(async () => { const r = await post<{ log: string }>('/api/ref/style_save', { text: style, files: refPaths }); notifications.show({ message: r.log }); })}>{t('ui.save_the_style')}</Button>
             </Group>
           </Stack>
         </details>
@@ -293,32 +306,53 @@ export function ModelMaterials() {
   const o = useOpts();
   const [asset, setAsset] = useLocalStorage<string | null>({ key: 'sf3d.mat_asset', defaultValue: null });
   const [model, setModel] = useState<string | null>(null);
-  const [an, setAn] = useState<{ overlay: string | null; log: string; groups: { value: string; label: string }[] } | null>(null);
+  const [an, setAn] = useState<{ overlay: string | null; log: string; groups: { value: string; label: string; color?: string }[] } | null>(null);
   const [vals, setVals] = useState<string[]>([]);
   const [v, setV] = useState(0);
+  const [analyzing, wait] = useWait();
   const [res] = useJobResult(['mat']);
   const busy = useBusy(['mat']);
   useEffect(() => { setAn(null); if (asset) get<{ model: string | null }>(`/api/env/asset_model?asset=${encodeURIComponent(asset)}`).then((r) => setModel(r.model)); }, [asset]);
   useEffect(() => { if (res) setV(Date.now()); }, [res]);
   if (!o) return null;
-  const analyze = async () => { if (!asset) return; const r = await get<typeof an>(`/api/mat/analyze?asset=${encodeURIComponent(asset)}`); setAn(r); setVals(r!.groups.map((g) => g.value)); };
+  const analyze = () => wait(async () => {
+    if (!asset) return;
+    const r = await get<typeof an>(`/api/mat/analyze?asset=${encodeURIComponent(asset)}`);
+    setAn(r); setVals(r!.groups.map((g) => g.value));
+  });
   return (
     <div className="work two">
       <div className="stage">
         <Viewer3D url={model ? fileUrl(model, v) : null} empty={plain(t('ui.1_choose_a_model_2_analyse_the'))} />
-        {an?.overlay && <div className="stage-strip"><div className="thumb"><Image src={fileUrl(an.overlay, v)} w={240} fit="contain" /></div></div>}
+        {an?.overlay && <div className="stage-strip"><div className="thumb" title={t('web.mat_overlay_note')}>
+          <Image src={fileUrl(an.overlay, v)} w={240} fit="contain" />
+          <Text size="xs" c="dimmed" maw={240}>{t('web.mat_overlay_note')}</Text></div></div>}
+        {analyzing && <LoadingVeil text={t('web.mat_analyzing')} />}
       </div>
       <ScrollArea className="panel"><Stack gap="sm" p="sm">
         <div className="panel-title">{t('web.step_model_materials')}</div>
-        <div className="field-note">{plain(t('ui.1_choose_a_model_2_analyse_the'))}</div>
+        <Stack gap={6} className="explain">
+          <Text size="sm">{t('web.mat_what')}</Text>
+          <List size="sm" type="ordered" spacing={4}>
+            <List.Item>{t('web.mat_step_analyze')}</List.Item>
+            <List.Item>{t('web.mat_step_fix')}</List.Item>
+            <List.Item>{t('web.mat_step_apply')}</List.Item>
+          </List>
+          <Text size="sm" fw={600}>{t('web.mat_result')}</Text>
+        </Stack>
         <Select label={t('ui.model_category_name')} searchable value={asset} data={o.mat_assets} onChange={setAsset} />
-        <Button variant="default" disabled={!asset} onClick={analyze}>{t('ui.analyse')}</Button>
+        <Button variant="default" disabled={!asset || busy} loading={analyzing} onClick={analyze}>{t('ui.analyse')}</Button>
         {an && <div className="field-note">{plain(an.log)}</div>}
         {an?.groups.map((g, i) => (
-          <Select key={i} size="xs" label={g.label} value={vals[i]} allowDeselect={false} data={o.mat_choices.map((c) => ({ value: c.id, label: c.label }))}
+          <Select key={i} size="xs" value={vals[i]}
+            label={<span className="group-label"><i className="swatch" style={{ background: g.color }} />{g.label}</span>} allowDeselect={false} data={o.mat_choices.map((c) => ({ value: c.id, label: c.label }))}
             onChange={(x) => setVals(vals.map((y, k) => (k === i ? x || y : y)))} />))}
-        <Button disabled={busy || !an?.groups.length} onClick={() => post('/api/mat/apply', { asset, values: vals })}>{t('ui.apply_the_materials')}</Button>
-        {res?.pics?.length > 0 && <Gallery pics={res.pics} empty="" />}
+        <Button disabled={analyzing || !an?.groups.length} loading={busy} onClick={() => post('/api/mat/apply', { asset, values: vals })}>{t('ui.apply_the_materials')}</Button>
+        {res?.pics?.length > 0 && <>
+          <Text size="sm" fw={600} mt="xs">{t('web.mat_previews')}</Text>
+          <div className="field-note">{t('web.mat_previews_note')}</div>
+          <Gallery pics={res.pics} empty="" />
+        </>}
       </Stack></ScrollArea>
     </div>
   );

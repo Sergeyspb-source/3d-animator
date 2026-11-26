@@ -476,8 +476,8 @@ On first start, `tool\config.example.json` is used. To change the paths or the l
 
 | How | What |
 |---|---|
-| `sf3d-ui.vbs` (double-click) | the interface with no console: builds the page if its sources changed, opens an app window at `http://127.0.0.1:7890`. Closing the window stops the server and the programs it runs and frees VRAM |
-| `sf3d-ui.bat` | the same interface with a visible console (for debugging) |
+| `3d-animator.vbs` (double-click) | the interface with no console: builds the page if its sources changed, opens an app window at `http://127.0.0.1:7890`. Closing the window stops the server and the programs it runs and frees VRAM |
+| `3d-animator.bat` | the same interface with a visible console (for debugging) |
 | `sf3d-tool.bat generate <image or folder> --category prop` | one-off CLI: image(s) → game-ready GLB |
 | `sf3d-tool.bat post work\item\axe\raw.glb --category item --name axe` | re-run post-processing only |
 | `sf3d-batch.bat <folder> [--force] [--no-preview] [--classic]` | batch: `<folder>\<category>\pic.png` → SF3D; `<folder>\<category>\<asset>\front.png [back/left/right.png]` → Hunyuan3D. By default the engine goes by category: characters and items → TRELLIS.2 (from the picture or `front.png`), buildings → Hunyuan3D (from one picture too); `--classic` turns that off |
@@ -501,7 +501,7 @@ Since 25.11.2026 the interface is a page of its own; the former Gradio tabs (786
 - **Environment** («Surfaces», «Effects», «Dungeons», «Destructibles»; «Vegetation» is «Make a model» with that category), **Models → Reference** (variants, back and side views, the project's style; «Send to 3D» fills «Make a model»: one picture — SF3D, with views — Hunyuan3D) and **Models → Model materials** (the colour groups and a material for each); the pictures made show as a grid where the 3D view is.
 - **Models → Batch processing:** a folder of pictures as one task; the models go into the drafts, «Check → Release all» releases at once those export does not have yet. **Video memory:** what holds the card (by Windows' counters) and «Close» a program (asked first; system ones are not offered). **Settings:** the export folder and OpenRouter (the key is never shown; an empty field keeps it) are written to `config.json`.
 
-The page is built with Vite + TypeScript + React + Mantine, 3D with three.js. The FastAPI server in the `sf3d` env (`tool\web\server.py`) calls the app's functions; Gradio is not used any more (since 25.11.2026; the server's packages are in `tool\web\requirements.txt`). `sf3d-ui.vbs` / `sf3d-ui.bat` build the page on the first start and after the page changes (Node.js 18+ and npm needed). What is next is in `docs\ROADMAP.md`, stage 9.
+The page is built with Vite + TypeScript + React + Mantine, 3D with three.js. The FastAPI server in the `sf3d` env (`tool\web\server.py`) calls the app's functions; Gradio is not used any more (since 25.11.2026; the server's packages are in `tool\web\requirements.txt`). `3d-animator.vbs` / `3d-animator.bat` build the page on the first start and after the page changes (Node.js 18+ and npm needed). What is next is in `docs\ROADMAP.md`, stage 9.
 
 **Run one GPU job at a time.** Approximate peak VRAM: SF3D 6.2 GB, Hunyuan shape 5.8 GB (fast 6.5 GB), Hunyuan paint 7.4 GB, TRELLIS.2 1.7–4.2 GB (up to 5.3 GB with the desktop's share), UniRig 4.5 GB. The GUI checks free memory before each job.
 
@@ -573,7 +573,7 @@ D:\conda\envs\sf3d\python.exe tool\anim_gallery.py "<character>_landmarks_rigged
 ## Repository layout
 
 ```
-sf3d-ui.vbs / sf3d-ui.bat     the interface's launchers (7890)
+3d-animator.vbs / 3d-animator.bat     the interface's launchers (7890)
 sf3d-tool.bat / sf3d-batch.bat CLI launchers
 sf3d-env.bat                  environment for the sf3d env
 *-install.ps1, *-weights.ps1, *-build.bat   installers for Hunyuan3D, TRELLIS.2 and UniRig

@@ -3410,5 +3410,21 @@
  "web.eq_qa_ok": "clean",
  "web.eq_qa_warn": "has notes",
  "web.eq_qa_never": "never",
- "web.eq_qa_old": "outdated"
+ "web.eq_qa_old": "outdated",
+ "web.mat_analyzing": "Splitting the texture into colour groups…",
+ "web.mat_what": "What for: a generated model (SF3D, Hunyuan3D, TRELLIS.2) reflects light the same all over, so metal looks like wood. Here each part of the texture gets its own material.",
+ "web.mat_step_analyze": "«Analyse» splits the texture into colour groups and suggests a material for each: metal, wood, stone, cloth, leather… A picture with the groups coloured shows under the 3D view.",
+ "web.mat_step_fix": "Look over the groups below and fix the material where it was guessed wrong.",
+ "web.mat_step_apply": "«Apply» rebuilds the model from its source with a metal / roughness map: in Godot metal shines while wood, stone and cloth stay matte. The colour and the shape stay; it can be applied again with other materials.",
+ "web.mat_result": "What comes out: the same model file (GLB) with the material map, and new previews.",
+ "web.mat_overlay_note": "The model's texture tinted by groups: a colour is the group with the same square by its name on the right.",
+ "web.mat_previews": "Previews with the new materials",
+ "web.mat_previews_note": "«Apply» shoots the model again: four views and the inventory icon, to see at once how the materials came out. A click opens the picture large.",
+ "web.release_still_draft": "«{}» is still a draft: it goes to export and the game after «Release» on the Check step.",
+ "web.release_to_check": "To Check",
+ "web.size_by_hand": "The size is set by hand: {0} (the category's height is {1} m). The form keeps it for the next models too.",
+ "web.size_h": "height {} m",
+ "web.size_w": "width {} m",
+ "web.size_d": "depth {} m",
+ "web.size_reset": "By the category"
 }

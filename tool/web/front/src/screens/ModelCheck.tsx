@@ -83,7 +83,7 @@ export default function ModelCheck({ go }: { go: (r: Route) => void }) {
       if (r.exists) { setAsk(`${m.category}/${m.stem}`); return; }
       setAsk(null);
       notifications.show({ color: r.ok ? 'teal' : 'red', message: r.log });
-      if (r.ok) load();
+      if (r.ok) { try { localStorage.setItem('sf3d.release_sel', `${m.category}/${m.stem}`); } catch { /* */ } load(); }   // (Release opens on it)
     } finally { setBusy(false); }
   };
   const discard = async () => {

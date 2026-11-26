@@ -1,6 +1,6 @@
 @echo off
 rem 3d-animator - the interface (a web page): http://127.0.0.1:7890. Double-click to start;
-rem sf3d-ui.vbs starts the same with no console. Close other GPU-heavy apps first (SF3D peaks at ~6.2 GB VRAM).
+rem 3d-animator.vbs starts the same with no console. Close other GPU-heavy apps first (SF3D peaks at ~6.2 GB VRAM).
 rem Builds the page when its sources are newer than the built one (Node.js 18+ and npm needed for that),
 rem then starts the server and opens an app window once it answers. Close this console to stop the server.
 call "%~dp0sf3d-env.bat"

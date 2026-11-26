@@ -175,6 +175,14 @@ export default function ModelCreate({ go, vegetation }: { go: (r: Route) => void
           <TextInput label={t('web.name')} description={t('web.name_hint')} value={f.name} onChange={(e) => set({ name: e.currentTarget.value })} />
           <Text className="field-note">{t('web.preset', preset.height_m ?? '—', t(opt.pivots.find((x) => x.id === preset.pivot)?.key || '—'),
             t(opt.collisions.find((x) => x.id === preset.collision)?.key || '—'))}</Text>
+          {(f.height > 0 || f.width > 0 || f.depth > 0) && (   /* (the form keeps it for the next models: in sight, not in the closed «Size») */
+            <Alert color="yellow" variant="light" p="xs">
+              <Group justify="space-between" wrap="nowrap" gap="xs">
+                <Text size="xs">{t('web.size_by_hand', [f.height > 0 ? t('web.size_h', f.height) : '', f.width > 0 ? t('web.size_w', f.width) : '',
+                  f.depth > 0 ? t('web.size_d', f.depth) : ''].filter(Boolean).join(', '), preset.height_m ?? '—')}</Text>
+                <Button size="compact-xs" variant="default" onClick={() => set({ height: 0, width: 0, depth: 0 })}>{t('web.size_reset')}</Button>
+              </Group>
+            </Alert>)}
 
           <Accordion multiple variant="contained" defaultValue={[]} chevronPosition="right">
             <Accordion.Item value="size">
