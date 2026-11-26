@@ -47,6 +47,23 @@ def collect_images(paths: list[str]) -> list[Path]:
     return found
 
 
+def welded_normals(vertices, faces):
+    """Vertex normals over faces sharing a POSITION (area-weighted): a mesh cut along its UV seams (each side its own
+    vertices) shaded as the one surface it is. trimesh's own normals see every cut as an edge, and it drops a GLB's own
+    NORMAL on loading a TRELLIS.2 model (50/90/99 % of the knight's vertices 23/91/157 deg off - blotchy faces along
+    the seams); TRELLIS's own normals are exactly these, Hunyuan's GLB has none."""
+    import numpy as np
+    v, f = np.asarray(vertices, np.float64), np.asarray(faces)
+    key = np.round((v - v.min(0)) / max(float(np.ptp(v, axis=0).max()), 1e-12) * 1e6).astype(np.int64)
+    _, inv = np.unique(key, axis=0, return_inverse=True)
+    inv = inv.ravel()
+    fn = np.cross(v[f[:, 1]] - v[f[:, 0]], v[f[:, 2]] - v[f[:, 0]])   # (its length = twice the area: the weight)
+    acc = np.zeros((inv.max() + 1, 3))
+    np.add.at(acc, inv[f].ravel(), np.repeat(fn, 3, axis=0))
+    n = acc[inv]
+    return n / np.linalg.norm(n, axis=1, keepdims=True).clip(1e-12)
+
+
 def tune_colors(tex, saturation: float = 1.0, brightness: float = 1.0):
     """Manual grade of the albedo: scale Lab chroma (saturation) and lightness (brightness)."""
     import numpy as np
@@ -281,6 +298,10 @@ def postprocess(src: Path, dst: Path, preset: dict, height, pivot, metallic, rou
         m.apply_scale(scale)
         m.apply_translation(offset)
         mat = getattr(m.visual, "material", None)
+        if getattr(mat, "normalTexture", None) is None:
+            # smooth over the UV seams (TRELLIS.2, Hunyuan); a model with a normal map (SF3D) keeps the normals it
+            # was baked against
+            m.vertex_normals = welded_normals(m.vertices, m.faces)
         if mat is not None and hasattr(mat, "metallicFactor"):
             # a generator's own metal/roughness map (TRELLIS.2): the factors multiply it, so the category preset's
             # metallic 0 would wipe the metal out - the map stays as made (factors 1) unless set by hand
