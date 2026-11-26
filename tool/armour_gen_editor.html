@@ -2813,6 +2813,15 @@ const TUNICS = {
   sleeveless: { slit: .08, slits: [[90, .4, 7], [-90, .4, 7]] },
   long: { slit: .09, slits: [[90, .8, 8], [-90, .8, 8]] },
   rolled: { slit: .08, roll: true, slits: [[90, .45, 7], [-90, .45, 7]] },
+  // the concept sheets' mages: #26 a long tunic without sleeves, its hem cut to a few big points, a shorter layer of the
+  // second cloth over it to points of its own, frayed; #19 a robe of dagged panels (slit up between them, each to a point),
+  // a shorter dagged layer over it
+  layered: { slit: .07, points: { n: 4, depth: .28, phase: .38 }, ramp: .45, legRide: { shin: .8, back: .55 }, slits: [[90, .55, 6], [-90, .55, 6], [0, .42, 4], [180, .5, 5]], layers: [{ up: .45, mat: 'cloth2', points: { n: 3, depth: .34, phase: .12 }, ragged: .5, slits: [[90, .55, 6], [-90, .55, 6], [0, .3, 3], [180, .3, 3]] }] },   // (the layer over it whole in front at the top, as on the sheet; slit a little from its hem: the knees)
+  // (a slit right at the front: a panel across the front's middle lay over both legs, went with neither - a shin came
+  // through it as a leg swung)
+  dagged: { slit: .07, points: { n: 12, depth: .1, phase: 0 }, ramp: .45, legRide: { shin: .8, back: .55 },
+    slits: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((k) => [k * 30, .42, 1.6]),
+    layers: [{ up: .38, mat: 'cloth2', points: { n: 8, depth: .14, phase: 0 }, slits: [0, 1, 2, 3, 4, 5, 6, 7].map((k) => [k * 45, .55, 1.8]) }] },
 };
 const VESTS = {
   embroidered: { open: true, vNeck: 16, border: true, slits: [[90, .55, 7], [-90, .55, 7]] },
@@ -2828,6 +2837,9 @@ const VESTS = {
 // convex hull, never in again going down), flared, in pleats (folds), slit where o.slits say, its hem frayed (o.ragged);
 // the hips' weights, more and more the thighs' going down in front and at the sides. Returns its grid [row][col] =
 // {o, n, w} (row 0 the edge it goes on from)
+// a hem cut to points (the concept sheets' mages: a handkerchief hem, dagged panels): {n} points round, {depth} below the
+// cuts between them (a share of the torso's length), {phase} where the first one is (a share of a point round from the front)
+const pointsAt = (pt, a) => { const x = ((a / TAU) * pt.n + (pt.phase ?? 0)) % 1, f = x < 0 ? x + 1 : x; return pt.depth * (1 - Math.abs(2 * f - 1)); };
 function clothSkirt(acc, cols, closed, t0, o) {
   const { limb: tl } = limbOf('cuirass', 'C'), fr = angAt(tl, FRONT), H = HEIGHT, vx = (id) => new V3(acc.v[3 * id], acc.v[3 * id + 1], acc.v[3 * id + 2]);
   const angOfP = (P) => { const d = P.clone().sub(tl.a), t = d.dot(tl.u); d.addScaledVector(tl.u, -t); return tl.angOf(d.normalize()); };
@@ -2843,6 +2855,7 @@ function clothSkirt(acc, cols, closed, t0, o) {
   const hullAt = (t, a) => at(hull, t, a), bareAt = (t, a) => { const d = tl.out(a), h = castOn(bodyGeo, tl.axis(t).addScaledVector(d, far), d.clone().negate(), far); return Math.max(h ? far - h.distance : 0, at(bare, t, a)); };
   const gap = o.gap, flare = (o.flare ?? .012) * H, fold = (o.folds ?? 1) * MM(13);
   const iH = boneNames.indexOf((PB.hips || PB.spine).name), iL = PB.upleg_L ? boneNames.indexOf(PB.upleg_L.name) : iH, iR = PB.upleg_R ? boneNames.indexOf(PB.upleg_R.name) : iH;
+  const iLs = PB.leg_L ? boneNames.indexOf(PB.leg_L.name) : iL, iRs = PB.leg_R ? boneNames.indexOf(PB.leg_R.name) : iR, tKnee = joint('leg_L') ? torsoT(joint('leg_L')) : -1;   // (o.legRide)
   // (rows closer near its top: over the hips and the seat the body curves most - a straight cell cut through it)
   const NV = 28, grid = [cols.map((c) => ({ o: c.o, n: c.n, w: c.w }))];
   // (the body's outline at a row, half a row above and below it and at the next: a briefs' waistband's lip lying
@@ -2853,16 +2866,20 @@ function clothSkirt(acc, cols, closed, t0, o) {
     const sv = (k / NV) ** 1.6, row = [];
     for (const c of cols) {
       const Po = vx(c.o), Pn = vx(c.n), a = angOfP(Po), t0j = torsoT(Po);
-      const hem = t0 + (o.ragged ? o.ragged * .06 * jagAt(relF(a) / TAU, 26) : 0), t = t0j + (hem - t0j) * sv;
+      const hem = t0 + (o.ragged ? o.ragged * .06 * jagAt(relF(a) / TAU, 26) : 0) - (o.points ? pointsAt(o.points, relF(a)) : 0), t = t0j + (hem - t0j) * sv;   // (o.points: a hem cut to big points)
       const r0 = Po.clone().sub(tl.axis(t0j)).addScaledVector(tl.u, -Po.clone().sub(tl.axis(t0j)).dot(tl.u)).length(), th = Po.distanceTo(Pn);
       // (pleats: out only, more going down, fourteen round)
       const rh = Math.max(r0, hullAt(t, a) + gap), e = smooth(0, o.ramp ?? .3, sv);   // (o.ramp: a long coat's skirt eases out over half its length)
       const r = Math.max(r0 + (rh - r0) * e * e * (3 - 2 * e), lipAt(t0j, hem, k, a) + gap) + MM(12) * smooth(0, o.ramp ?? .3, sv) + flare * sv ** 1.4 + fold * sv ** 1.2 * (1 - Math.cos(14 * relF(a))) / 2, dir = tl.out(a);
-      const kk = CLOTH_LEG_RIDE * Math.min(1, 1.6 * sv) * (.5 + .5 * Math.cos(relF(a))), sL = THREE.MathUtils.clamp(.5 + 4 * dir.x, 0, 1);
+      const LR = o.legRide, kk = CLOTH_LEG_RIDE * Math.min(1, 1.6 * sv) * (LR ? LR.back + (1 - LR.back) * (.5 + .5 * Math.cos(relF(a))) : .5 + .5 * Math.cos(relF(a))), sL = THREE.MathUtils.clamp(.5 + 4 * dir.x, 0, 1);
+      // (o.legRide - a robe down the shins: below the knee more and more with the shin of its side too, and at the back with
+      // the legs as well - the knee and the shin came through its front as a leg swung forward, the calf through its back)
+      const ks = LR ? LR.shin * smooth(tKnee + .04, tKnee - .3, t) : 0;
       // (the top rows: the edge's own weights, blending into the hips' and the thighs')
       const m = new Map(); const b0 = smooth(0, .35, sv);
       c.w[0].forEach((b, q) => m.set(b, (m.get(b) || 0) + c.w[1][q] * (1 - b0)));
-      m.set(iH, (m.get(iH) || 0) + (1 - kk) * b0); m.set(iL, (m.get(iL) || 0) + kk * sL * b0); m.set(iR, (m.get(iR) || 0) + kk * (1 - sL) * b0);
+      m.set(iH, (m.get(iH) || 0) + (1 - kk) * b0); m.set(iL, (m.get(iL) || 0) + kk * sL * (1 - ks) * b0); m.set(iR, (m.get(iR) || 0) + kk * (1 - sL) * (1 - ks) * b0);
+      if (ks > 0) { m.set(iLs, (m.get(iLs) || 0) + kk * sL * ks * b0); m.set(iRs, (m.get(iRs) || 0) + kk * (1 - sL) * ks * b0); }
       const top = [...m.entries()].sort((x, y) => y[1] - x[1]).slice(0, 4), tot = top.reduce((z, x) => z + x[1], 0) || 1; while (top.length < 4) top.push([iH, 0]);
       const direct = [top.map((x) => x[0]), top.map((x) => x[1] / tot)];
       const O = tl.axis(t).addScaledVector(dir, r), I = tl.axis(t).addScaledVector(dir, r - th), [u, v] = o.uv(O);
@@ -3153,8 +3170,10 @@ function clothPiece(p, o) {
   const thighs = ['L', 'R'].filter((sd) => PB['upleg_' + sd] && PB['leg_' + sd]).map((sd) => joint('upleg_' + sd).distanceTo(joint('leg_' + sd)));
   const thigh = (thighs.length ? thighs.reduce((x, y) => x + y) / thighs.length : .25 * H) / tl.len, t0 = crotchT(tl) - (o.hem ?? .4) * thigh;
   let grid = null;
-  if (cols.length > 3 && t0 < tMin - .02) grid = clothSkirt(acc, cols, closed, t0, { gap: MM(1) + q.gap * .02 * H, folds, slits: o.slits, ragged: o.ragged, flare: o.flare, ramp: o.ramp, uv: torsoUV, mat: PLATE, role: 'plate' });
-  fixSeams(acc, 0, mapOf, (P, m) => (m === 'T' ? torsoUV(P) : armUV(P, m)), (m) => (m === 'T' ? PT : PA));
+  if (cols.length > 3 && t0 < tMin - .02) grid = clothSkirt(acc, cols, closed, t0, { gap: MM(1) + q.gap * .02 * H, folds, slits: o.slits, ragged: o.ragged, flare: o.flare, ramp: o.ramp, points: o.points, legRide: o.legRide, uv: torsoUV, mat: PLATE, role: 'plate' });
+  const fixUV = (f0) => fixSeams(acc, f0, mapOf, (P, m) => (m === 'T' ? torsoUV(P) : armUV(P, m)), (m) => (m === 'T' ? PT : PA));
+  fixUV(0);
+  if (grid) sh0.hem = { cols, closed, t0, gap: MM(1) + q.gap * .02 * H, folds, slits: o.slits, flare: o.flare, ramp: o.ramp, legRide: o.legRide, uv: torsoUV, fix: fixUV };   // (skirtLayers: more skirts over it)
   const th = Math.max(MM(1.2), (p.thickness ?? .02) * .02 * H), nOf = (i) => HH.n[i];
   // a shirt's neck: the slit laced across, the cord tied in a bow at its top, its ends hanging
   if (o.slit) {
@@ -3251,8 +3270,29 @@ function clothPiece(p, o) {
 function tunic(p) {
   const T = TUNICS[String(p.tunic || 'tunic_shirt').replace(/^tunic_/, '')] || TUNICS.shirt;
   // (ease: a goblin's shoulder blades came out through a shirt 3 mm off them as the arms moved)
-  return clothPiece({ ...p }, { ...T, sleeve: (p.tn_sleeve ?? 100) / 100, hem: (p.tn_hem ?? 45) / 100, ease: (p.tn_ease ?? 8) / 100 * 1.2,
+  const out = clothPiece({ ...p }, { ...T, sleeve: (p.tn_sleeve ?? 100) / 100, hem: (p.tn_hem ?? 45) / 100, ease: (p.tn_ease ?? 8) / 100 * 1.2,
     ragged: p.tn_ragged ?? 0, folds: p.tn_folds ?? 1 });
+  if (T.layers && out[0] && out[0].hem) skirtLayers(out[0], T.layers, p);
+  return out;
+}
+// more skirts over a tunic's (the concept sheets' mages: a layered robe, each layer shorter, its hem cut to points, frayed):
+// each from the waist where the tunic's skirt starts, a little out over the one under it (its top hidden by a belt), in
+// the second cloth when cloth2, more flared and fuller in its folds than the one under it
+function skirtLayers(part, layers, p) {
+  const h = part.hem, acc = part.acc, vx = (id) => new V3(acc.v[3 * id], acc.v[3 * id + 1], acc.v[3 * id + 2]);
+  const tTop = Math.max(...h.cols.map((c) => torsoT(vx(c.o))));
+  layers.forEach((L, k) => {
+    const lift = (k + 1) * MM(3.5), tL = h.t0 + (tTop - h.t0) * L.up;
+    const cols2 = h.cols.map((c) => {
+      const Po = vx(c.o), Pn = vx(c.n), d = Po.clone().sub(Pn).normalize(), th = Po.distanceTo(Pn);
+      const O = Po.clone().addScaledVector(d, lift), I = O.clone().addScaledVector(d, -th), [u, v] = h.uv(O);
+      return { o: acc.vert(O, u, v, { direct: c.w }), n: acc.vert(I, u, v, { direct: c.w }), w: c.w };
+    });
+    const f0 = acc.f.length, two = L.mat === 'cloth2';
+    clothSkirt(acc, cols2, h.closed, tL, { gap: h.gap + lift + (k + 1) * MM(3), folds: h.folds * (1 + .35 * (k + 1)), slits: L.slits ?? h.slits, ragged: (L.ragged ?? 0) + (p.tn_ragged ?? 0),
+      points: L.points, flare: (h.flare ?? .012) + .012 * (k + 1), ramp: h.ramp, legRide: h.legRide, uv: h.uv, mat: two ? CLOTH : PLATE, role: two ? 'quilt' : 'plate' });
+    h.fix(f0);
+  });
 }
 function vest(p) {
   const V = VESTS[String(p.vest || 'vest_embroidered').replace(/^vest_/, '')] || VESTS.embroidered;
@@ -3508,6 +3548,7 @@ function beltPiece(p) {
 // chest down the outermost of what is worn), in cloth: a little past the shoulders' roots, longer at the front edges
 // (hd_point: two points either side of the opening), smoothed more
 function hood(p) {
+  { const dk = String(p.hood || '').replace(/^hood_/, ''); if (DRAPES[dk] && !p._drape) return drape(p, DRAPES[dk]); }   // (a shawl, a cowl collar: drape())
   const N = joint('neck'), aL = joint('arm_L'), aR = joint('arm_R'), chest = PB.spine2 || PB.spine1; if (!N || !aL || !aR || !chest) return [];
   const H = HEIGHT, Cz = (joint('spine2') || N).z;
   const C = new V3((aL.x + aR.x) / 2, Math.min(aL.y, aR.y) - .06 * H, Cz);
@@ -3516,7 +3557,7 @@ function hood(p) {
   const dir = (th, el) => front.clone().multiplyScalar(Math.cos(th)).addScaledVector(side, Math.sin(th)).multiplyScalar(Math.cos(el)).addScaledVector(UP, Math.sin(el));
   const worn = (h) => bodyGeo.index.array[3 * h.faceIndex] >= SKIN_VERTS;
   const outermost = (o, d, far) => { const all = castAll(o, d, far); let k = 0; while (k + 1 < all.length && worn(all[k + 1]) && all[k + 1].distance - all[k].distance < .06 * H) k++; return all[k] || null; };
-  const gapA = D_(3), ths = Array.from({ length: NT }, (_, j) => gapA + j / (NT - 1) * (TAU - 2 * gapA));   // from the front round (open there)
+  const gapA = D_(p._gapA ?? 3), ths = Array.from({ length: NT }, (_, j) => gapA + j / (NT - 1) * (TAU - 2 * gapA));   // from the front round (open there; a drape: closed)
   const face = ths.map(() => new Int32Array(NE).fill(-1));
   let raw = Array.from({ length: NE }, (_, i) => ths.map((th, j) => { const h = outermost(C, dir(th, elev(i)), .6 * H); if (h) face[j][i] = h.faceIndex; return h ? h.distance : NaN; }));
   let rawS = Array.from({ length: NE }, (_, i) => ths.map((th) => { const h = cast(C, dir(th, elev(i)), .6 * H); return h ? h.distance : NaN; }));
@@ -3628,6 +3669,7 @@ function hood(p) {
       PLATE, 'plate', rim.map(({ q }) => q.f), 10, false, .55);
   }
   // the toggle at the throat: a wooden peg across the opening on two cord loops
+  if (p.hd_toggle === false) return [{ side: 'C', acc, R: .1 * H, base, ths, C, N, thm }];   // (drape(): rolls of cloth over the throat instead)
   const a = base[1][0], b = base[1][NT - 1], Pa = a.X.clone().addScaledVector(a.d, thm), Pb = b.X.clone().addScaledVector(b.d, thm), Pm = Pa.clone().lerp(Pb, .5);
   const fwd = Pm.clone().sub(new V3(N.x, Pm.y, N.z)).setY(0).normalize(), across = Pb.clone().sub(Pa).normalize();
   const T = Pm.clone().addScaledVector(fwd, .012 * H);
@@ -3661,6 +3703,82 @@ function hoodUp(p, thm) {
   const ear = (v) => Math.abs(v.x - HJ.x) >= 1.1 * halfAt(v.y) && v.y > NK.y; ear.key = 'hood_up_ears';
   return { side: 'C', acc, R: .1 * H, mask: bodySkin(new Set(['head']), ear).keys };
 }
+// ---- a shawl and a cowl collar (the concept sheets' mages: #23 a desert shawl wound round the neck, over both shoulders,
+// one end hanging down the front, fringed; #26 a draped cowl round the neck coming to a point down the chest, the hood
+// down behind it): the capelet above (hood(), its front closed by the drape, no toggle), soft folds through it, rolls of
+// cloth round its neckline (sagging to the front for a cowl), a shawl's end hanging over the chest
+const DRAPES = {
+  scarf: { hood: false, point: 2, rolls: [[0, .017, 0], [.38, .02, .5]], sag: .25, folds: 9, foldA: .0065, end: { a: 38, w: .055, L: .28, fringe: true } },
+  cowl: { hood: true, point: 9, rolls: [[0, .015, 0], [.32, .017, .7]], sag: .75, folds: 7, foldA: .0055 },
+};
+function drape(p, o) {
+  const H = HEIGHT, out = hood({ ...p, _drape: true, _gapA: .4, hd_cowl: o.hood ? (p.hd_cowl ?? 1) : 0, hd_toggle: false, hd_point: p.hd_point ?? o.point });
+  const part = out[0]; if (!part || !part.base) return out;
+  const { acc, base, ths, C, N, thm } = part, nv = base.length, NT = base[0].length, front = FRONT.clone().setY(0).normalize(), side = new V3(1, 0, 0);
+  const vx = (id) => new V3(acc.v[3 * id], acc.v[3 * id + 1], acc.v[3 * id + 2]);
+  const thOf = (P) => { const d = P.clone().sub(C).setY(0); return Math.atan2(d.dot(side), d.dot(front)); };
+  // soft folds through it, deeper going down from the neck (all of it moved alike: the hood on its back stays on it)
+  const yTop = Math.max(...base[0].map((b) => b.X.y)), A = o.foldA * H;
+  for (let i = 0; i < acc.v.length / 3; i++) {
+    const P = vx(i), dh = P.clone().sub(C).setY(0); if (dh.lengthSq() < 1e-10) continue; dh.normalize();
+    const f = A * ((1 - Math.cos(o.folds * thOf(P) + .7 * Math.sin(2 * thOf(P)))) / 2) ** 1.5 * smooth(yTop - .015 * H, yTop - .09 * H, P.y);
+    acc.v[3 * i] += dh.x * f; acc.v[3 * i + 2] += dh.z * f;
+  }
+  // rolls of cloth round the neckline: each a closed tube along a row of the capelet (rowK of its rows down from the neck,
+  // more of them in front - sag), lying on it, its section squashed flat on it, fuller here, thinner there
+  const sagRow = (j, k) => Math.min(nv - 1, (k + o.sag * Math.max(0, Math.cos(ths[j])) ** 3 * (k > 0 ? 1.6 : 1)) * (nv - 1));
+  const rowAt = (fi, j) => { const i0 = Math.max(0, Math.min(nv - 2, Math.floor(fi))), t = fi - i0, a = base[i0][j], b = base[i0 + 1][j]; return { X: a.X.clone().lerp(b.X, t), d: a.d.clone().lerp(b.d, t).normalize(), f: t < .5 ? a.f : b.f }; };
+  // (each section an ellipse: across the surface R, out of it R x flat - lying on the shoulders, not standing on them as a
+  // round tube did, a hose round the neck)
+  o.rolls.forEach(([k, r, ph], n) => {
+    const m = NT, rings = [], flat = .42, ns = 12, along = [0];
+    const qs = Array.from({ length: m }, (_, j) => rowAt(sagRow(j, k), j));
+    const Rs = qs.map((_, j) => r * H * (1 + .28 * Math.sin(3 * ths[j] + ph * 4) + .14 * Math.sin(7 * ths[j] + n * 2.1)));
+    // its normal: the capelet's surface there (across the rows), out
+    const nrm = qs.map((q, j) => { const a = rowAt(Math.max(0, sagRow(j, k) - .5), j).X, b = rowAt(Math.min(nv - 1, sagRow(j, k) + .5), j).X, c = base[0][(j + 1) % m].X.clone().sub(base[0][(j - 1 + m) % m].X);
+      const nn = b.clone().sub(a).cross(c).normalize(); return nn.dot(q.d) < 0 ? nn.negate() : nn; });
+    const ctr = qs.map((q, j) => q.X.clone().addScaledVector(nrm[j], thm + Rs[j] * flat * .9 + MM(1)));
+    for (let j = 1; j < m; j++) along.push(along[j - 1] + ctr[j].distanceTo(ctr[j - 1]));
+    for (let j = 0; j < m; j++) {
+      const T = ctr[(j + 1) % m].clone().sub(ctr[(j - 1 + m) % m]).normalize(), nn = nrm[j].clone().addScaledVector(T, -nrm[j].dot(T)).normalize(), b = T.clone().cross(nn);
+      const wob = .1 * Math.sin(5 * ths[j] + n);   // (the roll twisting a little along)
+      rings.push(Array.from({ length: ns }, (_, s) => { const a = s / ns * TAU + wob; return acc.vert(ctr[j].clone().addScaledVector(b, Rs[j] * Math.cos(a)).addScaledVector(nn, flat * Rs[j] * Math.sin(a)), s / ns * TAU * Rs[j] / LOOK.U, along[j] / LOOK.U, qs[j].f); }));
+    }
+    for (let j = 0; j < m; j++) for (let s = 0; s < ns; s++) { const a = rings[j], b2 = rings[(j + 1) % m], s2 = (s + 1) % ns; acc.face([a[s], a[s2], b2[s2], b2[s]], PLATE, 'plate'); }
+  });
+  // a shawl's end: from the capelet over the left shoulder's front down the chest, over what is worn, a little wider down,
+  // its end fringed
+  if (o.end) {
+    const e = o.end, a = D_(e.a), j = Math.max(0, Math.min(NT - 1, Math.round((a - ths[0]) / (ths[NT - 1] - ths[0]) * (NT - 1))));
+    const top = rowAt((nv - 1) * .45, j), Ax = top.X.clone().addScaledVector(top.d, 2 * thm);
+    const Eacross = UP.clone().cross(top.d.clone().setY(0).normalize()).normalize(), { limb } = limbOf('cuirass', 'C');
+    const capR = (y, d) => {   // how far out the capelet reaches at height y that way (the end lies over it, not into it)
+      let best = 0; for (let i = 0; i < nv - 1; i++) { const A2 = base[i][j], B2 = base[i + 1][j]; if ((A2.X.y - y) * (B2.X.y - y) <= 0) { const t = (A2.X.y - y) / (A2.X.y - B2.X.y || 1), X = A2.X.clone().lerp(B2.X, t); const o2 = limb.axis((y - limb.a.y) / (limb.u.y * limb.len)); best = Math.max(best, X.clone().sub(o2).dot(d)); } }
+      return best;
+    };
+    const w = e.w * H, L = e.L * H, flare = .25, NR = 18, NC = 9, rowsE = lin(0, 1, NR), colsE = lin(-1, 1, NC);
+    // (each column of it laid on what is under it there, by its own ray from the body's axis: one surface for the row put
+    // parts of it inside a coat's front edge - holes; and draped: a wave down it, its sides a little back)
+    const onBody = (v, u, s) => {
+      const y = Ax.y - v * L, t = (y - limb.a.y) / (limb.u.y * limb.len), o2 = limb.axis(t);
+      const X0 = new V3(Ax.x, y, Ax.z).addScaledVector(Eacross, u * w * (1 + flare * v)), d = X0.clone().sub(o2).setY(0).normalize();
+      const h = layerHit(o2, d, .6 * H), r = Math.max(h ? h.r : X0.clone().sub(o2).setY(0).length(), capR(y, d) + thm + A) + MM(3);
+      return o2.clone().addScaledVector(d, r + w * .14 * (.5 + .5 * Math.sin(v * 6.5 + u * 1.2)) * smooth(0, .3, v) + MM(4) * u * u + s * thm);   // (the wave out only: in, it went into the coat)
+    };
+    solid(acc, rowsE.map((_, i) => i), colsE.map((_, j) => j), false, (i, j, s) => onBody(rowsE[i], colsE[j], s), PLATE, 'plate',
+      (i, j) => [(colsE[j] + 1) * w / LOOK.U, rowsE[i] * L / LOOK.U], () => top.f);
+    if (e.fringe) {   // the fringe: thin strands of the warp hanging from its end
+      const half = 1;
+      for (let s = 0; s < 15; s++) {
+        const u = (-1 + 2 * s / 14) * half * .96, X = onBody(1, u, .5), outD = X.clone().sub(limb.axis((X.y - limb.a.y) / (limb.u.y * limb.len))).setY(0).normalize();
+        const len = .022 * H * (.8 + .4 * hash(s, 5, 23));
+        tubeAlong(acc, [X, X.clone().add(new V3(0, -len * .55, 0)).addScaledVector(outD, MM(1)), X.clone().add(new V3(0, -len, 0)).addScaledVector(outD, MM(1.5))], .0012 * H, PLATE, 'plate', top.f, 5);
+      }
+    }
+  }
+  return out;
+}
+
 // ---- leg wraps: linen wound round the shins from under the knee to the ankle, crossed: a wrap close on the leg and
 // two bands spiralling round it either way over it (each a little over the other). On the forearms (wraps_arm: the
 // concept sheets' mages - leather strips round the wrists over a shirt's sleeves): the same from the elbow's way down to
@@ -7169,6 +7287,8 @@ Object.assign(STYLES, {
     breeches: { ...CLOTHES, cloth: '#6a4a32', weave: 'twill', loose: .75, folds: .45, t1: 62, cuffs: true, blouse: .6 },
     long_trousers: { ...CLOTHES, cloth: '#5e4a34', weave: 'twill', loose: .3, folds: .3, t1: 96, cuffs: false },
     short_wide: { ...CLOTHES, cloth: '#8a7656', weave: 'plain', loose: .8, folds: .45, t1: 50, cuffs: false, tr_ties: true },
+    // a desert mage's (the concept sheets' #23) wide trousers gathered at the shin, the cloth blousing over the band
+    harem: { ...CLOTHES, cloth: '#cdbb98', weave: 'plain', gap: 7, loose: 1, folds: .55, t1: 84, cuffs: true, blouse: .9 },   // (gap: the band at the shin off the skin - tight on it, the shin came through it)
   },
   // everyday clothes (GARB): each style the whole of its look, so another chosen after it leaves nothing of it
   tunic: {
@@ -7176,6 +7296,8 @@ Object.assign(STYLES, {
     tunic_short: { tunic: 'tunic_short', material: 'cloth', cloth: '#7d8a78', weave: 'plain', trim: '', tn_hem: 40, tn_sleeve: 30, tn_ease: 9, tn_ragged: 0, tn_folds: 1, gap: 4, thickness: 2 },
     tunic_sleeveless: { tunic: 'tunic_sleeveless', material: 'cloth', cloth: '#cdbd9c', weave: 'plain', trim: '', tn_hem: 35, tn_sleeve: 0, tn_ease: 8, tn_ragged: .7, tn_folds: 1, gap: 4, thickness: 2 },
     tunic_long: { tunic: 'tunic_long', material: 'cloth', cloth: '#5f5a3a', weave: 'twill', trim: '', tn_hem: 65, tn_sleeve: 100, tn_ease: 10, tn_ragged: 0, tn_folds: 1, gap: 4, thickness: 2.5 },
+    tunic_layered: { tunic: 'tunic_layered', material: 'cloth', cloth: '#3e2a3c', cloth2: '#3b3a3d', weave: 'twill', trim: '', tn_hem: 150, tn_sleeve: 0, tn_ease: 10, tn_ragged: .4, tn_folds: 1.1, gap: 4, thickness: 2.5 },
+    tunic_dagged: { tunic: 'tunic_dagged', material: 'cloth', cloth: '#7d8696', cloth2: '#3f5070', weave: 'twill', trim: '', tn_hem: 160, tn_sleeve: 60, tn_ease: 10, tn_ragged: .2, tn_folds: 1, gap: 4, thickness: 2.5 },
     tunic_rolled: { tunic: 'tunic_rolled', material: 'cloth', cloth: '#7a4a2e', weave: 'twill', trim: '', tn_hem: 35, tn_sleeve: 55, tn_ease: 9, tn_ragged: 0, tn_folds: 1, gap: 4, thickness: 2.5 },
   },
   vest: {
@@ -7197,6 +7319,8 @@ Object.assign(STYLES, {
   hood: {
     hood_capelet: { hood: 'hood_capelet', material: 'cloth', cloth: '#8a4428', weave: 'herring', tint: '#5a3a22', trim: '', hd_len: 10, hd_point: 2, hd_cowl: 1, hd_up: false, gap: 2, thickness: 3 },
     hood_pointed: { hood: 'hood_pointed', material: 'cloth', cloth: '#5e4630', weave: 'twill', tint: '#5a3a22', trim: '', hd_len: 10, hd_point: 7, hd_cowl: .8, hd_up: false, gap: 2, thickness: 3 },
+    hood_scarf: { hood: 'hood_scarf', material: 'cloth', cloth: '#b8893e', weave: 'plain', tint: '#5a3a22', trim: '', hd_len: 9, hd_point: 2, hd_cowl: 0, gap: 2, thickness: 3 },
+    hood_cowl: { hood: 'hood_cowl', material: 'cloth', cloth: '#3d2a3a', weave: 'twill', tint: '#5a3a22', trim: '', hd_len: 8, hd_point: 9, hd_cowl: 1, gap: 2, thickness: 3 },
   },
   wraps: {
     wraps_cross: { wraps: 'wraps_cross', material: 'cloth', cloth: '#d2c6a6', cloth2: '#b3a07a', weave: 'plain', trim: '', wr_from: 6, wr_to: 88, wr_turns: 4, gap: 2.5, thickness: 2.5, cell: 3 },
@@ -7483,7 +7607,7 @@ SPEC.push(['{{js:ag.hauberk_group}}', ['mail'], [
 const isG = (...k) => () => k.includes(S.piece);
 const GARB_GI = SPEC.length;
 SPEC.push(['{{js:ag.garb_group}}', ['plate', 'quilt', 'trim', 'strap'], [
-  ['tn_hem', -10, 100, 1, '{{js:ag.tn_hem}}', '{{js:ag.tn_hem_info}}', 'pc', isG('tunic', 'vest')],
+  ['tn_hem', -10, 180, 1, '{{js:ag.tn_hem}}', '{{js:ag.tn_hem_info}}', 'pc', isG('tunic', 'vest')],   // (past 100: down the shin - a robe)
   ['tn_sleeve', 0, 100, 5, '{{js:ag.tn_sleeve}}', '{{js:ag.tn_sleeve_info}}', 'pc', isG('tunic')],
   ['tn_ease', 0, 30, 1, '{{js:ag.tn_ease}}', '{{js:ag.tn_ease_info}}', 'pc', isG('tunic', 'vest')],
   ['tn_ragged', 0, 1, .05, '{{js:ag.tn_ragged}}', '{{js:ag.tn_ragged_info}}', '', isG('tunic')],
