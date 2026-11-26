@@ -6,7 +6,7 @@ import { notifications } from '@mantine/notifications';
 import { IconFolder } from '@tabler/icons-react';
 import { fileUrl, live, onTaskFinished, post, useStore } from '../api';
 import { useT } from '../i18n';
-import { useCurrent } from '../objects';
+import { asCharacter, asCreature, useCurrent } from '../objects';
 import type { Route } from '../nav';
 import Viewer3D from '../components/Viewer3D';
 import { useOverview } from './CharOverview';
@@ -14,7 +14,7 @@ import { useOverview } from './CharOverview';
 export function CharWeights({ creature = false }: { creature?: boolean }) {
   const t = useT();
   const cur = useCurrent();
-  const id = cur && cur.creature === creature ? cur.id : undefined;
+  const id = (creature ? asCreature(cur) : asCharacter(cur)) ? cur!.id : undefined;
   const [mesh, setMesh] = useState('');
   const [region, setRegion] = useState('auto');
   const [group, setGroup] = useState('');
@@ -64,7 +64,7 @@ export function CharWeights({ creature = false }: { creature?: boolean }) {
 export function CharGame({ go }: { go: (r: Route) => void }) {
   const t = useT();
   const cur = useCurrent();
-  const id = cur && !cur.creature ? cur.id : undefined;
+  const id = asCharacter(cur) ? cur.id : undefined;
   const o = useOverview(id);
   const running = useStore(live, (s) => Object.values(s.tasks).some((x) => x.kind === 'char' && x.meta?.what === 'wardrobe' && (x.status === 'running' || x.status === 'queued')));
   if (!id) return <div className="placeholder"><Text c="ember.3">{t('web.need_character')}</Text></div>;

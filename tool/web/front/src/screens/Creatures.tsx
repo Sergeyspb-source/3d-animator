@@ -7,7 +7,7 @@ import { notifications } from '@mantine/notifications';
 import { IconFolder, IconPlus, IconTrash } from '@tabler/icons-react';
 import { fileUrl, get, live, onTaskFinished, post, upload, useStore, type TaskSummary } from '../api';
 import { plain, useT } from '../i18n';
-import { PickList, useCurrent, useObjects } from '../objects';
+import { asCreature, PickList, useCurrent, useObjects } from '../objects';
 import type { Route } from '../nav';
 import EditorFrame from '../components/EditorFrame';
 import Viewer3D from '../components/Viewer3D';
@@ -22,7 +22,7 @@ interface CrOverview {
 function useCreature() {
   const cur = useCurrent();
   const finished = useStore(live, (s) => s.finished);
-  const id = cur && cur.creature ? cur.id : undefined;
+  const id = asCreature(cur) ? cur.id : undefined;
   const [o, setO] = useState<CrOverview | null>(null);
   useEffect(() => { if (!id) { setO(null); return; } get<CrOverview>(`/api/cr/overview?id=${encodeURIComponent(id)}`).then(setO).catch(() => setO(null)); }, [id, finished]);
   const running = useStore(live, (s) => Object.values(s.tasks).some((x) => x.kind === 'char' && x.meta?.char === id && (x.status === 'running' || x.status === 'queued')));

@@ -10,7 +10,7 @@ import { notifications } from '@mantine/notifications';
 import { IconPhoto } from '@tabler/icons-react';
 import { fileUrl, onTaskFinished } from '../api';
 import { useI18n } from '../i18n';
-import { useCurrent } from '../objects';
+import { asCharacter, useCurrent } from '../objects';
 import type { Step } from '../nav';
 
 interface Shot { path: string; caption: string }
@@ -27,7 +27,7 @@ export default function EquipWorkspace({ step, info, bridge, wear }: { step: str
   const [showShots, setShowShots] = useState(false);
   const [tool, setTool] = useLocalStorage<'make' | 'ready' | 'outfit'>({ key: 'sf3d.eq_tool', defaultValue: 'make' });
   const way = step === 'workshop' ? tool : 'make';
-  const rigged = cur && !cur.creature ? cur.rigged : null;
+  const rigged = asCharacter(cur) ? cur.rigged : null;
   // a new page only for another character, theme or language (the step it opens on is the one shown then)
   const src = useMemo(() => (rigged ? `/editor/equip?rigged=${encodeURIComponent(rigged)}&step=${stepNow.current}&theme=${colorScheme}&lang=${lang}` : null),
     [rigged, colorScheme, lang]);
@@ -71,7 +71,7 @@ export default function EquipWorkspace({ step, info, bridge, wear }: { step: str
         </div>)}
       {way === 'ready' ? <WearPanel ids={wear} /> : way === 'outfit' ? <OutfitPanel /> :
         src ? <iframe ref={frame} key={src} src={src} className="equip-frame" title={t('web.editor_title')} />
-        : <div className="placeholder"><Text c="ember.3">{cur && !cur.creature ? t('web.need_rig', cur.name) : t('web.need_character')}</Text></div>}
+        : <div className="placeholder"><Text c="ember.3">{asCharacter(cur) ? t('web.need_rig', cur.name) : t('web.need_character')}</Text></div>}
       <div id={bridge[0]} hidden><textarea defaultValue="" /></div>
       <button id={bridge[1]} type="button" hidden onClick={send} />
     </div>

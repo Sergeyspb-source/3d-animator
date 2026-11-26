@@ -7,7 +7,7 @@ import { useLocalStorage } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { fileUrl, get, live, onTaskFinished, post, useStore } from '../api';
 import { useT } from '../i18n';
-import { useCurrent } from '../objects';
+import { asCharacter, useCurrent } from '../objects';
 import EditorFrame from '../components/EditorFrame';
 
 type Mode = 'watch' | 'procedural' | 'mixamo';
@@ -19,7 +19,7 @@ export default function CharAnims() {
   const t = useT();
   const { colorScheme } = useMantineColorScheme();
   const cur = useCurrent();
-  const id = cur && !cur.creature ? cur.id : undefined;
+  const id = asCharacter(cur) ? cur.id : undefined;
   const finished = useStore(live, (s) => s.finished);
   const running = useStore(live, (s) => Object.values(s.tasks).some((x) => x.kind === 'char' && x.meta?.char === id && (x.status === 'running' || x.status === 'queued')));
   const [mode, setMode] = useLocalStorage<Mode>({ key: 'sf3d.anim_mode', defaultValue: 'watch' });

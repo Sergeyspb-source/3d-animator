@@ -25,11 +25,15 @@ export function useCurrent(): SceneObject | undefined {
   const o = useObjects();
   return [...o.characters, ...o.creatures].find((x) => x.id === o.current);
 }
+// whether a model works in the «Character» sections or in «Creatures» (a model may do both: one with no skeleton yet,
+// a creature with a humanoid's skeleton); «creature» itself is only the group it is listed under
+export const asCharacter = (o?: SceneObject | null): o is SceneObject => !!o && o.as_character;
+export const asCreature = (o?: SceneObject | null): o is SceneObject => !!o && o.as_creature;
 
 // the characters (or the creatures) to pick with a click, for a step opened with none of its kind chosen
 export function PickList({ creatures }: { creatures?: boolean }) {
   const o = useObjects();
-  return <>{(creatures ? o.creatures : o.characters).map((x) => (
+  return <>{[...o.characters, ...o.creatures].filter(creatures ? asCreature : asCharacter).map((x) => (
     <UnstyledButton key={x.id} className="ov-row" onClick={() => o.choose(x.id)}>
       <Group justify="space-between" wrap="nowrap"><Text size="sm" fw={600} truncate>{x.name}</Text><Text size="xs" c="dimmed">{x.tags}</Text></Group>
     </UnstyledButton>))}</>;

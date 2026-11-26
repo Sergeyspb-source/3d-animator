@@ -3247,5 +3247,9 @@
  "web.eq_make": "Make",
  "web.task_wear": "Armour: put the piece on",
  "web.task_outfit": "A set off a dressed model",
- "web.outfit_needs_parts": "The set is carried onto the body in parts: make it in «Character → Skeleton → Automatic» («Split the body into parts»)."
+ "web.outfit_needs_parts": "The set is carried onto the body in parts: make it in «Character → Skeleton → Automatic» («Split the body into parts»).",
+ "web.crash_title": "This screen failed to open",
+ "web.crash_part": "This part of the window failed to open",
+ "web.crash_note": "The rest of the interface works: go to another step or pick another object. What happened is below and in the console (F12).",
+ "web.crash_retry": "Try again"
 }

@@ -6,7 +6,7 @@ import { notifications } from '@mantine/notifications';
 import { IconFolder, IconPlus, IconTrash } from '@tabler/icons-react';
 import { fileUrl, get, live, post, upload, useStore } from '../api';
 import { useT } from '../i18n';
-import { PickList, useCurrent, useObjects } from '../objects';
+import { asCharacter, PickList, useCurrent, useObjects } from '../objects';
 import type { Route } from '../nav';
 import Viewer3D from '../components/Viewer3D';
 
@@ -44,7 +44,7 @@ export default function CharOverview({ go }: { go: (r: Route) => void }) {
   const t = useT();
   const cur = useCurrent();
   const objs = useObjects();
-  const o = useOverview(cur && !cur.creature ? cur.id : null);
+  const o = useOverview(asCharacter(cur) ? cur.id : null);
   const [ask, setAsk] = useState(false);
   const model = o ? o.rigged || o.source : null;
 
@@ -75,7 +75,7 @@ export default function CharOverview({ go }: { go: (r: Route) => void }) {
   return (
     <div className="work two">
       <div className="stage">
-        <Viewer3D url={model ? fileUrl(model, o?.files.find((x) => model.endsWith(x.name))?.when) : null} empty={t(cur && !cur.creature ? 'web.ov_no_model' : 'web.need_character')} person />
+        <Viewer3D url={model ? fileUrl(model, o?.files.find((x) => model.endsWith(x.name))?.when) : null} empty={t(asCharacter(cur) ? 'web.ov_no_model' : 'web.need_character')} person />
       </div>
       <ScrollArea className="panel">
         <Stack gap="sm" p="sm">
@@ -83,7 +83,7 @@ export default function CharOverview({ go }: { go: (r: Route) => void }) {
             <div className="panel-title">{o?.name || t('web.sec_character')}</div>
             {o && <div className="field-note">{o.dir}</div>}
           </div>
-          {!(cur && !cur.creature) && <PickList />}
+          {!(asCharacter(cur)) && <PickList />}
           {o && <>
             <Row title={t('ui.skeleton')} ok={!!rig} onOpen={step('character', 'skeleton')}
               state={rig ? `${t(rig.kind === 'landmark' ? 'web.ov_landmark' : 'web.ov_auto')}, ${t('web.ov_bones', rig.bones)}` : t('web.ov_none')}

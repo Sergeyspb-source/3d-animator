@@ -8,7 +8,7 @@ import { notifications } from '@mantine/notifications';
 import { IconAdjustments } from '@tabler/icons-react';
 import { fileUrl, get, live, onTaskFinished, post, useStore, type TaskSummary } from '../api';
 import { plain, useT } from '../i18n';
-import { useCurrent, useObjects } from '../objects';
+import { asCharacter, useCurrent, useObjects } from '../objects';
 import EditorFrame, { fieldValue } from '../components/EditorFrame';
 import Viewer3D from '../components/Viewer3D';
 import { useOverview } from './CharOverview';
@@ -27,7 +27,7 @@ export default function CharSkeleton({ bridges }: { bridges: { markup: string; p
   const { colorScheme } = useMantineColorScheme();
   const cur = useCurrent();
   const objs = useObjects();
-  const id = cur && !cur.creature ? cur.id : undefined;
+  const id = asCharacter(cur) ? cur.id : undefined;
   const o = useOverview(id);
   const [mode, setMode] = useLocalStorage<Mode>({ key: 'sf3d.rig_mode', defaultValue: 'markup' });
   const [naming, setNaming] = useLocalStorage({ key: 'sf3d.rig_naming', defaultValue: 'mixamo' });

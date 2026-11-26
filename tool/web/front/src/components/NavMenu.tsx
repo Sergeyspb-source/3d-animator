@@ -5,7 +5,7 @@ import { useLocalStorage } from '@mantine/hooks';
 import { IconCheck, IconChevronsLeft, IconChevronsRight, IconListDetails, IconCpu, IconSettings } from '@tabler/icons-react';
 import { get, live, useStore, type ModelInfo, type SceneObject } from '../api';
 import { useT } from '../i18n';
-import { useCurrent } from '../objects';
+import { asCharacter, asCreature, useCurrent } from '../objects';
 import { SECTIONS, TOOLS, type Route } from '../nav';
 
 const TOOL_ICON = { tasks: IconListDetails, gpu: IconCpu, settings: IconSettings } as const;
@@ -47,7 +47,7 @@ export default function NavMenu({ route, go, small, toggle, canToggle }: { route
     <Stack gap={0} h="100%">
       <ScrollArea style={{ flex: 1 }} p={6}>
         {SECTIONS.map((s) => {
-          const needs = s.object && (!cur || cur.creature !== (s.object === 'creature'));
+          const needs = s.object && !(s.object === 'creature' ? asCreature(cur) : asCharacter(cur));
           return (
             <NavLink key={s.id} label={<Text fw={600} size="md">{t(s.key)}</Text>} leftSection={<s.icon size={18} stroke={1.6} />}
               opened={!!open[s.id] || route.section === s.id} onChange={(o) => setOpen({ ...open, [s.id]: o })} childrenOffset={22}

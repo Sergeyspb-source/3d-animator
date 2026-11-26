@@ -14,7 +14,7 @@ export interface AppState {
   has_openrouter_key: boolean; gpu: Gpu; tasks: TaskSummary[]; bridges: { equip: [string, string]; markup: string; pose: string; rigface: string; creature: [string, string]; paint: [string, string]; wear: string[] };
 }
 export interface SceneObject {
-  id: string; name: string; creature: boolean; dir: string; rigged: string | null; source: string | null;
+  id: string; name: string; creature: boolean; as_character: boolean; as_creature: boolean; dir: string; rigged: string | null; source: string | null;
   landmark: boolean; auto: boolean; parts: boolean; speech: number; worn: number; tags: string;
 }
 export interface ModelInfo {

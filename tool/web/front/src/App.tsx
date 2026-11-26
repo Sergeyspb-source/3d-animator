@@ -11,7 +11,8 @@ import { SECTIONS, TOOLS, hashOf, parseHash, stepOf, type Route } from './nav';
 import TopBar from './components/TopBar';
 import NavMenu from './components/NavMenu';
 import Dock from './components/Dock';
-import { ObjectsProvider } from './objects';
+import { ObjectsProvider, useObjects } from './objects';
+import { Guard } from './components/ErrorBoundary';
 import ModelCreate from './screens/ModelCreate';
 import ModelCheck from './screens/ModelCheck';
 import ModelRelease from './screens/ModelRelease';
@@ -24,6 +25,12 @@ import CharAnims from './screens/CharAnims';
 import { CrOverviewScreen, CrSkeleton, CrAnims, CrPaint, CrGame } from './screens/Creatures';
 import { Surfaces, Effects, Dungeons, Destructibles, Reference, ModelMaterials } from './screens/EnvScreens';
 import { TasksScreen, GpuScreen, SettingsScreen, BatchScreen } from './screens/Tools';
+
+// the step's screen in its own error boundary: another step or another current object draws it again
+function Screen({ route, children }: { route: string; children: React.ReactNode }) {
+  const { current } = useObjects();
+  return <Guard key={`${route}|${current}`}>{children}</Guard>;
+}
 
 export default function App({ initial }: { initial: AppState }) {
   const t = useT();
@@ -92,13 +99,13 @@ export default function App({ initial }: { initial: AppState }) {
     <ObjectsProvider>
       <AppShell header={{ height: 44 }} navbar={{ width: small ? 60 : 248, breakpoint: 0 }}
         footer={{ height: dockOpen ? 'clamp(160px, 22vh, 300px)' : 32 }} padding={0}>
-        <AppShell.Header><TopBar route={route} go={go} testBench={initial.test_bench} /></AppShell.Header>
-        <AppShell.Navbar className="navrail"><NavMenu route={route} go={go} small={small} toggle={() => setNavSmall(!navSmall)} canToggle={!narrow} /></AppShell.Navbar>
+        <AppShell.Header><Guard compact><TopBar route={route} go={go} testBench={initial.test_bench} /></Guard></AppShell.Header>
+        <AppShell.Navbar className="navrail"><Guard compact><NavMenu route={route} go={go} small={small} toggle={() => setNavSmall(!navSmall)} canToggle={!narrow} /></Guard></AppShell.Navbar>
         <AppShell.Main className="main">
           {hot && <div className={'heat' + (hot.progress == null || hot.progress < 0.05 ? ' unknown' : '')} style={{ ['--p' as string]: hot.progress ?? 1 }} title={hot.title}><i /></div>}
-          {screen}
+          <Screen route={hashOf(route)}>{screen}</Screen>
         </AppShell.Main>
-        <AppShell.Footer><Dock open={dockOpen} toggle={() => setDockOpen(!dockOpen)} /></AppShell.Footer>
+        <AppShell.Footer><Guard compact><Dock open={dockOpen} toggle={() => setDockOpen(!dockOpen)} /></Guard></AppShell.Footer>
       </AppShell>
       <Spotlight actions={actions} shortcut={['mod + K']} nothingFound={t('web.nothing_found')} highlightQuery
         searchProps={{ leftSection: <IconSearch size={18} />, placeholder: t('web.search_ph') }} />

@@ -97,6 +97,12 @@ TEXTS = {
     "web.need_character": ("выберите персонажа сверху", "choose a character on top"),
     "web.need_creature": ("выберите существо сверху", "choose a creature on top"),
     "web.collapse": ("Свернуть меню", "Collapse the menu"),
+    # a part of the page that failed to draw (components/ErrorBoundary.tsx)
+    "web.crash_title": ("Этот экран не открылся", "This screen failed to open"),
+    "web.crash_part": ("Эта часть окна не открылась", "This part of the window failed to open"),
+    "web.crash_note": ("Остальной интерфейс работает: можно перейти на другой шаг или выбрать другой объект. Что случилось — ниже и в консоли (F12).",
+                       "The rest of the interface works: go to another step or pick another object. What happened is below and in the console (F12)."),
+    "web.crash_retry": ("Попробовать снова", "Try again"),
     # dock and tasks
     "web.dock": ("Журнал и задачи", "Log and tasks"),
     "web.gpu_idle": ("видеокарта свободна", "the GPU is free"),

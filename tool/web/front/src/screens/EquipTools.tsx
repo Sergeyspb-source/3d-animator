@@ -7,14 +7,14 @@ import { notifications } from '@mantine/notifications';
 import { IconUpload } from '@tabler/icons-react';
 import { fileUrl, live, onTaskFinished, post, upload, useStore } from '../api';
 import { plain, useT } from '../i18n';
-import { useCurrent } from '../objects';
+import { asCharacter, useCurrent } from '../objects';
 import EditorFrame from '../components/EditorFrame';
 
 export function WearPanel({ ids }: { ids: string[] }) {
   const t = useT();
   const { colorScheme } = useMantineColorScheme();
   const cur = useCurrent();
-  const id = cur && !cur.creature ? cur.id : undefined;
+  const id = asCharacter(cur) ? cur.id : undefined;
   if (!id) return <div className="placeholder"><Text c="ember.3">{t('web.need_character')}</Text></div>;
   return <EditorFrame src={`/editor/wear?id=${encodeURIComponent(id)}&theme=${colorScheme}`} fields={[ids[0], ids[2]]} title={t('web.eq_ready_glb')}
     go={[{ id: ids[1], field: ids[0], onGo: (text) => post('/api/char/wear', JSON.parse(text)) }]} />;
@@ -25,7 +25,7 @@ interface Seg { name: string; slot: string; title: string }
 export function OutfitPanel() {
   const t = useT();
   const cur = useCurrent();
-  const id = cur && !cur.creature ? cur.id : undefined;
+  const id = asCharacter(cur) ? cur.id : undefined;
   const [model, setModel] = useState<{ name: string; path: string } | null>(null);
   const [scan, setScan] = useState<{ log: string; pics: { path: string; caption: string }[]; segs: Seg[]; set_name: string; slots: string[] } | null>(null);
   const [busyScan, setBusyScan] = useState(false);

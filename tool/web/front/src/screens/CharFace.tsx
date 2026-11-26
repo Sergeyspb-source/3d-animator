@@ -8,7 +8,7 @@ import { notifications } from '@mantine/notifications';
 import { IconMicrophone } from '@tabler/icons-react';
 import { fileUrl, get, live, onTaskFinished, post, upload, useStore } from '../api';
 import { plain, useT } from '../i18n';
-import { useCurrent } from '../objects';
+import { asCharacter, useCurrent } from '../objects';
 import type { Route } from '../nav';
 import EditorFrame, { fieldValue } from '../components/EditorFrame';
 import Viewer3D from '../components/Viewer3D';
@@ -99,7 +99,7 @@ export default function CharFace({ go, bridges }: { go: (r: Route) => void; brid
   const t = useT();
   const { colorScheme } = useMantineColorScheme();
   const cur = useCurrent();
-  const id = cur && !cur.creature ? cur.id : undefined;
+  const id = asCharacter(cur) ? cur.id : undefined;
   const finished = useStore(live, (s) => s.finished);
   const [mode, setMode] = useLocalStorage<Mode>({ key: 'sf3d.face_mode', defaultValue: 'face' });
   const [st, setSt] = useState<FaceState | null>(null);

@@ -12,6 +12,7 @@ import '@mantine/dropzone/styles.css';
 import '@mantine/spotlight/styles.css';
 import './styles.css';
 import App from './App';
+import { Guard } from './components/ErrorBoundary';
 import { I18nProvider } from './i18n';
 import { connect, get, type AppState } from './api';
 
@@ -48,7 +49,7 @@ get<AppState>('/api/state').then((st) => {
     <MantineProvider theme={theme} defaultColorScheme="dark">
       <Notifications position="bottom-right" limit={4} />
       <I18nProvider initial={st.lang} langs={st.langs}>
-        <App initial={st} />
+        <Guard><App initial={st} /></Guard>
       </I18nProvider>
     </MantineProvider>,
   );

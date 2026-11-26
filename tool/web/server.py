@@ -238,12 +238,17 @@ async def open_folder(req: Request):
 
 
 # ------------------------------------------------------------------ the current object (character / creature)
-def _obj(value, creature=False):
+def _obj(value, as_character=False, as_creature=False):
+    """One model of the scene, once: «creature» is what its passport says (the group it is listed under);
+    as_character / as_creature: the sections it works in. A model can be both: one of export/character with no
+    skeleton yet (either may take it), a creature with a humanoid's skeleton (its jaw there, its clips and armour here)."""
     f = UI._char_files(value)
     if not f:
         return None
+    creature = UI.CR.is_creature(f["dir"], f["name"])
     clips, worn = UI._char_counts(f)
-    return {"id": value, "name": f["name"], "creature": creature, "dir": f["dir"].as_posix(),
+    return {"id": value, "name": f["name"], "creature": creature, "as_character": as_character, "as_creature": as_creature,
+            "dir": f["dir"].as_posix(),
             "rigged": f["rigged"].as_posix() if f["rigged"] else None,
             "source": f["source"].as_posix() if f["source"] else None,
             "landmark": bool(f["landmark"]), "auto": bool(f["auto"]), "parts": bool(f["parts"]),
@@ -251,16 +256,23 @@ def _obj(value, creature=False):
             "tags": UI._char_tags(f) if not creature else (UI.CR_ICON["rig"] if f["rigged"] else UI.ICON["none"])}
 
 
+def _kinds() -> tuple:
+    """The ids the «Character» sections take and the ids the «Creatures» section takes (they may share some)."""
+    return [v for _, v in UI._characters()], [v for _, v in UI._characters(True)]
+
+
 @app.get("/api/objects")
 def objects():
-    chars = [o for o in (_obj(v) for _, v in UI._characters()) if o]
-    crs = [o for o in (_obj(v, True) for _, v in UI._characters(True)) if o]
-    ids = {o["id"] for o in chars + crs}
+    chars, crs = _kinds()
+    sc, sr = set(chars), set(crs)
+    objs = [o for o in (_obj(v, v in sc, v in sr) for v in dict.fromkeys(chars + crs)) if o]
+    ids = {o["id"] for o in objs}
     try:   # the one current object of the web UI (a character or a creature), else the handler modules' current character
         cur = _web_memo().read_text(encoding="utf-8").strip()
     except OSError:
         cur = ""
-    return {"characters": chars, "creatures": crs, "current": cur if cur in ids else UI._char_default()}
+    return {"characters": [o for o in objs if not o["creature"]], "creatures": [o for o in objs if o["creature"]],
+            "current": cur if cur in ids else UI._char_default()}
 
 
 def _web_memo() -> Path:
@@ -273,9 +285,12 @@ async def object_current(req: Request):
     if not v:
         return {"ok": False}
     _web_memo().write_text(v, encoding="utf-8")
-    # the handler modules' own memo of that kind too (its «current character» / «current creature»)
-    is_creature = any(c == v for _, c in UI._characters(True)) and not any(c == v for _, c in UI._characters())
-    (UI.creature_remember if is_creature else UI.char_remember)(v)
+    # the handler modules' own memo of each kind it is (their «current character» / «current creature»)
+    chars, crs = _kinds()
+    if v in crs:
+        UI.creature_remember(v)
+    if v in chars or v not in crs:
+        UI.char_remember(v)
     return {"ok": True}
 
 
