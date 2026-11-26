@@ -7416,7 +7416,7 @@ const TUBED = ['bracer', 'greave', 'cuisse', 'rerebrace'];
 const LIMB_KEEP = { bracer: 20, greave: 20, cuisse: 55, rerebrace: 30, cuirass: 110 };
 // the skin under it pressed into the body instead of hidden (mm on a man 1.75 m tall): 0 holes, the skin coming out through it
 // a third or less on the guards' clips (2026-11-25; cuisse 180 -> 66 vertices, rerebrace 17 -> 0)
-const PRESS_IN = { cuirass: 25, cuisse: 25, rerebrace: 18 };   // (0 holes in the clips: old masks left 2071 hole vertices on a cuisse, 1341 on a steel cuirass)
+const PRESS_IN = { cuirass: 25, cuisse: 25, rerebrace: 18, bracer: 12, greave: 15 };   // (bracer, greave: their limb_cover masks left 344, 396 holes)   // (0 holes in the clips: old masks left 2071 hole vertices on a cuisse, 1341 on a steel cuirass)
 function applyStyle(k) {
   const set = styleSet(); if (!set || !set[k]) return;
   // a shield of another shape is another shield: the last one's pictures, dents, pinches, its place on the arm and its
@@ -7446,7 +7446,7 @@ const SPEC = [
     ['thickness', 2, 30, 1, '{{js:ag.thickness}}', '', 'rad'],
     ['relief', 0, 1, .05, '{{js:ag.relief}}', '{{js:ag.relief_info}}', '', () => !['glove', 'undercloth', ...GARB].includes(S.piece)],
     ['limb_keep', 0, 120, 5, '{{js:ag.limb_keep}}', '{{js:ag.limb_keep_info}}', '', isP(...TUBED, 'cuirass')],
-    ['press_in', 0, 40, 1, '{{js:ag.press_in}}', '{{js:ag.press_in_info}}', '', isP('cuirass', 'cuisse', 'rerebrace')],
+    ['press_in', 0, 40, 1, '{{js:ag.press_in}}', '{{js:ag.press_in_info}}', '', isP(...Object.keys(PRESS_IN))],
     ['top_cut', 0, 30, 1, '{{js:ag.top_cut}}', '{{js:ag.top_cut_info}}', 'pc', isLimb],
     ['bottom_cut', 0, 30, 1, '{{js:ag.bottom_cut}}', '{{js:ag.bottom_cut_info}}', 'pc', isLimb],
     ['neckline', 0, 25, 1, '{{js:ag.neckline}}', '{{js:ag.neckline_info}}', 'pc', isP('cuirass')],

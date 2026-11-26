@@ -553,7 +553,8 @@ obj.select_set(True)
 import blender_texbake as TB
 # each material its own unwrap filling its own texture (rivets get more than a pixel); the one given out with the piece
 # last time when the mesh is the same (a texture painted on it finds it again)
-TB.unwrap(obj, [{mi} for mi in range(len(mats))], job, "UVMap")
+TB.unwrap(obj, [{mi} for mi in range(len(mats))], job, "UVMap",   # (mail anywhere, a trousers' cloth: bigger islands - their rings,
+         wide={mi for mi, u in enumerate(used) if u == 3 or (kind == "trousers" and u in (0, 4))})   # their weave broke at each)
 out_dir = Path(job["out"]).parent
 out_dir.mkdir(parents=True, exist_ok=True)
 tex_dir = Path(job.get("work") or out_dir) / f"{Path(job['out']).stem}_tex"   # the GLB embeds them; kept for a look
@@ -872,7 +873,7 @@ if job.get("mask"):   # what of the body the piece hides (the game takes it away
         from body_mask import limb_cover                                    # what is seen and a band round it, body_mask.limb_cover)
         zs = [(o.matrix_world @ v.co).z for o in body for v in o.data.vertices]
         keys = {tuple(x) for x in limb_cover(body, [obj], float(mj["limb_keep"]) / 1750 * (max(zs) - min(zs)), arm)}
-        if kind in ("cuisse", "rerebrace") and float(mj.get("press_in") or 0) > 0:   # (pressed in, not hidden: the limb's skin under it
+        if kind in ("cuisse", "rerebrace", "bracer", "greave") and float(mj.get("press_in") or 0) > 0:   # (pressed in, not hidden: the limb's skin under it
             from body_mask import press_under                                      # 25 / 18 mm into it - no hole, a third of the skin out; the
             H_ = max(zs) - min(zs)                                                 # limb_cover mask left holes at an inner thigh)
             keys = {tuple(m) for m in press_under(body, [obj], float(mj["press_in"]) / 1750 * H_, 30 / 1750 * H_, by_bone=True)}

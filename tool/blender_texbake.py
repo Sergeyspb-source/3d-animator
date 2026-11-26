@@ -222,7 +222,7 @@ def uv_package(obj, groups, size, item, job, info, layer="UVMap"):
         save(f"{sl}_mask", np.stack([mk, mk, mk, np.ones_like(mk)], axis=1))
         save(f"{sl}_lines", np.stack([lines * 0, lines * 0, lines * 0, lines], axis=1))
         out["slots"][sl] = {"hash": uv_hash(obj, g["mis"], layer), "faces": int(sel.sum())}
-    out["geo"] = geo_hash(obj)
+    out["geo"] = geo_hash(obj) + UNWRAP_TAG
     cs = _corners(obj, layer)   # each face by its points, its corners' UVs: found again whatever the faces' order
     np.savez_compressed(d / "uv_loops.npz", geo=np.array(out["geo"]), fn=np.array([len(k) for k, _, _, _ in cs], np.int32),
                         fv=np.array([x for k, _, _, _ in cs for x in k], np.int32), fuv=np.concatenate([u for _, u, _, _ in cs]).astype(np.float32))   # (the next make of this mesh takes it back)
@@ -238,12 +238,20 @@ def geo_hash(obj):
     return h.hexdigest()[:16]
 
 
-def unwrap(obj, sets, job, layer):
+UNWRAP_TAG = ""   # (how the last unwrap was made: kept with it, so an unwrap made another way is not taken back)
+
+
+def unwrap(obj, sets, job, layer, wide=()):
     """Each set of materials (its faces) its own unwrap, filling its own texture, on the UV layer - as given out with the
     piece last time (uv_loops.npz in job["uv_prev"]) when the mesh is the same: smart_project's islands and packing of
-    a big part are not the same from run to run, and a texture painted on the unwrap must find it again."""
+    a big part are not the same from run to run, and a texture painted on the unwrap must find it again.
+    wide: the materials cut at 80 degrees, not 60 - fewer, bigger islands: a mail's rings, a cloth's weave broke at each
+    of a hauberk's 1154 islands (2026-11-26: 687 now; trousers 105 -> 88). An unwrap along the editor's pattern layer was
+    tried: angle based folded half a hauberk to nothing, and the layer lies on itself (inner and outer sides, both legs)."""
+    global UNWRAP_TAG
     me = obj.data
-    gh = geo_hash(obj)
+    UNWRAP_TAG = "|wide" if wide else ""
+    gh = geo_hash(obj) + UNWRAP_TAG
     prev = Path(str(job.get("uv_prev") or "")) / "uv_loops.npz"
     if job.get("uv_prev") and prev.exists():
         try:
@@ -274,7 +282,7 @@ def unwrap(obj, sets, job, layer):
         bpy.ops.object.mode_set(mode="EDIT"); bpy.ops.mesh.select_all(action="DESELECT"); bpy.ops.object.mode_set(mode="OBJECT")
         me.polygons.foreach_set("select", sel)
         bpy.ops.object.mode_set(mode="EDIT")
-        bpy.ops.uv.smart_project(angle_limit=math.radians(60), island_margin=.006)
+        bpy.ops.uv.smart_project(angle_limit=math.radians(80 if set(mis) & set(wide) else 60), island_margin=.006)
         bpy.ops.object.mode_set(mode="OBJECT")
 
 
