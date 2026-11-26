@@ -20,6 +20,9 @@ extends Node3D
 
 var _blink_meshes: Array[MeshInstance3D] = []
 var _blink_idx: Array[PackedInt32Array] = []
+## Per blink mesh: the eyelids' "eyeBlink<Side>_arc" helpers, -1 where none (4v(1-v): the lid along the eyeball's arc
+## half way, not through it).
+var _blink_arc: Array[PackedInt32Array] = []
 var _next_blink: float = 0.0
 var _blink_t: float = -1.0
 var _blinks_left: int = 0
@@ -35,13 +38,16 @@ func _ready() -> void:
 		if mi.mesh == null:
 			continue
 		var idx := PackedInt32Array()
+		var arc := PackedInt32Array()
 		for key: String in ["eyeBlinkLeft", "eyeBlinkRight"]:
 			var i: int = mi.find_blend_shape_by_name(key)
 			if i >= 0:
 				idx.append(i)
+				arc.append(mi.find_blend_shape_by_name(key + "_arc"))
 		if not idx.is_empty():
 			_blink_meshes.append(mi)
 			_blink_idx.append(idx)
+			_blink_arc.append(arc)
 	_find_lines()
 	_schedule_blink()
 	if say_on_ready != "":
@@ -116,11 +122,15 @@ func _process(delta: float) -> void:
 # The face curves of a line may blink too: the larger value wins, so the timer never cancels the line's own blink.
 func _set_blink(v: float) -> void:
 	for m: int in _blink_meshes.size():
-		for i: int in _blink_idx[m]:
+		for j: int in _blink_idx[m].size():
+			var i: int = _blink_idx[m][j]
 			var line_v: float = 0.0
 			if _player != null and is_speaking():
 				line_v = _blink_meshes[m].get_blend_shape_value(i)
-			_blink_meshes[m].set_blend_shape_value(i, maxf(v, line_v) if v > 0.0 else line_v)
+			var w: float = maxf(v, line_v) if v > 0.0 else line_v
+			_blink_meshes[m].set_blend_shape_value(i, w)
+			if _blink_arc[m][j] >= 0:
+				_blink_meshes[m].set_blend_shape_value(_blink_arc[m][j], 4.0 * w * (1.0 - w))
 
 
 func _schedule_blink() -> void:

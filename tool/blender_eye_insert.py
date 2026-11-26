@@ -193,6 +193,9 @@ def tint_kit_iris(target):
 face = None
 balls = []
 solved = {}
+# the eyelids: rows of their own grown into the face's skin (eyelid_topo.py); off - the older shells over the ball
+LID_TOPO = bool(job.get("lid_topo", True))
+SHELLS = bool(job.get("lid_shells", True)) and not LID_TOPO
 for side, spec in job["sides"].items():
     rim3 = [bl(p) for p in spec["outline"]]
     curve = catmull(rim3, 10)
@@ -204,6 +207,8 @@ for side, spec in job["sides"].items():
         skins = [o for o in meshes if not o.name.startswith(("Teeth_", "Gum_", "Tongue", "MouthCavity", "Eye"))] or meshes
         face = max(skins, key=lambda o: sum(1 for v in o.data.vertices if ((o.matrix_world @ v.co) - Vector((cx, rim3[0].y, cz))).length < width * 2))
         fw = face.matrix_world
+        # (the face as it was, its painted eyes in place: the lids' own texture is coloured from it - eyelid_topo)
+        src_me = face.data.copy() if LID_TOPO else None
     # the painted surface in front of the aperture centre (before cutting)
     face.data.calc_loop_triangles()
     wv = [fw @ v.co for v in face.data.vertices]
@@ -353,8 +358,8 @@ for side, sv in solved.items():
     sg = sock.vertex_groups.new(name=job["head_bone"]); sg.add(list(range(len(sock.data.vertices))), 1.0, "REPLACE")
     sm_ = sock.modifiers.new("Armature", "ARMATURE"); sm_.object = arm
     sock.parent = arm; sock.matrix_parent_inverse = arm.matrix_world.inverted()
-    if job.get("lid_shells", True):
-        # with the eyelid shells the opening round the ball is theirs: the cup's front lip, at the opening's edge,
+    if SHELLS or LID_TOPO:
+        # with the eyelid shells (or lids of their own) the opening round the ball is theirs: the cup's front lip, at the opening's edge,
         # stood out in front of an uneven skin in dark flaps over the eye (women_young, man_young)
         bpy.data.objects.remove(sock, do_unlink=True)
     report["eyes"][side] = {"radius": round(r, 4), "opening_width": round(width, 4), "deleted_faces": sv["kill"],
@@ -568,7 +573,7 @@ def smooth_rims():
     return rep_out
 
 
-if face is not None and job.get("smooth_rims", True):
+if face is not None and job.get("smooth_rims", True) and not LID_TOPO:   # (with lids of their own the edge is cut away)
     report["smooth_rims"] = smooth_rims()
 
 
@@ -663,7 +668,7 @@ def lid_keys():
         # source's ragged cut edge closed in teeth and pieces far from the ball flew forward (women_young); even a
         # quarter of the way it lay in stripes over the closed shell (man_young). Squint and wide are the skin's own
         # (the shells lie behind it: without the skin those two keys showed nothing)
-        sk = float(job.get("skin_lid_share", 0.0 if job.get("lid_shells", True) else 1.0))
+        sk = float(job.get("skin_lid_share", 0.0 if (SHELLS or LID_TOPO) else 1.0))
         ex = float(job.get("lid_expressivity", 1.5))   # squint and wide further than they were (they hardly showed)
         for key, a_up, a_lo in (("eyeBlink", sk, sk), ("eyeSquint", 0.18 * ex, 0.55 * ex), ("eyeWide", -0.35 * ex, -0.12 * ex)):
             mv = moves.setdefault(key + name, {})
@@ -700,6 +705,11 @@ def lid_keys():
 
 if face is not None and job.get("lid_keys", True):
     report["lid_keys"] = lid_keys()
+
+if face is not None and LID_TOPO:
+    import eyelid_topo
+    report["lid_topo"] = eyelid_topo.build(face, solved, balls, job, src_me, base_pixels)
+    bpy.data.meshes.remove(src_me)
 
 
 # ------------------------------------------------------------------ eyelid shells (the user's idea)
@@ -850,7 +860,7 @@ def lid_shells():
     return made
 
 
-if face is not None and job.get("lid_shells", True):
+if face is not None and SHELLS:
     report["lid_shells"] = lid_shells()
 
 # eye bones to the ball centres (only the balls are weighted to them)

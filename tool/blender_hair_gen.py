@@ -3291,6 +3291,42 @@ def shell_edges(sd, c):
     return up, lo
 
 
+def lid_margin(sd, c, r):
+    """the lids of their own topology (blender_eye_insert + eyelid_topo: rows grown into the face's skin, the margin's
+    faces of material eyelid_rim): the lash line - the margin's outer edge, its vertices farthest from the ball -,
+    upper and lower, from the inner corner (by the nose) to the outer -> (up, lo) or None"""
+    mats = [m.name if m else "" for m in me.materials]
+    if not any(n.startswith("eyelid_rim") for n in mats):
+        return None
+    vs = set()
+    for poly in me.polygons:
+        if poly.material_index < len(mats) and mats[poly.material_index].startswith("eyelid_rim") and (V[poly.vertices[0]] - c).length < 2.5 * r:
+            vs.update(poly.vertices)
+    uniq = {}
+    for i in vs:   # (glTF splits a vertex along the unwrap's seams)
+        p = V[i]
+        uniq[(round(p.x * 2e5), round(p.y * 2e5), round(p.z * 2e5))] = p
+    pts = list(uniq.values())
+    if len(pts) < 12:
+        return None
+    rad = [(p - c).length for p in pts]
+    cut_ = .5 * (min(rad) + max(rad))   # (the wet line and the sleeve just over the ball, the lash line a lid's thickness out)
+    lash = [p for p, d in zip(pts, rad) if d > cut_]
+    if len(lash) < 8:
+        return None
+    a_, b_ = min(lash, key=lambda p: p.x), max(lash, key=lambda p: p.x)
+    inner, outer = (a_, b_) if abs(a_.x - O.x) < abs(b_.x - O.x) else (b_, a_)
+    zl = lambda x: inner.z + (outer.z - inner.z) * (x - inner.x) / ((outer.x - inner.x) or 1e-9)   # noqa: E731
+    key = lambda p: abs(p.x - inner.x)   # noqa: E731
+    up = sorted([p for p in lash if p.z >= zl(p.x)] + [inner, outer], key=key)
+    lo = sorted([p for p in lash if p.z < zl(p.x)] + [inner, outer], key=key)
+    dedup = lambda seq: [p for j, p in enumerate(seq) if j == 0 or (p - seq[j - 1]).length > 1e-6]   # noqa: E731
+    up, lo = dedup(up), dedup(lo)
+    if len(up) < 5 or len(lo) < 5:
+        return None
+    return up, lo
+
+
 def shell_turns(sd, c, r):
     """the eyelid shells' turn in each of their keys (radians, + down): the upper's, the lower's (EyeLid_<side>, built
     with the eyes: blender_eye_insert.lid_shells) - or None"""
@@ -3320,13 +3356,18 @@ def build_lashes(st):
         c, r = eye_ball(sd)
         if c is None:
             continue
-        sh, op = shell_edges(sd, c), eye_opening(sd)
-        if sh is None and op is None:
+        sh = shell_edges(sd, c)
+        lm = lid_margin(sd, c, r) if sh is None else None   # (the lids of their own topology: on their lash line)
+        op = eye_opening(sd) if lm is None else None
+        if sh is None and op is None and lm is None:
             continue
         found[sd] = dict(c=c, r=r, shells=sh is not None)
         # (the upper ones on the upper shell's edge; the lower ones on the lower lid's edge as one sees it - the skin
         # there is often higher than the lower shell's edge, hidden under it: from the shell they came out of the cheek)
-        up_m, lo_m = (sh[0] if sh else op["up"]), (op["lo"] if op else sh[1])
+        if lm is not None:
+            up_m, lo_m = lm
+        else:
+            up_m, lo_m = (sh[0] if sh else op["up"]), (op["lo"] if op else sh[1])
         lat = X * (1 if up_m[-1].x > up_m[0].x else -1)   # (out to the outer corner)
         for lid, marg, Lf in (("up", up_m, 1.), ("lo", lo_m, sp["lower"])):
             if Lf <= 0:

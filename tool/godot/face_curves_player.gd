@@ -17,6 +17,9 @@ var _was_playing: bool = false
 ## keys were split by side: an older clip's mouthSmile drives mouthSmileLeft and mouthSmileRight).
 var _targets: Array[Dictionary] = []
 var _meshes: Array[MeshInstance3D] = []
+## Per mesh: blend shape index -> its "<name>_arc" helper (SF3D's eyelids: a blink is a straight line from open to
+## closed, through the eyeball half way; the helper at 4v(1-v) bends it back onto the arc over the ball).
+var _arcs: Array[Dictionary] = []
 
 
 # GPT: load the clip and resolve blend-shape indices once; the face starts at rest.
@@ -41,6 +44,7 @@ func _ready() -> void:
 		if not map.is_empty():
 			_meshes.append(mi)
 			_targets.append(map)
+			_arcs.append(_arc_helpers(mi, map))
 	assert(not _meshes.is_empty(), "no blend shape under %s matches the face clip" % face_root.name)
 	_apply_rest()
 
@@ -79,6 +83,9 @@ func evaluate(t: float) -> void:
 		for key: StringName in map:
 			for index: int in map[key]:
 				_meshes[m].set_blend_shape_value(index, values[key])
+				if _arcs[m].has(index):
+					var v: float = clampf(values[key], 0.0, 1.0)
+					_meshes[m].set_blend_shape_value(_arcs[m][index], 4.0 * v * (1.0 - v))
 
 
 func _apply_rest() -> void:
@@ -86,3 +93,19 @@ func _apply_rest() -> void:
 		for indices: Array in _targets[m].values():
 			for index: int in indices:
 				_meshes[m].set_blend_shape_value(index, 0.0)
+		for arc: int in _arcs[m].values():
+			_meshes[m].set_blend_shape_value(arc, 0.0)
+
+
+# The "_arc" helper of each driven blend shape that has one (by name), index -> helper index.
+func _arc_helpers(mi: MeshInstance3D, map: Dictionary) -> Dictionary:
+	var arcs: Dictionary = {}
+	var am: ArrayMesh = mi.mesh as ArrayMesh
+	if am == null:
+		return arcs
+	for indices: Array in map.values():
+		for index: int in indices:
+			var a: int = mi.find_blend_shape_by_name(StringName(String(am.get_blend_shape_name(index)) + "_arc"))
+			if a >= 0:
+				arcs[index] = a
+	return arcs
