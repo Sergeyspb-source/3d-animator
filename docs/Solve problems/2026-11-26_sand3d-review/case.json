@@ -1,0 +1,65 @@
+{
+  "id": "2026-11-26_sand3d-review",
+  "title_ru": "Нам прислали проект, где «много объектов, которыми можно управлять». Подойдёт ли он для игры?",
+  "title_en": "Someone sent us a project with 'lots of objects you can control'. Is it good for our game?",
+  "hook_ru": "Под «управляемыми объектами» оказалась не физика, а способ писать 3D-модели как программу.",
+  "status": "solved",
+  "date": "2026-11-26",
+  "sessions": [
+    {"name": "sand3d-research (claude/sand3d-research-c5af5c)", "id": ""},
+    {"name": "Расширение карты Home до большого мира (задание)", "id": "local_b6e54bdd-a00f-4d8a-b379-a81d691da2ec"}
+  ],
+  "commits": ["game:c00184be", "game:95e93fb2"],
+  "tags": ["sand3d", "blender", "godot", "research", "joints"],
+  "video": {
+    "potential": 3,
+    "why_ru": "Понятный поворот: галерея похожа на физику, а это способ писать модели программой. Смешная неудача с камерой. Подводка к ролику про сундук и колодец.",
+    "wow_moment_ru": "Пять пустых серых кадров подряд — камера видела на десять сантиметров, потому что sand3d строит в миллиметрах.",
+    "length_seconds": 75,
+    "thumbnail": {"image": "src/01_washing_machine_open.png", "text_ru": "ЭТО НЕ ФИЗИКА"}
+  },
+  "numbers": [
+    {"what_ru": "Сборка стиральной машины (пример авторов)", "before": null, "after": 1.2, "unit_ru": "секунды", "better": "lower",
+     "measured_on": "ноутбук, RTX 4060 8 ГБ (сборка на процессоре)", "note_ru": "1,0–1,5 с в разных прогонах; 2 942 треугольника, 4 подвижные части"},
+    {"what_ru": "Наш сундук: строк программы", "before": null, "after": 18, "unit_ru": "строк", "better": "lower",
+     "measured_on": "подсчёт строк", "note_ru": "собрался с первой попытки, 264 треугольника, 0,14–0,17 с"},
+    {"what_ru": "Наша тележка: строк программы", "before": null, "after": 23, "unit_ru": "строки", "better": "lower",
+     "measured_on": "подсчёт строк", "note_ru": "собралась с первой попытки, 1 900 треугольников, 3 подвижные части"},
+    {"what_ru": "Кусок пустыни 3 × 2 м", "before": null, "after": 35544, "unit_ru": "треугольников", "better": "lower",
+     "measured_on": "ноутбук, RTX 4060 8 ГБ", "note_ru": "3,2–3,7 с сборки; слишком подробно для большой карты"},
+    {"what_ru": "Объектов в готовых наборах sand3d", "before": null, "after": 116151, "unit_ru": "объектов", "better": "higher",
+     "measured_on": "карточки наборов на Hugging Face, 2026-11-26", "note_ru": "почти всё современное; CC BY 4.0"},
+    {"what_ru": "Ожидание свободной машины", "before": null, "after": 14, "unit_ru": "минут", "better": "lower",
+     "measured_on": "ноутбук, CPU 100 % от чужих задач", "note_ru": "по правилам проекта тяжёлое не запускают на загруженной машине"}
+  ],
+  "media": [
+    {"file": "img/01_probe_objects.jpg", "clean": "src/01_washing_machine_open.png", "kind": "render", "role": "result", "pair": "",
+     "caption_ru": "Четыре пробных объекта в позе «открыто»: две модели авторов и две наши. Чистые кадры: src/01_*.png."},
+    {"file": "img/02_dune_patch.jpg", "clean": "src/02_dune_patch.png", "kind": "render", "role": "attempt", "pair": "",
+     "caption_ru": "Дюна по рецепту sand3d: 35 544 треугольника на 3 × 2 метра."}
+  ],
+  "models": [
+    {"role": "reference", "path": "docs/Solve problems/2026-11-26_sand3d-review/src/models/washing_machine.glb", "label_ru": "Стиральная машина из примеров sand3d (в покое)"},
+    {"role": "reference", "path": "docs/Solve problems/2026-11-26_sand3d-review/src/models/garden_gate.glb", "label_ru": "Садовые ворота из примеров sand3d"},
+    {"role": "attempt", "path": "docs/Solve problems/2026-11-26_sand3d-review/src/models/chest.glb", "label_ru": "Наш пробный сундук, 18 строк"},
+    {"role": "attempt", "path": "docs/Solve problems/2026-11-26_sand3d-review/src/models/handcart.glb", "label_ru": "Наша пробная тележка, 23 строки"},
+    {"role": "attempt", "path": "docs/Solve problems/2026-11-26_sand3d-review/src/models/dunes.glb", "label_ru": "Кусок пустыни из инструкции sand3d"},
+    {"role": "after", "path": "game:assets/models/home/town_blocks/props/training_chest.glb", "label_ru": "Сундук, который потом попал в игру"}
+  ],
+  "beats": [
+    {"n": 1, "seconds": 10, "say_ru": "Нам прислали ссылку: в галерее sand3d стиральная машина сама открывает дверцу. Подойдёт ли это для игры?", "show": ["src/01_washing_machine_open.png", "src/01_garden_gate.png"]},
+    {"n": 2, "seconds": 15, "say_ru": "Это не физика и не движок. Модель пишется как программа, а в файл кладётся пометка: эта деталь крутится вокруг этой оси.", "show": ["diagram:программа sand3d → Blender → GLB с петлями → Godot"]},
+    {"n": 3, "seconds": 12, "say_ru": "Первые пять картинок вышли пустыми. sand3d строит в миллиметрах, а камера видела на сто единиц — десять сантиметров.", "show": ["diagram:пустой серый кадр, камера и граница видимости 10 см"]},
+    {"n": 4, "seconds": 15, "say_ru": "Камеру отодвинули. Стиральная машина — за секунду, наш сундук — восемнадцать строк, с первой попытки.", "show": ["img/01_probe_objects.jpg", "model:attempt"]},
+    {"n": 5, "seconds": 10, "say_ru": "Godot прочитал петли: игра может двигать такие детали одним общим скриптом.", "show": ["src/01_chest_open.png"]},
+    {"n": 6, "seconds": 13, "say_ru": "Вердикт: сначала прототип. Для предметов с подвижными частями — да, для физики и толп — нет. Дальше — сундук и колодец.", "show": ["model:after"]}
+  ],
+  "reproduce_in_app": [
+    "Это не приложение SF3D. В игре: Дом → тренировочный двор, за трибунами у стены замка стоит сундук; подойти и нажать E."
+  ],
+  "regenerate": [
+    "Клон https://github.com/Sandflow-ai/sand3d (коммит 2a8ea58) в папку <clone>; затем через очередь тяжёлых задач игры:",
+    "powershell -File \"D:\\My projects\\game-project-godot\\tools\\run_queued.ps1\" -Lane heavy -Exe \"D:\\Blender 5.2\\blender.exe\" -b --factory-startup --python \"docs/Solve problems/2026-11-26_sand3d-review/src/probe_render_2k.py\" -- <clone>\\src <clone> <out_dir>",
+    "D:\\conda\\envs\\sf3d\\python.exe \"docs/Solve problems/_tools/sheet.py\" \"docs/Solve problems/2026-11-26_sand3d-review/img/01_probe_objects.jpg\" \"Стиральная машина из примеров: дверца и ящик открыты\" src/01_washing_machine_open.png \"Садовые ворота из примеров: створка на 60°\" src/01_garden_gate.png \"Наш сундук, 18 строк: крышка открыта\" src/01_chest_open.png \"Наша тележка, 23 строки: кузов наклонён\" src/01_handcart_tipped.png --cols 2 --crop"
+  ]
+}
