@@ -696,6 +696,110 @@ def keep_band(body, keys, pieces, band, reach=.06, deg=30):
     return [k for k in keys if len(k) != 3 or tuple(k[:3]) not in back]
 
 
+def keep_rim(body, keys, band, skip_bones=(), skip=None):
+    """keys (body_mask's list) with the hidden skin nearer than `band` to the shown skin - along the skin - given back
+    (2026-11-27): a boot, a glove, a helmet, a coif hides a whole foot, hand, head; in the clips its rim lifts off the skin (the
+    ankle bent, the head bowed: the nape under a bascinet) and the cut's edge showed under it - the leg's, the neck's tube seen
+    into (the guards' 61 clips: work/wear_test/torso_band, measure.py edge=). Kept, the skin is there under the rim (pressed in
+    under it: press_under). Along the skin's edges, places merged by their keys (a seam's split vertices are one place), so a
+    hand's skin is not given back for a thigh that is near it. skip_bones: the skin carried most by these stays hidden and the
+    band does not go through it (a helmet's, a coif's ears and head: given back, an ear's stub stuck out through it; the neck,
+    the nape is what is wanted); skip(world point, bone name, key) -> True: the same for a vertex by its place (a head's skin from the
+    eyes up, where a goblin's ears are - the nape under a bascinet's rim below them given back). Moved vertices stay as they are."""
+    import heapq
+    skip_at = skip
+    hid = {tuple(k[:3]) for k in keys if len(k) == 3}
+    if band <= 0 or not hid:
+        return keys
+    key_of = lambda c: (round(c.x * 1000), round(c.z * 1000), round(-c.y * 1000))  # noqa: E731
+    is_hid = lambda k: any((k[0] + a, k[1] + b, k[2] + c) in hid for a in (-1, 0, 1) for b in (-1, 0, 1) for c in (-1, 0, 1))  # noqa: E731
+    pos, nb, skip = {}, {}, set()
+    for o in body:
+        W = o.matrix_world
+        ks = [key_of(v.co) for v in o.data.vertices]
+        names = [g.name for g in o.vertex_groups]
+        for v, k in zip(o.data.vertices, ks):
+            pos.setdefault(k, W @ v.co)
+            if (skip_bones or skip_at) and v.groups:
+                bn = names[max(v.groups, key=lambda g: g.weight).group]
+                if bn in skip_bones or (skip_at is not None and skip_at(W @ v.co, bn, k)):
+                    skip.add(k)
+        for e in o.data.edges:
+            a, b = ks[e.vertices[0]], ks[e.vertices[1]]
+            if a != b:
+                nb.setdefault(a, set()).add(b)
+                nb.setdefault(b, set()).add(a)
+    hidden = {k: is_hid(k) for k in pos}
+    dist, heap = {}, []
+    for k, h in hidden.items():   # (from the shown skin's places next to the cut, into the hidden skin)
+        if not h and any(hidden.get(w) for w in nb.get(k, ())):
+            dist[k] = 0.0
+            heap.append((0.0, k))
+    heapq.heapify(heap)
+    while heap:
+        d, k = heapq.heappop(heap)
+        if d > dist.get(k, 1e9) or d >= band:
+            continue
+        for w in nb.get(k, ()):
+            if hidden.get(w) and w not in skip:
+                nd = d + (pos[w] - pos[k]).length
+                if nd < band and nd < dist.get(w, 1e9):
+                    dist[w] = nd
+                    heapq.heappush(heap, (nd, w))
+    back = {k for k, d in dist.items() if hidden[k] and d < band}
+    gone = {(k[0] + a, k[1] + b, k[2] + c) for k in back for a in (-1, 0, 1) for b in (-1, 0, 1) for c in (-1, 0, 1)} & hid
+    return [k for k in keys if len(k) != 3 or tuple(k[:3]) not in gone]
+
+
+def drop_islands(body, keys, pieces, share=.02, reach=.06, deg=30):
+    """keys with the shown skin cut off from the rest by the hidden skin - and all of it under the piece - hidden too
+    (2026-11-27): a hybrid boot's mask left a patch of the instep shown inside it, and in the clips the patch came out
+    through the boot's plate (111 vertices out on the guards' 61 clips). A patch goes only when it is small (`share` of the
+    body's places) and every place of it is under the piece (_under, normals by the bone line:
+    its normal and the four rays round it meet the piece) - toes seen in an open shoe, a face behind a visor's slit stay."""
+    hid = {tuple(k[:3]) for k in keys if len(k) == 3}
+    if not hid:
+        return keys
+    key_of = lambda c: (round(c.x * 1000), round(c.z * 1000), round(-c.y * 1000))  # noqa: E731
+    is_hid = lambda k: any((k[0] + a, k[1] + b, k[2] + c) in hid for a in (-1, 0, 1) for b in (-1, 0, 1) for c in (-1, 0, 1))  # noqa: E731
+    nb, allk = {}, set()
+    for o in body:
+        ks = [key_of(v.co) for v in o.data.vertices]
+        allk.update(ks)
+        for e in o.data.edges:
+            a, b = ks[e.vertices[0]], ks[e.vertices[1]]
+            if a != b:
+                nb.setdefault(a, set()).add(b)
+                nb.setdefault(b, set()).add(a)
+    hidden = {k: is_hid(k) for k in allk}
+    seen, comps = set(), []
+    for k in allk:
+        if hidden[k] or k in seen:
+            continue
+        comp, stack, touches = [], [k], False
+        seen.add(k)
+        while stack:
+            x = stack.pop()
+            comp.append(x)
+            for w in nb.get(x, ()):
+                if hidden[w]:
+                    touches = True
+                elif w not in seen:
+                    seen.add(w)
+                    stack.append(w)
+        comps.append((comp, touches))
+    if len(comps) < 2:
+        return keys
+    big = max(len(c) for c, _ in comps)
+    small = [c for c, _t in comps if len(c) < big and len(c) <= share * len(allk)]   # (a toenail's own island in a boot too)
+    if not small:
+        return keys
+    pts, _H = _under(body, pieces, 0.0, reach, deg, by_bone=True)
+    under = {k for k, _p, _n, u in pts if u}
+    add = [x for c in small if all(k in under for k in c) for x in c]
+    return keys + [list(k) for k in sorted(set(add))]
+
+
 def press_under(body, pieces, depth, fade, reach=.06, deg=30, by_bone=False):
     """The skin under a rigid piece pressed `depth` into the body along its normal (2026-11-25, the user's idea: the belly came
     out through the steel cuirass's lower edge in a step - pressed in, it stays under it, and no hole opens: the skin is

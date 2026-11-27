@@ -1387,7 +1387,7 @@ static func _hide_pieces(skel: Node) -> void:
 ## shirt is not pressed by its own mask); under two of them the deeper move. The mesh the steps before made is kept aside
 ## («sf3d_press_src»), so the cloth comes back when the cuirass comes off and is never pressed twice.
 const PRESSED_UNDER := ["undercloth", "trousers", "brayette", "hauberk", "gambeson", "tunic", "vest"]
-const PRESSING := ["cuirass", "cuisse", "rerebrace", "bracer", "greave", "pauldron", "brayette", "tassets", "pelerine", "hauberk"]
+const PRESSING := ["cuirass", "cuisse", "rerebrace", "bracer", "greave", "pauldron", "brayette", "tassets", "pelerine", "hauberk", "footwear"]
 const PRESS_REACH := 0.04   # of the body's height: a cloth vertex this near a pressed skin vertex moves as it
 
 

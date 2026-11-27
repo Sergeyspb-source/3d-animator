@@ -576,6 +576,22 @@ if job.get("mask"):   # what it hides, the ears too
     keys = head_cover(body, [obj], keys, poke, centre, shell=shell_tree, ear_keys=ear_keys, press=.5 * max(gap, .04 * half_d),
                       radii=(half_w, half_d, top), root=.35 * half_w, inner=inner, band=band, fixed=head_bones,
                       band_fixed=prm.get("band_fixed"))   # (a test's: body_mask.BAND_FIXED otherwise)
+    # the skin below the eyes given back within neck_keep_mm of the shown skin (along the skin) and pressed in under the helmet
+    # (2026-11-27): the head bowed, a visored bascinet's rim and mail lifted off the nape and its cut showed - the neck's tube
+    # seen into (the guards' 61 clips, measure.py edge: 1621 hidden places shown -> 403). The head from the eyes up and the
+    # ears stay as head_cover left them: given back, a goblin's ear stuck out through the shell as a stub
+    nk = float(prm.get("neck_keep_mm", 60))
+    if nk > 0:
+        from body_mask import keep_rim, press_under
+        ear_near = {(k[0] + a, k[1] + b, k[2] + c) for k in ear_keys for a in (-1, 0, 1) for b in (-1, 0, 1) for c in (-1, 0, 1)}
+        keys = keep_rim(body, keys, nk / 1750 * H, skip=lambda p, bn, k: bn in head_bones and (p.z >= E.z or k in ear_near))
+        npress = float(prm.get("neck_press_mm", 10))
+        if npress > 0:
+            hid_ = {tuple(k[:3]) for k in keys if len(k) == 3}
+            moved_ = {tuple(k[:3]) for k in keys if len(k) == 6}
+            near_ = lambda k: any((k[0] + a, k[1] + b, k[2] + c) in hid_ for a in (-1, 0, 1) for b in (-1, 0, 1) for c in (-1, 0, 1))  # noqa: E731
+            keys = list(keys) + [m for m in press_under(body, [obj], npress / 1750 * H, 30 / 1750 * H, by_bone=True)
+                                 if tuple(m[:3]) not in moved_ and not near_(tuple(m[:3]))]
     Path(job["mask"]).write_text(json.dumps(keys), encoding="utf-8")
 
 for o in list(bpy.data.objects):   # the skeleton and the helmet only

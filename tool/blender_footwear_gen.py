@@ -110,6 +110,8 @@ gap = float(prm.get("gap", .06))
 hide = bool(prm.get("hide", 1)) and style != "sandal"   # (a sandal leaves the foot bare)
 # the skin kept inside below the rim (world): the editor's in millimetres on a man 1.75 m tall, or a share of the height
 keep = (float(prm["keep_mm"]) / 1750 if "keep_mm" in prm else float(prm.get("keep", .0114))) * H
+FOOT_PRESS_MM = 25   # the shin's skin shown under the boot pressed in this far (mm on a man 1.75 m tall; prm press_mm): a hybrid
+# boot's 98 skin vertices out in the guards' clips -> 55 at 15 mm, 29 at 25 (the holes at its rim 32 -> 47)
 k_width = float(prm.get("width", 1.))
 
 
@@ -505,6 +507,17 @@ if job.get("mask"):
             keys |= {tuple(x) for x in where(body, own, lambda q, A=f["A"], up=up, lim=lim: (q - A).dot(up) < lim)}
         else:
             keys |= {tuple(x) for x in body_mask(body, [ob for x, ob in parts if x == s], erode=4)}
+    # (2026-11-27) a patch of skin left shown inside the boot, cut off from the rest by the hidden foot, hidden too: a hybrid
+    # boot's instep came out through its plate in the clips (the guards' 61 clips: 136 places, the holes round it 86 -> 32).
+    # Toes seen in an open shoe stay (body_mask.drop_islands: only what is all under the boot)
+    from body_mask import drop_islands, press_under
+    keys = {tuple(x) for x in drop_islands(body, [list(k) for k in keys], [ob for _, ob in parts])}
+    pm = float(prm.get("press_mm", FOOT_PRESS_MM))
+    if pm > 0:   # (the shin's skin shown in the shaft pressed in, as under a greave: it came out through a boot's shaft)
+        hid_ = {k for k in keys if len(k) == 3}
+        near_ = lambda k: any((k[0] + a, k[1] + b, k[2] + c) in hid_ for a in (-1, 0, 1) for b in (-1, 0, 1) for c in (-1, 0, 1))  # noqa: E731
+        keys |= {tuple(m) for m in press_under(body, [ob for _, ob in parts], pm / 1750 * H, 30 / 1750 * H, by_bone=True)
+                 if not near_(tuple(m[:3]))}
 import blender_texbake as TB
 TB.tag_mail([ob for _, ob in parts])   # (the mail's rings: a slot of their own)
 obj = join([ob for _, ob in parts])
