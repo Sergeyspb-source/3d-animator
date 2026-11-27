@@ -899,9 +899,13 @@ def run(cat: str, stem: str, cfg: dict, draft_dir: Path, opts: dict, log=None) -
         if opts.get("mirror") and "right" in pics and "left" not in pics:
             cams["left"], _, M = fitted(d, st, base, "left", pics["right"]["path"], M, flip=True)
         t = time.time()
+        _marks3d(st, base, M, info.get("category") or cat)
+        sizes = {v: Image.open(x["path"]).size for v, x in pics.items()}
         a_info = project(base, d / "step_a.glb", {v: x["path"] for v, x in pics.items()}, mirror=bool(opts.get("mirror")),
                          sharp=float(opts.get("sharp", 4.0)), delight_k=float(opts.get("delight", 0.0)),
-                         pins=st.get("pins") or {}, cams=cams)
+                         pins=view_pins(st, cams, {v: x["path"] for v, x in pics.items()}, bool(opts.get("mirror")), sizes),
+                         cams=cams)
+        a_info["marks"] = sum(len(v) for v in (st.get("marks") or {}).values())
         secs["project"] = round(time.time() - t, 1)
         steps.append("project")
         cur = d / "step_a.glb"
@@ -1009,7 +1013,10 @@ def codex_sides(cat: str, stem: str, cfg: dict, draft_dir: Path, views: list, lo
         M = None
         for v, x in pics.items():
             cams[v], _, M = fitted(d, st, base, v, x["path"], M)
-        project(base, d / "codex_base.glb", {v: x["path"] for v, x in pics.items()}, cams=cams, pins=st.get("pins") or {})
+        _marks3d(st, base, M, info.get("category") or cat)
+        sizes = {v: Image.open(x["path"]).size for v, x in pics.items()}
+        project(base, d / "codex_base.glb", {v: x["path"] for v, x in pics.items()}, cams=cams,
+                pins=view_pins(st, cams, {v: x["path"] for v, x in pics.items()}, False, sizes))
         src = d / "codex_base.glb"
     fw, fh = Image.open(front).size
     w = 864
@@ -1069,6 +1076,202 @@ def set_pins(cat: str, stem: str, cfg: dict, view: str, pins: list) -> dict:
     return st
 
 
+# ------------------------------------------------------------------ landmarks: named pins whose model end is a 3D point
+# For characters: ear tips, ear holes, elbows, hands (the palm's middle), knees; L = the model's own left (+X). The model
+# point lives in 3D (one for every view: an ear tip marked once lands in the front AND the side picture - the ear fitted
+# in two planes); the picture point is per view. A side view takes only its own side's marks (the far ear is hidden).
+MARK_PARTS = [("ear_tip", "surface"), ("ear_hole", "surface"), ("elbow", "joint"), ("hand", "joint"), ("knee", "joint")]
+MARK_NAMES = [f"{p}_{s}" for p, _ in MARK_PARTS for s in ("L", "R")]
+MARK_KIND = {f"{p}_{s}": k for p, k in MARK_PARTS for s in ("L", "R")}
+
+
+def mirror_name(n: str) -> str:
+    return n[:-1] + ("R" if n.endswith("L") else "L")
+
+
+def mark_in_view(n: str, view: str) -> bool:
+    """front / back: all; a side view: its own side's ears and knee (a T-posed arm points at the camera there)"""
+    if view in ("front", "back"):
+        return True
+    return (view == "left") == n.endswith("_L") and not n.startswith(("elbow", "hand"))
+
+
+def guess_marks3d(M) -> dict:
+    """first guesses on a T / A-posed character facing +Z: the hand = a slice across the arm a little in from its
+    farthest point, the elbow 42 % of the way from the torso's edge to that point, the knee a slice across each leg at
+    27 % of the height (joints: the slice's middle, inside the limb); the ear tip = the farthest-out point above the arms
+    and the neck, the ear hole = the middle of the ear's outer part (surface marks)"""
+    V = M["V"]
+    ymin, ymax = V[:, 1].min(), V[:, 1].max()
+    h = ymax - ymin
+    out = {}
+    for s, sg in (("L", 1.0), ("R", -1.0)):
+        side = V[sg * V[:, 0] > 0.02 * h]
+        if len(side) < 50:
+            continue
+        tip = side[np.argmax(sg * side[:, 0])]
+        arm_y = tip[1]
+
+        def mid(sel):
+            pts = side[sel]
+            return (pts.min(0) + pts.max(0)) / 2 if len(pts) >= 3 else None
+
+        hx = tip[0] - sg * 0.06 * h
+        hand = mid((np.abs(side[:, 0] - hx) < 0.012 * h) & (np.abs(side[:, 1] - arm_y) < 0.12 * h))
+        chest = side[(side[:, 1] < arm_y - 0.08 * h) & (side[:, 1] > arm_y - 0.16 * h) & (sg * side[:, 0] < 0.5 * sg * tip[0])]
+        sh_x = chest[np.argmax(sg * chest[:, 0]), 0] if len(chest) else 0.3 * tip[0]
+        ex = sh_x + 0.42 * (tip[0] - sh_x)
+        elbow = mid((np.abs(side[:, 0] - ex) < 0.012 * h) & (np.abs(side[:, 1] - arm_y) < 0.14 * h))
+        ky = ymin + 0.27 * h
+        knee = mid((np.abs(side[:, 1] - ky) < 0.012 * h) & (sg * side[:, 0] < 0.25 * h))
+        head = side[side[:, 1] > max(arm_y + 0.06 * h, ymin + 0.72 * h)]
+        for n, p in (("hand", hand), ("elbow", elbow), ("knee", knee)):
+            if p is not None:
+                out[f"{n}_{s}"] = p
+        if len(head) >= 10:
+            et = head[np.argmax(sg * head[:, 0])]
+            out[f"ear_tip_{s}"] = et
+            ear = head[sg * head[:, 0] > 0.6 * sg * et[0]]
+            out[f"ear_hole_{s}"] = ear.mean(0) if len(ear) >= 10 else et
+    return {k: [round(float(x), 5) for x in v] for k, v in out.items()}
+
+
+def unproject(M, view, cam, x, y, W, H, kind="surface"):
+    """a picture pixel of that view back onto the model: the nearest surface under it (surface marks) or the middle
+    between the nearest and the farthest (joint marks: inside the limb). None off the model."""
+    d, r, u = view_axes(view)
+    s, tx, ty = cam
+    P2, z = project_pts(M["V"], view, cam)
+    _, _, zn = raster(P2, M["F"], W, H, z=z)
+    _, _, zf = raster(P2, M["F"], W, H, z=-z)
+    ok = np.isfinite(zn)
+    ix, iy = int(np.clip(x, 0, W - 1)), int(np.clip(y, 0, H - 1))
+    if not ok[iy, ix]:   # (a click just off the edge: the nearest pixel of the model within 8 px)
+        ys, xs = np.nonzero(ok[max(0, iy - 8):iy + 9, max(0, ix - 8):ix + 9])
+        if not len(xs):
+            return None
+        k = np.argmin((xs + max(0, ix - 8) - ix) ** 2 + (ys + max(0, iy - 8) - iy) ** 2)
+        ix, iy = xs[k] + max(0, ix - 8), ys[k] + max(0, iy - 8)
+    near, far = zn[iy, ix], -zf[iy, ix]
+    depth = near if kind == "surface" else (near + far) / 2
+    return (r * ((x - tx) / s) + u * (-(y - ty) / s) + d * depth).tolist()
+
+
+def mark_model_2d(m3, view, cam):
+    (xy,), _ = project_pts(np.asarray([m3], float), view, cam)
+    return [round(float(xy[0]), 2), round(float(xy[1]), 2)]
+
+
+def view_pins(st: dict, cams: dict, pics: dict, mirror: bool, sizes: dict) -> dict:
+    """every view's pins for the projection: the free ones plus the landmarks (picture point -> the 3D point drawn
+    from that view's camera); a mirrored side (no picture of its own) takes the other side's, mirrored with its picture"""
+    out = {}
+    m3 = st.get("marks3d") or {}
+    for v in ORDER:
+        if v in pics:
+            ps = [tuple(p) for p in (st.get("pins") or {}).get(v, [])]
+            for n, sp in ((st.get("marks") or {}).get(v) or {}).items():
+                if n in m3 and mark_in_view(n, v) and v in cams:
+                    dx, dy = mark_model_2d(m3[n], v, cams[v])
+                    ps.append((sp[0], sp[1], dx, dy))
+            out[v] = ps
+        elif mirror and v in ("left", "right") and ({"left", "right"} - {v}) & set(pics) and v in cams:
+            o = "left" if v == "right" else "right"
+            Wp = sizes[o][0]
+            ps = [(Wp - a, b, Wp - c, e) for a, b, c, e in (st.get("pins") or {}).get(o, [])]
+            for n, sp in ((st.get("marks") or {}).get(o) or {}).items():
+                mn = mirror_name(n)
+                if mn in m3 and mark_in_view(mn, v):
+                    dx, dy = mark_model_2d(m3[mn], v, cams[v])
+                    ps.append((Wp - sp[0], sp[1], dx, dy))
+            out[v] = ps
+    return out
+
+
+def _marks3d(st: dict, base: Path, M=None, cat=""):
+    if st.get("marks3d") is None and cat in ("character", "creature"):
+        st["marks3d"] = guess_marks3d(M or load(base))
+    return st.get("marks3d") or {}
+
+
+def guess_pic_ear(alpha, model_xy, mid_x, sg_img, H):
+    """an ear tip on a front / back picture: the cut's farthest point outward in a band round the model's ear tip"""
+    band = int(0.05 * H)
+    y0, y1 = max(0, int(model_xy[1]) - band), min(alpha.shape[0], int(model_xy[1]) + band)
+    m = alpha[y0:y1] > 0.5
+    ys, xs = np.nonzero(m)
+    if not len(xs):
+        return None
+    sel = (xs - mid_x) * sg_img > 0
+    if not sel.any():
+        return None
+    xs, ys = xs[sel], ys[sel]
+    k = np.argmax((xs - mid_x) * sg_img)
+    return [float(xs[k]), float(ys[k] + y0)]
+
+
+def marks_for_editor(st, view, cam, pic, W, H, mid):
+    """the landmarks of a view for the editor: the model point (3D drawn from the camera), the picture point (set, or a
+    first guess: the ear tips on front / back pictures from the cut's outline, the rest where the model point is)"""
+    m3 = st.get("marks3d") or {}
+    if not m3:
+        return []
+    set_ = (st.get("marks") or {}).get(view) or {}
+    alpha = None
+    out = []
+    for n in MARK_NAMES:
+        if n not in m3 or not mark_in_view(n, view):
+            continue
+        mxy = mark_model_2d(m3[n], view, cam)
+        p, guess = set_.get(n), False
+        if p is None:
+            guess = True
+            p = mxy
+            if n.startswith("ear_tip") and view in ("front", "back") and mid is not None:
+                if alpha is None:
+                    alpha = pic_alpha(pic)[1]
+                # (front: the model's +X shows on the image's right; back: on its left)
+                sg_img = (1 if n.endswith("_L") else -1) * (1 if view == "front" else -1)
+                p = guess_pic_ear(alpha, mxy, mid, sg_img, H) or mxy
+        out.append({"name": n, "kind": MARK_KIND[n], "model": mxy, "pic": [round(float(p[0]), 2), round(float(p[1]), 2)],
+                    "set": not guess})
+    return out
+
+
+def set_marks(cat: str, stem: str, cfg: dict, view: str, marks: dict) -> dict:
+    """the picture points of a view's landmarks ({name: [x, y]}; the ones not given are left as first guesses)"""
+    d = improve_dir(cfg, cat, stem)
+    st = load_state(d)
+    st.setdefault("marks", {})[view] = {n: [round(float(p[0]), 2), round(float(p[1]), 2)] for n, p in (marks or {}).items()
+                                        if n in MARK_KIND}
+    save_state(d, st)
+    return st
+
+
+def set_mark3d(cat: str, stem: str, cfg: dict, draft_dir: Path, view: str, name: str, x: float, y: float,
+               mirror: bool = False) -> dict:
+    """a landmark's model point moved in one view (the pixel put back onto the model); mirrored to the other side's
+    mark (x -> -x) when asked. -> the view's editor data again"""
+    d = improve_dir(cfg, cat, stem)
+    st = load_state(d)
+    info_p = Path(draft_dir) / f"{stem}.json"
+    info = json.loads(info_p.read_text(encoding="utf-8")) if info_p.exists() else {}
+    pics = pictures(st, info)
+    base = d / "before.glb"
+    cam, _, M = fitted(d, st, base, view, pics[view]["path"])
+    M = M or load(base)
+    W, H = Image.open(pics[view]["path"]).size
+    p = unproject(M, view, cam, x, y, W, H, MARK_KIND.get(name, "surface"))
+    if p is not None:
+        st = load_state(d)
+        m3 = st.setdefault("marks3d", {})
+        m3[name] = [round(float(c), 5) for c in p]
+        if mirror:
+            m3[mirror_name(name)] = [round(-float(p[0]), 5), round(float(p[1]), 5), round(float(p[2]), 5)]
+        save_state(d, st)
+    return align(cat, stem, cfg, draft_dir, view)
+
+
 def align(cat: str, stem: str, cfg: dict, draft_dir: Path, view: str) -> dict:
     """what the pins editor shows for a view: the picture, the model drawn from the fitted camera at the picture's size
     (PNG), the model's middle line in the picture (for mirrored pins: front / back), the pins so far"""
@@ -1094,8 +1297,13 @@ def align(cat: str, stem: str, cfg: dict, draft_dir: Path, view: str) -> dict:
         st.setdefault("align_keys", {})[view] = key
         save_state(d, st)
     mid = cam[1] if view in ("front", "back") else None
+    cat_ = info.get("category") or cat
+    if st.get("marks3d") is None and cat_ in ("character", "creature"):
+        _marks3d(st, base, M, cat_)
+        save_state(d, st)
     return {"ok": True, "view": view, "picture": pic, "model": str(png), "size": [W, H], "cam": list(cam),
-            "iou": iou, "mid_x": mid, "pins": (st.get("pins") or {}).get(view, []), "kind": pics[view]["kind"]}
+            "iou": iou, "mid_x": mid, "pins": (st.get("pins") or {}).get(view, []), "kind": pics[view]["kind"],
+            "marks": marks_for_editor(st, view, cam, pic, W, H, mid)}
 
 
 def status(cat: str, stem: str, cfg: dict, draft_dir: Path) -> dict:
@@ -1109,6 +1317,7 @@ def status(cat: str, stem: str, cfg: dict, draft_dir: Path) -> dict:
     has_raw = engine_of(info) == "hunyuan" and raw_mesh_of(info) is not None
     return {"engine": engine_of(info), "category": info.get("category") or cat, "pictures": pics,
             "codex": st.get("codex") or {}, "pins": {v: len(p) for v, p in (st.get("pins") or {}).items()},
+            "marks": {v: len(m) for v, m in (st.get("marks") or {}).items()},
             "options": st.get("options") or defaults(info, pics, has_raw), "defaults": defaults(info, pics, has_raw),
             "has_raw": has_raw, "improved": info.get("improved"), "can_undo": (d / "before.glb").exists(),
             "before": str(d / "before.glb") if (d / "before.glb").exists() else None,

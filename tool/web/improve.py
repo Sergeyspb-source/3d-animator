@@ -81,10 +81,19 @@ def align(cat: str, stem: str, view: str) -> dict:
     return MI.align(cat, stem, cfg, d, view)
 
 
-def pins(cat: str, stem: str, view: str, pin_list: list) -> dict:
+def pins(cat: str, stem: str, view: str, pin_list: list, marks=None) -> dict:
+    """the view's free pins and (when given) its landmarks' picture points {name: [x, y]}"""
     cfg, _ = _draft(cat, stem)
     MI.set_pins(cat, stem, cfg, view, pin_list)
+    if marks is not None:
+        MI.set_marks(cat, stem, cfg, view, marks)
     return status(cat, stem)
+
+
+def mark3d(cat: str, stem: str, view: str, name: str, x: float, y: float, mirror: bool) -> dict:
+    """a landmark's model point moved in one view -> that view's editor data again"""
+    cfg, d = _draft(cat, stem)
+    return MI.set_mark3d(cat, stem, cfg, d, view, name, float(x), float(y), bool(mirror))
 
 
 def picture(cat: str, stem: str, view: str, path) -> dict:

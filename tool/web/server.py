@@ -376,7 +376,13 @@ async def improve_align(category: str, stem: str, view: str):
 @app.post("/api/models/improve/pins")
 async def improve_pins(req: Request):
     p = await req.json()
-    return IM.pins(p["category"], p["stem"], p["view"], p.get("pins") or [])
+    return IM.pins(p["category"], p["stem"], p["view"], p.get("pins") or [], p.get("marks"))
+
+
+@app.post("/api/models/improve/mark3d")
+async def improve_mark3d(req: Request):
+    p = await req.json()
+    return await asyncio.to_thread(IM.mark3d, p["category"], p["stem"], p["view"], p["name"], p["x"], p["y"], bool(p.get("mirror")))
 
 
 @app.post("/api/models/improve/picture")

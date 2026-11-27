@@ -22,7 +22,7 @@ const KIND_KEY: Record<string, string> = { concept: 'web.imp_kind_concept', code
 interface Opts { project: boolean; mirror: boolean; sharp: number; delight: number; sym: string; relief: boolean }
 interface Status {
   engine: string; category: string; pictures: Record<string, { path: string; kind: string }>;
-  codex: Record<string, { path: string; render: string; accepted: boolean; seconds?: number }>; pins: Record<string, number>;
+  codex: Record<string, { path: string; render: string; accepted: boolean; seconds?: number }>; pins: Record<string, number>; marks?: Record<string, number>;
   options: Opts & { codex_missing?: string[] }; defaults: Opts & { codex_missing: string[] }; has_raw: boolean;
   improved: null | { steps: string[]; seconds: Record<string, number>; when: string; fit?: Record<string, number | null> };
   can_undo: boolean; before: string | null; fit: Record<string, number | null>;
@@ -66,10 +66,17 @@ export default function ModelImprove({ go }: { go: (r: Route) => void }) {
     } catch (e: any) { notifications.show({ color: 'red', message: String(e.message || e) }); setPinView(null); }
     finally { setAligning(false); }
   };
-  const savePins = async (pins: Pin[]) => {
+  const savePins = async (pins: Pin[], marks: Record<string, [number, number]>) => {
     if (!m || !pinView) return;
-    setSt(await post<Status>('/api/models/improve/pins', { category: m.category, stem: m.stem, view: pinView, pins }));
+    setSt(await post<Status>('/api/models/improve/pins', { category: m.category, stem: m.stem, view: pinView, pins, marks }));
     notifications.show({ color: 'patina', message: t('web.imp_pins_saved') });
+  };
+  // a landmark's model point moved: the server puts it back onto the model (3D) and draws the view's marks again
+  const moveMark3d = async (name: string, x: number, y: number, mirror: boolean) => {
+    if (!m || !pinView) return null;
+    try {
+      return await post<AlignData>('/api/models/improve/mark3d', { category: m.category, stem: m.stem, view: pinView, name, x, y, mirror });
+    } catch (e: any) { notifications.show({ color: 'red', message: String(e.message || e) }); return null; }
   };
   const setPicture = async (v: ViewName, f: File | null) => {
     if (!m) return;
@@ -108,7 +115,7 @@ export default function ModelImprove({ go }: { go: (r: Route) => void }) {
         <ModelList items={items} sel={sel} onPick={pick} empty={t('web.no_drafts')} />
       </div>
       <div className="stage">
-        {pinView ? (align ? <PinEditor key={`${sel}/${pinView}`} data={align} onSave={savePins} onClose={() => { setPinView(null); setAlign(null); }} />
+        {pinView ? (align ? <PinEditor key={`${sel}/${pinView}`} data={align} onSave={savePins} onMark3d={moveMark3d} onClose={() => { setPinView(null); setAlign(null); }} />
           : <div className="stage-wait"><Text c="dimmed" size="sm">{aligning ? t('web.imp_fitting') : ''}</Text></div>) : (
           <>
             <Viewer3D url={m ? fileUrl(look === 'before' && st?.before ? st.before : m.glb, m.time) : null} empty={t('web.check_empty')} />
@@ -136,7 +143,7 @@ export default function ModelImprove({ go }: { go: (r: Route) => void }) {
                       <Group gap={6} wrap="nowrap"><Text size="sm" fw={600}>{t(VIEW_KEY[v])}</Text>
                         <span className={'tag' + (p?.kind === 'codex' ? ' warm' : '')}>{p ? t(KIND_KEY[p.kind] || p.kind) : mirrored ? t('web.imp_kind_mirror') : c ? t('web.imp_kind_candidate') : t('web.imp_kind_none')}</span></Group>
                       <Text size="xs" c="dimmed">{[st.fit[v] != null ? t('web.imp_fit', Math.round((st.fit[v] as number) * 100)) : null,
-                        st.pins[v] ? t('web.imp_pins_n', st.pins[v]) : null].filter(Boolean).join(' · ') || ' '}</Text>
+                        st.pins[v] ? t('web.imp_pins_n', st.pins[v]) : null, st.marks?.[v] ? t('web.imp_marks_n', st.marks[v]) : null].filter(Boolean).join(' · ') || ' '}</Text>
                     </div>
                     <Group gap={4} wrap="nowrap">
                       {p && <Tooltip label={t('web.imp_fit_by_hand')}><Button size="compact-xs" variant="default" onClick={() => openPins(v)} leftSection={<IconPin size={14} />}>{t('web.imp_pins')}</Button></Tooltip>}
