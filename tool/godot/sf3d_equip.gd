@@ -1343,7 +1343,7 @@ static func _hide_pieces(skel: Node) -> void:
 			continue
 		var mi := node as MeshInstance3D
 		if not mi.has_meta("sf3d_full_mesh"):
-			mi.set_meta("sf3d_full_mesh", mi.mesh)
+			mi.set_meta("sf3d_full_mesh", _as_made(mi))   # (not as a pressing piece pressed it: _press_cloth, after this)
 		var full: Mesh = mi.get_meta("sf3d_full_mesh")
 		var hide := {}
 		for e in mi.get_meta("sf3d_under"):
@@ -1377,6 +1377,143 @@ static func _hide_pieces(skel: Node) -> void:
 			am.add_surface_from_arrays(full.surface_get_primitive_type(s), arrays, full.surface_get_blend_shape_arrays(s))
 			am.surface_set_material(s, full.surface_get_material(s))
 		mi.mesh = am
+	_press_cloth(skel)   # (the last step every change of what is worn or shown ends with)
+
+
+## Cloth worn under a piece that presses the skin in is pressed in with it (2026-11-27; SF3D's game_bake and the game's
+## ArmourDressing do the same): the skin under a cuirass, a cuisse, a mail shirt goes into the body (its mask's moves), and a
+## shirt over that skin stayed where it was and came out through the cuirass where the skin had. Each cloth vertex moves as
+## the nearest pressed skin vertex within PRESS_REACH, and only by the pressing pieces on a higher layer than its own (a mail
+## shirt is not pressed by its own mask); under two of them the deeper move. The mesh the steps before made is kept aside
+## («sf3d_press_src»), so the cloth comes back when the cuirass comes off and is never pressed twice.
+const PRESSED_UNDER := ["undercloth", "trousers", "brayette", "hauberk", "gambeson", "tunic", "vest"]
+const PRESSING := ["cuirass", "cuisse", "rerebrace", "bracer", "greave", "pauldron", "brayette", "tassets", "pelerine", "hauberk"]
+const PRESS_REACH := 0.04   # of the body's height: a cloth vertex this near a pressed skin vertex moves as it
+
+
+static func _press_cloth(skel: Node) -> void:
+	var pressers := []   # [its layer, its moves] of each shown pressing piece
+	var cloth := []
+	var character: Node = null
+	for node in skel.get_children():
+		if not (node is MeshInstance3D and node.has_meta("sf3d_kind")):
+			continue
+		var k := String(node.get_meta("sf3d_kind"))
+		if node.has_meta("sf3d_character"):
+			character = node.get_meta("sf3d_character")
+		if k in PRESSING and node.visible and not (node.get_meta("sf3d_press", {}) as Dictionary).is_empty():
+			pressers.append([float(node.get_meta("sf3d_layer", LAYER.get(k, 0.0))), node.get_meta("sf3d_press")])
+		if k in PRESSED_UNDER:
+			cloth.append(node)
+	if cloth.is_empty():
+		return
+	if character == null or not is_instance_valid(character):
+		character = skel.get_parent()
+	var body := _skin_mesh(character)
+	var reach := PRESS_REACH * _height(skel as Skeleton3D) if skel is Skeleton3D else PRESS_REACH
+	for mi in cloth:
+		var src: Mesh = _as_made(mi)
+		var own := float(mi.get_meta("sf3d_layer", LAYER.get(String(mi.get_meta("sf3d_kind")), 0.0)))
+		var press := {}
+		for p in pressers:
+			if float(p[0]) > own:
+				_merge_deeper(press, p[1])
+		var out: Mesh = src
+		if not press.is_empty() and body != null and src != null:
+			var key := [src.get_instance_id(), press.size(), press.hash()]
+			if mi.get_meta("sf3d_press_key", []) == key:   # (the same mesh under the same presses: pressed already)
+				out = mi.get_meta("sf3d_press_done")
+			else:
+				out = _follow(src, press, _relative(character, body).affine_inverse() * _relative(character, mi), reach)
+				mi.set_meta("sf3d_press_key", key)
+				mi.set_meta("sf3d_press_done", out)
+		mi.set_meta("sf3d_press_src", src)
+		mi.set_meta("sf3d_press_out", out)
+		mi.mesh = out
+
+
+# a piece's mesh as the steps before the cloth press made it (its pressed one is not made again from itself)
+static func _as_made(mi: MeshInstance3D) -> Mesh:
+	if mi.has_meta("sf3d_press_out") and mi.mesh == mi.get_meta("sf3d_press_out"):
+		return mi.get_meta("sf3d_press_src")
+	return mi.mesh
+
+
+# `from`'s moves put into `into`; a place two pieces press (a cuirass over a mail shirt) keeps the deeper move, not the first
+static func _merge_deeper(into: Dictionary, from: Dictionary) -> void:
+	if into.is_empty():
+		into.merge(from)
+		return
+	for k in from:
+		if not into.has(k) or (from[k] as Vector3).length_squared() > (into[k] as Vector3).length_squared():
+			into[k] = from[k]
+
+
+# the character's skin: its mesh (not a piece's) with the most vertices, as made - the masks' places are its own
+static func _skin_mesh(character: Node) -> MeshInstance3D:
+	var best: MeshInstance3D = null
+	var most := -1
+	for node in character.find_children("*", "MeshInstance3D", true, false):
+		var mi := node as MeshInstance3D
+		if mi.has_meta("sf3d_piece") or mi.mesh == null:
+			continue
+		var m: Mesh = mi.get_meta("sf3d_body_mesh", mi.mesh)
+		var n := 0
+		for s in m.get_surface_count():
+			n += m.surface_get_array_len(s)
+		if n > most:
+			most = n
+			best = mi
+	return best
+
+
+# `full` (a cloth mesh; `xf` its places into the skin mesh's) with each vertex moved as the nearest pressed skin place
+# within `reach` (a grid of cells that size over the pressed places)
+static func _follow(full: Mesh, press: Dictionary, xf: Transform3D, reach: float) -> Mesh:
+	var cell := maxf(reach, 1e-4)
+	var grid := {}
+	var lo := Vector3(INF, INF, INF)
+	var hi := -lo
+	for k in press:
+		var at := Vector3(k) * 0.001
+		lo = lo.min(at)
+		hi = hi.max(at)
+		var c := Vector3i((at / cell).floor())
+		if not grid.has(c):
+			grid[c] = []
+		grid[c].append([at, press[k]])
+	lo -= Vector3.ONE * reach
+	hi += Vector3.ONE * reach
+	var back := xf.basis.inverse()
+	var am := ArrayMesh.new()
+	for b in full.get_blend_shape_count():
+		am.add_blend_shape(full.get_blend_shape_name(b))
+	if full is ArrayMesh:
+		am.blend_shape_mode = (full as ArrayMesh).blend_shape_mode
+	for s in full.get_surface_count():
+		var arrays := full.surface_get_arrays(s)
+		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		for i in verts.size():
+			var p := xf * verts[i]
+			if p.x < lo.x or p.y < lo.y or p.z < lo.z or p.x > hi.x or p.y > hi.y or p.z > hi.z:
+				continue
+			var c := Vector3i((p / cell).floor())
+			var best := reach * reach
+			var d = null
+			for dx in [-1, 0, 1]:
+				for dy in [-1, 0, 1]:
+					for dz in [-1, 0, 1]:
+						for e in grid.get(c + Vector3i(dx, dy, dz), []):
+							var q := p.distance_squared_to(e[0])
+							if q < best:
+								best = q
+								d = e[1]
+			if d != null:
+				verts[i] += back * (d as Vector3)
+		arrays[Mesh.ARRAY_VERTEX] = verts
+		am.add_surface_from_arrays(full.surface_get_primitive_type(s), arrays, full.surface_get_blend_shape_arrays(s))
+		am.surface_set_material(s, full.surface_get_material(s))
+	return am
 
 
 static func _in_mask(hide: Dictionary, v: Vector3) -> bool:
@@ -1447,7 +1584,7 @@ static func _hide_body(character: Node) -> void:
 	for node in skel.get_children():
 		if node is MeshInstance3D and node.has_meta("sf3d_mask") and node.visible:
 			hide.merge(node.get_meta("sf3d_mask"))
-			press.merge(node.get_meta("sf3d_press", {}))
+			_merge_deeper(press, node.get_meta("sf3d_press", {}))   # (under two pressing pieces: the deeper move)
 	for node in character.find_children("*", "MeshInstance3D", true, false):
 		var mi := node as MeshInstance3D
 		if mi.has_meta("sf3d_piece") or mi.mesh == null:
@@ -1525,7 +1662,7 @@ static func _cinch(skel: Skeleton3D) -> void:
 				soft.append(node)
 	for mi in soft + belts:   # (as made first)
 		if not mi.has_meta("sf3d_cinch_base"):
-			mi.set_meta("sf3d_cinch_base", mi.get_meta("sf3d_full_mesh") if mi.has_meta("sf3d_full_mesh") else mi.mesh)
+			mi.set_meta("sf3d_cinch_base", mi.get_meta("sf3d_full_mesh") if mi.has_meta("sf3d_full_mesh") else _as_made(mi))   # (not pressed: _press_cloth)
 	var lay := func(mi) -> float: return float(mi.get_meta("sf3d_layer", LAYER.get(String(mi.get_meta("sf3d_kind")), 0.0)))
 	soft.sort_custom(func(x, y): return lay.call(x) < lay.call(y))   # (inside first: each lies over those under it)
 	var shown := belts.filter(func(bt): return bt.visible)
