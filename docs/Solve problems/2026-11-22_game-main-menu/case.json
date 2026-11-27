@@ -1,0 +1,75 @@
+{
+  "id": "2026-11-22_game-main-menu",
+  "title_ru": "Как у игры появилось главное меню, и почему «Новая игра» — самая опасная кнопка?",
+  "title_en": "How the game got a main menu, and why «New game» is the most dangerous button",
+  "hook_ru": "Самая опасная кнопка в меню — «Новая игра»: одно нажатие могло стереть всё, что игрок наиграл.",
+  "status": "solved",
+  "date": "2026-11-22",
+  "sessions": [
+    {"name": "Главное меню игры: вход и настройки", "id": "local_5f72d0d3-39b4-4ff8-80a6-224aa3b2323a"},
+    {"name": "Правки проекта (поставил задачу)", "id": "local_e34b3455-30a6-47ca-b378-81932d2b8d06"}
+  ],
+  "commits": ["game:2729f07", "game:cdc06e9"],
+  "tags": ["godot", "ui", "menu", "settings", "saves"],
+  "video": {
+    "potential": 2,
+    "why_ru": "Привычная для игрока вещь без зрелища. Держится на одной понятной мысли: новая игра не должна стирать прогресс.",
+    "wow_moment_ru": "Вопрос «Начать новую игру?», а рядом в папке backups появляется копия сохранения с датой в имени.",
+    "length_seconds": 60,
+    "thumbnail": {"image": "src/main_menu.png", "text_ru": "НЕ СТЕРЕТЬ СЕЙВ"}
+  },
+  "numbers": [
+    {"what_ru": "Проверок в автотесте меню и настроек", "before": null, "after": 54, "unit_ru": "проверок, все прошли",
+     "better": "higher", "measured_on": "Godot 4.7.2, headless", "note_ru": ""},
+    {"what_ru": "Общие тесты игры", "before": null, "after": 807, "unit_ru": "проверок, 0 ошибок", "better": "higher",
+     "measured_on": "Godot 4.7.2, headless", "note_ru": "на одном коммите без чужих правок: 767 из 767"},
+    {"what_ru": "Команд, которые можно переназначить", "before": 0, "after": 20, "unit_ru": "команд по 2 клавиши",
+     "better": "higher", "measured_on": "", "note_ru": "клавиши панели действий 1–5 пока не переназначаются"},
+    {"what_ru": "Настроек, сохранившихся после перезапуска", "before": null, "after": 4, "unit_ru": "из 4",
+     "better": "higher", "measured_on": "RTX 4060 Laptop, игра с окном", "note_ru": "тени, масштаб 3D 85 %, музыка 40 % (−8 дБ), прыжок на J"},
+    {"what_ru": "Новых строк перевода", "before": null, "after": 70, "unit_ru": "строк на каждом из 2 языков",
+     "better": "higher", "measured_on": "", "note_ru": ""}
+  ],
+  "media": [
+    {"file": "img/01_main_menu.png", "clean": "src/main_menu.png", "kind": "screenshot", "role": "after", "pair": null,
+     "caption_ru": "Главное меню; снимок сделан до названия, вместо «GAME PROJECT» теперь «Мир гоблинов»"},
+    {"file": "img/02_new_game_question.png", "clean": "src/new_game_question.png", "kind": "screenshot", "role": "result", "pair": null,
+     "caption_ru": "Перед новой игрой: копия сохранения ляжет в папку backups, курсор на «Отмена»"},
+    {"file": "img/03_settings_graphics.png", "clean": "src/settings_graphics.png", "kind": "screenshot", "role": "result", "pair": null,
+     "caption_ru": "Вкладка «Графика»: шесть настроек, применяются сразу"},
+    {"file": "img/04_settings_keys.png", "clean": "src/settings_keys.png", "kind": "screenshot", "role": "result", "pair": null,
+     "caption_ru": "Вкладка «Управление»: прыжок переназначен на J"},
+    {"file": "img/05_game_after_continue.jpg", "clean": "src/game_after_continue.png", "kind": "screenshot", "role": "context", "pair": null,
+     "caption_ru": "После «Продолжить»: музыка на 40 %, как выбрали в меню"},
+    {"file": "img/06_pause.jpg", "clean": "src/pause.png", "kind": "screenshot", "role": "result", "pair": null,
+     "caption_ru": "Пауза: новые кнопки «Настройки» и «В главное меню»"},
+    {"file": "img/07_pause_settings.jpg", "clean": "src/pause_settings.png", "kind": "screenshot", "role": "result", "pair": null,
+     "caption_ru": "Настройки поверх игры: 85 % и средние тени уже действуют"}
+  ],
+  "media_note_ru": "Все кадры — готовые снимки игры 1600 × 900 (размер окна при проверке), а не 2560 × 1440. Кадра «до» нет: раньше игра сразу открывалась в мире.",
+  "models": [],
+  "beats": [
+    {"n": 1, "seconds": 8, "say_ru": "Наша игра про гоблина долго обходилась без главного меню. Запускаешь — и ты сразу в городке. Хочешь начать заново — иди удаляй файл руками.",
+     "show": ["src/game_after_continue.png"]},
+    {"n": 2, "seconds": 10, "say_ru": "Сделать четыре кнопки нетрудно. Трудно не сломать то, что за ними. Самая опасная кнопка — «Новая игра». Сохранение у игры одно, и одно нажатие могло стереть всё, что игрок наиграл.",
+     "show": ["src/main_menu.png"]},
+    {"n": 3, "seconds": 10, "say_ru": "Поэтому новая игра сначала спрашивает. Потом кладёт копию старого сохранения в отдельную папку и проверяет, что копия целая. Не получилось скопировать — ничего не трогаем.",
+     "show": ["src/new_game_question.png", "diagram:Новая игра → копия сохранения в backups → проверка копии → новый забег"]},
+    {"n": 4, "seconds": 10, "say_ru": "Настройки тоже с подвохом. Игра и меню читают один файл. Два файла через месяц начали бы спорить, какой главный. Поэтому файл один: меню пишет, игра читает.",
+     "show": ["src/settings_graphics.png"]},
+    {"n": 5, "seconds": 8, "say_ru": "Клавиши можно менять: по две на каждую из двадцати команд. Занятая клавиша переезжает, и игра об этом говорит.",
+     "show": ["src/settings_keys.png"]},
+    {"n": 6, "seconds": 10, "say_ru": "А из паузы теперь можно выйти в меню. Игра перед этим сохраняется. Не сохранилось — остаёмся в игре, прогресс цел.",
+     "show": ["src/pause.png", "src/pause_settings.png"]}
+  ],
+  "reproduce_in_app": [
+    "Запустить игру (game:project.godot, стартовая сцена — главное меню)",
+    "Настройки → Графика: тени «Среднее», масштаб 3D 85 %; Звук: музыка 40 %; Управление: прыжок → J",
+    "Продолжить → в игре Esc → Настройки (Esc закрывает только панель) → В главное меню",
+    "Перезапустить игру: выбранное на месте",
+    "Новая игра → «Начать заново»; в папке данных игры появится backups/g4_run_v22_<дата>.json"
+  ],
+  "regenerate": [
+    "Кадры сняты 2026-11-22 одноразовым скриптом проверки (вне репозиториев), из меню в игру с окном 1600 × 900; исходники в game:user_data/main_menu_20261122/ (папка в .gitignore)"
+  ]
+}
