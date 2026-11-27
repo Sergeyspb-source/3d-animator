@@ -3546,5 +3546,15 @@
  "web.imp_ears": "Ears",
  "web.imp_ears_note": "each ear laid flat, its front and its back",
  "web.imp_ears_tip": "Each ear cut off the head and laid flat: left to right - the left ear's back, its front, the right ear's front, its back. The ear's back, hidden on the head's skin, has its own panel here. Drag a feature of the pictures to its place on the ear's relief; on one ear, the other is mirrored.",
- "web.imp_ears_none": "No ears found: they do not stand out of the model's head"
+ "web.imp_ears_none": "No ears found: they do not stand out of the model's head",
+ "web.imp_torso": "Torso",
+ "web.imp_torso_note": "the chest, the belly and the back laid flat",
+ "web.imp_torso_tip": "The torso laid flat like the head's skin: the front in the middle, the back at the edges; the head, the arms and the legs have their own skins. Drag a feature of the pictures (the navel, a belt's edge) to its place on the relief; on one half, the other is mirrored.",
+ "web.imp_arms": "Arms",
+ "web.imp_arms_note": "both arms laid flat: the shoulders in the middle, the hands at the edges",
+ "web.imp_arms_tip": "Each arm laid out along itself as in the front picture: the right arm on the left, the left arm on the right, the shoulders meeting in the middle. The arm's front runs along the middle row, its top above, its underside below, its back at the top and bottom edges. The body is cut by the landmarks: if the cut is off, move the hands, elbows and knees in the «Landmarks» mode.",
+ "web.imp_legs": "Legs",
+ "web.imp_legs_note": "both legs laid flat: the hip at the top, the foot at the bottom",
+ "web.imp_legs_tip": "Each leg laid out round itself: the right leg on the left, the left leg on the right; the leg's front in the middle of its half, its back at the edges. Drag a feature of the pictures (a knee, a trouser's hem) to its place on the relief; on one leg, the other is mirrored.",
+ "web.imp_body_none": "Could not cut the body: it needs the hand, elbow and knee landmarks (the «Landmarks» mode on the front picture)"
 }

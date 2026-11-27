@@ -20,6 +20,7 @@ E 1-5 min per side (the user's ChatGPT plan). Blender steps: blender_improve.py.
 Views (glTF: +Y up, the model faces +Z, its own left is +X):
   front d=+Z (image right = +X), back d=-Z (right = -X), left d=+X (right = -Z), right d=-X (right = +Z)
 """
+import hashlib
 import io
 import json
 import shutil
@@ -629,6 +630,12 @@ def project(glb, out, pics, mirror=False, res=None, c0=0.1, c1=0.55, sharp=4.0, 
                 on, P2, N2 = moved
                 Tx["pos"] = Tx["pos"].copy(); Tx["nrm"] = Tx["nrm"].copy()
                 Tx["pos"][on], Tx["nrm"][on] = P2, N2
+        for bw in skin_warp.get("body") or []:   # (the torso, the arms, the legs: each part's texels by its face)
+            moved = body_move(pos0, nrm0, Tx["fid"], *bw)
+            if moved is not None:
+                on, P2, N2 = moved
+                Tx["pos"] = Tx["pos"].copy(); Tx["nrm"] = Tx["nrm"].copy()
+                Tx["pos"][on], Tx["nrm"][on] = P2, N2
     pics = dict(pics)
     if mirror and "left" in pics and "right" not in pics:
         pics["right"] = ("flip", pics["left"])
@@ -1206,13 +1213,21 @@ def skin_move(pos, nrm, sp, xyz, xnrm, pins):
         return None
     qq = q[on] + pin_field(pins)(q[on])
     moved = np.linalg.norm(qq - q[on], axis=1) > 0.05
-    xs = np.mod(qq[:, 0] - 0.5, sp["W"]); ys = np.clip(qq[:, 1] - 0.5, 0, sp["H"] - 1)
-    Pn = np.stack([map_coordinates(xyz[..., c], [ys, xs], order=0, mode="nearest") for c in range(3)], 1)
-    Nn = np.stack([map_coordinates(xnrm[..., c], [ys, xs], order=0, mode="nearest") for c in range(3)], 1)
-    good = moved & np.isfinite(Pn).all(1)
+
+    def at(qs):
+        xs = np.mod(qs[:, 0] - 0.5, sp["W"]); ys = np.clip(qs[:, 1] - 0.5, 0, sp["H"] - 1)
+        return (np.stack([map_coordinates(xyz[..., c], [ys, xs], order=0, mode="nearest") for c in range(3)], 1),
+                np.stack([map_coordinates(xnrm[..., c], [ys, xs], order=0, mode="nearest") for c in range(3)], 1))
+    Pa, Na = at(q[on])
+    Pb, Nb = at(qq)
+    good = moved & np.isfinite(Pa).all(1) & np.isfinite(Pb).all(1)
     pos2, nrm2 = pos.copy(), nrm.copy()
     idx = np.nonzero(on)[0][good]
-    pos2[idx] = Pn[good]; nrm2[idx] = Nn[good]
+    # (moved by the skin's own move: a layer under the outermost one - behind an ear, an ear's back - keeps its depth
+    # instead of jumping onto the outer surface)
+    pos2[idx] += Pb[good] - Pa[good]
+    n2 = nrm2[idx] + Nb[good] - Na[good]
+    nrm2[idx] = n2 / np.maximum(np.linalg.norm(n2, axis=1, keepdims=True), 1e-9)
     return pos2, nrm2
 
 
@@ -1247,6 +1262,13 @@ def skin_warp_of(d: Path, st: dict, base: Path):
         if ep:
             prm, faces, xyz, nrm, _ = ep
             out["ears"] = (prm, faces, xyz, nrm, [tuple(p) for p in pins])
+    for view in BODY_SKINS:
+        pins = (st.get("pins") or {}).get(view)
+        if pins:
+            bp = body_state(d, st, base, view)
+            if bp:
+                prm, faces, xyz, nrm, _ = bp
+                out.setdefault("body", []).append((prm, faces, xyz, nrm, [tuple(p) for p in pins]))
     return out or None
 
 
@@ -1442,6 +1464,381 @@ def ears_state(d: Path, st: dict, base: Path, M=None, width=2048):
     ears_guide(xyz, nrm, prm).save(d / "skin_ears_guide.png")
     st = load_state(d)
     st.setdefault("skin", {})["ears"] = {"key": key, "params": prm}
+    save_state(d, st)
+    return prm, faces, xyz, nrm, M
+
+
+# ------------------------------------------------------------------ the body laid flat: the torso, the arms, the legs
+# Each part is a cylinder round its own axis (the torso: vertical, as the head; an arm: shoulder -> fingertip; a leg:
+# crotch -> sole), its surface drawn outermost along the radius, one scale both ways at the part's mean radius. The
+# layouts keep the front picture's look and make mirrored pins work (x -> W - x swaps the sides):
+#   skin_torso  the front in the middle, the back at the edges (as the head's skin)
+#   skin_arms   [right arm | left arm]: the shoulders meet in the middle, the hands at the edges; an arm's front along the
+#               middle row, its top above, its underside below, its back at the top and bottom edges
+#   skin_legs   [right leg | left leg]: each one's front in its middle, the hip at the top, the foot at the bottom
+# The cut follows the landmarks (hands, elbows, knees - moved by hand in the «Landmarks» mode they cut again): a face is
+# an arm's when it lies nearer that arm's axis (in the arm's radii) than the torso's axis (in the torso's half-width /
+# half-depth) or its leg's axis (in the leg's radii), the piece holding the hand; below the crotch the rest are legs.
+BODY_SKINS = ("skin_torso", "skin_arms", "skin_legs")
+BODY_MARKS = ("hand_L", "hand_R", "elbow_L", "elbow_R", "knee_L", "knee_R")
+
+
+def _unit(v):
+    v = np.asarray(v, float)
+    return v / max(float(np.linalg.norm(v)), 1e-12)
+
+
+def _seg_dist(P, A, a, L):
+    """distance of points P from the segment A -> A + a L (a unit)"""
+    t = np.clip((P - A) @ a, 0, L)
+    return np.linalg.norm(P - A - t[:, None] * a, axis=1)
+
+
+def body_cut(M, m3):
+    """{"labels": per face 0 head, 1 torso, 2 arm L, 3 arm R, 4 leg L, 5 leg R; "joints": the axes found} for a T / A-
+    posed character facing +Z, or None when the hand / elbow / knee landmarks are missing"""
+    import scipy.sparse as sp_
+    from scipy.sparse.csgraph import connected_components
+    if not all(k in m3 for k in BODY_MARKS):
+        return None
+    V, F = M["V"], M["F"]
+    ymin, ymax = float(V[:, 1].min()), float(V[:, 1].max())
+    h = ymax - ymin
+    head, neck = head_faces(M)
+    J = {k: np.asarray(m3[k], float) for k in BODY_MARKS}
+    C = V[F].mean(1)
+    # the arms: the shoulder joint = the elbow + 0.9 x (elbow - hand); the radius at the elbow; the fingertip = the
+    # farthest point along the axis near it
+    arms = {}
+    for s in ("L", "R"):
+        Hd, E = J[f"hand_{s}"], J[f"elbow_{s}"]
+        O = E + 0.9 * (E - Hd)
+        a = _unit(Hd - O)
+        R = V - O
+        t = R @ a
+        rr = np.linalg.norm(R - t[:, None] * a, axis=1)
+        te = float((E - O) @ a)
+        sl = (np.abs(t - te) < 0.012 * h) & (rr < 0.06 * h)
+        r = float(np.median(rr[sl])) if sl.sum() > 5 else 0.03 * h
+        near = (rr < 3.5 * r) & (t > 0)
+        L = float(t[near].max()) if near.any() else float((Hd - O) @ a) * 1.3
+        arms[s] = {"O": O, "a": a, "r": max(r, 1e-4), "L": L}
+    # the legs: the radius round the knee (across the horizontal slice), the ankle = the middle of the slice at 7 % of the
+    # height; the crotch = the lowest height (going up from the knees) where the surface closes between the legs
+    legs = {}
+    for s, sg in (("L", 1.0), ("R", -1.0)):
+        K = J[f"knee_{s}"]
+        dxz = np.hypot(V[:, 0] - K[0], V[:, 2] - K[2])
+        sl = (np.abs(V[:, 1] - K[1]) < 0.012 * h) & (sg * V[:, 0] > 0) & (dxz < 0.12 * h)
+        rl = float(np.median(dxz[sl])) if sl.sum() > 5 else 0.04 * h
+        ya = ymin + 0.07 * h
+        sa = (np.abs(V[:, 1] - ya) < 0.012 * h) & (sg * V[:, 0] > 0) & (dxz < 0.2 * h)
+        A = (V[sa].min(0) + V[sa].max(0)) / 2 if sa.sum() >= 3 else np.array([K[0], ya, K[2]])
+        legs[s] = {"K": K, "A": A, "r": max(rl, 1e-4)}
+    gap = 0.12 * min(abs(J["knee_L"][0]), abs(J["knee_R"][0]))   # (the thighs' insides come close below the crotch)
+    zc = (J["knee_L"][2] + J["knee_R"][2]) / 2
+    rl_ = min(legs["L"]["r"], legs["R"]["r"])
+    ky = max(J["knee_L"][1], J["knee_R"][1])
+    crotch = None
+    mid = (np.abs(V[:, 0]) < gap) & (np.abs(V[:, 2] - zc) < 0.6 * rl_)
+    for yy in np.arange(ky + 0.02 * h, neck, 0.004 * h):
+        if (mid & (np.abs(V[:, 1] - yy) < 0.003 * h)).sum() >= 3:
+            crotch = float(yy)
+            break
+    if crotch is None:
+        crotch = float(ky + 0.9 * (ky - ymin))
+    for s, g in legs.items():
+        a = _unit(g["A"] - g["K"])
+        if a[1] > -0.5:   # (a leg runs down)
+            a = np.array([0.0, -1.0, 0.0])
+        O = g["K"] + a * ((crotch - g["K"][1]) / a[1])   # (the axis's point at the crotch's height)
+        t = (V - O) @ a
+        g.update({"O": O, "a": a, "L": float(min(t.max(), (O[1] - ymin) / max(-a[1], 1e-6) * 1.15))})
+    # the torso: half-width across the middle of the torso (inside the elbows), half-depth across its middle
+    ym = (neck + crotch) / 2
+    ex = 0.85 * min(abs(J["elbow_L"][0]), abs(J["elbow_R"][0]))
+    sl = (np.abs(V[:, 1] - ym) < 0.01 * h) & (np.abs(V[:, 0]) < ex)
+    Rx = float(np.abs(V[sl, 0]).max()) if sl.sum() > 5 else 0.95 * max(abs(arms["L"]["O"][0]), abs(arms["R"]["O"][0]))
+    sl2 = sl & (np.abs(V[:, 0]) < 0.5 * Rx)
+    # (the middle of the depth, not the median: a generator's mesh is often denser on the front)
+    cz = float((V[sl2, 2].max() + V[sl2, 2].min()) / 2) if sl2.sum() > 5 else float(zc)
+    Rz = float((V[sl2, 2].max() - V[sl2, 2].min()) / 2) if sl2.sum() > 5 else Rx * 0.7
+    Rx, Rz = max(Rx, 1e-4), max(Rz, 1e-4)
+    # the costs per face (its centre): the nearest part in its own radii
+    big = 1e9
+    above = C[:, 1] >= crotch
+    cost = np.full((len(F), 5), big)
+    cost[:, 0] = np.where(above, np.hypot(C[:, 0] / Rx, (C[:, 2] - cz) / Rz), big)
+    for i, s in enumerate(("L", "R")):
+        g = arms[s]
+        cost[:, 1 + i] = _seg_dist(C, g["O"], g["a"], g["L"]) / g["r"]
+        g = legs[s]
+        cost[:, 3 + i] = np.where(above, big, _seg_dist(C, g["O"], g["a"], g["L"]) / g["r"])
+    lab = np.argmin(cost, 1) + 1
+    lab[head] = 0
+    # (the head's level cut at the neck takes the tops of T-posed shoulders: those near an arm's axis go to the arm)
+    back = head & (C[:, 1] < neck + 0.06 * h) & (np.minimum(cost[:, 1], cost[:, 2]) < 1.4)
+    lab[back] = np.where(cost[back, 1] <= cost[back, 2], 2, 3)
+    # an arm = the piece of its faces holding the hand; its other faces go back to the torso / the legs
+    rep, k = weld(V, 1e-5)
+    for i, s in enumerate(("L", "R")):
+        idx = np.nonzero(lab == 2 + i)[0]
+        if not len(idx):
+            continue
+        rows = np.repeat(np.arange(len(idx)), 3)
+        A_ = sp_.coo_matrix((np.ones(len(rows)), (rows, rep[F[idx]].ravel())), shape=(len(idx), k)).tocsr()
+        _, cc = connected_components(A_ @ A_.T, directed=False)
+        keep = cc == cc[np.argmin(np.linalg.norm(C[idx] - J[f"hand_{s}"], axis=1))]
+        rest = idx[~keep]
+        if len(rest):
+            c2 = cost[rest][:, [0, 3, 4]]
+            lab[rest] = np.array([1, 4, 5])[np.argmin(c2, 1)]
+    joints = {"neck": float(neck), "crotch": float(crotch), "torso": {"cz": cz, "Rx": Rx, "Rz": Rz},
+              "arms": arms, "legs": legs}
+    return {"labels": lab, "joints": joints}
+
+
+def part_xy(P, p):
+    """points -> (their panel coordinates on that part's cylinder, their distance from its axis)"""
+    O, a, ef, eu = (np.asarray(p[k], float) for k in ("O", "a", "ef", "eu"))
+    R = np.asarray(P, float) - O
+    t = R @ a
+    rr = R - t[:, None] * a
+    th = np.arctan2(rr @ eu, rr @ ef)
+    q = (np.asarray(p["anchor"], float) + (t * p["s"])[:, None] * np.asarray(p["tdir"], float)
+         + (th * p["r"] * p["s"])[:, None] * np.asarray(p["hdir"], float))
+    return q, np.linalg.norm(rr, axis=1)
+
+
+def _frame(a, sg_up=None):
+    """a part's cylinder frame round axis a: ef = the front (+Z) square to it; eu = +90 degrees of the angle: for an arm
+    (sg_up = +1 left / -1 right) its top, else the model's left (+X)"""
+    a = _unit(a)
+    ef = np.array([0.0, 0.0, 1.0]) - a[2] * a
+    if np.linalg.norm(ef) < 1e-3:
+        ef = np.array([0.0, 1.0, 0.0]) - a[1] * a
+    ef = _unit(ef)
+    if sg_up is not None:
+        eu = _unit(sg_up * np.cross(ef, a))
+    else:
+        eu = np.array([1.0, 0.0, 0.0])
+        eu = _unit(eu - (eu @ a) * a - (eu @ ef) * ef)
+    return ef, eu
+
+
+def body_layout(M, cut, view, width=2048):
+    """(params {"W", "H", "parts": {name: frame, scale, panel place}}, {name: face ids}) for a body skin, or None"""
+    V, F = M["V"], M["F"]
+    lab, J = cut["labels"], cut["joints"]
+    L_ = lambda v: np.asarray(v, float).tolist()   # noqa: E731
+    parts, faces = {}, {}
+
+    def radius(fids, O, a):
+        vid = np.unique(F[fids])
+        R = V[vid] - O
+        t = R @ a
+        return float(np.median(np.linalg.norm(R - t[:, None] * a, axis=1))), t
+
+    if view == "skin_torso":
+        fids = np.nonzero(lab == 1)[0]
+        if len(fids) < 50:
+            return None
+        vy = V[np.unique(F[fids]), 1]
+        ytop, ybot = float(vy.max()), float(vy.min())
+        O = np.array([0.0, ytop, J["torso"]["cz"]]); a = np.array([0.0, -1.0, 0.0])
+        r, _ = radius(fids, O, a)
+        s = width / (2 * np.pi * r)
+        W, H = int(width), int(np.ceil((ytop - ybot) * s)) + 4
+        parts["torso"] = {"O": L_(O), "a": L_(a), "ef": [0, 0, 1.0], "eu": [1.0, 0, 0], "r": r, "s": s,
+                          "anchor": [W / 2, 2.0], "tdir": [0, 1.0], "hdir": [1.0, 0], "rect": [0, 0, W, H]}
+        faces["torso"] = fids
+    elif view == "skin_arms":
+        info = {}
+        for i, s_ in enumerate(("L", "R")):
+            fids = np.nonzero(lab == 2 + i)[0]
+            if len(fids) < 50:
+                continue
+            g = J["arms"][s_]
+            r, t = radius(fids, g["O"], g["a"])
+            info[s_] = (fids, g, r, float(t.max()), float(min(t.min(), 0)))
+        if not info:
+            return None
+        r = float(np.mean([x[2] for x in info.values()]))
+        Lm = max(x[3] for x in info.values())
+        back = min(max(-x[4] for x in info.values()), 0.3 * Lm)
+        s = width / (2 * (Lm + back))
+        W, H = int(width), int(np.ceil(2 * np.pi * r * s)) + 4
+        for s_, (fids, g, _, _, _) in info.items():
+            sg = 1.0 if s_ == "L" else -1.0
+            ef, eu = _frame(g["a"], sg)
+            parts[f"arm_{s_}"] = {"O": L_(g["O"]), "a": L_(g["a"]), "ef": L_(ef), "eu": L_(eu), "r": r, "s": s,
+                                  "anchor": [W / 2 + sg * back * s, H / 2], "tdir": [sg, 0], "hdir": [0, -1.0],
+                                  "rect": [W / 2, 0, W, H] if s_ == "L" else [0, 0, W / 2, H]}
+            faces[f"arm_{s_}"] = fids
+    elif view == "skin_legs":
+        info = {}
+        for i, s_ in enumerate(("L", "R")):
+            fids = np.nonzero(lab == 4 + i)[0]
+            if len(fids) < 50:
+                continue
+            g = J["legs"][s_]
+            r, t = radius(fids, g["O"], g["a"])
+            info[s_] = (fids, g, r, float(t.max()), float(min(t.min(), 0)))
+        if not info:
+            return None
+        r = float(np.mean([x[2] for x in info.values()]))
+        Lm = max(x[3] for x in info.values())
+        top = min(max(-x[4] for x in info.values()), 0.2 * Lm)
+        s = min(width / (4 * np.pi * r), 2048 / (Lm + top))
+        P = 2 * np.pi * r * s
+        W, H = int(np.ceil(2 * P)), int(np.ceil((Lm + top) * s)) + 4
+        for s_, (fids, g, _, _, _) in info.items():
+            ef, eu = _frame(g["a"])
+            cx = 1.5 * P if s_ == "L" else 0.5 * P
+            parts[f"leg_{s_}"] = {"O": L_(g["O"]), "a": L_(g["a"]), "ef": L_(ef), "eu": L_(eu), "r": r, "s": s,
+                                  "anchor": [cx, top * s + 2], "tdir": [0, 1.0], "hdir": [1.0, 0],
+                                  "rect": [P, 0, 2 * P, H] if s_ == "L" else [0, 0, P, H]}
+            faces[f"leg_{s_}"] = fids
+    else:
+        return None
+    return {"W": W, "H": H, "parts": parts}, faces
+
+
+def body_build(M, prm, faces):
+    """every pixel of a body skin: the outermost surface point of its part along the part's radius, its normal"""
+    V, F = M["V"], M["F"]
+    N_ = M.get("N")
+    if N_ is None:
+        N_ = M["N"] = smooth_normals(V, F)
+    W, H = prm["W"], prm["H"]
+    xyz = np.full((H, W, 3), np.nan, np.float32); nrm = np.zeros((H, W, 3), np.float32)
+    zall = np.full((H, W), -np.inf)
+    fid_all = np.full((H, W), -1, np.int64); bary_all = np.zeros((H, W, 3), np.float32)
+    yy, xx = np.mgrid[0:H, 0:W] + 0.5
+    for name, p in prm["parts"].items():
+        fids = faces[name]
+        Q, rho = part_xy(V, p)
+        per = 2 * np.pi * p["r"] * p["s"]
+        hd = np.asarray(p["hdir"], float)
+        c = (Q - np.asarray(p["anchor"], float)) @ hd   # (the angle's coordinate: -per/2 .. per/2)
+        tc = c[F[fids]]
+        wrap = (tc.max(1) - tc.min(1)) > per / 2   # (triangles across the back seam: drawn on both edges)
+        Qw = Q.copy(); Qw[c < 0] += per * hd
+        Qw2 = Qw - per * hd
+        x0, y0, x1, y1 = p["rect"]
+        inr = (xx >= x0) & (xx < x1) & (yy >= y0) & (yy < y1)
+        for grp, QQ in ((fids[~wrap], Q), (fids[wrap], Qw), (fids[wrap], Qw2)):
+            if not len(grp):
+                continue
+            fid, bary, zb = raster(QQ, F[grp], W, H, z=rho)
+            sel = (fid >= 0) & (zb > zall) & inr
+            fid_all[sel] = grp[fid[sel]]; bary_all[sel] = bary[sel]; zall[sel] = zb[sel]
+    ok = fid_all >= 0
+    tri = F[fid_all[ok]]
+    b = bary_all[ok].astype(np.float64)
+    xyz[ok] = (V[tri] * b[..., None]).sum(1)
+    n = (N_[tri] * b[..., None]).sum(1)
+    nrm[ok] = n / np.maximum(np.linalg.norm(n, axis=1, keepdims=True), 1e-9)
+    return xyz, nrm
+
+
+def body_guide(xyz, nrm, prm):
+    """a body skin's relief: lit along each part's own radius and from above"""
+    ok = np.isfinite(xyz[..., 0])
+    rad = np.zeros_like(nrm)
+    H, W = ok.shape
+    yy, xx = np.mgrid[0:H, 0:W] + 0.5
+    for p in prm["parts"].values():
+        x0, y0, x1, y1 = p["rect"]
+        m = ok & (xx >= x0) & (xx < x1) & (yy >= y0) & (yy < y1)
+        O, a = np.asarray(p["O"], float), np.asarray(p["a"], float)
+        R = xyz[m].astype(np.float64) - O
+        rad[m] = R - (R @ a)[:, None] * a
+    rad /= np.maximum(np.linalg.norm(rad, axis=2, keepdims=True), 1e-9)
+    Lt = rad * 0.8 + np.array([0, 0.45, 0])
+    Lt /= np.maximum(np.linalg.norm(Lt, axis=2, keepdims=True), 1e-9)
+    g = 0.25 + 0.55 * np.clip((nrm * Lt).sum(2), 0, 1) + 0.2 * np.clip((nrm * rad).sum(2), 0, 1)
+    img = np.zeros((H, W, 4), np.uint8)
+    v = (g * 235).clip(0, 255).astype(np.uint8)
+    img[ok, 0] = v[ok]; img[ok, 1] = v[ok]; img[ok, 2] = (v[ok] * 1.03).clip(0, 255).astype(np.uint8); img[ok, 3] = 255
+    return Image.fromarray(img, "RGBA")
+
+
+def _skin_at(xyz, xnrm, q, rect):
+    """a skin map's 3D point and normal at panel points q (nearest pixel, kept inside the rect)"""
+    from scipy.ndimage import map_coordinates
+    x0, y0, x1, y1 = rect
+    xs = np.clip(q[:, 0] - 0.5, x0, x1 - 1); ys = np.clip(q[:, 1] - 0.5, y0, y1 - 1)
+    P = np.stack([map_coordinates(xyz[..., k], [ys, xs], order=0, mode="nearest") for k in range(3)], 1)
+    N = np.stack([map_coordinates(xnrm[..., k], [ys, xs], order=0, mode="nearest") for k in range(3)], 1)
+    return P, N
+
+
+def body_move(pos, nrm, fid, prm, faces, xyz, xnrm, pins):
+    """a body part's texels read from where its pins dragged them (as skin_move, per part: only the pins on that
+    part's panel move it) -> (texel ids, positions, normals) or None"""
+    if not pins:
+        return None
+    P_ = np.asarray(pins, float).reshape(-1, 4)
+    ids, Ps, Ns = [], [], []
+    for name, p in prm["parts"].items():
+        x0, y0, x1, y1 = p["rect"]
+        pp = P_[(P_[:, 2] >= x0) & (P_[:, 2] < x1) & (P_[:, 3] >= y0) & (P_[:, 3] < y1)]
+        fs = faces.get(name)
+        if not len(pp) or fs is None or not len(fs):
+            continue
+        m = np.isin(fid, fs)
+        if not m.any():
+            continue
+        q, _ = part_xy(pos[m], p)
+        D = pin_field(pp)(q)
+        qq = q + D
+        per = 2 * np.pi * p["r"] * p["s"]
+        hd = np.asarray(p["hdir"], float)
+        c = (qq - np.asarray(p["anchor"], float)) @ hd
+        qq = qq + (np.mod(c + per / 2, per) - per / 2 - c)[:, None] * hd   # (round the cylinder, not off its panel)
+        Pa, Na = _skin_at(xyz, xnrm, q, (x0, y0, x1, y1))
+        Pb, Nb = _skin_at(xyz, xnrm, qq, (x0, y0, x1, y1))
+        good = (np.linalg.norm(D, axis=1) > 0.05) & np.isfinite(Pa).all(1) & np.isfinite(Pb).all(1)
+        idx = np.nonzero(m)[0]
+        P2, N2 = pos[idx].copy(), nrm[idx].copy()
+        # (moved by the skin's own move from q to q + D: a layer under the outermost one - skin under the cloth, a
+        # fold's far side - keeps its depth instead of jumping onto the outer surface)
+        P2[good] += Pb[good] - Pa[good]
+        n2 = N2[good] + Nb[good] - Na[good]
+        N2[good] = n2 / np.maximum(np.linalg.norm(n2, axis=1, keepdims=True), 1e-9)
+        ids.append(idx); Ps.append(P2); Ns.append(N2)
+    if not ids:
+        return None
+    return np.concatenate(ids), np.concatenate(Ps), np.concatenate(Ns)
+
+
+def body_state(d: Path, st: dict, base: Path, view: str, M=None, width=2048):
+    """a body skin for base.glb, built once (cached by the model's time and the landmarks that cut it); None when the
+    landmarks are missing or the part was not found -> (params, faces, xyz, nrm, M)"""
+    m3 = st.get("marks3d") or {}
+    if M is not None and not m3:
+        m3 = guess_marks3d(M)
+    mk = hashlib.md5(json.dumps({k: m3.get(k) for k in BODY_MARKS}, sort_keys=True).encode()).hexdigest()[:10]
+    key = f"{base.stat().st_mtime_ns}/{mk}"
+    bk = (st.get("skin") or {}).get(view)
+    if bk and bk.get("key") == key and (d / f"{view}_xyz.npy").exists():
+        faces = {n: np.load(d / f"{view}_faces_{n}.npy") for n in bk["params"]["parts"]}
+        return bk["params"], faces, np.load(d / f"{view}_xyz.npy"), np.load(d / f"{view}_nrm.npy"), M
+    M = M or load(base)
+    if not m3:
+        m3 = guess_marks3d(M)
+    cut = body_cut(M, m3)
+    lay = body_layout(M, cut, view, width) if cut else None
+    if not lay:
+        return None
+    prm, faces = lay
+    xyz, nrm = body_build(M, prm, faces)
+    np.save(d / f"{view}_xyz.npy", xyz); np.save(d / f"{view}_nrm.npy", nrm)
+    for n, f_ in faces.items():
+        np.save(d / f"{view}_faces_{n}.npy", f_)
+    body_guide(xyz, nrm, prm).save(d / f"{view}_guide.png")
+    st.setdefault("skin", {})[view] = {"key": key, "params": prm}
     save_state(d, st)
     return prm, faces, xyz, nrm, M
 
@@ -1655,7 +2052,7 @@ def align(cat: str, stem: str, cfg: dict, draft_dir: Path, view: str) -> dict:
         shutil.copy2(glb, base)
     st = load_state(d)
     pics = pictures(st, info)
-    if view in ("skin_head", "skin_ears"):
+    if view in ("skin_head", "skin_ears", *BODY_SKINS):
         if not pics:
             return {"ok": False, "view": view}
         cams, M = {}, None
@@ -1672,11 +2069,17 @@ def align(cat: str, stem: str, cfg: dict, draft_dir: Path, view: str) -> dict:
         save_state(d, st)
         if view == "skin_head":
             sp, xyz, nrm, M = skin_state(d, st, base, M)
-        else:
+        elif view == "skin_ears":
             ep = ears_state(d, st, base, M)
             if not ep:
                 return {"ok": False, "view": view, "error": "no ears found"}
             sp, _, xyz, nrm, M = ep
+            M = M or load(base)
+        else:
+            bp = body_state(d, st, base, view, M)
+            if not bp:
+                return {"ok": False, "view": view, "error": "no body part found"}
+            sp, _, xyz, nrm, M = bp
             M = M or load(base)
         st = load_state(d)
         sizes = {v: Image.open(x["path"]).size for v, x in pics.items()}
