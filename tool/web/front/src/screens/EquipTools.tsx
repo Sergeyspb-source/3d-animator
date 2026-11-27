@@ -2,13 +2,14 @@
 // («Броня»: place a GLB piece on the character and put it on), and «Off a dressed model» — a dressed model split into
 // segments, each given a slot, the set carried onto the character's body in parts.
 import { useEffect, useState } from 'react';
-import { Button, FileButton, Group, Image, ScrollArea, Select, Stack, Text, TextInput, useMantineColorScheme } from '@mantine/core';
+import { Button, FileButton, Group, ScrollArea, Select, Stack, Text, TextInput, useMantineColorScheme } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconUpload } from '@tabler/icons-react';
-import { fileUrl, live, onTaskFinished, post, upload, useStore } from '../api';
+import { live, onTaskFinished, post, upload, useStore } from '../api';
 import { plain, useT } from '../i18n';
 import { asCharacter, useCurrent } from '../objects';
 import EditorFrame from '../components/EditorFrame';
+import { ZoomImage } from '../components/Zoom';
 
 export function WearPanel({ ids }: { ids: string[] }) {
   const t = useT();
@@ -46,7 +47,7 @@ export function OutfitPanel() {
     <div className="work two" style={{ flex: 1 }}>
       <ScrollArea className="stage plainstage">
         {pics.length ? <div className="gallery-grid">{pics.map((p) => (
-          <div key={p.path} className="gal-item"><Image src={fileUrl(p.path)} fit="contain" radius="sm" /><Text size="xs" c="dimmed" ta="center" truncate>{p.caption}</Text></div>))}</div>
+          <div key={p.path} className="gal-item"><ZoomImage src={p.path} group={pics.map((x) => x.path)} captions={pics.map((x) => x.caption)} fit="contain" radius="sm" /><Text size="xs" c="dimmed" ta="center" truncate>{p.caption}</Text></div>))}</div>
           : <Text className="viewer-empty">{plain(t('ui.generate_the_same_character_in_the'))}</Text>}
       </ScrollArea>
       <ScrollArea className="panel"><Stack gap="sm" p="sm">

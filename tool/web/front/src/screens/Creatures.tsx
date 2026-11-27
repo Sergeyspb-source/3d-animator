@@ -2,7 +2,7 @@
 // the markup viewer whose requests move the joints, mark the jaw and put the eyes in), its clips, its colouring, the
 // Godot view. Each page of the app works here unchanged; its requests come through the hidden fields below it.
 import { useEffect, useRef, useState } from 'react';
-import { Button, Checkbox, FileButton, Group, Image, Modal, ScrollArea, SegmentedControl, Stack, Text, UnstyledButton, useMantineColorScheme } from '@mantine/core';
+import { Button, Checkbox, FileButton, Group, Modal, ScrollArea, SegmentedControl, Stack, Text, UnstyledButton, useMantineColorScheme } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconFolder, IconPlus, IconTrash } from '@tabler/icons-react';
 import { fileUrl, get, live, onTaskFinished, post, upload, useStore, type TaskSummary } from '../api';
@@ -11,6 +11,7 @@ import { asCreature, PickList, useCurrent, useObjects } from '../objects';
 import type { Route } from '../nav';
 import EditorFrame from '../components/EditorFrame';
 import Viewer3D from '../components/Viewer3D';
+import { ZoomImage } from '../components/Zoom';
 
 interface CrOverview {
   id: string; name: string; dir: string; source: string | null; rigged: string | null;
@@ -133,14 +134,14 @@ export function CrSkeleton({ bridge, eyes }: { bridge: [string, string]; eyes?: 
         {mode === 'viewer' && <Text size="xs" c="dimmed" truncate style={{ flex: 1 }}>{plain(t(eyes ? 'web.cr_eyes_hint' : 'cr.view_info'))}</Text>}
       </Group>
       {mode === 'template' && o && (o.tpl_pictures || []).length > 0 && (
-        <div className="shots">{(o.tpl_pictures || []).map((s) => <a key={s} href={fileUrl(s)} target="_blank" rel="noreferrer"><Image src={fileUrl(s, v)} h={110} w="auto" fit="contain" /></a>)}</div>)}
+        <div className="shots">{(o.tpl_pictures || []).map((s) => <ZoomImage key={s} src={s} url={fileUrl(s, v)} group={o.tpl_pictures} h={110} w="auto" fit="contain" />)}</div>)}
       {mode === 'template' ? (o?.source || o?.rigged
         ? <EditorFrame src={`/editor/creature?${q}&what=template`} fields={[TPL_BRIDGE[0]]} title={t('ct.title')}
           go={[{ id: TPL_BRIDGE[1], field: TPL_BRIDGE[0], onGo: (text) => post('/api/cr/template', { id, text }) }]} />
         : <div className="placeholder"><Text c="dimmed">{t('web.ov_no_model')}</Text></div>)
       : <>
       {!eyes && o && o.jaw_pictures.length > 0 && (
-        <div className="shots">{o.jaw_pictures.map((s) => <a key={s} href={fileUrl(s)} target="_blank" rel="noreferrer"><Image src={fileUrl(s, v)} h={110} w="auto" fit="contain" /></a>)}</div>)}
+        <div className="shots">{o.jaw_pictures.map((s) => <ZoomImage key={s} src={s} url={fileUrl(s, v)} group={o.jaw_pictures} h={110} w="auto" fit="contain" />)}</div>)}
       {o?.rigged ? <EditorFrame src={`/editor/creature?${q}&what=viewer`} fields={[bridge[0]]} title={t('cr.section')}
         go={[{ id: bridge[1], field: bridge[0], onGo: (text) => post('/api/cr/request', { id, text }) }]} />
         : <div className="placeholder"><Text c="dimmed">{plain(t('cr.rig_intro'))}</Text></div>}

@@ -1,7 +1,7 @@
 // Models → Create a model: SF3D / Hunyuan3D (fast shape) / TRELLIS.2, the same options as the former Gradio tab, the
 // result straight in the 3D view. It is made as a draft; «Release» puts it into export.
 import { useEffect, useMemo, useState } from 'react';
-import { Accordion, Alert, Button, CloseButton, Group, Image, Kbd, NumberInput, ScrollArea, SegmentedControl, Select, SimpleGrid,
+import { Accordion, Alert, Button, CloseButton, Group, Kbd, NumberInput, ScrollArea, SegmentedControl, Select, SimpleGrid,
   Slider, Stack, Switch, Text, TextInput } from '@mantine/core';
 import { Dropzone, IMAGE_MIME_TYPE } from '@mantine/dropzone';
 import { useHotkeys, useLocalStorage } from '@mantine/hooks';
@@ -11,6 +11,7 @@ import { fileUrl, get, live, onTaskFinished, post, upload, useStore, type TaskSu
 import { useT } from '../i18n';
 import type { Route } from '../nav';
 import Viewer3D from '../components/Viewer3D';
+import { ZoomImage } from '../components/Zoom';
 
 interface Choice { id: string; key: string }
 interface Options {
@@ -123,7 +124,7 @@ export default function ModelCreate({ go, vegetation }: { go: (r: Route) => void
         {(pics.length > 0 || Object.values(views).some(Boolean)) && (
           <Group className="stage-strip" gap={6}>
             {(f.engine === 'hunyuan' ? VIEWS.filter((k) => views[k]).map((k) => ({ ...views[k]!, tag: t(VIEW_KEY[k]) })) : pics.map((p) => ({ ...p, tag: '' }))).map((p) => (
-              <div key={p.path} className="thumb"><Image src={fileUrl(p.path)} h={64} w={64} fit="contain" />{p.tag && <Text size="xs" ta="center">{p.tag}</Text>}</div>))}
+              <div key={p.path} className="thumb"><ZoomImage src={p.path} group={(f.engine === 'hunyuan' ? VIEWS.filter((k) => views[k]).map((k) => views[k]!.path) : pics.map((x) => x.path))} caption={p.tag} h={64} w={64} fit="contain" />{p.tag && <Text size="xs" ta="center">{p.tag}</Text>}</div>))}
           </Group>
         )}
         {result && task?.status === 'done' && (
@@ -148,7 +149,7 @@ export default function ModelCreate({ go, vegetation }: { go: (r: Route) => void
               <Text size="sm" fw={500} mb={4}>{t('web.views')}</Text>
               <SimpleGrid cols={2} spacing={6}>
                 {VIEWS.map((k) => views[k] ? (
-                  <div key={k} className="slot"><Image src={fileUrl(views[k]!.path)} h={92} fit="contain" />
+                  <div key={k} className="slot"><ZoomImage src={views[k]!.path} group={VIEWS.filter((x) => views[x]).map((x) => views[x]!.path)} captions={VIEWS.filter((x) => views[x]).map((x) => t(VIEW_KEY[x]))} h={92} fit="contain" />
                     <Group justify="space-between" gap={2}><Text size="xs">{t(VIEW_KEY[k])}</Text><CloseButton size="xs" onClick={() => setViews({ ...views, [k]: undefined })} /></Group></div>
                 ) : <Drop key={k} label={t(VIEW_KEY[k])} onFiles={(fs) => addFiles(fs.slice(0, 1), k)} />)}
               </SimpleGrid>
@@ -161,7 +162,7 @@ export default function ModelCreate({ go, vegetation }: { go: (r: Route) => void
               {pics.length > 0 && (
                 <Group gap={6} mt={6}>
                   {pics.map((p) => (
-                    <div key={p.path} className="slot small"><Image src={fileUrl(p.path)} h={54} w={54} fit="contain" />
+                    <div key={p.path} className="slot small"><ZoomImage src={p.path} group={pics.map((x) => x.path)} h={54} w={54} fit="contain" />
                       <CloseButton size="xs" className="slot-x" onClick={() => setPics(pics.filter((x) => x !== p))} /></div>))}
                 </Group>)}
             </div>

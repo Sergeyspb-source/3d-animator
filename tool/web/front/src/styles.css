@@ -193,3 +193,18 @@ body { overflow: hidden; font-variant-numeric: tabular-nums; background: var(--r
 /* Model materials: a group's colour as on the tinted texture, before its name */
 .group-label { display: inline-flex; gap: 6px; align-items: baseline; }
 .group-label .swatch { flex: none; width: 10px; height: 10px; border-radius: 2px; display: inline-block; transform: translateY(1px); }
+/* a picture opened large (components/Zoom.tsx): a small one shows it can be opened; the whole window, dark, over everything */
+.zoomable { cursor: zoom-in; transition: filter .12s; }
+.zoomable:hover { filter: brightness(1.08); }
+.gal-item { position: relative; }
+.gal-item .zoom-btn { position: absolute; top: 6px; right: 6px; opacity: 0; transition: opacity .12s; }
+.gal-item:hover .zoom-btn, .gal-item .zoom-btn:focus-visible { opacity: 1; }
+.zoom-host { position: fixed; inset: 0; z-index: 400; background: rgba(8, 9, 11, .92); display: flex; align-items: center; justify-content: center;
+  overflow: hidden; cursor: zoom-out; user-select: none; touch-action: none; }
+.zoom-host img { max-width: 94vw; max-height: calc(100vh - 120px); object-fit: contain; cursor: default; transform-origin: center;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, .5); background: repeating-conic-gradient(#2a2d33 0 25%, #22252a 0 50%) 0 0 / 16px 16px; }
+.zoom-host img.grab { cursor: grab; }
+.zoom-bar { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; align-items: center; cursor: default;
+  padding: 6px 8px; border-radius: 8px; background: var(--panel); border: 1px solid var(--seam); max-width: calc(100vw - 32px); }
+.zoom-cap { color: var(--mantine-color-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 40px; }
+.zoom-help { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); color: #a8adb5; text-align: center; padding: 0 16px; }

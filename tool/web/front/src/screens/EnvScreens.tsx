@@ -11,6 +11,7 @@ import { plain, useT } from '../i18n';
 import type { Route } from '../nav';
 import Viewer3D from '../components/Viewer3D';
 import LoadingVeil from '../components/LoadingVeil';
+import { ZoomButton, ZoomImage, zoom } from '../components/Zoom';
 
 // a button waiting for the server's answer: it spins meanwhile (one can see it was pressed), a failure shows
 function useWait(): [boolean, (f: () => Promise<void>) => Promise<void>] {
@@ -56,9 +57,11 @@ export function Gallery({ pics, empty, onPick, picked }: { pics: Pic[]; empty: s
   return (
     <ScrollArea className="gallery">
       <div className="gallery-grid">
-        {pics.map((p) => (
-          <UnstyledButton key={p.path} className={'gal-item' + (picked === p.path ? ' on' : '')} onClick={() => (onPick ? onPick(p) : window.open(fileUrl(p.path)))}>
-            <Image src={fileUrl(p.path)} fit="contain" radius="sm" />
+        {pics.map((p, i) => (
+          <UnstyledButton key={p.path} className={'gal-item' + (picked === p.path ? ' on' : '')}
+            onClick={() => (onPick ? onPick(p) : zoom(pics.map((x) => ({ src: x.path, caption: x.caption })), i))}>
+            <Image src={fileUrl(p.path)} fit="contain" radius="sm" className={onPick ? '' : 'zoomable'} />
+            {onPick && <ZoomButton list={pics.map((x) => x.path)} at={i} />}
             {p.caption && <Text size="xs" c="dimmed" ta="center" truncate>{p.caption}</Text>}
           </UnstyledButton>))}
       </div>
@@ -212,7 +215,7 @@ export function Destructibles() {
     <div className="work two">
       <div className="stage">
         <Viewer3D url={model ? fileUrl(model) : null} empty={plain(t('ui.the_model_a_barrel_a_crate_a_vase_a'))} person />
-        {res?.pics?.length > 0 && <Group className="stage-strip" gap={6}>{res.pics.map((x: Pic) => <div key={x.path} className="thumb"><Image src={fileUrl(x.path)} h={120} w="auto" fit="contain" /></div>)}</Group>}
+        {res?.pics?.length > 0 && <Group className="stage-strip" gap={6}>{res.pics.map((x: Pic) => <div key={x.path} className="thumb"><ZoomImage src={x.path} group={res.pics.map((y: Pic) => y.path)} caption={x.caption} h={120} w="auto" fit="contain" /></div>)}</Group>}
       </div>
       <ScrollArea className="panel"><Stack gap="sm" p="sm">
         <div className="panel-title">{t('web.step_destructibles')}</div>
@@ -325,7 +328,7 @@ export function ModelMaterials() {
       <div className="stage">
         <Viewer3D url={model ? fileUrl(model, v) : null} empty={plain(t('ui.1_choose_a_model_2_analyse_the'))} />
         {an?.overlay && <div className="stage-strip"><div className="thumb" title={t('web.mat_overlay_note')}>
-          <Image src={fileUrl(an.overlay, v)} w={240} fit="contain" />
+          <ZoomImage src={an.overlay} url={fileUrl(an.overlay, v)} w={240} fit="contain" />
           <Text size="xs" c="dimmed" maw={240}>{t('web.mat_overlay_note')}</Text></div></div>}
         {analyzing && <LoadingVeil text={t('web.mat_analyzing')} />}
       </div>

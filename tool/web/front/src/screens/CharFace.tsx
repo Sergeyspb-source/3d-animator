@@ -1,7 +1,7 @@
 // Character → Face: the face on the skeleton (a landmark rig has it from its markup; an auto-rig gets it marked and
 // built here), the shared eyes / teeth / tongue set with its live view, the speech lines (lip-sync) played on the face.
 import { useEffect, useRef, useState } from 'react';
-import { Button, Checkbox, ColorInput, FileButton, Group, Image, NumberInput, ScrollArea, SegmentedControl, Select, Slider, Stack, Text,
+import { Button, Checkbox, ColorInput, FileButton, Group, NumberInput, ScrollArea, SegmentedControl, Select, Slider, Stack, Text,
   TextInput, Textarea, useMantineColorScheme } from '@mantine/core';
 import { useLocalStorage } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
@@ -12,6 +12,7 @@ import { asCharacter, useCurrent } from '../objects';
 import type { Route } from '../nav';
 import EditorFrame, { fieldValue } from '../components/EditorFrame';
 import Viewer3D from '../components/Viewer3D';
+import { ZoomImage } from '../components/Zoom';
 
 type Mode = 'face' | 'parts' | 'speech';
 interface FaceState { rigged: string | null; landmark: boolean; auto: boolean; summary: Record<string, any>; speech_model: string | null; clips: string[] }
@@ -53,7 +54,7 @@ function PartsPanel() {
     <div className="work two" style={{ flex: 1 }}>
       <div className="stage">
         <Viewer3D url={view.glb ? fileUrl(view.glb, view.png) : null} empty={view.log || t('face.preview_rendering')} />
-        {view.png && <div className="stage-strip"><div className="thumb"><Image src={fileUrl(view.png)} w={220} fit="contain" /></div></div>}
+        {view.png && <div className="stage-strip"><div className="thumb"><ZoomImage src={view.png} w={220} fit="contain" /></div></div>}
       </div>
       <ScrollArea className="panel">
         <Stack gap="xs" p="sm">

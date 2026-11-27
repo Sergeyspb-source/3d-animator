@@ -3501,5 +3501,10 @@
  "web.imp_log_blender": "Blender: relief and symmetry",
  "web.imp_log_fit": "Fitting the view: {0}",
  "web.imp_log_codex": "ChatGPT draws the view: {0}",
- "web.imp_done": "Done in {0} s"
+ "web.imp_done": "Done in {0} s",
+ "web.zoom_open": "Open large",
+ "web.zoom_tab": "Open the file in a new tab",
+ "web.zoom_close": "Close (Esc)",
+ "web.zoom_help": "Wheel to zoom, drag to move, double click or 0 to fit, ← → for the others, Esc to close",
+ "web.zoom_views": "The model from each side"
 }

@@ -5,17 +5,18 @@
 // catalogue come from it; the shell asks it to take a piece, to open one made before, to press its buttons. Its
 // requests reach the server through the hidden field and button below (the editor's own way to talk to its page).
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Group, Image, SegmentedControl, Text, useMantineColorScheme } from '@mantine/core';
+import { Button, Group, SegmentedControl, Text, useMantineColorScheme } from '@mantine/core';
 import { useLocalStorage } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { IconPhoto } from '@tabler/icons-react';
 import { WearPanel, OutfitPanel } from './EquipTools';
 import { CatalogPage, CheckPanel, ReleasePage, WorkshopEmpty, type CatBlock, type Made, type PieceOn } from './EquipSteps';
-import { fileUrl, get, onTaskFinished } from '../api';
+import { get, onTaskFinished } from '../api';
 import { useI18n } from '../i18n';
 import { asCharacter, useCurrent } from '../objects';
 import LoadingVeil, { useFrameLoading } from '../components/LoadingVeil';
 import type { Route, Step } from '../nav';
+import { ZoomImage } from '../components/Zoom';
 
 interface Shot { path: string; caption: string }
 type Tab = 'shape' | 'fit' | 'materials';
@@ -106,7 +107,7 @@ export default function EquipWorkspace({ step, info, bridge, wear, go }:
       </Group>
       {(step === 'workshop' || step === 'look') && showShots && shots.length > 0 && (
         <div className="shots">{shots.map((s) => (
-          <a key={s.path} href={fileUrl(s.path)} target="_blank" rel="noreferrer" title={s.caption}><Image src={fileUrl(s.path)} h={150} w="auto" fit="contain" /></a>))}
+          <ZoomImage key={s.path} src={s.path} group={shots.map((x) => x.path)} captions={shots.map((x) => x.caption)} title={s.caption} h={150} w="auto" fit="contain" />))}
         </div>)}
       <div className={'eq-body' + (step === 'check' ? ' check' : '')}>
         <div className="eq-editor">

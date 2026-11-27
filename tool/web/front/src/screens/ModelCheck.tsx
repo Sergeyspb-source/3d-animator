@@ -8,6 +8,7 @@ import { fileUrl, get, live, post, useStore, type ModelInfo } from '../api';
 import { useT } from '../i18n';
 import type { Route } from '../nav';
 import Viewer3D from '../components/Viewer3D';
+import { ZoomImage } from '../components/Zoom';
 
 export const CAT_KEY: Record<string, string> = { item: 'ui.inventory_item', prop: 'ui.prop_environment', building: 'ui.building',
   character: 'ui.character', vegetation: 'ui.vegetation_trees_bushes_grass' };
@@ -108,8 +109,8 @@ export default function ModelCheck({ go }: { go: (r: Route) => void }) {
           <Stack gap="sm" p="sm">
             <div><div className="panel-title">{m.stem}</div><div className="field-note">{t(CAT_KEY[m.category] || m.category)}</div></div>
             <ModelFacts m={m} />
-            {m.preview && <Image src={fileUrl(m.preview, m.time)} radius="sm" />}
-            {m.source && <Group gap={8} align="flex-start"><Image src={fileUrl(m.source)} w={96} h={96} fit="contain" radius="sm" /><Text size="xs" c="dimmed">{t('web.source_picture')}</Text></Group>}
+            {m.preview && <ZoomImage src={m.preview} url={fileUrl(m.preview, m.time)} group={[m.preview, m.source].filter(Boolean) as string[]} captions={[t('web.zoom_views'), t('web.source_picture')]} radius="sm" />}
+            {m.source && <Group gap={8} align="flex-start"><ZoomImage src={m.source} group={[m.preview, m.source].filter(Boolean) as string[]} captions={m.preview ? [t('web.zoom_views'), t('web.source_picture')] : [t('web.source_picture')]} w={96} h={96} fit="contain" radius="sm" /><Text size="xs" c="dimmed">{t('web.source_picture')}</Text></Group>}
             {m.rigged && <Badge variant="light" color="patina">{t('web.has_skeleton')}</Badge>}
             <Button onClick={() => release(false)} loading={busy}>{t('web.release_btn')}</Button>
             <div className="field-note">{t('web.release_to', `export/${m.category}/${m.stem}/`)}</div>

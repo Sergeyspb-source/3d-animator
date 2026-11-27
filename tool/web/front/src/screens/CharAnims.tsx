@@ -1,14 +1,15 @@
 // Character → Animations: watch the character's clips (own procedural ones, Mixamo's), with a weapon in hand and the
 // clip check; make the 12 procedural clips in a chosen manner; carry Mixamo FBX motions onto the skeleton.
 import { useEffect, useState } from 'react';
-import { Button, Checkbox, Group, Image, NumberInput, ScrollArea, SegmentedControl, Select, Stack, Table, Text, TextInput,
+import { Button, Checkbox, Group, NumberInput, ScrollArea, SegmentedControl, Select, Stack, Table, Text, TextInput,
   useMantineColorScheme } from '@mantine/core';
 import { useLocalStorage } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
-import { fileUrl, get, live, onTaskFinished, post, useStore } from '../api';
+import { get, live, onTaskFinished, post, useStore } from '../api';
 import { useT } from '../i18n';
 import { asCharacter, useCurrent } from '../objects';
 import EditorFrame from '../components/EditorFrame';
+import { ZoomImage } from '../components/Zoom';
 
 type Mode = 'watch' | 'procedural' | 'mixamo';
 interface Opts { clips: { id: string; label: string }[]; manners: { id: string; key: string }[]; deaths: { id: string; key: string }[]; weapons: string[]; fbx_dir: string }
@@ -94,7 +95,7 @@ export default function CharAnims() {
         {head}
         <div className="work two" style={{ flex: 1 }}>
           <ScrollArea className="stage sheets">
-            {shots.length ? <Stack gap="xs" p="sm">{shots.map((s) => <Image key={s} src={fileUrl(s)} radius="sm" />)}</Stack>
+            {shots.length ? <Stack gap="xs" p="sm">{shots.map((s) => <ZoomImage key={s} src={s} group={shots} radius="sm" />)}</Stack>
               : <Text className="viewer-empty">{has('anim') ? t('web.anim_has', st!.anim!.clips.length) : t('web.anim_none')}</Text>}
           </ScrollArea>
           <ScrollArea className="panel">

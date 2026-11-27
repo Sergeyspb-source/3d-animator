@@ -2,12 +2,13 @@
 // Catalog (what to make, the pieces made), the Workshop's empty state, Check's panel (the bake, the check in motion
 // over the clips, the Godot fitting room) and Release (the character's pieces in a table).
 import { useEffect, useState } from 'react';
-import { Alert, Badge, Button, Group, Image, Progress, ScrollArea, Stack, Table, Text, Title, UnstyledButton } from '@mantine/core';
+import { Alert, Badge, Button, Group, Progress, ScrollArea, Stack, Table, Text, Title, UnstyledButton } from '@mantine/core';
 import { IconFolder, IconRefresh } from '@tabler/icons-react';
 import { fileUrl, get, live, post, useStore, type TaskSummary } from '../api';
 import { useI18n } from '../i18n';
 import PieceIcon from '../components/PieceIcon';
 import LoadingVeil from '../components/LoadingVeil';
+import { ZoomImage } from '../components/Zoom';
 
 export interface PieceOn { piece: string | null; style: string | null; label: string; item: string }
 export interface CatBlock { title: string; hair: boolean; items: { piece: string; style: string | null; label: string }[] }
@@ -142,7 +143,7 @@ export function CheckPanel({ rigged, piece, press }: { rigged: string; piece: Pi
             <Stack gap={4}>
               <Text size="xs" c="dimmed">{t('web.eq_qa_shots')}</Text>
               <div className="qa-shots">{rep.shots.map((s) => (
-                <a key={s.path} href={fileUrl(s.path)} target="_blank" rel="noreferrer" title={s.caption}><Image src={fileUrl(s.path, rep.when)} radius="sm" /></a>))}</div>
+                <ZoomImage key={s.path} src={s.path} url={fileUrl(s.path, rep.when)} group={(rep.shots || []).map((x) => x.path)} captions={(rep.shots || []).map((x) => x.caption)} title={s.caption} radius="sm" />))}</div>
             </Stack>)}
         </Stack>
 

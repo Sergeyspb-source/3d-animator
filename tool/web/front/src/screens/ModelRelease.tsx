@@ -1,13 +1,14 @@
 // Models → Release: what is in export (the game takes it from there), newest first, filtered by category. It opens on
 // the model released last from Check; the draft worked on in Check, while it is not released, is named on top.
 import { useEffect, useState } from 'react';
-import { Alert, Button, Image, ScrollArea, Select, Stack, Text } from '@mantine/core';
+import { Alert, Button, ScrollArea, Select, Stack, Text } from '@mantine/core';
 import { IconFolder } from '@tabler/icons-react';
 import { fileUrl, get, live, post, useStore, type ModelInfo } from '../api';
 import { useT } from '../i18n';
 import Viewer3D from '../components/Viewer3D';
 import { CAT_KEY, ModelFacts, ModelList } from './ModelCheck';
 import type { Route } from '../nav';
+import { ZoomImage } from '../components/Zoom';
 
 const stored = (k: string) => { try { return localStorage.getItem(k); } catch { return null; } };
 
@@ -41,7 +42,7 @@ export default function ModelRelease({ go }: { go: (r: Route) => void }) {
           <Stack gap="sm" p="sm">
             <div><div className="panel-title">{m.stem}</div><div className="field-note">{t(CAT_KEY[m.category] || m.category)}, {new Date(m.time * 1000).toLocaleString()}</div></div>
             <ModelFacts m={m} />
-            {m.preview && <Image src={fileUrl(m.preview, m.time)} radius="sm" />}
+            {m.preview && <ZoomImage src={m.preview} url={fileUrl(m.preview, m.time)} caption={t('web.zoom_views')} radius="sm" />}
             <div className="field-note">{m.files.join(', ')}</div>
             <Button variant="default" leftSection={<IconFolder size={16} />} onClick={() => post('/api/open', { path: m.dir })}>{t('ui.char_open_folder')}</Button>
             <Text size="xs" c="dimmed">{t('web.release_game_note')}</Text>

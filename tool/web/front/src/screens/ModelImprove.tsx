@@ -3,7 +3,7 @@
 // side (the draft's own, uploaded, drawn by ChatGPT), the missing sides to draw, the steps (texture from the pictures,
 // mirrored side, symmetry, relief), «Improve» (a queued task) and «Undo».
 import { useEffect, useState } from 'react';
-import { Button, Checkbox, FileButton, Group, Image, ScrollArea, SegmentedControl, Slider, Stack, Switch, Text, Tooltip } from '@mantine/core';
+import { Button, Checkbox, FileButton, Group, ScrollArea, SegmentedControl, Slider, Stack, Switch, Text, Tooltip } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconPin, IconPhotoUp, IconX, IconCheck, IconArrowBackUp, IconSparkles } from '@tabler/icons-react';
 import { fileUrl, get, live, post, upload, useStore, type ModelInfo } from '../api';
@@ -13,6 +13,7 @@ import Viewer3D from '../components/Viewer3D';
 import PinEditor, { type AlignData, type Pin } from '../components/PinEditor';
 import { CAT_KEY, ModelList } from './ModelCheck';
 import './ModelImprove.css';
+import { ZoomImage } from '../components/Zoom';
 
 const VIEWS = ['front', 'back', 'left', 'right'] as const;
 type ViewName = typeof VIEWS[number];
@@ -129,8 +130,8 @@ export default function ModelImprove({ go }: { go: (r: Route) => void }) {
                 const mirrored = !p && opts.mirror && ((v === 'right' && st.pictures.left) || (v === 'left' && st.pictures.right));
                 return (
                   <div key={v} className="imp-view">
-                    <div className="imp-thumb">{p ? <Image src={fileUrl(p.path)} fit="contain" h={64} w={52} />
-                      : c ? <Image src={fileUrl(c.path)} fit="contain" h={64} w={52} style={{ opacity: 0.7 }} /> : <span className="imp-none">—</span>}</div>
+                    <div className="imp-thumb">{p ? <ZoomImage src={p.path} group={VIEWS.map((x) => st.pictures[x]?.path).filter(Boolean) as string[]} caption={t(VIEW_KEY[v] || v)} fit="contain" h={64} w={52} />
+                      : c ? <ZoomImage src={c.path} fit="contain" h={64} w={52} style={{ opacity: 0.7 }} /> : <span className="imp-none">—</span>}</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <Group gap={6} wrap="nowrap"><Text size="sm" fw={600}>{t(VIEW_KEY[v])}</Text>
                         <span className={'tag' + (p?.kind === 'codex' ? ' warm' : '')}>{p ? t(KIND_KEY[p.kind] || p.kind) : mirrored ? t('web.imp_kind_mirror') : c ? t('web.imp_kind_candidate') : t('web.imp_kind_none')}</span></Group>
