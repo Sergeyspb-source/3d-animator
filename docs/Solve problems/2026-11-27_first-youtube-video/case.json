@@ -1,0 +1,372 @@
+{
+  "id": "2026-11-27_first-youtube-video",
+  "title_ru": "Как собрать ролик для YouTube без видеоредактора?",
+  "title_en": "How do you make a YouTube video without a video editor?",
+  "hook_ru": "Ролик о нейросетях собрала нейросеть, и ни одной склейки в видеоредакторе не было. Но гоблина ростом с ребёнка в кадре заметил только человек.",
+  "status": "solved",
+  "date": "2026-11-27",
+  "sessions": [
+    {
+      "name": "YouTube №1: сравнение генераторов 3D (SF3D, Hunyuan, TRELLIS.2)",
+      "id": "local_c3c325a1"
+    },
+    {
+      "name": "Правки проекта (координатор, дал задание)",
+      "id": "local_e34b3455"
+    }
+  ],
+  "commits": [],
+  "tags": [
+    "youtube",
+    "video",
+    "voice",
+    "hyperframes",
+    "elevenlabs"
+  ],
+  "video": {
+    "potential": 4,
+    "why_ru": "Зрелищные поломки 3D, понятная цифра (7:08 против 6:35) и честный финал: ошибку в кадре нашёл человек, а не программа.",
+    "wow_moment_ru": "Чёрный силуэт рыцаря шторкой превращается в серую глину, а белый диск — в деревянный щит.",
+    "length_seconds": 100,
+    "thumbnail": {
+      "image": "src/fault_knight_no_normals.png",
+      "text_ru": "РОЛИК СОБРАЛ КОД"
+    }
+  },
+  "numbers": [
+    {
+      "what_ru": "Длина ролика",
+      "before": 428,
+      "after": 395,
+      "unit_ru": "секунд",
+      "better": "lower",
+      "measured_on": "запись голоса ElevenLabs",
+      "note_ru": "до голоса по расчёту 7:08 (первая версия ролика), по настоящему голосу 6:35"
+    },
+    {
+      "what_ru": "Скорость голоса",
+      "before": 13.0,
+      "after": 14.4,
+      "unit_ru": "знаков в секунду",
+      "better": "higher",
+      "measured_on": "57 фраз, 5 109 знаков, eleven_v4_turbo",
+      "note_ru": "13 — расчёт заранее, 14,4 — замер; для этого голоса брать 14,4"
+    },
+    {
+      "what_ru": "Рендер 4 секунд видео",
+      "before": 210,
+      "after": 45,
+      "unit_ru": "секунд",
+      "better": "lower",
+      "measured_on": "RTX 4060 Laptop 8 ГБ",
+      "note_ru": "3D стало рисовать только текущую сцену"
+    },
+    {
+      "what_ru": "Рендер всего ролика",
+      "before": null,
+      "after": 15,
+      "unit_ru": "минут",
+      "better": "lower",
+      "measured_on": "RTX 4060 Laptop 8 ГБ, 3 потока, около 7 ГБ видеопамяти",
+      "note_ru": "от 15 до 25 минут; всего было 4 полных рендера, 2 из них лишние"
+    },
+    {
+      "what_ru": "Знаков ElevenLabs",
+      "before": null,
+      "after": 5109,
+      "unit_ru": "знаков",
+      "better": "lower",
+      "measured_on": "",
+      "note_ru": "57 фраз; перенос фразы в другой блок — 0 новых знаков"
+    },
+    {
+      "what_ru": "Рост модели на экране «Выпуск»",
+      "before": 1.0,
+      "after": 1.8,
+      "unit_ru": "м",
+      "better": "higher",
+      "measured_on": "приложение, рамка модели",
+      "note_ru": "гоблин рядом с человеком 1,75 м выглядел ребёнком; заменён рыцарем"
+    },
+    {
+      "what_ru": "SF3D: время модели, задание против замера",
+      "before": 20,
+      "after": 10,
+      "unit_ru": "секунд",
+      "better": "lower",
+      "measured_on": "RTX 4060 Laptop 8 ГБ, тестовая копия",
+      "note_ru": "20 — цифра из задания, не замер; замер: щит 11 с, бочка 8 с, таверна 10 с, рыцарь 41 с при первом запуске"
+    },
+    {
+      "what_ru": "Громкость ролика",
+      "before": null,
+      "after": -15.4,
+      "unit_ru": "LUFS",
+      "better": "higher",
+      "measured_on": "ffmpeg ebur128",
+      "note_ru": "голос −16 LUFS, музыка на 12 дБ тише, пик −1,4 дБ"
+    }
+  ],
+  "media": [
+    {
+      "file": "img/01_film_frames.jpg",
+      "clean": "src/film_0006_hook_race.png",
+      "kind": "screenshot",
+      "role": "result",
+      "pair": null,
+      "caption_ru": "Кадры готового ролика: гонка по секундам в начале"
+    },
+    {
+      "file": "img/01_film_frames.jpg",
+      "clean": "src/film_0100_cast_hunyuan.png",
+      "kind": "screenshot",
+      "role": "result",
+      "pair": null,
+      "caption_ru": "Участник: Hunyuan3D, что он умеет"
+    },
+    {
+      "file": "img/01_film_frames.jpg",
+      "clean": "src/film_0200_round1_callout.png",
+      "kind": "screenshot",
+      "role": "result",
+      "pair": null,
+      "caption_ru": "Раунд 1: выноска на детали рыцаря"
+    },
+    {
+      "file": "img/01_film_frames.jpg",
+      "clean": "src/film_0258_round2_shields.png",
+      "kind": "screenshot",
+      "role": "result",
+      "pair": null,
+      "caption_ru": "Раунд 2: щиты Hunyuan и TRELLIS.2 со временем"
+    },
+    {
+      "file": "img/01_film_frames.jpg",
+      "clean": "src/film_0453_table.png",
+      "kind": "screenshot",
+      "role": "result",
+      "pair": null,
+      "caption_ru": "Итоговая таблица четырёх раундов"
+    },
+    {
+      "file": "img/01_film_frames.jpg",
+      "clean": "src/film_0515_app_log.png",
+      "kind": "screenshot",
+      "role": "result",
+      "pair": null,
+      "caption_ru": "Приложение: журнал задач во время генерации"
+    },
+    {
+      "file": "img/01_film_frames.jpg",
+      "clean": "src/film_0537_improve_3d.png",
+      "kind": "screenshot",
+      "role": "result",
+      "pair": null,
+      "caption_ru": "Рыцарь до и после «Улучшения» рядом с картинкой"
+    },
+    {
+      "file": "img/01_film_frames.jpg",
+      "clean": "src/film_0630_outro_qr.png",
+      "kind": "screenshot",
+      "role": "result",
+      "pair": null,
+      "caption_ru": "Концовка: телеграм-канал и QR-код"
+    },
+    {
+      "file": "img/02_thumbnails.jpg",
+      "clean": "src/thumb_B2_final.png",
+      "kind": "render",
+      "role": "context",
+      "pair": null,
+      "caption_ru": "Три варианта обложки и выбранная B с подписью «до 8 ГБ»"
+    },
+    {
+      "file": "img/03_faults_3d.jpg",
+      "clean": "src/fault_knight_no_normals.png",
+      "kind": "render",
+      "role": "before",
+      "pair": "knight-normals",
+      "caption_ru": "Рыцарь Hunyuan как есть: без нормалей он чёрный"
+    },
+    {
+      "file": "img/03_faults_3d.jpg",
+      "clean": "src/fault_knight_fixed.png",
+      "kind": "render",
+      "role": "after",
+      "pair": "knight-normals",
+      "caption_ru": "Нормали досчитаны: серая глина"
+    },
+    {
+      "file": "img/03_faults_3d.jpg",
+      "clean": "src/fault_shield_collision_disc.png",
+      "kind": "render",
+      "role": "before",
+      "pair": "shield-collision",
+      "caption_ru": "Щит SF3D как есть: закрыт невидимым в игре диском для столкновений"
+    },
+    {
+      "file": "img/03_faults_3d.jpg",
+      "clean": "src/fault_shield_fixed.png",
+      "kind": "render",
+      "role": "after",
+      "pair": "shield-collision",
+      "caption_ru": "Диск выброшен: видно щит"
+    },
+    {
+      "file": "img/04_timing_estimate_vs_voice.png",
+      "clean": null,
+      "kind": "chart",
+      "role": "cause",
+      "pair": null,
+      "caption_ru": "Длина сцен по средней скорости речи и по настоящему голосу"
+    },
+    {
+      "file": "img/05_release_goblin_vs_knight.jpg",
+      "clean": "src/release_before_goblin.png",
+      "kind": "screenshot",
+      "role": "problem",
+      "pair": null,
+      "caption_ru": "Экран «Выпуск»: гоблин в 1 м рядом с человеком 1,75 м"
+    },
+    {
+      "file": "img/05_release_goblin_vs_knight.jpg",
+      "clean": "src/release_after_knight.png",
+      "kind": "screenshot",
+      "role": "after",
+      "pair": null,
+      "caption_ru": "Экран «Выпуск»: рыцарь 1,8 м рядом с тем же человеком"
+    },
+    {
+      "file": "img/06_avatar.jpg",
+      "clean": "src/avatar_final_NP.png",
+      "kind": "render",
+      "role": "result",
+      "pair": null,
+      "caption_ru": "Аватар канала: выбрана монограмма «НП» в шестиграннике"
+    },
+    {
+      "file": null,
+      "clean": "src/clip_hook_0000-0014.mp4",
+      "kind": "clip",
+      "role": "result",
+      "pair": null,
+      "caption_ru": "Первые 14 секунд готового ролика со звуком"
+    },
+    {
+      "file": null,
+      "clean": "src/clip_improve_release.mp4",
+      "kind": "clip",
+      "role": "after",
+      "pair": null,
+      "caption_ru": "12 секунд с 5:35: рыцарь до и после «Улучшения», затем «Выпуск» с рыцарем"
+    }
+  ],
+  "models": [
+    {
+      "role": "before",
+      "path": "work/youtube_01_models/video/assets/models/knight_hy.glb",
+      "label_ru": "Рыцарь Hunyuan без нормалей (для облёта включить raw в writeup/index.html)"
+    },
+    {
+      "role": "before",
+      "path": "work/youtube_01_models/video/assets/models/shield_sf.glb",
+      "label_ru": "Щит SF3D с узлом коллизии shield_sf3d-convcolonly"
+    },
+    {
+      "role": "reference",
+      "path": "work/youtube_01_models/video/assets/models/knight_tr.glb",
+      "label_ru": "Рыцарь TRELLIS.2 до «Улучшения»"
+    },
+    {
+      "role": "reference",
+      "path": "work/youtube_01_models/video/assets/models/knight_tr_improved.glb",
+      "label_ru": "Рыцарь TRELLIS.2 после «Улучшения»"
+    }
+  ],
+  "beats": [
+    {
+      "n": 1,
+      "seconds": 10,
+      "say_ru": "Первый ролик канала собирал не монтажёр, а нейросеть. У неё нет мыши и монтажного стола, только код.",
+      "show": [
+        "src/clip_hook_0000-0014.mp4"
+      ]
+    },
+    {
+      "n": 2,
+      "seconds": 12,
+      "say_ru": "Поэтому каждая сцена ролика — веб-страница. Программа листает её время и снимает тридцать кадров в секунду, как мультфильм из блокнота.",
+      "show": [
+        "diagram:сценарий → голос → длины фраз → время сцен → сцены-страницы → кадры → звук → MP4",
+        "img/01_film_frames.jpg"
+      ]
+    },
+    {
+      "n": 3,
+      "seconds": 20,
+      "say_ru": "Модели в кадре — настоящие. Первая вышла чёрной: в файле не было нормалей. А щит закрыл белый диск: в игровой файл спрятана невидимая форма для столкновений.",
+      "show": [
+        "src/fault_knight_no_normals.png",
+        "src/fault_knight_fixed.png",
+        "src/fault_shield_collision_disc.png",
+        "src/fault_shield_fixed.png"
+      ]
+    },
+    {
+      "n": 4,
+      "seconds": 12,
+      "say_ru": "Пробный рендер шёл три с половиной минуты на четыре секунды видео. Стали рисовать 3D только в текущей сцене — весь ролик собирается за пятнадцать минут.",
+      "show": [
+        "diagram:3D во всех сценах сразу против только в текущей: 3,5 минуты против 45 секунд"
+      ]
+    },
+    {
+      "n": 5,
+      "seconds": 15,
+      "say_ru": "Время сцен сначала считали по средней скорости речи: семь минут восемь секунд. Настоящий голос читает быстрее — шесть тридцать пять. Пришлось рендерить заново.",
+      "show": [
+        "img/04_timing_estimate_vs_voice.png"
+      ]
+    },
+    {
+      "n": 6,
+      "seconds": 16,
+      "say_ru": "Автор посмотрел ролик и нашёл то, чего не заметила программа: рядом с человеком метр семьдесят пять стоял гоблин ростом с ребёнка. Пересняли с рыцарем.",
+      "show": [
+        "src/release_before_goblin.png",
+        "src/release_after_knight.png"
+      ]
+    },
+    {
+      "n": 7,
+      "seconds": 10,
+      "say_ru": "Голос — клон голоса автора, музыка — локальная нейросеть, обложку и аватар выбрал автор из трёх вариантов.",
+      "show": [
+        "img/02_thumbnails.jpg",
+        "img/06_avatar.jpg"
+      ]
+    },
+    {
+      "n": 8,
+      "seconds": 8,
+      "say_ru": "Урок для следующего ролика: сначала голос, потом картинка. И последний взгляд — всё равно человеческий.",
+      "show": [
+        "src/film_0630_outro_qr.png"
+      ]
+    }
+  ],
+  "reproduce_in_app": [
+    "Тестовая копия: D:\\conda\\tmp\\yt01_web\\run_yt_server.bat, затем http://127.0.0.1:7893",
+    "Модели → Создать модель: движок TRELLIS.2, картинка рыцаря, «Создать» — журнал задач внизу",
+    "Модели → Проверка: человек 1,75 м рядом, облёт, каркас",
+    "Модели → Улучшение: «Улучшить», затем «До» / «После»",
+    "Модели → Выпуск: выбрать skeleton_knight в списке"
+  ],
+  "regenerate": [
+    "cd work/youtube_01_models/writeup && npx --yes hyperframes@0.9.102 snapshot --at 0.5,1.5,2.5,3.5 --no-end -o ../previews/_wu",
+    "ffmpeg -ss <секунды> -i work/youtube_01_models/render/youtube01_2560_ru.mp4 -frames:v 1 <кадр>.png  (кадры ролика: 6, 60, 120, 178, 293, 315, 337.5, 390; «Выпуск» до — render/old_v2 на 340, после — 344.5)",
+    "D:\\conda\\envs\\sf3d\\python.exe work/youtube_01_models/writeup/timing_chart.py \"docs/Solve problems/2026-11-27_first-youtube-video/img/04_timing_estimate_vs_voice.png\"",
+    "D:\\conda\\envs\\sf3d\\python.exe \"docs/Solve problems/_tools/sheet.py\" img/03_faults_3d.jpg \"Hunyuan как есть: рыцарь чёрный\" src/fault_knight_no_normals.png \"Нормали досчитаны: серая глина\" src/fault_knight_fixed.png \"SF3D как есть: щит закрыт диском\" src/fault_shield_collision_disc.png \"Невидимый диск выброшен: щит\" src/fault_shield_fixed.png --cols 2 --width 1920 --crop",
+    "Остальные листы img/ — тем же sheet.py из файлов src/ (подписи как в README)"
+  ]
+}
