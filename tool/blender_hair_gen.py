@@ -23,6 +23,9 @@ Two ways, after what games do (and what the user chose from the prototypes):
   texture; a crop's sides fade out. A mohawk: thick blades along the head's middle and a ponytail on that base.
 Weights: the head's, more and more the neck's and the chest's below the jaw. The skin under the cap or the shell is
 the mask. Prints ARMOUR_GEN_OK {json}.
+Springs (params "spring": 1, the styles of cards only): the strands grouped by where they leave the head, a chain of
+bones Hair_<c>_<k> each (from the head's bone down their mean way); a strand's vertices go over from the head to its
+chain's links along it - the game's spring bones swing them (tool/godot/sf3d_equip.gd: SpringBoneSimulator3D).
 """
 import json
 import math
@@ -332,8 +335,12 @@ def material(name, im, cut, rough=.6):
 
 
 # ---------------------------------------------------------------- long hair, a bob: cards
+STRANDS = []   # (the cards' strands, for the springs: [(points, [(left, mid, right) vertex index per point]), ...])
+
+
 def build_cards(L, part, cut_z, wave=0., messy=0., swept=0., narrow=1.):
     roots = []
+    made = []   # (each card's points and its vertices, while the mesh is made)
     N = 2000   # (fewer roots, steps and points than the prototype's: a preview in about a minute, a lighter piece)
     for i in range(N):
         z = 1 - 2 * (i + .5) / N; r = math.sqrt(1 - z * z); ph = i * 2.39996
@@ -566,6 +573,7 @@ def build_cards(L, part, cut_z, wave=0., messy=0., swept=0., narrow=1.):
             o = out.normalized() * (.02 * R)
             left.append(bm.verts.new(p - side * w / 2 + o)); right.append(bm.verts.new(p + side * w / 2 + o))
             mid.append(bm.verts.new(p + o + out.normalized() * (.16 * w)))
+        made.append(([p.copy() for p in pts], left, mid, right))
         u0, u1 = slot / 4 + .005, (slot + 1) / 4 - .005
         um = .5 * (u0 + u1)
         for i in range(len(pts) - 1):
@@ -583,6 +591,8 @@ def build_cards(L, part, cut_z, wave=0., messy=0., swept=0., narrow=1.):
             card(settle(pts, kf, layer), w * narrow * R * (.8 + .4 * rnd.random()), rnd.randrange(4), kf)
             n_cards += 1
     print("cards", n_cards, flush=True)
+    bm.verts.index_update()   # (the mesh's vertices in the bmesh's order: the strands' indices hold in it)
+    STRANDS[:] = [(pts, [(a.index, b.index, c.index) for a, b, c in zip(le, mi, ri)]) for pts, le, mi, ri in made]
     cm = bpy.data.meshes.new("hair_cards"); bm.to_mesh(cm); bm.free()
     cards = bpy.data.objects.new("hair_cards", cm); sc.collection.objects.link(cards)
     atlas = strands_atlas()
@@ -3883,6 +3893,91 @@ if job.get("piece") not in FACE_HAIR:   # (brows, lashes: fine hairs on the skin
     bake_ao(obs)
     print("ao baked", flush=True)
 
+# ---------------------------------------------------------------- springs: chains of bones the cards' strands swing on
+def _resample(pts, n):
+    d = [0.]
+    for a, b in zip(pts, pts[1:]):
+        d.append(d[-1] + (b - a).length)
+    out, j = [], 0
+    for k in range(n):
+        s = d[-1] * k / (n - 1)
+        while j < len(d) - 2 and d[j + 1] < s:
+            j += 1
+        f = (s - d[j]) / max(d[j + 1] - d[j], 1e-9)
+        out.append(pts[j].lerp(pts[j + 1], min(1., max(0., f))))
+    return out, d
+
+
+def hair_springs(nc=14, ramp=.35):
+    """the cards' strands by where they leave the head (nc sectors round it): a chain each, the mean of its strands
+    (Hair_<c>_<k> from its top down, the first under the head's bone, a last short one at its end: every joint a bone,
+    as the game's spring bones want); each strand's vertices weighted along it - none at its root (the head holds it),
+    all of it ramp head radii down, between two links by where on the chain it is (as HairDeck binds its cards:
+    hairdeck.spring.sim.bind). Returns ({vertex: (chain share, [(bone, weight), ...])}, chains)."""
+    secs = {}
+    for pts, vix in STRANDS:
+        if len(pts) < 4:
+            continue
+        rs, d = _resample(pts, 20)
+        if d[-1] < .6 * R:   # (too short to swing: on the head)
+            continue
+        r0 = pts[0] - O
+        az = math.atan2(r0.x, -r0.y)
+        secs.setdefault(int((az + math.pi) / (2 * math.pi) * nc) % nc, []).append((rs, d, vix, pts))
+    if not secs:
+        return {}, 0
+    head_b = names["head"]
+    bpy.ops.object.select_all(action="DESELECT")
+    arm.select_set(True)
+    bpy.context.view_layer.objects.active = arm
+    bpy.ops.object.mode_set(mode="EDIT")
+    eb = arm.data.edit_bones
+    inv = arm.matrix_world.inverted()
+    out, n = {}, 0
+    for sec in sorted(secs):
+        mem = secs[sec]
+        mean = [sum((m[0][i] for m in mem), Vector()) / len(mem) for i in range(20)]
+        Lm = sum(m[1][-1] for m in mem) / len(mem)
+        nj = max(3, min(7, round(Lm / (.7 * R)) + 1))
+        J, _ = _resample(mean, nj)
+        prev, bones = eb[head_b], []
+        for k in range(nj):
+            b = eb.new(f"Hair_{n}_{k}")
+            tail = J[k + 1] if k < nj - 1 else J[k] + (J[k] - J[k - 1]) * .5
+            b.head, b.tail = inv @ J[k], inv @ tail
+            b.parent = prev
+            b.use_connect = k > 0
+            prev = b
+            bones.append(b.name)
+        for rs, d, vix, pts in mem:   # (its vertices: by their point's share of the strand's length)
+            acc = [0.]
+            for a, b_ in zip(pts, pts[1:]):
+                acc.append(acc[-1] + (b_ - a).length)
+            for i, tri in enumerate(vix):
+                s = acc[i]
+                w = smooth(0., ramp * R, s)
+                if w <= 1e-4:
+                    continue
+                u = s / max(acc[-1], 1e-9) * (nj - 1)
+                k = min(int(u), nj - 2)
+                f = u - k
+                k2, al = k, 1.
+                if f < .5 and k > 0:
+                    k2, al = k - 1, .5 + f
+                elif f > .5 and k < nj - 2:
+                    k2, al = k + 1, 1.5 - f
+                ws = [(bones[k], w * al)] + ([(bones[k2], w * (1 - al))] if k2 != k else [])
+                for vi in tri:
+                    out[vi] = (w, ws)
+        n += 1
+    bpy.ops.object.mode_set(mode="OBJECT")
+    print("springs", n, "chains", flush=True)
+    return out, n
+
+
+SPRING_W, N_SPRINGS = hair_springs() if prm.get("spring") and STRANDS else ({}, 0)
+SPRING_OB = obs[0] if SPRING_W else None
+
 # ---------------------------------------------------------------- weights: the head's; below the jaw the neck's and the chest's
 groups = [names["head"], names.get("neck", names["head"]), names.get("spine2", names.get("neck", names["head"]))]
 groups = [g for g in groups if g in arm.data.bones] or [names["head"]]
@@ -3904,9 +3999,16 @@ def weights(z):
 
 for ob in obs + ([mask_of] if mask_of not in obs else []):
     vg = {g: ob.vertex_groups.new(name=g) for g in dict.fromkeys(groups + ([JAW] if JAW and job.get("piece") == "beard" else []))}
+    sw = SPRING_W if ob is SPRING_OB else {}
     for v in ob.data.vertices:
-        for g, w in weights((ob.matrix_world @ v.co).z):
+        ws = weights((ob.matrix_world @ v.co).z)
+        if v.index in sw:   # (a strand's: its chain's share off the head's, the neck's, the chest's)
+            k, chain = sw[v.index]
+            ws = [(g, w * (1 - k)) for g, w in ws] + chain
+        for g, w in ws:
             if w > 1e-4:
+                if g not in vg:
+                    vg[g] = ob.vertex_groups.new(name=g)
                 vg[g].add([v.index], w, "ADD")
 # what it hides: the skin under its cap or its shell
 keys = set()
@@ -3949,4 +4051,4 @@ _vc = {"export_vertex_color": "ACTIVE"} if "export_vertex_color" in bpy.ops.expo
 bpy.ops.export_scene.gltf(filepath=job["out"], export_format="GLB", use_selection=True, export_skins=True,
                           export_animations=False, export_influence_nb=4, export_morph=True, export_morph_normal=False,
                           **_vc)   # (its shadows: the vertices' colour; the brows', the lashes' face keys)
-print("ARMOUR_GEN_OK " + json.dumps({"vertices": len(obj.data.vertices), "bones": groups, "style": style, "uvtex": {}}), flush=True)
+print("ARMOUR_GEN_OK " + json.dumps({"vertices": len(obj.data.vertices), "bones": groups, "style": style, "uvtex": {}, "springs": N_SPRINGS}), flush=True)

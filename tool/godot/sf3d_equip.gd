@@ -22,6 +22,7 @@ static var keep_off_body := true   # a shield strapped on kept out of the body b
 static var keep_flex := 30.0   # how far its elbow may bend (degrees) to lift it out first, before it is moved
 static var keep_debug := false   # (the fitting room's --keepdebug: the correction printed every frame)
 static var keep_apply := true   # (false: worked out, not applied - the fitting room's --nokeep with --keepdebug)
+static var springs := true   # spring bones of hair and of hems (false: they stay with the head, the thighs - the fitting room's --nosprings)
 const DEPTH_STEP := 0.012   # of the height, between two layers worn at most
 const DEPTH_MAX := 0.045   # of the height, the top layer's push (a step of ~0.5 % with nine layers worn)
 # the armour editor's LAYER (armour_gen_editor.html): the pelerine over the mail, under the cuirass and the pauldrons
@@ -53,6 +54,8 @@ static func wear(character: Node, piece: PackedScene, mask := "", layer := -1.0)
 	var inst := piece.instantiate()
 	var own := skeleton_of(inst)
 	var cloth := _add_cloth_bones(own, skel) if own else []
+	var hair_chains := _add_cloth_bones(own, skel, "Hair_") if own else []   # (a hairstyle made with springs)
+	var hem_chains := _add_cloth_bones(own, skel, "Hem_") if own else []   # (a tunic's, a vest's, an apron's hem on springs)
 	var home_grid := {}
 	for node in inst.find_children("*", "MeshInstance3D", true, false):
 		var mi := node as MeshInstance3D
@@ -123,6 +126,10 @@ static func wear(character: Node, piece: PackedScene, mask := "", layer := -1.0)
 			_grip(skel).keep_off(mi, true)
 	if not cloth.is_empty() and out.size() > 0:   # a cloak: its chains swing
 		out[0].set_meta("sf3d_cloth", _cloth(skel, cloth, home_grid))
+	if springs and not hair_chains.is_empty() and out.size() > 0:   # hair: its strands' chains swing (spring bones)
+		out[0].set_meta("sf3d_springs", _hair_springs(skel, hair_chains))
+	if springs and not hem_chains.is_empty() and out.size() > 0:   # a hem: its columns swing round the legs (spring bones)
+		out[0].set_meta("sf3d_springs", _hem_springs(skel, hem_chains))
 	if out.size() > 0:
 		var path := mask if mask != "" else piece.resource_path.get_basename() + ".mask.json"
 		var keys := _mask_keys(path)
@@ -279,11 +286,11 @@ void fragment() {
 # A cloak's cloth bones («Cloth_<column>_<link>», blender_armour_gen.py) are the piece's own: they are added to the
 # character's skeleton, each where it is in the piece at rest (the global rest kept: the character's GLB may be another
 # export of the rig, its bones' axes turned). Returns the chains: [[bone names from the top down], ...].
-static func _add_cloth_bones(own: Skeleton3D, skel: Skeleton3D) -> Array:
+static func _add_cloth_bones(own: Skeleton3D, skel: Skeleton3D, prefix := "Cloth_") -> Array:
 	var chains := {}
 	for i in own.get_bone_count():   # parents come before their children in a skeleton
 		var n := String(own.get_bone_name(i))
-		if not n.begins_with("Cloth_"):
+		if not n.begins_with(prefix):   # (a cloak's «Cloth_», a hairstyle's «Hair_<chain>_<link>»: the same way)
 			continue
 		if skel.find_bone(n) < 0:
 			var pn := String(own.get_bone_name(own.get_bone_parent(i))) if own.get_bone_parent(i) >= 0 else ""
@@ -295,6 +302,13 @@ static func _add_cloth_bones(own: Skeleton3D, skel: Skeleton3D) -> Array:
 			var rest := skel.get_bone_global_rest(pi).affine_inverse() * own.get_bone_global_rest(i)
 			skel.set_bone_rest(b, rest)
 			skel.set_bone_pose(b, rest)
+		elif prefix in ["Hair_", "Hem_"]:   # (another hairstyle, hem worn before: its chains were elsewhere - this one's rest)
+			var b := skel.find_bone(n)
+			var pi := skel.get_bone_parent(b)
+			if pi >= 0:
+				var rest := skel.get_bone_global_rest(pi).affine_inverse() * own.get_bone_global_rest(i)
+				skel.set_bone_rest(b, rest)
+				skel.set_bone_pose(b, rest)
 		var parts := n.split("_")
 		if parts.size() == 3:
 			chains[int(parts[1])] = (chains.get(int(parts[1]), []) as Array) + [[int(parts[2]), n]]
@@ -304,6 +318,159 @@ static func _add_cloth_bones(own: Skeleton3D, skel: Skeleton3D) -> Array:
 		links.sort_custom(func(a, b): return a[0] < b[0])
 		out.append(links.map(func(x): return x[1]))
 	return out
+
+
+## A hairstyle's chains (blender_hair_gen.py «spring»: Hair_<chain>_<link> from the head down, the last a short end)
+## as Godot's own spring bones (SpringBoneSimulator3D, VRM's way): each chain keeps to its rest shape (stiffness), loses
+## its speed (drag), and goes round the head (a sphere as the skull: from the head's joint to its top), the neck, the
+## chest and the shoulders (capsules as thick as the skin round those bones: _thickness), its joints HAIR_R of the height
+## thick. Returns the simulator (taken off with the piece).
+const HAIR_STIFF := 0.5   # (to its rest shape; 0.55 with drag 0.4 and no gravity, as HairDeck's VRM export, flung it out on a quick turn)
+const HAIR_DRAG := 0.5
+const HAIR_GRAVITY := 1.5   # (without it the strands kept their shape on the head: a head bowed in a clip stood them out behind)
+const HAIR_R := 0.012   # a joint's radius, in heights
+
+
+## After a jump of the pose (a clip seeked, the character put somewhere else, spawned): the springs start from it at
+## rest instead of being flung by the jump.
+static func reset_springs(node: Node) -> void:
+	var skel := skeleton_of(node)
+	if skel == null:
+		return
+	for sim in skel.find_children("*", "SpringBoneSimulator3D", false, false):
+		(sim as SpringBoneSimulator3D).reset()
+
+
+## Spring bones on or off (a character far off, in a crowd: their cost is ~4-5 µs a joint a frame on a laptop CPU -
+## a hem ~0.2 ms, long hair ~0.5 ms a character; off, the hair and the hem stay as made on the head and the thighs).
+## Turned on again they start from the pose then (reset).
+static func springs_active(node: Node, on: bool) -> void:
+	var skel := skeleton_of(node)
+	if skel == null:
+		return
+	for sim in skel.find_children("*", "SpringBoneSimulator3D", false, false):
+		var s := sim as SpringBoneSimulator3D
+		if on and not s.active:
+			s.reset()
+		s.active = on
+
+
+static func _bone_by(skel: Skeleton3D, suffixes: Array) -> String:
+	for i in skel.get_bone_count():
+		for sfx in suffixes:
+			if String(skel.get_bone_name(i)).ends_with(sfx):
+				return String(skel.get_bone_name(i))
+	return ""
+
+
+static func _hair_springs(skel: Skeleton3D, chains: Array) -> SpringBoneSimulator3D:
+	var h := _height(skel)
+	var spheres := []
+	var head_n := _bone_by(skel, ["Head"])
+	var top_n := _bone_by(skel, ["HeadTop_End", "Head_end", "head_top"])
+	if head_n != "":   # the skull: a sphere half way up from the head's joint to its top
+		var hp := skel.get_bone_global_rest(skel.find_bone(head_n)).origin
+		var tp := skel.get_bone_global_rest(skel.find_bone(top_n)).origin if top_n != "" else hp + Vector3.UP * 0.15 * h
+		var hh := hp.distance_to(tp)
+		# the face: in front of the skull - the model faces +Z; the strands kept off it as made fell over it as the head bowed
+		spheres = [[head_n, hp.lerp(tp, 0.52), 0.46 * hh], [head_n, hp.lerp(tp, 0.35) + Vector3(0, 0, 1) * 0.42 * hh, 0.36 * hh]]
+	var segs := [[["Neck"], ["Head"]], [["Spine2", "UpperChest"], ["Neck"]], [["Spine1", "Chest"], ["Spine2", "UpperChest"]]]
+	for side in ["Left", "Right"]:
+		for pair in [[["Shoulder"], ["Arm", "UpperArm"]], [["Arm", "UpperArm"], ["ForeArm", "LowerArm"]]]:
+			segs.append([pair[0].map(func(x): return side + x), pair[1].map(func(x): return side + x)])
+	return _springs(skel, chains, "SF3DHairSprings", HAIR_STIFF, HAIR_DRAG, HAIR_GRAVITY, HAIR_R * h, spheres, segs)
+
+
+## An everyday garment's hem (blender_armour_gen.py «hem_spring»: Hem_<column>_<joint> from the hips down, a tunic's, a
+## vest's, an apron's) on spring bones, as hair: the legs (thighs, shins) and the pelvis as capsules push it as they move.
+const HEM_STIFF := 3.0   # (0.6 with gravity 1.5: the hem hung straight from the thigh and the leg went through it)
+const HEM_DRAG := 0.5
+const HEM_GRAVITY := 0.5
+const HEM_R := 0.006   # a joint's radius, in heights (cloth: thin)
+
+
+static func _hem_springs(skel: Skeleton3D, chains: Array) -> SpringBoneSimulator3D:
+	var segs := [[["Hips"], ["Spine"]]]
+	for side in ["Left", "Right"]:
+		for pair in [[["UpLeg", "UpperLeg"], ["Leg", "LowerLeg"]], [["Leg", "LowerLeg"], ["Foot"]]]:
+			segs.append([pair[0].map(func(x): return side + x), pair[1].map(func(x): return side + x)])
+	return _springs(skel, chains, "SF3DHemSprings", HEM_STIFF, HEM_DRAG, HEM_GRAVITY, HEM_R * _height(skel), [], segs, true)
+
+
+## Spring bones on chains (each [bone names from its root down]): spheres [[bone, centre at rest, radius], ...] and
+## capsules [[bone suffixes, next bone suffixes], ...] (as thick as the skin round the bone: _thickness) as colliders.
+## The chains' joints as made (the first of a chain is held by its parent): no collider may hold one of them at rest -
+## pushed out every frame and pulled back by its stiffness the hair stood up in a bush (a collider a little too thick,
+## a strand lying on the neck): each is made no thicker than its nearest joint allows, dropped if that leaves too little.
+static func _springs(skel: Skeleton3D, chains: Array, nm: String, stiff: float, drag: float, grav: float, jr: float,
+		spheres: Array, seg_names: Array, full := false) -> SpringBoneSimulator3D:
+	var sim := SpringBoneSimulator3D.new()
+	sim.name = nm
+	skel.add_child(sim)
+	sim.setting_count = chains.size()
+	for s in chains.size():
+		var links: Array = chains[s]
+		sim.set_root_bone_name(s, links[0])
+		sim.set_end_bone_name(s, links[links.size() - 1])
+		sim.set_stiffness(s, stiff)
+		sim.set_drag(s, drag)
+		sim.set_gravity(s, grav)
+		sim.set_radius(s, jr)
+		sim.set_enable_all_child_collisions(s, true)
+	var joints := []   # [rest place, the chain's parent bone]
+	var parents := []
+	for links in chains:
+		var pb := skel.get_bone_parent(skel.find_bone(links[0]))
+		parents.append(String(skel.get_bone_name(pb)) if pb >= 0 else "")
+		for k in range(1, links.size()):
+			joints.append([skel.get_bone_global_rest(skel.find_bone(links[k])).origin, parents[parents.size() - 1]])
+	# (to the nearest joint from the segment a..b, less a joint's radius; a chain hanging from that collider's own bone - a
+	# hem's column on a thigh - goes with it: not counted, and it does not collide with it)
+	var room := func(a: Vector3, b: Vector3, own := "") -> float:
+		var m := INF
+		for jp in joints:
+			if own != "" and jp[1] == own:
+				continue
+			m = minf(m, Geometry3D.get_closest_point_to_segment(jp[0], a, b).distance_to(jp[0]))
+		return m - 1.05 * jr
+	for sc in spheres:
+		var r := minf(float(sc[2]), room.call(sc[1], sc[1]))
+		if r > 0.0:
+			var sp := SpringBoneCollisionSphere3D.new()
+			sp.bone_name = sc[0]
+			sp.position_offset = skel.get_bone_global_rest(skel.find_bone(sc[0])).affine_inverse() * (sc[1] as Vector3)
+			sp.radius = r
+			sim.add_child(sp)
+	var segs := []
+	for pair in seg_names:
+		segs.append([_bone_by(skel, pair[0]), _bone_by(skel, pair[1])])
+	segs = segs.filter(func(sg): return sg[0] != "" and sg[1] != "" and sg[0] != sg[1])
+	var thick := _thickness(skel, segs)
+	for sg in segs:   # a capsule from a bone's joint to the next one's
+		var ga := skel.get_bone_global_rest(skel.find_bone(sg[0]))
+		var a := ga.origin
+		var b := skel.get_bone_global_rest(skel.find_bone(sg[1])).origin
+		# (full: as thick as the limb's fuller side - a hem; the thin measure keeps a skirt's capsule off the buttocks, the
+		# hem then let a thigh through in a stride)
+		var r0 := float(thick.get(sg[0] + ("#full" if full and ("Leg" in sg[0]) else ""), thick.get(sg[0], 0.04 * _height(skel))))
+		var r := minf(r0, room.call(a, b, sg[0]))
+		if r < 0.25 * r0:   # (the chains lie on it: no use)
+			continue
+		var cap := SpringBoneCollisionCapsule3D.new()
+		cap.name = "Col_" + String(sg[0])
+		cap.bone_name = sg[0]
+		cap.radius = r
+		cap.height = a.distance_to(b) + 2.0 * r
+		var local_dir := (ga.basis.inverse() * (b - a)).normalized()
+		cap.position_offset = ga.affine_inverse() * ((a + b) * 0.5)
+		cap.rotation_offset = Quaternion(Vector3.UP, local_dir) if local_dir.length() > 0.5 else Quaternion.IDENTITY
+		sim.add_child(cap)
+		for s in chains.size():   # (a chain on this bone: not against it)
+			if parents[s] == sg[0]:
+				var n := sim.get_exclude_collision_count(s)
+				sim.set_exclude_collision_count(s, n + 1)
+				sim.set_exclude_collision_path(s, n, NodePath(cap.name))
+	return sim
 
 
 ## The cloak as cloth, as the editor's «Cloth» (armour_gen_editor.html clothStep) and the game cloth of Unreal / Unity
@@ -1076,10 +1243,11 @@ static func take_off(meshes: Array) -> void:
 	var character: Node = null
 	var skels := []
 	for mi in meshes:
-		if is_instance_valid(mi) and mi.has_meta("sf3d_cloth"):
-			var sim = mi.get_meta("sf3d_cloth")
-			if is_instance_valid(sim):
-				sim.queue_free()
+		for meta in ["sf3d_cloth", "sf3d_springs"]:   # (a cloak's cloth, hair's spring bones)
+			if is_instance_valid(mi) and mi.has_meta(meta):
+				var sim = mi.get_meta(meta)
+				if is_instance_valid(sim):
+					sim.queue_free()
 		if is_instance_valid(mi) and mi.has_meta("sf3d_hold"):
 			_grip(mi.get_parent()).hold(mi.get_meta("sf3d_hold"), false)
 			if mi.has_meta("sf3d_two"):

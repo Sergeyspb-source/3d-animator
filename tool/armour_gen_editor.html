@@ -7605,6 +7605,7 @@ SPEC.push(['{{js:ag.codpiece_group}}', ['plate', 'trim', 'strap'], [
   ['cod_proj', 40, 200, 5, '{{js:ag.cod_proj}}', '{{js:ag.cod_proj_info}}', 'pc', isP('codpiece')],
   ['cod_top', -100, 100, 5, '{{js:ag.cod_top}}', '{{js:ag.cod_top_info}}', 'pc', isP('codpiece')]], isP('codpiece')]);
 const HAIR_GI = SPEC.length;
+const SPRING_HAIR = ['long', 'bob', 'wavy', 'half_up', 'wavy_short', 'shaggy', 'warrior', 'top_knot'];   // (blender_hair_gen.py's styles of cards: their strands can swing)
 SPEC.push(['{{js:ag.hair_group}}', ['plate'], [
   ['hair_len', 0, 40, .5, '{{js:ag.hair_len}}', '{{js:ag.hair_len_info}}', 'pc', isP('hair')],
   ['hair_vol', 40, 250, 5, '{{js:ag.hair_vol}}', '', 'pc', () => false],   // (hair is made in Blender now: cards, a shell - its length and colour only)
@@ -7671,13 +7672,13 @@ const DEFAULTS = Object.assign({ gap: 8, thickness: 12, relief: .35, step: 5, ri
   two_plates: false, spaulders: 0, sp_start: 30, sp_reach: 45, sp_span: 260, neckline: 8, armhole: 40, point: 0, ridge: 0, cap: 1.6, trim: '', hammer: .5, arm_share: .7, mail_under: false, hem: 15, sleeves: 30, top_cut: 0, bottom_cut: 0, splints: 6, stitch: false,
   closure: 'across', hinges: false, opening: 'none', shoulders: 'straps', yoke: 70, thigh: 'none', knee: 'none', fly: false, wrap: false,
   front_panel: false, hem_band: false, made_mat: '', helmet: 'barbute', head_gap: 7, head_keep: 20, limb_keep: 20, press_in: 25, visor_angle: 0, cheek_angle: 0, tail: 100, brim: 100,
-  strap: 0, strap_fwd: 0, elbow: 'elbow_winged_plate', poleyn: 'poleyn_winged_plate', made_slide: 0, made_twist: 0, made_size: 100, codpiece: 'cod_plate', cod_size: 100, cod_proj: 100, cod_top: 0, cod_belt: false, gorget_lames: 4, gorget_low: 40, gorget_high: 60, bevor: false, bevor_high: 100, w_magnet: true, rondel: 'rondel_plain', ailette: 'ailette_square', pel_len: 11, pel_point: 4, pel_lift: 0, pel_gap: .4, hauberk: 'hauberk_long', hb_hem: 90, hb_sleeve: 100, hb_slits: 45, hb_ease: 5, coif: 'coif_short', coif_cape: 5, limb_gap: 8, wing: 100, footwear: 'foot_ankle_boot', foot_gap: 6, foot_keep: 20, foot_spring: 10, foot_width: 100, glove: 'plain_leather', cuff: 14,
+  strap: 0, strap_fwd: 0, elbow: 'elbow_winged_plate', poleyn: 'poleyn_winged_plate', made_slide: 0, made_twist: 0, made_size: 100, codpiece: 'cod_plate', cod_size: 100, cod_proj: 100, cod_top: 0, cod_belt: false, gorget_lames: 4, gorget_low: 40, gorget_high: 60, bevor: false, bevor_high: 100, hair_spring: false, w_magnet: true, rondel: 'rondel_plain', ailette: 'ailette_square', pel_len: 11, pel_point: 4, pel_lift: 0, pel_gap: .4, hauberk: 'hauberk_long', hb_hem: 90, hb_sleeve: 100, hb_slits: 45, hb_ease: 5, coif: 'coif_short', coif_cape: 5, limb_gap: 8, wing: 100, footwear: 'foot_ankle_boot', foot_gap: 6, foot_keep: 20, foot_spring: 10, foot_width: 100, glove: 'plain_leather', cuff: 14,
   cloth_style: 'shirt', cloth_quilt: false, quilt_lines: false, pinches: [], paints: [],
   weapon: 'sword', shield: 'round', w_len: 100, w_width: 100, w_guard: 100, w_grip: 100, w_grip_r: 100, w_head: 100, grip_along: 0, grip_out: 0,
   grip_tilt: 15, grip_roll: 0, w_two: 0, bow: 'short', bow_brace: 100, arrows: 12, cloak_len: 60, cloak_wrap: 172, cloak_flare: 25, cloak_lift: 5, cloak_nape: 120, cloak_gap: .5, skirt_len: 30, skirt_flare: 30, skirt_lift: 6, skirt_slit: 0, skirt_gap: .5, tabard_len: 50, tabard_belt: 8, tabard_flare: 15, tabard_lift: 2, tabard_gap: 1, s_size: 100, s_curve: 30, s_rim: 100, s_boss: 100, s_along: 0, s_out: 0, s_turn: 0, s_hand: false, s_elbow: true, s_bend: 0, s_ridge: 0,
   s_px: 0, s_py: 0, s_pz: 0, s_rx: 0, s_ry: 0, s_rz: 0,
   tunic: 'tunic_shirt', vest: 'vest_embroidered', apron: 'apron_smith', belt: 'belt_buckle', hood: 'hood_capelet', wraps: 'wraps_cross',
-  tn_hem: 45, tn_sleeve: 100, tn_ease: 8, tn_ragged: 0, tn_folds: 1, vs_gap: 34, ap_len: 70, ap_width: 65, ap_bib: 70, ap_bibw: 38, ap_pockets: 1, ap_tools: false,
+  tn_hem: 45, tn_sleeve: 100, tn_ease: 8, tn_ragged: 0, tn_folds: 1, vs_gap: 34, ap_len: 70, ap_width: 65, ap_bib: 70, ap_bibw: 38, ap_pockets: 1, ap_tools: false, hem_spring: false,
   bl_at: 22, bl_width: 100, bl_pouch: true, bl_purse: false, bl_satchel: false, bl_rag: false, bl_coil: false, hd_len: 10, hd_point: 2, hd_cowl: 1,
   wr_from: 6, wr_to: 88, wr_turns: 5, blouse: 0, weave: '', tr_ties: false, cloth2: '#8a3c30', thread: '#c9903a' }, PIECES.bracer.defaults);
 // idle: no piece being made (the editor opens so: the character as it is, its worn pieces to tick) until a kind is
@@ -7740,10 +7741,11 @@ function buildPanel() {
       `<div id="r_must"><div class="note">{{js:ag.must_mode}}</div><div class="row" style="margin:2px 0 4px"><span class="seg" id="mustSeg">` +
       ['merge', 'over', 'none'].map((m) => `<button data-must="${m}">${'{{js:ag.must_merge}}|{{js:ag.must_over}}|{{js:ag.must_none}}'.split('|')[['merge', 'over', 'none'].indexOf(m)]}</button>`).join('') + `</span></div></div>` +
       `<div id="r_contour"><div class="row" style="margin:4px 0 2px"><span class="seg"><button id="b_contour" title="{{js:ag.contour_info}}">{{js:ag.contour}}</button><button id="b_creset">{{js:ag.contour_reset}}</button><button id="b_clearn" title="{{js:ag.contour_learn_info}}">{{js:ag.contour_learn}}</button></span>` +
-      `<label class="chk" style="margin-left:8px"><input type="checkbox" id="i_csym" checked> {{js:ag.contour_sym}}</label></div><div class="note" id="contourNote">{{js:ag.contour_info}}</div></div>` : '') +
+      `<label class="chk" style="margin-left:8px"><input type="checkbox" id="i_csym" checked> {{js:ag.contour_sym}}</label></div><div class="note" id="contourNote">{{js:ag.contour_info}}</div></div>` +
+      `<label class="chk" id="r_hair_spring" title="{{js:ag.hair_spring_info}}"><input type="checkbox" id="i_hair_spring"> {{js:ag.hair_spring}}</label>` : '') +
     (gi === GARB_GI ? `<div id="r_weave"><div class="note">{{js:ag.weave}}</div><div class="row" style="margin:2px 0 6px"><span class="seg" id="weaveSeg">` +
       ['', 'plain', 'twill', 'herring'].map((m) => `<button data-weave="${m}">${'{{js:ag.weave_none}}|{{js:ag.weave_plain}}|{{js:ag.weave_twill}}|{{js:ag.weave_herring}}'.split('|')[['', 'plain', 'twill', 'herring'].indexOf(m)]}</button>`).join('') + `</span></div></div>` +
-      [['ap_tools', '{{js:ag.ap_tools}}'], ['bl_pouch', '{{js:ag.bl_pouch}}'], ['bl_purse', '{{js:ag.bl_purse}}'], ['bl_satchel', '{{js:ag.bl_satchel}}'], ['bl_rag', '{{js:ag.bl_rag}}'], ['bl_coil', '{{js:ag.bl_coil}}'], ['tr_ties', '{{js:ag.tr_ties}}'], ['hd_up', '{{js:ag.hd_up}}']]
+      [['ap_tools', '{{js:ag.ap_tools}}'], ['bl_pouch', '{{js:ag.bl_pouch}}'], ['bl_purse', '{{js:ag.bl_purse}}'], ['bl_satchel', '{{js:ag.bl_satchel}}'], ['bl_rag', '{{js:ag.bl_rag}}'], ['bl_coil', '{{js:ag.bl_coil}}'], ['tr_ties', '{{js:ag.tr_ties}}'], ['hd_up', '{{js:ag.hd_up}}'], ['hem_spring', '{{js:ag.hem_spring}}']]
         .map(([k, l]) => `<label class="chk" id="r_${k}"><input type="checkbox" id="i_${k}"> ${l}</label>`).join('') : '') +
     (gi === GOR_GI ? `<label class="chk" id="r_bevor" title="{{js:ag.bevor_info}}"><input type="checkbox" id="i_bevor"> {{js:ag.bevor}}</label>` : '') +
     (gi === HELD_GI ? `<label class="chk" id="r_w_magnet" title="{{js:ag.w_magnet_info}}"><input type="checkbox" id="i_w_magnet"> {{js:ag.w_magnet}}</label>` +
@@ -7801,7 +7803,8 @@ function buildPanel() {
   $('i_s_hand').addEventListener('change', (e) => { S.p.s_hand = e.target.checked; if (S.p.s_hand) fistPose(); changed('s_hand'); });
   $('i_cod_belt').addEventListener('change', (e) => { S.p.cod_belt = e.target.checked; changed('cod_belt'); });
   $('i_bevor').addEventListener('change', (e) => { S.p.bevor = e.target.checked; changed('bevor'); });
-  for (const k of ['ap_tools', 'bl_pouch', 'bl_purse', 'bl_satchel', 'bl_rag', 'bl_coil', 'tr_ties', 'hd_up']) $('i_' + k).addEventListener('change', (e) => { S.p[k] = e.target.checked; changed(k); });
+  $('i_hair_spring').addEventListener('change', (e) => { S.p.hair_spring = e.target.checked; changed('hair_spring'); });   // (card hair: chains of bones that swing in the game)
+  for (const k of ['ap_tools', 'bl_pouch', 'bl_purse', 'bl_satchel', 'bl_rag', 'bl_coil', 'tr_ties', 'hd_up', 'hem_spring']) $('i_' + k).addEventListener('change', (e) => { S.p[k] = e.target.checked; changed(k); });
   $('weaveSeg').addEventListener('click', (e) => { const m = e.target.dataset.weave; if (m !== undefined) { S.p.weave = m; changed('weave'); } });
   $('i_cloth2').addEventListener('input', (e) => { S.p.cloth2 = e.target.value; changed('look'); });
   $('i_thread').addEventListener('input', (e) => { S.p.thread = e.target.value; changed('look'); });
@@ -7893,7 +7896,8 @@ function syncPanel() {
   { const g = GARB.includes(S.piece);   // (everyday clothes: their ticks, their weave, their second cloth and thread)
     for (const [k, on] of [['ap_tools', S.piece === 'apron'], ['bl_pouch', S.piece === 'belt'], ['bl_purse', S.piece === 'belt'], ['bl_satchel', S.piece === 'belt'],
       ['bl_rag', S.piece === 'belt'], ['bl_coil', S.piece === 'belt'], ['tr_ties', S.piece === 'trousers'],
-      ['hd_up', S.piece === 'hood' && ['hood_capelet', 'hood_pointed'].includes(S.p.hood)]]) { $('r_' + k).hidden = !on; $('i_' + k).checked = S.p[k] !== false && !!S.p[k]; }
+      ['hd_up', S.piece === 'hood' && ['hood_capelet', 'hood_pointed'].includes(S.p.hood)],
+      ['hem_spring', ['tunic', 'vest', 'apron'].includes(S.piece)]]) { $('r_' + k).hidden = !on; $('i_' + k).checked = S.p[k] !== false && !!S.p[k]; }   // (hem_spring: the hem below the hips on spring bones in the game)
     $('r_weave').hidden = !((g || S.piece === 'trousers') && S.p.material === 'cloth');
     for (const b of $('weaveSeg').children) b.classList.toggle('on', b.dataset.weave === (S.p.weave || ''));
     $('r_garbcols').hidden = !g; $('i_cloth2').value = S.p.cloth2 || '#8a3c30'; $('i_thread').value = S.p.thread || '#c9903a';
@@ -7930,6 +7934,10 @@ function syncPanel() {
   }
   if ($('r_contour')) $('r_contour').hidden = !contourPiece();   // (fitting by hand: a beard, a hairstyle made here)
   if ($('b_clearn')) $('b_clearn').title = S.piece === 'hair' ? '{{js:ag.contour_learn_hair_info}}' : S.piece === 'brows' ? '{{js:ag.contour_learn_brows_info}}' : '{{js:ag.contour_learn_info}}';   // (a beard's nodes, a hairline kept as the default)
+  if ($('r_hair_spring')) {   // (springs: the hairstyles of cards only - a shell, a braid, a tail are one piece on the head)
+    $('r_hair_spring').hidden = !(S.piece === 'hair' && SPRING_HAIR.includes(S.p.hair_style));
+    $('i_hair_spring').checked = !!S.p.hair_spring;
+  }
   if ($('r_must')) {   // (a beard's moustache: into it, over it, none - a beard with one)
     $('r_must').hidden = !(S.piece === 'beard' && ['short', 'full', 'long', 'goatee'].includes(S.p.beard_style));
     for (const b of $('mustSeg').children) b.classList.toggle('on', b.dataset.must === (S.p.beard_must || 'merge'));
@@ -8213,7 +8221,7 @@ function rebuildMade() {
   }
   if (!['helmet', ...HAIRY].includes(piece) && !sides.length) { $('warn').textContent = '{{js:ag.choose_a_side}}'; $('warn').hidden = false; lastBuild = null; $('go').disabled = true; return; }
   // (a helmet: and the coifs on under it - put on or off, another one; a tall boot: the trousers, the wraps under it)
-  const key = [piece, S.p[piece], S.p.head_gap, S.p.head_keep, piece === 'helmet' ? [...WORN.entries()].filter(([k, w]) => w.on && /coif/.test(k)).map(([k]) => k).join('+') : piece === 'footwear' && S.p.footwear === 'foot_tall_boot' ? [...WORN.entries()].filter(([k, w]) => w.on && /^(trousers|wraps|undercloth)/.test(w.piece || k)).map(([k]) => k).join('+') : '', ['elbow', 'poleyn'].includes(piece) ? MADE_GAP0 : S.p.limb_gap, S.p.wing, S.p.foot_gap, S.p.foot_keep, S.p.foot_spring, S.p.foot_width, S.p.visor_angle, S.p.cheek_angle, S.p.tail, S.p.brim, piece === 'hair' ? `${S.p.hair_len}_${S.p.hair_part}_${JSON.stringify(((S.p.hair_nodes || {})[S.p.hair]) || '')}` : piece === 'beard' ? `${S.p.beard_len}_${S.p.beard_vol}_${S.p.beard_must || 'merge'}_${JSON.stringify(((S.p.beard_nodes || {})[S.p.beard]) || '')}`
+  const key = [piece, S.p[piece], S.p.head_gap, S.p.head_keep, piece === 'helmet' ? [...WORN.entries()].filter(([k, w]) => w.on && /coif/.test(k)).map(([k]) => k).join('+') : piece === 'footwear' && S.p.footwear === 'foot_tall_boot' ? [...WORN.entries()].filter(([k, w]) => w.on && /^(trousers|wraps|undercloth)/.test(w.piece || k)).map(([k]) => k).join('+') : '', ['elbow', 'poleyn'].includes(piece) ? MADE_GAP0 : S.p.limb_gap, S.p.wing, S.p.foot_gap, S.p.foot_keep, S.p.foot_spring, S.p.foot_width, S.p.visor_angle, S.p.cheek_angle, S.p.tail, S.p.brim, piece === 'hair' ? `${S.p.hair_len}_${S.p.hair_part}_${S.p.hair_spring ? 'spring' : ''}_${JSON.stringify(((S.p.hair_nodes || {})[S.p.hair]) || '')}` : piece === 'beard' ? `${S.p.beard_len}_${S.p.beard_vol}_${S.p.beard_must || 'merge'}_${JSON.stringify(((S.p.beard_nodes || {})[S.p.beard]) || '')}`
     : piece === 'brows' ? `${S.p.brow_vol}_${JSON.stringify(((S.p.brows_nodes || {})[S.p.brows]) || '')}` : piece === 'lashes' ? `${S.p.lash_len}` : '', ...sides].join('_'), h = madeCache.get(key);
   const style = S.p[piece], sd = sides.join('');
   if (!h) {

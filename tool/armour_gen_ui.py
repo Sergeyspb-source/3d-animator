@@ -273,6 +273,8 @@ def _hair_params(params) -> dict:
     lin = [c / 12.92 if c <= .04045 else ((c + .055) / 1.055) ** 2.4 for c in srgb]
     part = {"left": .3, "right": -.3}.get(params.get("hair_part"), 0.)
     out = {"gap": 0., "length": float(params.get("hair_len", 20)) / 100, "color": lin, "seed": int(params.get("seed", 1)), "part": part}
+    if params.get("hair_spring"):   # (a hairstyle of cards: chains of bones Hair_<c>_<k> that swing in the game)
+        out["spring"] = 1.
     nodes = (params.get("hair_nodes") or {}).get(params.get("hair")) if isinstance(params.get("hair_nodes"), dict) else None
     if isinstance(nodes, dict):   # (its hairline fitted by hand: the nodes on the scalp, glTF's axes)
         out["nodes"] = {str(k): [float(x) for x in v][:3] for k, v in nodes.items() if isinstance(v, (list, tuple)) and len(v) >= 3}
@@ -851,6 +853,8 @@ def made_preview(cfg, req) -> dict:
     tag += "".join(f"_{k[:2]}{round(hp[k] * 10)}" for k in ("slide", "twist", "size") if k in hp and hp[k] != (100 if k == "size" else 0))   # (placed by hand)
     if hp.get("must", "merge") != "merge":   # (a beard's moustache over it, or none)
         tag += "_m" + hp["must"]
+    if hp.get("spring") and piece == "hair":   # (with the chains of bones that swing)
+        tag += "_spr"
     if hp.get("nodes"):   # (an outline fitted by hand)
         tag += "_n" + hashlib.md5(json.dumps(hp["nodes"], sort_keys=True).encode()).hexdigest()[:8]
     under = _made_under(rigged, piece, style, req)
@@ -924,6 +928,8 @@ def generate(cfg, req) -> dict:
            "uv_prev": str(uv_dir(rigged, item, piece))}   # (its unwrap kept there: the same mesh unwrapped as before)
     if piece == "undercloth":
         job["style"] = params.get("cloth_style")
+    if piece in ("tunic", "vest", "apron") and params.get("hem_spring"):   # (its hem below the hips on spring bones in the game)
+        job["hem_spring"] = True
     if params.get(piece) == "wraps_arm":   # (a sleeve's cuff, an armhole move off the skin as a wrist turns, a fist closes:
         job["mask_erode"] = 5          # the skin hidden up to their very edge showed as holes there - more of it given back)
     elif piece in ("tunic", "vest") or params.get("cloth_style") in ("shirt", "fitted"):   # (theirs: the skin by the open edges given back by the editor, mask_free -

@@ -60,6 +60,7 @@ func _ready() -> void:
 	Equip.keep_apply = not _args.has("nokeep")
 	Equip.keep_flex = float(_args.get("keepflex", str(Equip.keep_flex)))   # (--keepflex=0: the elbow not bent)
 	Equip.keep_debug = _args.has("keepdebug")   # (the correction printed every frame; the shot not seeked: the clip played from its start)
+	Equip.springs = not _args.has("nosprings")   # (hair's spring bones off: the strands with the head, as made)
 	var layers = JSON.parse_string(FileAccess.get_file_as_string("res://layers.json")) if FileAccess.file_exists("res://layers.json") else {}
 	for p in pieces:   # (layers.json: the layers set by hand in the editor, by the piece's name)
 		var nm := p.resource_path.get_file().get_basename().trim_prefix("wear_")
@@ -518,6 +519,11 @@ func _arm(kind: String) -> void:
 func _play(clip: String) -> void:
 	if _player:
 		_player.play(clip)
+		# (another clip: the pose jumps - spring bones of hair and hems start from its first frame, not flung through the
+		# legs: a stride begun from the rest pose left a tunic's hem behind the thigh)
+		await get_tree().process_frame
+		await get_tree().process_frame
+		Equip.reset_springs(_model)
 
 
 func _bounds(root: Node) -> AABB:
@@ -727,6 +733,7 @@ func _shoot(path: String, at: float, focus := "") -> void:
 	# settled - whenever its block came in)
 	if _player and String(_player.current_animation) != "" and not _args.has("keepdebug"):
 		_player.seek(maxf(at - 0.25, 0.0), true)
+		Equip.reset_springs(_model)   # (hair's spring bones: from this pose, not flung by the seek)
 		await get_tree().create_timer(minf(at, 0.25)).timeout
 	else:
 		await get_tree().create_timer(at).timeout
