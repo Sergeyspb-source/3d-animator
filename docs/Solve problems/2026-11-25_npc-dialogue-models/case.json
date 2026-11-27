@@ -1,0 +1,62 @@
+{
+  "id": "2026-11-25_npc-dialogue-models",
+  "title_ru": "Могут ли жители игры разговаривать между собой через ИИ?",
+  "title_en": "Can the game's townsfolk talk to each other through AI?",
+  "hook_ru": "ИИ «хоронил» живых солдат, пока игра не начала подсказывать ему, что сказать и что он знает.",
+  "status": "partial",
+  "date": "2026-11-25",
+  "sessions": [
+    {"name": "Тест ИИ: диалоги жителей (ветка claude/ai-dialogue-test-7347db)", "id": ""},
+    {"name": "Локальный ИИ в игре: исследование архитектуры", "id": "local_2babc752-1892-4b93-9ec7-3870939aaa81"},
+    {"name": "Голосовые команды НПЦ: исследование и стенд", "id": "local_158bdd70-3235-47c9-9959-9986dcc7b6d7"}
+  ],
+  "commits": ["game:5cd759b7", "game:1dcfcbf9"],
+  "tags": ["llm", "npc-dialogue", "godot", "gemma", "deepseek"],
+  "video": {
+    "potential": 4,
+    "why_ru": "Смешные ошибки ИИ, понятная лестница оценок и неожиданный вывод: помог не размер модели, а режиссура игры.",
+    "wow_moment_ru": "Реплика «Сигвард же погиб на стене!» про живого человека, а рядом та же сцена с подсказками игры.",
+    "length_seconds": 100,
+    "thumbnail": {"image": "src/02_bad_lines.png", "text_ru": "ИИ ХОРОНИТ ЖИВЫХ"}
+  },
+  "numbers": [
+    {"what_ru": "Оценка речи жителей", "before": 3.38, "after": 4.30, "unit_ru": "из 5", "better": "higher",
+     "measured_on": "11 сцен, 90 реплик, оценка по чтению", "note_ru": "Было: Qwen3.5-4B, первые правила. Стало: Gemma 4 E4B с ходами и памятью от игры, два зерна."},
+    {"what_ru": "Факты в речи", "before": 2.8, "after": 4.6, "unit_ru": "из 5", "better": "higher",
+     "measured_on": "11 сцен, 90 реплик, оценка по чтению", "note_ru": "Нет выдуманных смертей, ран и чисел."},
+    {"what_ru": "Время одной реплики, медиана", "before": 1.25, "after": 0.81, "unit_ru": "секунды", "better": "lower",
+     "measured_on": "RTX 4060 Laptop 8 ГБ, llama.cpp", "note_ru": "У Gemma 0,74–0,81 с по двум зёрнам; взято худшее."},
+    {"what_ru": "Видеопамять под модель", "before": 2.95, "after": 3.3, "unit_ru": "ГБ", "better": "lower",
+     "measured_on": "RTX 4060 Laptop 8 ГБ", "note_ru": "Gemma берёт больше, зато одна модель и для речи, и для приказов."},
+    {"what_ru": "Оценка речи через интернет (DeepSeek V4.1 Flash)", "before": 4.30, "after": 4.79, "unit_ru": "из 5", "better": "higher",
+     "measured_on": "OpenRouter, 90 реплик", "note_ru": "До — локальная Gemma; цена $0,00012 за реплику."},
+    {"what_ru": "Худшая из пяти дешёвых моделей против лучшей", "before": 3.97, "after": 4.34, "unit_ru": "из 5", "better": "higher",
+     "measured_on": "OpenRouter, 90 реплик каждая", "note_ru": "Qwen3.7 Flash и Gemma 4 26B; ни одна не догнала DeepSeek (4,79)."}
+  ],
+  "media": [
+    {"file": "img/01_score_ladder.png", "clean": "src/01_score_ladder.png", "kind": "chart", "role": "result",
+     "caption_ru": "Оранжевым — общая оценка, синим — факты. Самый большой скачок фактов дали подсказки игры."},
+    {"file": "img/02_bad_lines.png", "clean": "src/02_bad_lines.png", "kind": "diagram", "role": "problem",
+     "caption_ru": "Худшие реплики маленьких моделей: живой Сигвард «погиб», порез стал оторванным плечом."},
+    {"file": "img/03_good_lines.png", "clean": "src/03_good_lines.png", "kind": "diagram", "role": "after",
+     "caption_ru": "С подсказками игры слух остаётся слухом, а сотник отвечает лекарю его же присказкой."},
+    {"file": "img/04_cheap_models.png", "clean": "src/04_cheap_models.png", "kind": "chart", "role": "attempt",
+     "caption_ru": "Модели дешевле DeepSeek говорят не лучше бесплатной Gemma на своей видеокарте."}
+  ],
+  "models": [],
+  "beats": [
+    {"n": 1, "seconds": 12, "say_ru": "Мы хотели, чтобы жители замка разговаривали сами, а реплики сочинял ИИ прямо на видеокарте игрока.", "show": ["diagram:десять жителей замка и их связи"]},
+    {"n": 2, "seconds": 15, "say_ru": "Десять персонажей, одиннадцать сцен, каждую реплику пишет модель. Первая модель — три и четыре десятых из пяти.", "show": ["img/01_score_ladder.png"]},
+    {"n": 3, "seconds": 15, "say_ru": "Лучник Ульф говорит: «Сигвард же погиб на стене!» Сигвард жив.", "show": ["src/02_bad_lines.png"]},
+    {"n": 4, "seconds": 18, "say_ru": "Строже правила, модель крупнее, свобода выбора — выдумки не уходят, а свобода делает хуже.", "show": ["img/01_score_ladder.png"]},
+    {"n": 5, "seconds": 20, "say_ru": "Игра становится режиссёром: решает ход и даёт факты с пометкой, кто их знает и откуда. Модель только говорит.", "show": ["diagram:ход и память от игры → модель → проверка → реплика"]},
+    {"n": 6, "seconds": 12, "say_ru": "Любава: «Молочница шептала…» — слух остаётся слухом. Оценка четыре и три, факты четыре и шесть.", "show": ["src/03_good_lines.png"]},
+    {"n": 7, "seconds": 10, "say_ru": "Через интернет DeepSeek дошёл до четырёх и восьми. Пять моделей той же цены — не лучше нашей бесплатной.", "show": ["src/04_cheap_models.png"]}
+  ],
+  "reproduce_in_app": [
+    "В игре речи жителей пока нет: это стенд. Реплики всех прогонов — game:Docs/Research/ai_dialogues_ru_2026-11-25.md."
+  ],
+  "regenerate": [
+    "node \"docs/Solve problems/2026-11-25_npc-dialogue-models/pictures.mjs\""
+  ]
+}
