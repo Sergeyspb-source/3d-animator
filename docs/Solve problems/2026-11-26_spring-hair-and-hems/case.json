@@ -1,0 +1,83 @@
+{
+  "id": "2026-11-26_spring-hair-and-hems",
+  "title_ru": "Как заставить волосы и подол качаться, а не стоять колом?",
+  "title_en": "How do you make hair and a hem swing instead of moving like a helmet?",
+  "hook_ru": "Пружины в движке есть готовые, но первые попытки дали волосы дыбом и ногу, проходящую сквозь юбку.",
+  "status": "solved",
+  "date": "2026-11-26",
+  "sessions": [{"name": "Проверка HairDeck (ветка, запущенная координатором)", "id": null},
+               {"name": "Правки проекта (координатор)", "id": "local_e34b3455"}],
+  "commits": ["9648ef8", "2a3cda0"],
+  "tags": ["godot", "springs", "hair", "cloth", "armour"],
+  "video": {
+    "potential": 5,
+    "why_ru": "Смешные провалы (взрыв волос, нога сквозь юбку), понятная физика и результат, который видно в движении.",
+    "wow_moment_ru": "Ходьба рядом «до» и «после»: слева подол рвётся за бедром, справа ложится на ногу и качается.",
+    "length_seconds": 110,
+    "thumbnail": {"image": "img/02_hair_bush.jpg", "text_ru": "ВОЛОСЫ ДЫБОМ"}
+  },
+  "numbers": [
+    {"what_ru": "Цепочек в длинной причёске", "before": 0, "after": 14, "unit_ru": "цепочек", "better": "higher",
+     "measured_on": "", "note_ru": "около 100 суставов"},
+    {"what_ru": "Цепочек в подоле туники", "before": 0, "after": 12, "unit_ru": "цепочек", "better": "higher",
+     "measured_on": "", "note_ru": "60 суставов"},
+    {"what_ru": "Скрытых точек кожи под длинной туникой", "before": 3403, "after": 2626, "unit_ru": "точек", "better": "lower",
+     "measured_on": "", "note_ru": "кожа бёдер под подолом больше не прячется"},
+    {"what_ru": "Кадр, 40 гоблинов с туникой", "before": 6.9, "after": 11.9, "unit_ru": "мс", "better": "lower",
+     "measured_on": "RTX 4060 Laptop, Godot 4.7 без окна", "note_ru": "6,9 мс — потолок кадра в этом режиме; около 0,2–0,3 мс на подол"},
+    {"what_ru": "Кадр, 40 гоблинов с длинными волосами", "before": 6.9, "after": 23.5, "unit_ru": "мс", "better": "lower",
+     "measured_on": "RTX 4060 Laptop, Godot 4.7 без окна", "note_ru": "около 0,5 мс на причёску, около 5 мкс на сустав"},
+    {"what_ru": "Жёсткость пружин подола", "before": 0.6, "after": 3, "unit_ru": "", "better": "higher",
+     "measured_on": "", "note_ru": "при 0,6 и тяжести 1,5 нога проходила сквозь ткань"}
+  ],
+  "media": [
+    {"file": "img/01_tunic_walk_before_after.jpg", "clean": "src/tunic_before_f150.png", "kind": "screenshot", "role": "before",
+     "pair": "tunic-walk", "caption_ru": "Туника в шаге: подол тянется за бедром, в ткани дыры"},
+    {"file": "img/01_tunic_walk_before_after.jpg", "clean": "src/tunic_after_f150.png", "kind": "screenshot", "role": "after",
+     "pair": "tunic-walk", "caption_ru": "Туника в шаге: подол на пружинах лежит на бедре"},
+    {"file": "img/02_hair_bush.jpg", "clean": null, "kind": "screenshot", "role": "attempt", "pair": null,
+     "caption_ru": "Без пружин, первые пружины (волосы дыбом) и итог"},
+    {"file": "img/03_hair_turn_goblin.jpg", "clean": "src/hair_turn_goblin.mp4", "kind": "clip", "role": "result", "pair": null,
+     "caption_ru": "Длинные волосы на пружинах: поворот, кивок, прыжок"},
+    {"file": "img/04_leg_through.jpg", "clean": "src/leg_after_f40.png", "kind": "screenshot", "role": "attempt", "pair": "leg-raise",
+     "caption_ru": "Бедро вперёд: старый подол, пружины от таза, колонны на бёдрах"},
+    {"file": "img/04_leg_through.jpg", "clean": "src/leg_before_f40.png", "kind": "screenshot", "role": "before", "pair": "leg-raise",
+     "caption_ru": "Бедро вперёд: старый подол растягивается"},
+    {"file": "img/05_vest_before_after.jpg", "clean": "src/vest_after_f150.png", "kind": "screenshot", "role": "after", "pair": "vest-walk",
+     "caption_ru": "Длинный кафтан: полы висят и качаются"},
+    {"file": "img/05_vest_before_after.jpg", "clean": "src/vest_before_f150.png", "kind": "screenshot", "role": "before", "pair": "vest-walk",
+     "caption_ru": "Длинный кафтан: полы прилипли к бёдрам"},
+    {"file": "img/06_apron_before_after.jpg", "clean": null, "kind": "screenshot", "role": "result", "pair": null,
+     "caption_ru": "Фартук: раньше пропадал в шаге, теперь висит впереди"}
+  ],
+  "models": [
+    {"role": "before", "path": "work/armour_gen/man_muscul_no_segment_no_rig_tunic_long/piece.glb", "label_ru": "Длинная туника без пружин"},
+    {"role": "after", "path": "work/hairdeck_test/hem/tunic_long/piece.glb", "label_ru": "Длинная туника с подолом на пружинах"},
+    {"role": "before", "path": "work/hairdeck_test/ours/long.glb", "label_ru": "Длинные волосы без пружин (гоблин)"},
+    {"role": "after", "path": "work/hairdeck_test/ours/long_spring.glb", "label_ru": "Длинные волосы с цепочками костей (гоблин)"},
+    {"role": "reference", "path": "work/hairdeck_test/char/goblin_hero_2/goblin_hero_2_landmarks_rigged.glb", "label_ru": "Гоблин (копия)"}
+  ],
+  "beats": [
+    {"n": 1, "seconds": 14, "say_ru": "Посмотрите на этого гоблина. Он поворачивает голову, а длинные волосы едут вместе с ней, как шлем. А подол туники при шаге растягивается за ногой, как резина, и рвётся.",
+     "show": ["src/tunic_walk_before_after.mp4"]},
+    {"n": 2, "seconds": 14, "say_ru": "Настоящие волосы и ткань отстают и качаются. В игровом движке для этого есть пружинные кости: цепочки, которые раскачиваются, как маятник на резинке. Казалось бы, поставь — и готово.",
+     "show": ["diagram:Пряди → группы по кругу → цепочка костей → веса → пружины в Godot"]},
+    {"n": 3, "seconds": 14, "say_ru": "Первая попытка: волосы встали дыбом. Невидимое тело, о которое они бьются, оказалось чуть толще настоящего. Пряди каждый кадр выталкивало наружу, а пружина тянула назад.",
+     "show": ["img/02_hair_bush.jpg"]},
+    {"n": 4, "seconds": 8, "say_ru": "Вторая беда: голова наклонилась — волосы торчат назад. Забыли про силу тяжести.",
+     "show": ["src/hair_run.mp4"]},
+    {"n": 5, "seconds": 18, "say_ru": "С подолом ещё хуже. Цепочки висели от таза. Нога шла вперёд — и проходила прямо сквозь ткань. Помогло прицепить цепочки над бедром к самому бедру и сделать пружины в пять раз жёстче.",
+     "show": ["src/leg_raise_three_versions.mp4", "img/04_leg_through.jpg"]},
+    {"n": 6, "seconds": 16, "say_ru": "Теперь волосы и подол качаются. Но это не бесплатно: около половины миллисекунды на одну причёску. Поэтому у дальних персонажей пружины выключаются.",
+     "show": ["src/hair_turn_goblin.mp4", "src/vest_walk_before_after.mp4"]}
+  ],
+  "reproduce_in_app": [
+    "Персонаж → Внешность, блок «Волосы», стиль из прядей (длинные, каре, волнистые) → флажок «Пружины (качаются в игре)» → Сгенерировать",
+    "Экипировка → Мастерская, вещь «Туника», «Жилет» или «Фартук» → флажок «Подол на пружинах (качается в игре)» → Сгенерировать",
+    "Экипировка → Проверка → примерочная Godot: клипы ходьбы и бега"
+  ],
+  "regenerate": [
+    "D:\\conda\\envs\\sf3d\\python.exe work/hairdeck_test/rec_clips.py",
+    "D:\\conda\\envs\\sf3d\\python.exe work/hairdeck_test/build_case_media.py"
+  ]
+}
