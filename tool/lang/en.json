@@ -3542,5 +3542,9 @@
  "web.rm_done": "{0}: in the Recycle Bin ({1} paths)",
  "web.imp_skin": "The head's skin",
  "web.imp_skin_note": "the head laid flat: the face, the sides, the ears, the back",
- "web.imp_skin_tip": "The head laid flat like a world map: the model's relief in grey, the pictures over it as they lie on the model (curvature included). Drag a feature of the pictures (the lips, an ear's rim) to its place on the relief: the fix goes onto the model from every side."
+ "web.imp_skin_tip": "The head laid flat like a world map: the model's relief in grey, the pictures over it as they lie on the model (curvature included). Drag a feature of the pictures (the lips, an ear's rim) to its place on the relief: the fix goes onto the model from every side.",
+ "web.imp_ears": "Ears",
+ "web.imp_ears_note": "each ear laid flat, its front and its back",
+ "web.imp_ears_tip": "Each ear cut off the head and laid flat: left to right - the left ear's back, its front, the right ear's front, its back. The ear's back, hidden on the head's skin, has its own panel here. Drag a feature of the pictures to its place on the ear's relief; on one ear, the other is mirrored.",
+ "web.imp_ears_none": "No ears found: they do not stand out of the model's head"
 }

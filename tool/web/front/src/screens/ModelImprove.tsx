@@ -36,7 +36,7 @@ export default function ModelImprove({ go }: { go: (r: Route) => void }) {
   const [st, setSt] = useState<Status | null>(null);
   const [opts, setOpts] = useState<Opts | null>(null);
   const [look, setLook] = useState<'after' | 'before'>('after');
-  const [pinView, setPinView] = useState<ViewName | 'skin_head' | null>(null);
+  const [pinView, setPinView] = useState<ViewName | 'skin_head' | 'skin_ears' | null>(null);
   const [align, setAlign] = useState<AlignData | null>(null);
   const [aligning, setAligning] = useState(false);
   const [draw, setDraw] = useState<string[]>([]);
@@ -57,12 +57,12 @@ export default function ModelImprove({ go }: { go: (r: Route) => void }) {
   useEffect(() => { loadStatus(); }, [sel, finished, m?.time]); // eslint-disable-line react-hooks/exhaustive-deps
   const pick = (x: ModelInfo) => { const id = `${x.category}/${x.stem}`; setSel(id); localStorage.setItem('sf3d.improve_sel', id); };
 
-  const openPins = async (v: ViewName | 'skin_head') => {
+  const openPins = async (v: ViewName | 'skin_head' | 'skin_ears') => {
     if (!m) return;
     setAligning(true); setPinView(v); setAlign(null);
     try {
       const a = await get<AlignData & { ok: boolean }>(`/api/models/improve/align?${q}&view=${v}`);
-      if (a.ok) setAlign(a); else setPinView(null);
+      if (a.ok) setAlign(a); else { setPinView(null); if ((a as any).error) notifications.show({ color: 'yellow', message: t('web.imp_ears_none') }); }
     } catch (e: any) { notifications.show({ color: 'red', message: String(e.message || e) }); setPinView(null); }
     finally { setAligning(false); }
   };
@@ -167,6 +167,15 @@ export default function ModelImprove({ go }: { go: (r: Route) => void }) {
                     <Text size="xs" c="dimmed">{st.pins.skin_head ? t('web.imp_pins_n', st.pins.skin_head) : t('web.imp_skin_note')}</Text>
                   </div>
                   <Tooltip label={t('web.imp_skin_tip')} multiline w={300}><Button size="compact-xs" variant="default" onClick={() => openPins('skin_head')}
+                    leftSection={<IconPin size={14} />}>{t('web.imp_pins')}</Button></Tooltip>
+                </div>)}
+              {char && Object.keys(st.pictures).length > 0 && (   // each ear laid flat with its back
+                <div className="imp-view">
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <Text size="sm" fw={600}>{t('web.imp_ears')}</Text>
+                    <Text size="xs" c="dimmed">{st.pins.skin_ears ? t('web.imp_pins_n', st.pins.skin_ears) : t('web.imp_ears_note')}</Text>
+                  </div>
+                  <Tooltip label={t('web.imp_ears_tip')} multiline w={300}><Button size="compact-xs" variant="default" onClick={() => openPins('skin_ears')}
                     leftSection={<IconPin size={14} />}>{t('web.imp_pins')}</Button></Tooltip>
                 </div>)}
             </div>

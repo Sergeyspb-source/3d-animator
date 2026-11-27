@@ -617,10 +617,18 @@ def project(glb, out, pics, mirror=False, res=None, c0=0.1, c1=0.55, sharp=4.0, 
     R = res or max(W0, 2048)
     Tx = texels(M, R, R)
     T["texels"] = round(time.time() - t0, 1)
-    if skin_warp:   # (pins on the head's skin: each texel reads the pictures where its skin point was dragged from)
-        moved = skin_move(Tx["pos"], Tx["nrm"], *skin_warp)
-        if moved is not None:
-            Tx["pos"], Tx["nrm"] = moved
+    if skin_warp:   # (pins on the skins: each texel reads the pictures where its skin point was dragged from)
+        pos0, nrm0 = Tx["pos"], Tx["nrm"]
+        if skin_warp.get("head"):
+            moved = skin_move(pos0, nrm0, *skin_warp["head"])
+            if moved is not None:
+                Tx["pos"], Tx["nrm"] = moved
+        if skin_warp.get("ears"):   # (an ear's texels from their own place, over what the head's pins did)
+            moved = ears_move(pos0, nrm0, Tx["fid"], *skin_warp["ears"])
+            if moved is not None:
+                on, P2, N2 = moved
+                Tx["pos"] = Tx["pos"].copy(); Tx["nrm"] = Tx["nrm"].copy()
+                Tx["pos"][on], Tx["nrm"][on] = P2, N2
     pics = dict(pics)
     if mirror and "left" in pics and "right" not in pics:
         pics["right"] = ("flip", pics["left"])
@@ -1226,12 +1234,216 @@ def skin_state(d: Path, st: dict, base: Path, M=None, width=2048):
 
 
 def skin_warp_of(d: Path, st: dict, base: Path):
-    """for project(): (params, xyz, nrm, pins) when the head skin has pins, else None"""
+    """for project(): {"head": (params, xyz, nrm, pins), "ears": (params, faces, xyz, nrm, pins)} for the skins that
+    have pins, else None"""
+    out = {}
     pins = (st.get("pins") or {}).get("skin_head")
+    if pins:
+        sp, xyz, nrm, _ = skin_state(d, st, base)
+        out["head"] = (sp, xyz, nrm, [tuple(p) for p in pins])
+    pins = (st.get("pins") or {}).get("skin_ears")
+    if pins:
+        ep = ears_state(d, st, base)
+        if ep:
+            prm, faces, xyz, nrm, _ = ep
+            out["ears"] = (prm, faces, xyz, nrm, [tuple(p) for p in pins])
+    return out or None
+
+
+# ------------------------------------------------------------------ the ears laid flat, each with its back
+# The head's cylinder sees an ear from outside only; its back is behind it. Here each ear is cut off the head (what
+# lies farther out along the radius than the skull under it, joined to the ear tip) and laid on its own plane (the
+# ear's flattest direction, facing front): the side facing front and the back side drawn as seen through it, so both
+# panels have the same outline - [left back | left front || right front | right back], the right ear mirrored.
+def skull_fit(xyz, sp):
+    """the skull as an ellipsoid (axis-aligned, centred on the model's middle left-right) fitted to the head's outer
+    skin above its lower third; the ears, the nose and the chin stick out of it and are left out by a robust loss"""
+    from scipy.optimize import least_squares
+    ok = np.isfinite(xyz[..., 0])
+    P = xyz[ok].astype(np.float64)
+    P = P[P[:, 1] > sp["ylo"] + 0.3 * (sp["yhi"] - sp["ylo"])]
+    if len(P) > 30000:
+        P = P[np.random.default_rng(0).choice(len(P), 30000, replace=False)]
+    r0 = float(np.median(np.linalg.norm(P - [0, np.median(P[:, 1]), sp["cz"]], axis=1)))
+
+    def res(x):
+        a, b, c, cy, cz = x
+        return np.sqrt((P[:, 0] / a) ** 2 + ((P[:, 1] - cy) / b) ** 2 + ((P[:, 2] - cz) / c) ** 2) - 1
+
+    x0 = [r0, r0, r0, float(np.median(P[:, 1])), sp["cz"]]
+    fit = least_squares(res, x0, loss="cauchy", f_scale=0.02)
+    a, b, c, cy, cz = fit.x
+    return {"a": abs(a), "b": abs(b), "c": abs(c), "cy": cy, "cz": cz}
+
+
+def ear_faces(M, keep, sk, m3, margin=0.06):
+    """{"L"/"R": face ids of that ear}: the head's faces standing out of the skull ellipsoid by more than the margin on
+    that side, the piece of them that holds the ear tip"""
+    import scipy.sparse as sp_
+    from scipy.sparse.csgraph import connected_components
+    V, F = M["V"], M["F"]
+    e = np.sqrt((V[:, 0] / sk["a"]) ** 2 + ((V[:, 1] - sk["cy"]) / sk["b"]) ** 2 + ((V[:, 2] - sk["cz"]) / sk["c"]) ** 2)
+    rep, k = weld(V, 1e-5)
+    out, bases = {}, {}
+    for s, sg in (("L", 1.0), ("R", -1.0)):
+        T = m3.get(f"ear_tip_{s}")
+        if T is None:
+            continue
+        T = np.asarray(T)
+        # the ear's base: the tip drawn back onto the skull ellipsoid along its radius; the ear = near the base-tip line
+        C = np.array([0.0, sk["cy"], sk["cz"]])
+        et = np.sqrt((T[0] / sk["a"]) ** 2 + ((T[1] - sk["cy"]) / sk["b"]) ** 2 + ((T[2] - sk["cz"]) / sk["c"]) ** 2)
+        B = C + (T - C) / max(et, 1e-6)
+        ln = max(float(np.linalg.norm(T - B)), 1e-4)
+        ax = (T - B) / ln
+        # (a cheek or a jaw standing out of the skull ellipsoid stays out: not much behind the base, not far from it)
+        near_ear = (np.linalg.norm(V - B, axis=1) < 1.25 * ln) & ((V - B) @ ax > -0.3 * ln)
+        bases[s] = B.tolist()
+        stand = (e > 1 + margin) & (sg * V[:, 0] > 0.35 * sk["a"]) & near_ear
+        cand = np.nonzero(keep & stand[F].all(1))[0]
+        if len(cand) < 20:
+            continue
+        Fc = rep[F[cand]]
+        rows = np.repeat(np.arange(len(cand)), 3)
+        A = sp_.coo_matrix((np.ones(len(rows)), (rows, Fc.ravel())), shape=(len(cand), k)).tocsr()
+        n, lab = connected_components(A @ A.T, directed=False)
+        near = np.argmin(np.linalg.norm(V[F[cand]].mean(1) - T, axis=1))
+        out[s] = cand[lab == lab[near]]
+    return out, bases
+
+
+def ears_build(M, ears, width=2048, tips=None, bases=None):
+    """the ear panels: per ear its frame (the flattest direction N facing front, e1 toward the tip), the front side
+    (faces with n.N > 0, the nearest along N) and the back side (the rest, the nearest along -N) drawn into their
+    panels with one scale per ear -> (params, xyz, nrm)"""
+    V, F = M["V"], M["F"]
+    N_ = M.get("N")
+    if N_ is None:
+        N_ = M["N"] = smooth_normals(V, F)
+    P = width // 4
+    W, H = 4 * P, P
+    xyz = np.full((H, W, 3), np.nan, np.float32); nrm = np.zeros((H, W, 3), np.float32)
+    zall = np.full((H, W), -np.inf)
+    prm = {"W": W, "H": H, "P": P, "ears": {}}
+    fn = np.cross(V[F[:, 1]] - V[F[:, 0]], V[F[:, 2]] - V[F[:, 0]])
+    for s, fids in ears.items():
+        vid = np.unique(F[fids])
+        Pv = V[vid]
+        c = Pv.mean(0)
+        _, _, vt = np.linalg.svd(Pv - c, full_matrices=False)
+        Nn = vt[2] if vt[2][2] >= 0 else -vt[2]
+        tip = np.asarray((tips or {}).get(s)) if (tips or {}).get(s) is not None else Pv[np.argmax(np.linalg.norm(Pv - c, axis=1))]
+        root = np.asarray((bases or {}).get(s)) if (bases or {}).get(s) is not None else c
+        e1 = (tip - root) - np.dot(tip - root, Nn) * Nn
+        e1 /= max(np.linalg.norm(e1), 1e-9)
+        e2 = (1 if s == "L" else -1) * np.cross(Nn, e1)
+        u, v = (Pv - c) @ e1, (Pv - c) @ e2
+        u0, v0 = (u.max() + u.min()) / 2, (v.max() + v.min()) / 2
+        sc = 0.9 * P / max(u.max() - u.min(), v.max() - v.min(), 1e-6)
+        dirx = -1.0 if s == "L" else 1.0
+        cxs = {"back": P * 0.5, "front": P * 1.5} if s == "L" else {"front": P * 2.5, "back": P * 3.5}
+        prm["ears"][s] = {"c": c.tolist(), "e1": e1.tolist(), "e2": e2.tolist(), "N": Nn.tolist(), "u0": float(u0), "v0": float(v0),
+                          "sc": float(sc), "dir": dirx, "cx": cxs}
+        front = (fn[fids] @ Nn) > 0
+        for side, sel, sgn in (("front", fids[front], 1.0), ("back", fids[~front], -1.0)):
+            if not len(sel):
+                continue
+            Q = np.zeros((len(V), 2))
+            Q[:, 0] = cxs[side] + dirx * (((V - c) @ e1) - u0) * sc
+            Q[:, 1] = H / 2 - (((V - c) @ e2) - v0) * sc
+            fid, bary, zb = raster(Q, F[sel], W, H, z=sgn * (V @ Nn))
+            ok = (fid >= 0) & (zb > zall)
+            if not ok.any():
+                continue
+            tri = F[sel[fid[ok]]]
+            b = bary[ok].astype(np.float64)
+            xyz[ok] = (V[tri] * b[..., None]).sum(1)
+            n = (N_[tri] * b[..., None]).sum(1)
+            nrm[ok] = n / np.maximum(np.linalg.norm(n, axis=1, keepdims=True), 1e-9)
+            zall[ok] = zb[ok]
+    return prm, xyz, nrm
+
+
+def ears_coords(pos, nrm, fid, prm, faces):
+    """texels on an ear -> (mask, their panel coordinates): which ear by the face, which side by the normal"""
+    on = np.zeros(len(pos), bool)
+    q = np.zeros((len(pos), 2))
+    for s, e in prm["ears"].items():
+        fs = faces.get(s)
+        if fs is None or not len(fs):
+            continue
+        m = np.isin(fid, fs)
+        if not m.any():
+            continue
+        c, e1, e2, Nn = (np.asarray(e[k]) for k in ("c", "e1", "e2", "N"))
+        P = pos[m]
+        side = np.where(nrm[m] @ Nn > 0, e["cx"]["front"], e["cx"]["back"])
+        q[m, 0] = side + e["dir"] * (((P - c) @ e1) - e["u0"]) * e["sc"]
+        q[m, 1] = prm["H"] / 2 - (((P - c) @ e2) - e["v0"]) * e["sc"]
+        on |= m
+    return on, q
+
+
+def ears_move(pos, nrm, fid, prm, faces, xyz, xnrm, pins):
+    """an ear's texels read from where the ear pins dragged them (as skin_move, on the ear panels)"""
     if not pins:
         return None
-    sp, xyz, nrm, _ = skin_state(d, st, base)
-    return (sp, xyz, nrm, [tuple(p) for p in pins])
+    from scipy.ndimage import map_coordinates
+    on, q = ears_coords(pos, nrm, fid, prm, faces)
+    if not on.any():
+        return None
+    qq = q[on] + pin_field(pins)(q[on])
+    xs = np.clip(qq[:, 0] - 0.5, 0, prm["W"] - 1); ys = np.clip(qq[:, 1] - 0.5, 0, prm["H"] - 1)
+    Pn = np.stack([map_coordinates(xyz[..., c], [ys, xs], order=0, mode="nearest") for c in range(3)], 1)
+    Nn = np.stack([map_coordinates(xnrm[..., c], [ys, xs], order=0, mode="nearest") for c in range(3)], 1)
+    good = np.isfinite(Pn).all(1)
+    idx = np.nonzero(on)[0]
+    P2, N2 = pos[idx].copy(), nrm[idx].copy()
+    P2[good], N2[good] = Pn[good], Nn[good]
+    return idx, P2, N2
+
+
+def ears_guide(xyz, nrm, prm):
+    """the ears' relief on their panels: lit along the panel's own normal (N in front, -N behind) and from above"""
+    ok = np.isfinite(xyz[..., 0])
+    L = np.zeros_like(nrm)
+    P = prm["P"]
+    for s, e in prm["ears"].items():
+        Nn = np.asarray(e["N"])
+        for side, sgn in (("front", 1.0), ("back", -1.0)):
+            x0 = int(e["cx"][side] - P / 2)
+            L[:, x0:x0 + P] = sgn * Nn * 0.8 + np.array([0, 0.45, 0])
+    L /= np.maximum(np.linalg.norm(L, axis=2, keepdims=True), 1e-9)
+    g = 0.25 + 0.75 * np.clip((nrm * L).sum(2), 0, 1)
+    img = np.zeros((prm["H"], prm["W"], 4), np.uint8)
+    v = (g * 235).clip(0, 255).astype(np.uint8)
+    img[ok, 0] = v[ok]; img[ok, 1] = v[ok]; img[ok, 2] = (v[ok] * 1.03).clip(0, 255).astype(np.uint8); img[ok, 3] = 255
+    return Image.fromarray(img, "RGBA")
+
+
+def ears_state(d: Path, st: dict, base: Path, M=None, width=2048):
+    """the ear panels for base.glb, built once (cached by the model's time); None when no ear was found"""
+    key = str(base.stat().st_mtime_ns)
+    ek = (st.get("skin") or {}).get("ears")
+    if ek and ek.get("key") == key and (d / "skin_ears_xyz.npy").exists():
+        faces = {s: np.load(d / f"skin_ears_faces_{s}.npy") for s in ek["params"]["ears"]}
+        return ek["params"], faces, np.load(d / "skin_ears_xyz.npy"), np.load(d / "skin_ears_nrm.npy"), M
+    sp, hxyz, _, M = skin_state(d, st, base, M)
+    M = M or load(base)
+    keep, _ = head_faces(M)
+    m3 = st.get("marks3d") or guess_marks3d(M)
+    faces, bases = ear_faces(M, keep, skull_fit(hxyz, sp), m3)
+    if not faces:
+        return None
+    prm, xyz, nrm = ears_build(M, faces, width, tips={s_: m3.get(f"ear_tip_{s_}") for s_ in faces}, bases=bases)
+    np.save(d / "skin_ears_xyz.npy", xyz); np.save(d / "skin_ears_nrm.npy", nrm)
+    for s_, f_ in faces.items():
+        np.save(d / f"skin_ears_faces_{s_}.npy", f_)
+    ears_guide(xyz, nrm, prm).save(d / "skin_ears_guide.png")
+    st = load_state(d)
+    st.setdefault("skin", {})["ears"] = {"key": key, "params": prm}
+    save_state(d, st)
+    return prm, faces, xyz, nrm, M
 
 
 # ------------------------------------------------------------------ landmarks: named pins whose model end is a 3D point
@@ -1443,7 +1655,7 @@ def align(cat: str, stem: str, cfg: dict, draft_dir: Path, view: str) -> dict:
         shutil.copy2(glb, base)
     st = load_state(d)
     pics = pictures(st, info)
-    if view == "skin_head":
+    if view in ("skin_head", "skin_ears"):
         if not pics:
             return {"ok": False, "view": view}
         cams, M = {}, None
@@ -1455,13 +1667,22 @@ def align(cat: str, stem: str, cfg: dict, draft_dir: Path, view: str) -> dict:
             cams["right"], _, M = fitted(d, st, base, "right", use["left"], M, flip=True); use["right"] = ("flip", use["left"])
         if mirror and "right" in use and "left" not in use:
             cams["left"], _, M = fitted(d, st, base, "left", use["right"], M, flip=True); use["left"] = ("flip", use["right"])
-        sp, xyz, nrm, M = skin_state(d, st, base, M)
         M = M or load(base)
         _marks3d(st, base, M, info.get("category") or cat)
+        save_state(d, st)
+        if view == "skin_head":
+            sp, xyz, nrm, M = skin_state(d, st, base, M)
+        else:
+            ep = ears_state(d, st, base, M)
+            if not ep:
+                return {"ok": False, "view": view, "error": "no ears found"}
+            sp, _, xyz, nrm, M = ep
+            M = M or load(base)
+        st = load_state(d)
         sizes = {v: Image.open(x["path"]).size for v, x in pics.items()}
         vp = view_pins(st, cams, {v: x["path"] for v, x in pics.items()}, bool(mirror), sizes)
-        skin_pictures(M, xyz, nrm, sp, use, cams, vp).save(d / "skin_head_pics.png")
-        return {"ok": True, "view": view, "picture": str(d / "skin_head_pics.png"), "model": str(d / "skin_head_guide.png"),
+        skin_pictures(M, xyz, nrm, sp, use, cams, vp).save(d / f"{view}_pics.png")
+        return {"ok": True, "view": view, "picture": str(d / f"{view}_pics.png"), "model": str(d / f"{view}_guide.png"),
                 "size": [sp["W"], sp["H"]], "cam": None, "iou": None, "mid_x": sp["W"] / 2,
                 "pins": (st.get("pins") or {}).get(view, []), "kind": "skin", "marks": []}
     if view not in pics:
