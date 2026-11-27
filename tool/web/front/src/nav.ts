@@ -9,6 +9,7 @@ export const SECTIONS: Section[] = [
     { id: 'ref', key: 'ui.reference', about: 'web.about_ref' },
     { id: 'create', key: 'ui.make_a_model', about: 'web.about_create' },
     { id: 'check', key: 'web.step_check', about: 'web.about_check' },
+    { id: 'improve', key: 'web.step_improve', about: 'web.about_improve' },
     { id: 'materials', key: 'web.step_model_materials', about: 'web.about_model_materials' },
     { id: 'release', key: 'web.step_release', about: 'web.about_release' },
     { id: 'batch', key: 'ui.batch_processing_2', about: 'web.about_batch' },

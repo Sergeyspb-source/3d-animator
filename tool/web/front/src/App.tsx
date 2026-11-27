@@ -15,6 +15,7 @@ import { ObjectsProvider, useObjects } from './objects';
 import { Guard } from './components/ErrorBoundary';
 import ModelCreate from './screens/ModelCreate';
 import ModelCheck from './screens/ModelCheck';
+import ModelImprove from './screens/ModelImprove';
 import ModelRelease from './screens/ModelRelease';
 import EquipWorkspace from './screens/EquipWorkspace';
 import CharOverview from './screens/CharOverview';
@@ -71,6 +72,7 @@ export default function App({ initial }: { initial: AppState }) {
   else if (route.section === 'models' && route.step === 'create') screen = <ModelCreate go={go} />;
   else if (route.section === 'environment' && route.step === 'vegetation') screen = <ModelCreate go={go} vegetation />;
   else if (route.section === 'models' && route.step === 'check') screen = <ModelCheck go={go} />;
+  else if (route.section === 'models' && route.step === 'improve') screen = <ModelImprove go={go} />;
   else if (route.section === 'models' && route.step === 'ref') screen = <Reference go={go} />;
   else if (route.section === 'models' && route.step === 'batch') screen = <BatchScreen go={go} />;
   else if (route.section === 'models' && route.step === 'materials') screen = <ModelMaterials />;

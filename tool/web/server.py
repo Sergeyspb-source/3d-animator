@@ -344,6 +344,62 @@ async def model_discard(req: Request):
     return M.discard(p.get("category") or "", p.get("stem") or "")
 
 
+# ------------------------------------------------------------------ «Models → Improve» (web/improve.py, tool/model_improve.py)
+import improve as IM  # noqa: E402
+
+
+@app.get("/api/models/improve/status")
+def improve_status(category: str, stem: str):
+    return IM.status(category, stem)
+
+
+@app.post("/api/models/improve/run")
+async def improve_run(req: Request):
+    t = tasks.submit(IM.run_task(await req.json()))
+    return {"ok": True, "task": t.summary()}
+
+
+@app.post("/api/models/improve/codex")
+async def improve_codex(req: Request):
+    p = await req.json()
+    if not p.get("views"):
+        return JSONResponse({"ok": False, "log": ""})
+    t = tasks.submit(IM.codex_task(p))
+    return {"ok": True, "task": t.summary()}
+
+
+@app.get("/api/models/improve/align")
+async def improve_align(category: str, stem: str, view: str):
+    return await asyncio.to_thread(IM.align, category, stem, view)
+
+
+@app.post("/api/models/improve/pins")
+async def improve_pins(req: Request):
+    p = await req.json()
+    return IM.pins(p["category"], p["stem"], p["view"], p.get("pins") or [])
+
+
+@app.post("/api/models/improve/picture")
+async def improve_picture(req: Request):
+    p = await req.json()
+    path = p.get("path")
+    if path:
+        _allowed(path)
+    return IM.picture(p["category"], p["stem"], p["view"], path)
+
+
+@app.post("/api/models/improve/codex_accept")
+async def improve_codex_accept(req: Request):
+    p = await req.json()
+    return IM.codex_accept(p["category"], p["stem"], p["view"], bool(p.get("accept")))
+
+
+@app.post("/api/models/improve/undo")
+async def improve_undo(req: Request):
+    p = await req.json()
+    return IM.undo(p["category"], p["stem"])
+
+
 # ------------------------------------------------------------------ «Equipment» and «Looks»: the procedural editor
 @app.get("/editor/equip")
 def editor_equip(rigged: str):

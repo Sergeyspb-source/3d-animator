@@ -182,6 +182,10 @@ except torch.cuda.OutOfMemoryError:
 stats["shape_seconds"] = round(time.time() - t, 1)
 stats["shape_peak_vram_mb"] = round(torch.cuda.max_memory_allocated() / 1024**2)
 stats["shape_faces_raw"] = int(len(mesh.faces))
+try:   # the dense mesh before the clean-up and the simplification: «Improve» bakes its relief into a normal map
+    mesh.export(str(out / "shape_raw.ply"))
+except Exception:  # noqa: BLE001
+    traceback.print_exc()
 del shape_pipe
 free_gpu()
 say(_t("hy.shape_ready_in_s_faces", stats['shape_seconds'], stats['shape_faces_raw']))
