@@ -36,7 +36,7 @@ export default function ModelImprove({ go }: { go: (r: Route) => void }) {
   const [st, setSt] = useState<Status | null>(null);
   const [opts, setOpts] = useState<Opts | null>(null);
   const [look, setLook] = useState<'after' | 'before'>('after');
-  const [pinView, setPinView] = useState<ViewName | null>(null);
+  const [pinView, setPinView] = useState<ViewName | 'skin_head' | null>(null);
   const [align, setAlign] = useState<AlignData | null>(null);
   const [aligning, setAligning] = useState(false);
   const [draw, setDraw] = useState<string[]>([]);
@@ -57,7 +57,7 @@ export default function ModelImprove({ go }: { go: (r: Route) => void }) {
   useEffect(() => { loadStatus(); }, [sel, finished, m?.time]); // eslint-disable-line react-hooks/exhaustive-deps
   const pick = (x: ModelInfo) => { const id = `${x.category}/${x.stem}`; setSel(id); localStorage.setItem('sf3d.improve_sel', id); };
 
-  const openPins = async (v: ViewName) => {
+  const openPins = async (v: ViewName | 'skin_head') => {
     if (!m) return;
     setAligning(true); setPinView(v); setAlign(null);
     try {
@@ -160,6 +160,15 @@ export default function ModelImprove({ go }: { go: (r: Route) => void }) {
               })}
               {Object.entries(st.codex).filter(([v, c]) => !c.accepted && !st.pictures[v]).length > 0 && (
                 <div className="field-note">{t('web.imp_candidates_note')}</div>)}
+              {char && Object.keys(st.pictures).length > 0 && (   // the head's skin laid flat: pins where the views squeeze it
+                <div className="imp-view">
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <Text size="sm" fw={600}>{t('web.imp_skin')}</Text>
+                    <Text size="xs" c="dimmed">{st.pins.skin_head ? t('web.imp_pins_n', st.pins.skin_head) : t('web.imp_skin_note')}</Text>
+                  </div>
+                  <Tooltip label={t('web.imp_skin_tip')} multiline w={300}><Button size="compact-xs" variant="default" onClick={() => openPins('skin_head')}
+                    leftSection={<IconPin size={14} />}>{t('web.imp_pins')}</Button></Tooltip>
+                </div>)}
             </div>
 
             {missing.length > 0 && st.pictures.front && (

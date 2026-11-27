@@ -3539,5 +3539,8 @@
  "web.rm_busy": "{0}: not deleted, a task works on it («{1}»)",
  "web.rm_nothing": "{0}: no files found",
  "web.rm_failed": "{0}: failed ({1})",
- "web.rm_done": "{0}: in the Recycle Bin ({1} paths)"
+ "web.rm_done": "{0}: in the Recycle Bin ({1} paths)",
+ "web.imp_skin": "The head's skin",
+ "web.imp_skin_note": "the head laid flat: the face, the sides, the ears, the back",
+ "web.imp_skin_tip": "The head laid flat like a world map: the model's relief in grey, the pictures over it as they lie on the model (curvature included). Drag a feature of the pictures (the lips, an ear's rim) to its place on the relief: the fix goes onto the model from every side."
 }

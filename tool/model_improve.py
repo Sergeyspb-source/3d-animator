@@ -603,7 +603,7 @@ def set_normals(src_glb, out_glb):
 
 # ------------------------------------------------------------------ A: the pictures projected
 def project(glb, out, pics, mirror=False, res=None, c0=0.1, c1=0.55, sharp=4.0, prio=None, delight_k=0.0, pins=None,
-            cams=None, mr_smooth=True, detail=0.7, log=None):
+            cams=None, mr_smooth=True, detail=0.7, log=None, skin_warp=None):
     """pics: {view: path or ("flip", path)}; cams: {view: (s, tx, ty)} already fitted (else fitted here);
     pins: {view: [(sx, sy, dx, dy), ...]}. -> info {views: {view: {iou, cam, ...}}, seconds, coverage}"""
     say = log or (lambda *_: None)
@@ -617,6 +617,10 @@ def project(glb, out, pics, mirror=False, res=None, c0=0.1, c1=0.55, sharp=4.0, 
     R = res or max(W0, 2048)
     Tx = texels(M, R, R)
     T["texels"] = round(time.time() - t0, 1)
+    if skin_warp:   # (pins on the head's skin: each texel reads the pictures where its skin point was dragged from)
+        moved = skin_move(Tx["pos"], Tx["nrm"], *skin_warp)
+        if moved is not None:
+            Tx["pos"], Tx["nrm"] = moved
     pics = dict(pics)
     if mirror and "left" in pics and "right" not in pics:
         pics["right"] = ("flip", pics["left"])
@@ -904,7 +908,7 @@ def run(cat: str, stem: str, cfg: dict, draft_dir: Path, opts: dict, log=None) -
         a_info = project(base, d / "step_a.glb", {v: x["path"] for v, x in pics.items()}, mirror=bool(opts.get("mirror")),
                          sharp=float(opts.get("sharp", 4.0)), delight_k=float(opts.get("delight", 0.0)),
                          pins=view_pins(st, cams, {v: x["path"] for v, x in pics.items()}, bool(opts.get("mirror")), sizes),
-                         cams=cams)
+                         cams=cams, skin_warp=skin_warp_of(d, st, base))
         a_info["marks"] = sum(len(v) for v in (st.get("marks") or {}).values())
         secs["project"] = round(time.time() - t, 1)
         steps.append("project")
@@ -1016,7 +1020,7 @@ def codex_sides(cat: str, stem: str, cfg: dict, draft_dir: Path, views: list, lo
         _marks3d(st, base, M, info.get("category") or cat)
         sizes = {v: Image.open(x["path"]).size for v, x in pics.items()}
         project(base, d / "codex_base.glb", {v: x["path"] for v, x in pics.items()}, cams=cams,
-                pins=view_pins(st, cams, {v: x["path"] for v, x in pics.items()}, False, sizes))
+                pins=view_pins(st, cams, {v: x["path"] for v, x in pics.items()}, False, sizes), skin_warp=skin_warp_of(d, st, base))
         src = d / "codex_base.glb"
     fw, fh = Image.open(front).size
     w = 864
@@ -1074,6 +1078,160 @@ def set_pins(cat: str, stem: str, cfg: dict, view: str, pins: list) -> dict:
     st.setdefault("pins", {})[view] = [[round(float(x), 2) for x in p[:4]] for p in pins or []]
     save_state(d, st)
     return st
+
+
+# ------------------------------------------------------------------ the head's skin laid flat (pins on the skin)
+# A cylinder round the head's vertical axis, as in face cloning from front and side photos: the face in the middle, the
+# sides and the ears to the left and right, the back of the head at the edges. Every skin pixel keeps its 3D point, so a
+# pin on the skin (this feature of the pictures belongs there on the head) moves where on the surface a texel reads
+# its colour; the pictures stay projected with their real foreshortening. Same scale both ways at the head's mean radius.
+def head_faces(M):
+    V = M["V"]
+    y0, y1 = V[:, 1].min(), V[:, 1].max()
+    m3 = guess_marks3d(M)
+    hands = [m3[k][1] for k in ("hand_L", "hand_R") if k in m3]
+    arm_y = float(np.mean(hands)) if hands else y0 + 0.75 * (y1 - y0)
+    neck = arm_y + 0.04 * (y1 - y0)
+    return (V[M["F"]][:, :, 1] > neck).all(1), neck
+
+
+def skin_params(M, keep, width=2048):
+    hv = M["V"][np.unique(M["F"][keep])]
+    cz = float(np.median(hv[:, 2]))
+    ylo, yhi = float(hv[:, 1].min()), float(hv[:, 1].max())
+    r = float(np.median(np.hypot(hv[:, 0], hv[:, 2] - cz)))
+    s = width / (2 * np.pi * r)
+    return {"cx": 0.0, "cz": cz, "ylo": ylo, "yhi": yhi, "scale": s, "W": int(width), "H": int(np.ceil((yhi - ylo) * s)) + 4}
+
+
+def skin_xy(P, sp):
+    th = np.arctan2(P[:, 0] - sp["cx"], P[:, 2] - sp["cz"])   # (0 = the front, +: the model's left)
+    return np.stack([(th / (2 * np.pi) + 0.5) * sp["W"], (sp["yhi"] - P[:, 1]) * sp["scale"] + 2], 1)
+
+
+def skin_build(M, keep, sp):
+    """every skin pixel: the outermost surface point along its radius (an ear covers the head behind it), its normal"""
+    W, H = sp["W"], sp["H"]
+    V = M["V"]
+    P2 = skin_xy(V, sp)
+    rho = np.hypot(V[:, 0] - sp["cx"], V[:, 2] - sp["cz"])
+    kidx = np.nonzero(keep)[0]
+    tx = P2[:, 0][M["F"][kidx]]
+    wrap = (tx.max(1) - tx.min(1)) > W / 2   # (triangles across the back seam: drawn on both edges)
+    Qw = P2.copy(); Qw[Qw[:, 0] < W / 2, 0] += W
+    Qw2 = Qw.copy(); Qw2[:, 0] -= W
+    fid_all = np.full((H, W), -1, np.int64); bary_all = np.zeros((H, W, 3), np.float32); zall = np.full((H, W), -np.inf)
+    for grp, Q in ((kidx[~wrap], P2), (kidx[wrap], Qw), (kidx[wrap], Qw2)):
+        if not len(grp):
+            continue
+        fid, bary, zb = raster(Q, M["F"][grp], W, H, z=rho)
+        sel = (fid >= 0) & (zb > zall)
+        fid_all[sel] = grp[fid[sel]]; bary_all[sel] = bary[sel]; zall[sel] = zb[sel]
+    ok = fid_all >= 0
+    tri = M["F"][fid_all[ok]]
+    b = bary_all[ok].astype(np.float64)
+    xyz = np.full((H, W, 3), np.nan, np.float32)
+    xyz[ok] = (V[tri] * b[..., None]).sum(1)
+    N = M.get("N")
+    if N is None:
+        N = M["N"] = smooth_normals(V, M["F"])
+    n = (N[tri] * b[..., None]).sum(1)
+    nrm = np.zeros((H, W, 3), np.float32)
+    nrm[ok] = n / np.maximum(np.linalg.norm(n, axis=1, keepdims=True), 1e-9)
+    return xyz, nrm
+
+
+def skin_guide(xyz, nrm, sp):
+    """the head's relief on the skin: lit along the radius and from above"""
+    ok = np.isfinite(xyz[..., 0])
+    rad = np.zeros_like(nrm)
+    rad[..., 0] = np.nan_to_num(xyz[..., 0] - sp["cx"]); rad[..., 2] = np.nan_to_num(xyz[..., 2] - sp["cz"])
+    rad /= np.maximum(np.linalg.norm(rad, axis=2, keepdims=True), 1e-9)
+    L = rad * 0.8 + np.array([0, 0.45, 0])
+    L /= np.maximum(np.linalg.norm(L, axis=2, keepdims=True), 1e-9)
+    g = 0.25 + 0.55 * np.clip((nrm * L).sum(2), 0, 1) + 0.2 * np.clip((nrm * rad).sum(2), 0, 1)
+    img = np.zeros((sp["H"], sp["W"], 4), np.uint8)
+    v = (g * 235).clip(0, 255).astype(np.uint8)
+    img[ok, 0] = v[ok]; img[ok, 1] = v[ok]; img[ok, 2] = (v[ok] * 1.03).clip(0, 255).astype(np.uint8); img[ok, 3] = 255
+    return Image.fromarray(img, "RGBA")
+
+
+def skin_pictures(M, xyz, nrm, sp, pics, cams, pins, sharp=4.0, prio=None):
+    """the pictures as the projection lays them, drawn on the skin (with the picture pins and landmarks): what the skin
+    pins then move"""
+    prio = {"front": 1.0, "back": 0.85, "left": 0.6, "right": 0.6, **(prio or {})}
+    ok = np.isfinite(xyz[..., 0])
+    P = xyz[ok].astype(np.float64); Nn = nrm[ok].astype(np.float64)
+    acc = np.zeros((len(P), 3)); ws = np.zeros(len(P)); cover = np.zeros(len(P))
+    for v, pic in pics.items():
+        if v not in cams:
+            continue
+        rgb_, a = pic_alpha(pic[1] if isinstance(pic, tuple) else pic)
+        if isinstance(pic, tuple):
+            rgb_, a = rgb_[:, ::-1].copy(), a[:, ::-1].copy()
+        cam = cams[v]
+        zb = silhouette(M, v, cam, a.shape[1], a.shape[0])
+        Tx = {"pos": P, "nrm": Nn}
+        w, xy = view_weights(Tx, v, cam, zb, a)
+        if (pins or {}).get(v):
+            xy = xy + pin_field(pins[v])(xy)
+        pre = sample(rgb_.astype(np.float32) * a[..., None], xy)
+        col = pre / np.maximum(sample(a.astype(np.float32), xy), 1e-3)[:, None]
+        k = (prio.get(v, 1.0) * w) ** sharp
+        acc += col * k[:, None]; ws += k; cover = np.maximum(cover, w)
+    img = np.zeros((sp["H"], sp["W"], 4), np.uint8)
+    col = acc / np.maximum(ws, 1e-12)[:, None]
+    rgba = np.concatenate([col.clip(0, 255), (np.clip(cover * 1.5, 0, 1) * 255)[:, None]], 1).astype(np.uint8)
+    img[ok] = rgba
+    return Image.fromarray(img, "RGBA")
+
+
+def skin_move(pos, nrm, sp, xyz, xnrm, pins):
+    """texels on the head: their skin point q read from the skin point q + D(q) (the pins' warp) - its 3D point and
+    normal from the skin maps; texels off the head or landing off the skin keep theirs"""
+    if not pins:
+        return None
+    from scipy.ndimage import map_coordinates
+    q = skin_xy(pos, sp)
+    on = (pos[:, 1] >= sp["ylo"]) & (q[:, 1] >= 0) & (q[:, 1] < sp["H"])
+    if not on.any():
+        return None
+    qq = q[on] + pin_field(pins)(q[on])
+    moved = np.linalg.norm(qq - q[on], axis=1) > 0.05
+    xs = np.mod(qq[:, 0] - 0.5, sp["W"]); ys = np.clip(qq[:, 1] - 0.5, 0, sp["H"] - 1)
+    Pn = np.stack([map_coordinates(xyz[..., c], [ys, xs], order=0, mode="nearest") for c in range(3)], 1)
+    Nn = np.stack([map_coordinates(xnrm[..., c], [ys, xs], order=0, mode="nearest") for c in range(3)], 1)
+    good = moved & np.isfinite(Pn).all(1)
+    pos2, nrm2 = pos.copy(), nrm.copy()
+    idx = np.nonzero(on)[0][good]
+    pos2[idx] = Pn[good]; nrm2[idx] = Nn[good]
+    return pos2, nrm2
+
+
+def skin_state(d: Path, st: dict, base: Path, M=None, width=2048):
+    """the head skin's parameters and maps for base.glb, built once (cached by the model's time)"""
+    key = str(base.stat().st_mtime_ns)
+    sk = (st.get("skin") or {}).get("head")
+    if sk and sk.get("key") == key and (d / "skin_head_xyz.npy").exists():
+        return sk["params"], np.load(d / "skin_head_xyz.npy"), np.load(d / "skin_head_nrm.npy"), M
+    M = M or load(base)
+    keep, _ = head_faces(M)
+    sp = skin_params(M, keep, width)
+    xyz, nrm = skin_build(M, keep, sp)
+    np.save(d / "skin_head_xyz.npy", xyz); np.save(d / "skin_head_nrm.npy", nrm)
+    skin_guide(xyz, nrm, sp).save(d / "skin_head_guide.png")
+    st.setdefault("skin", {})["head"] = {"key": key, "params": sp}
+    save_state(d, st)
+    return sp, xyz, nrm, M
+
+
+def skin_warp_of(d: Path, st: dict, base: Path):
+    """for project(): (params, xyz, nrm, pins) when the head skin has pins, else None"""
+    pins = (st.get("pins") or {}).get("skin_head")
+    if not pins:
+        return None
+    sp, xyz, nrm, _ = skin_state(d, st, base)
+    return (sp, xyz, nrm, [tuple(p) for p in pins])
 
 
 # ------------------------------------------------------------------ landmarks: named pins whose model end is a 3D point
@@ -1274,7 +1432,8 @@ def set_mark3d(cat: str, stem: str, cfg: dict, draft_dir: Path, view: str, name:
 
 def align(cat: str, stem: str, cfg: dict, draft_dir: Path, view: str) -> dict:
     """what the pins editor shows for a view: the picture, the model drawn from the fitted camera at the picture's size
-    (PNG), the model's middle line in the picture (for mirrored pins: front / back), the pins so far"""
+    (PNG), the model's middle line in the picture (for mirrored pins: front / back), the pins so far. view "skin_head":
+    the head's skin laid flat - its relief as the ground, the pictures as the projection lays them on it"""
     glb = Path(draft_dir) / f"{stem}.glb"
     info_p = Path(draft_dir) / f"{stem}.json"
     info = json.loads(info_p.read_text(encoding="utf-8")) if info_p.exists() else {}
@@ -1284,6 +1443,27 @@ def align(cat: str, stem: str, cfg: dict, draft_dir: Path, view: str) -> dict:
         shutil.copy2(glb, base)
     st = load_state(d)
     pics = pictures(st, info)
+    if view == "skin_head":
+        if not pics:
+            return {"ok": False, "view": view}
+        cams, M = {}, None
+        for v, x in pics.items():
+            cams[v], _, M = fitted(d, st, base, v, x["path"], M)
+        mirror = (st.get("options") or {}).get("mirror", (info.get("category") or cat) == "character")
+        use = {v: x["path"] for v, x in pics.items()}
+        if mirror and "left" in use and "right" not in use:
+            cams["right"], _, M = fitted(d, st, base, "right", use["left"], M, flip=True); use["right"] = ("flip", use["left"])
+        if mirror and "right" in use and "left" not in use:
+            cams["left"], _, M = fitted(d, st, base, "left", use["right"], M, flip=True); use["left"] = ("flip", use["right"])
+        sp, xyz, nrm, M = skin_state(d, st, base, M)
+        M = M or load(base)
+        _marks3d(st, base, M, info.get("category") or cat)
+        sizes = {v: Image.open(x["path"]).size for v, x in pics.items()}
+        vp = view_pins(st, cams, {v: x["path"] for v, x in pics.items()}, bool(mirror), sizes)
+        skin_pictures(M, xyz, nrm, sp, use, cams, vp).save(d / "skin_head_pics.png")
+        return {"ok": True, "view": view, "picture": str(d / "skin_head_pics.png"), "model": str(d / "skin_head_guide.png"),
+                "size": [sp["W"], sp["H"]], "cam": None, "iou": None, "mid_x": sp["W"] / 2,
+                "pins": (st.get("pins") or {}).get(view, []), "kind": "skin", "marks": []}
     if view not in pics:
         return {"ok": False, "view": view}
     pic = pics[view]["path"]
