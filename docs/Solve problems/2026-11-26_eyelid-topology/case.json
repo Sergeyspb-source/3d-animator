@@ -46,10 +46,10 @@
     {"file": "img/08_seam_before_after.jpg", "clean": "src/girl_v1_rest_close.png", "kind": "render", "role": "before", "pair": "girl-seam", "caption_ru": "Первая версия: линия края старой кожи под глазами"},
     {"file": "img/08_seam_before_after.jpg", "clean": "src/girl_after_rest_close.png", "kind": "render", "role": "after", "pair": "girl-seam", "caption_ru": "После доработки: линии нет"},
     {"file": "img/08_seam_before_after.jpg", "clean": "src/gob_v1_rest_close.png", "kind": "render", "role": "before", "pair": "gob-seam", "caption_ru": "Гоблин, первая версия: засечки у переносицы"},
-    {"file": "img/08_seam_before_after.jpg", "clean": "src/gob_after_rest_close.png", "kind": "render", "role": "after", "pair": "gob-seam", "caption_ru": "Гоблин после: осталась одна засечка"},
+    {"file": "img/08_seam_before_after.jpg", "clean": "src/gob_after_rest_close.png", "kind": "render", "role": "after", "pair": "gob-seam", "caption_ru": "Гоблин после: засечка справа от переносицы и тонкая щёлочка слева"},
     {"file": "img/09_lashes.jpg", "clean": "img/09_lashes.jpg", "kind": "render", "role": "result", "caption_ru": "Ресницы на кромке нового века (первая версия века)"},
     {"file": "img/10_godot.jpg", "clean": "src/shot_girl_5.png", "kind": "screenshot", "role": "result", "caption_ru": "Godot 4.7: открыто, полуморгание, закрыто (первая версия века)"},
-    {"file": "img/11_notch.jpg", "clean": "src/gob_after_rest_close.png", "kind": "render", "role": "result", "caption_ru": "Оставшаяся засечка у переносицы гоблина"}
+    {"file": "img/11_notch.jpg", "clean": "src/gob_after_rest_close.png", "kind": "render", "role": "result", "caption_ru": "Оставшиеся дефекты у переносицы гоблина: засечка справа, щёлочка слева"}
   ],
   "models": [
     {"role": "before", "path": "work/backup_rigs/women_young_no_segment_no_rig_before_lids_20261126/women_young_no_segment_no_rig_landmarks_rigged.glb", "label_ru": "Девушка со скорлупками"},
@@ -66,7 +66,7 @@
     {"n": 4, "seconds": 14, "say_ru": "Пришить новое веко к старой коже не получилось: модель многослойная, вылезали дыры. Мы подложили веко под край кожи, как заплатку изнутри.", "show": ["img/05_dead_ends.jpg"]},
     {"n": 5, "seconds": 18, "say_ru": "Анимация лица ведёт точку по прямой, а веко должно идти по дуге. На середине моргания оно проваливалось в глаз. Помощник выталкивает кромку на дугу.", "show": ["img/03_chord_vs_arc.png", "img/04_half_blink.jpg"]},
     {"n": 6, "seconds": 14, "say_ru": "Пользователь заметил засечки у носа. Оказалось, веко одного глаза было вывернуто наизнанку.", "show": ["img/07_inside_out.png", "img/08_seam_before_after.jpg"]},
-    {"n": 7, "seconds": 12, "say_ru": "Теперь персонажи моргают в игре, ресницы идут за веком. Одна маленькая засечка у гоблина пока осталась.", "show": ["img/10_godot.jpg", "img/11_notch.jpg"]}
+    {"n": 7, "seconds": 12, "say_ru": "Теперь персонажи моргают в игре, ресницы идут за веком. У переносицы гоблина пока остались засечка и тонкая щёлочка.", "show": ["img/10_godot.jpg", "img/11_notch.jpg"]}
   ],
   "reproduce_in_app": [
     "Персонаж → Скелет → По ориентирам: разметить глаза (контур века, шарик) и собрать скелет — веки строятся сами",
