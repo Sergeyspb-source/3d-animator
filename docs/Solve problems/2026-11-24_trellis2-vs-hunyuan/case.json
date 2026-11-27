@@ -1,0 +1,81 @@
+{
+  "id": "2026-11-24_trellis2-vs-hunyuan",
+  "title_ru": "Может ли нейросеть сделать 3D-героя по одной картинке лучше, чем другая по четырём?",
+  "title_en": "Can one neural network build a better 3D hero from one picture than another does from four?",
+  "hook_ru": "TRELLIS.2 по одной картинке слепил рыцаря точнее, чем Hunyuan3D по четырём, и в 8 раз быстрее. А на таверне проиграл.",
+  "status": "solved",
+  "date": "2026-11-24",
+  "sessions": [
+    {"name": "TRELLIS.2 — проверка и встраивание", "id": "запущена из local_e34b3455"},
+    {"name": "Правки проекта (координатор)", "id": "local_e34b3455"}
+  ],
+  "commits": ["116c700", "69bb9e5", "b5372a6"],
+  "tags": ["trellis", "hunyuan", "vram", "comparison", "speed"],
+  "video": {
+    "potential": 5,
+    "why_ru": "Дуэль двух нейросетей на слабой видеокарте: большая цифра (в 8 раз), неожиданный победитель по одной картинке и честные провалы — дырявый щит и тёмная таверна.",
+    "wow_moment_ru": "Два рыцаря рядом и таймеры под ними: 517 и 62 секунды, причём у быстрого одна картинка на входе.",
+    "length_seconds": 100,
+    "thumbnail": {"image": "src/knight_trellis_clay_q34.png", "text_ru": "8 РАЗ БЫСТРЕЕ"}
+  },
+  "numbers": [
+    {"what_ru": "Рыцарь, время на модель", "before": 517, "after": 62, "unit_ru": "секунд", "better": "lower",
+     "measured_on": "RTX 4060 Laptop 8 ГБ", "note_ru": "Hunyuan — 4 картинки, TRELLIS — одна"},
+    {"what_ru": "Щит, время на модель", "before": 446, "after": 85, "unit_ru": "секунд", "better": "lower",
+     "measured_on": "RTX 4060 Laptop 8 ГБ", "note_ru": ""},
+    {"what_ru": "Бочка, время на модель", "before": 415, "after": 284, "unit_ru": "секунд", "better": "lower",
+     "measured_on": "RTX 4060 Laptop 8 ГБ", "note_ru": "первый замер 391 с — видеокарту делила другая задача"},
+    {"what_ru": "Таверна, время на модель", "before": 602, "after": 216, "unit_ru": "секунд", "better": "lower",
+     "measured_on": "RTX 4060 Laptop 8 ГБ", "note_ru": "но качество текстуры у Hunyuan лучше"},
+    {"what_ru": "Пик видеопамяти (рыцарь)", "before": 7.4, "after": 2.7, "unit_ru": "ГБ", "better": "lower",
+     "measured_on": "RTX 4060 Laptop 8 ГБ", "note_ru": "у TRELLIS 2,7–5,3 ГБ по моделям, вместе с рабочим столом"},
+    {"what_ru": "Яркость текстуры рыцаря (на картинке 0,55)", "before": 0.49, "after": 0.32, "unit_ru": "доля", "better": "higher",
+     "measured_on": "средний цвет текстуры", "note_ru": "TRELLIS темнее картинки на 30–50%"}
+  ],
+  "media": [
+    {"file": "img/01_knight_hunyuan_vs_trellis.jpg", "clean": "src/knight_hunyuan_clay_q34.png", "kind": "render", "role": "before",
+     "pair": "knight-clay-q34", "caption_ru": "Рыцарь от Hunyuan3D по четырём картинкам, 517 секунд"},
+    {"file": "img/01_knight_hunyuan_vs_trellis.jpg", "clean": "src/knight_trellis_clay_q34.png", "kind": "render", "role": "after",
+     "pair": "knight-clay-q34", "caption_ru": "Рыцарь от TRELLIS.2 по одной картинке, 62 секунды"},
+    {"file": "img/01_knight_hunyuan_vs_trellis.jpg", "clean": "src/knight_hunyuan_tex_q34.png", "kind": "render", "role": "before",
+     "pair": "knight-tex-q34", "caption_ru": "Hunyuan с текстурой: всё рыжее"},
+    {"file": "img/01_knight_hunyuan_vs_trellis.jpg", "clean": "src/knight_trellis_tex_q34.png", "kind": "render", "role": "after",
+     "pair": "knight-tex-q34", "caption_ru": "TRELLIS с текстурой: красный табард, тёмный металл, но темнее картинки"},
+    {"file": "img/02_shield_cracks.jpg", "clean": null, "kind": "render", "role": "attempt", "pair": null,
+     "caption_ru": "Щит: трещины у TRELLIS стали сквозными дырами"},
+    {"file": "img/03_tavern.jpg", "clean": null, "kind": "render", "role": "attempt", "pair": null,
+     "caption_ru": "Таверна: Hunyuan лучше, у TRELLIS тёмная плоская текстура"},
+    {"file": "img/04_barrel.jpg", "clean": null, "kind": "render", "role": "attempt", "pair": null,
+     "caption_ru": "Бочка: у TRELLIS обручи медные вместо железных"},
+    {"file": "img/05_time_chart.png", "clean": null, "kind": "chart", "role": "result", "pair": null,
+     "caption_ru": "Время на модель по четырём моделям"}
+  ],
+  "models": [
+    {"role": "before", "path": "work/hunyuan/character/skeleton_knight/textured.glb", "label_ru": "Рыцарь от Hunyuan3D (сырой)"},
+    {"role": "after", "path": "work/trellis_test/out/knight/knight.glb", "label_ru": "Рыцарь от TRELLIS.2 (сырой)"},
+    {"role": "before", "path": "work/trellis_test/normals/hunyuan_knight.glb", "label_ru": "Рыцарь Hunyuan после постобработки, 1,8 м"},
+    {"role": "after", "path": "work/trellis_test/normals/trellis_knight.glb", "label_ru": "Рыцарь TRELLIS после постобработки, 1,8 м"},
+    {"role": "attempt", "path": "work/trellis_test/out/shield/shield.glb", "label_ru": "Щит TRELLIS с дырами на трещинах"},
+    {"role": "attempt", "path": "work/trellis_test/out/tavern/tavern.glb", "label_ru": "Таверна TRELLIS"},
+    {"role": "reference", "path": "work/hunyuan/character/skeleton_knight/view_front.png", "label_ru": "Исходная картинка рыцаря"}
+  ],
+  "beats": [
+    {"n": 1, "seconds": 12, "say_ru": "Наша программа делает трёхмерных героев для игры из картинок. Нейросеть Hunyuan тратила на рыцаря восемь с половиной минут и забирала почти всю видеопамять.",
+     "show": ["work/hunyuan/character/skeleton_knight/view_front.png", "model:before"]},
+    {"n": 2, "seconds": 14, "say_ru": "Вышла TRELLIS два от Майкрософт. Ей нужна видеокарта на шестнадцать гигабайт, а у нас восемь. Энтузиаст переписал её на C++ и сжал. Мы собрали её сами.",
+     "show": ["diagram:картинка → объём → форма → цвет и металл → модель"]},
+    {"n": 3, "seconds": 16, "say_ru": "Рыцарь — шестьдесят две секунды вместо пятисот семнадцати. И форма лучше: тонкие кости, рваная ткань. Причём TRELLIS видел одну картинку, а Hunyuan — четыре.",
+     "show": ["img/01_knight_hunyuan_vs_trellis.jpg", "model:after"]},
+    {"n": 4, "seconds": 12, "say_ru": "Но не всё так гладко. На щите тёмные трещины стали сквозными дырами.",
+     "show": ["img/02_shield_cracks.jpg"]},
+    {"n": 5, "seconds": 12, "say_ru": "А таверну TRELLIS проиграл: дом вышел тёмным и плоским, солома пропала.",
+     "show": ["img/03_tavern.jpg"]},
+    {"n": 6, "seconds": 12, "say_ru": "По времени TRELLIS быстрее везде. Поэтому оставили обе: героев и предметы делает TRELLIS, здания — Hunyuan.",
+     "show": ["img/05_time_chart.png"]}
+  ],
+  "reproduce_in_app": ["Модели → Создание → Движок: TRELLIS.2 — одна картинка → картинка рыцаря → Создать модель"],
+  "regenerate": [
+    "D:\\conda\\envs\\sf3d\\python.exe tool/blender_queue.py -- -b -P \"docs/Solve problems/_tools/render_models.py\" -- \"D:/My projects/SF3D/docs/Solve problems/2026-11-24_trellis2-vs-hunyuan/src\" knight_hunyuan=work/trellis_test/normals/hunyuan_knight.glb knight_trellis=work/trellis_test/normals/trellis_knight.glb",
+    "D:\\conda\\envs\\sf3d\\python.exe \"docs/Solve problems/_tools/sheet.py\" \"docs/Solve problems/2026-11-24_trellis2-vs-hunyuan/img/01_knight_hunyuan_vs_trellis.jpg\" \"Hunyuan3D: 4 картинки, 517 с\" src/knight_hunyuan_clay_q34.png \"TRELLIS.2: 1 картинка, 62 с\" src/knight_trellis_clay_q34.png ... --cols 4 --crop"
+  ]
+}
