@@ -2,7 +2,7 @@
 // It is the handler modules' «current character» too (work_dir/current_character.txt).
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { Group, Text, UnstyledButton } from '@mantine/core';
-import { get, post, type SceneObject } from './api';
+import { get, live, post, useStore, type SceneObject } from './api';
 
 interface Objects {
   characters: SceneObject[]; creatures: SceneObject[]; current: string | null;
@@ -13,7 +13,8 @@ const Ctx = createContext<Objects>({ characters: [], creatures: [], current: nul
 export function ObjectsProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<{ characters: SceneObject[]; creatures: SceneObject[]; current: string | null }>({ characters: [], creatures: [], current: null });
   const refresh = useCallback(() => { get<typeof data>('/api/objects').then(setData).catch(() => {}); }, []);
-  useEffect(refresh, [refresh]);
+  const removed = useStore(live, (s) => s.objects);   // (models deleted: from this page or another)
+  useEffect(refresh, [refresh, removed]);
   const choose = useCallback((id: string | null) => {
     setData((d) => ({ ...d, current: id }));
     if (id) post('/api/objects/current', { id }).catch(() => {});

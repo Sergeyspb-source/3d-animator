@@ -1,7 +1,7 @@
 // Models → Check: the drafts made here, each in 3D beside a 1.75 m person, its numbers and previews; «Release»
 // moves it into export (a model already there goes aside to web_drafts/replaced), «Remove» puts the draft aside.
 import { useEffect, useState } from 'react';
-import { Badge, Button, Group, Image, Modal, ScrollArea, Stack, Table, Text, UnstyledButton } from '@mantine/core';
+import { Badge, Button, Checkbox, Group, Image, Modal, ScrollArea, Stack, Table, Text, UnstyledButton } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconFolder, IconTrash } from '@tabler/icons-react';
 import { fileUrl, get, live, post, useStore, type ModelInfo } from '../api';
@@ -9,13 +9,16 @@ import { useT } from '../i18n';
 import type { Route } from '../nav';
 import Viewer3D from '../components/Viewer3D';
 import { ZoomImage } from '../components/Zoom';
+import { askRemove } from '../components/RemoveModels';
 
 export const CAT_KEY: Record<string, string> = { item: 'ui.inventory_item', prop: 'ui.prop_environment', building: 'ui.building',
   character: 'ui.character', vegetation: 'ui.vegetation_trees_bushes_grass' };
 const ENGINE: Record<string, string> = { sf3d: 'SF3D', hunyuan: 'Hunyuan3D', trellis2: 'TRELLIS.2', trellis: 'TRELLIS.2' };
 
-export function ModelList({ items, sel, onPick, empty }: { items: ModelInfo[]; sel: string | null; onPick: (m: ModelInfo) => void; empty: string }) {
+export function ModelList({ items, sel, onPick, empty, checked }: { items: ModelInfo[]; sel: string | null; onPick: (m: ModelInfo) => void; empty: string;
+  checked?: [Set<string>, (s: Set<string>) => void] }) {
   const t = useT();
+  const flip = (id: string) => { if (!checked) return; const n = new Set(checked[0]); if (n.has(id)) n.delete(id); else n.add(id); checked[1](n); };
   return (
     <ScrollArea className="list">
       <Stack gap={4} p={6}>
@@ -25,6 +28,7 @@ export function ModelList({ items, sel, onPick, empty }: { items: ModelInfo[]; s
           return (
             <UnstyledButton key={id} className={'list-item' + (sel === id ? ' on' : '')} onClick={() => onPick(m)}>
               <Group gap={8} wrap="nowrap">
+                {checked && <Checkbox size="xs" checked={checked[0].has(id)} onChange={() => flip(id)} onClick={(e) => e.stopPropagation()} aria-label={m.stem} />}
                 <div className="icon">{m.icon ? <Image src={fileUrl(m.icon, m.time)} w={40} h={40} fit="contain" /> : null}</div>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <Text size="sm" fw={600} truncate>{m.stem}</Text>
@@ -40,6 +44,19 @@ export function ModelList({ items, sel, onPick, empty }: { items: ModelInfo[]; s
         })}
       </Stack>
     </ScrollArea>
+  );
+}
+
+export function TickBar({ items, checked, draft }: { items: ModelInfo[]; checked: [Set<string>, (s: Set<string>) => void]; draft: boolean }) {
+  const t = useT();
+  const ids = items.map((m) => `${m.category}/${m.stem}`), n = ids.filter((x) => checked[0].has(x)).length;
+  return (
+    <Group justify="space-between" px={8} wrap="nowrap">
+      <Checkbox size="xs" label={t('web.rm_all')} checked={n > 0 && n === ids.length} indeterminate={n > 0 && n < ids.length} disabled={!ids.length}
+        onChange={() => checked[1](n === ids.length ? new Set() : new Set(ids))} />
+      <Button size="compact-xs" color="rust" variant="light" leftSection={<IconTrash size={14} />} disabled={!n}
+        onClick={() => askRemove(ids.filter((x) => checked[0].has(x)).map((id) => ({ id, draft })), () => checked[1](new Set()))}>{t('web.rm_some', n)}</Button>
+    </Group>
   );
 }
 
@@ -68,6 +85,7 @@ export default function ModelCheck({ go }: { go: (r: Route) => void }) {
   const [ask, setAsk] = useState<string | null>(null);   // the draft asked about (kept while the dialog fades)
   const [busy, setBusy] = useState(false);
   const [askAll, setAskAll] = useState(false);
+  const ticks = useState<Set<string>>(new Set());
   const load = () => get<ModelInfo[]>('/api/models/drafts').then((d) => {
     setItems(d);
     setSel((s) => (s && d.some((m) => `${m.category}/${m.stem}` === s) ? s : d[0] ? `${d[0].category}/${d[0].stem}` : null));
@@ -87,19 +105,14 @@ export default function ModelCheck({ go }: { go: (r: Route) => void }) {
       if (r.ok) { try { localStorage.setItem('sf3d.release_sel', `${m.category}/${m.stem}`); } catch { /* */ } load(); }   // (Release opens on it)
     } finally { setBusy(false); }
   };
-  const discard = async () => {
-    if (!m) return;
-    const r = await post<{ ok: boolean; log: string }>('/api/models/discard', { category: m.category, stem: m.stem });
-    notifications.show({ color: r.ok ? 'gray' : 'red', message: r.log });
-    load();
-  };
 
   return (
     <div className="work three">
       <div className="side">
         <Group justify="space-between" pr={6} wrap="nowrap"><div className="side-title">{t('web.drafts')}</div>
           {items.some((x) => !x.in_export) && <Button size="compact-xs" variant="subtle" color="gray" onClick={() => setAskAll(true)}>{t('web.release_all')}</Button>}</Group>
-        <ModelList items={items} sel={sel} onPick={pick} empty={t('web.no_drafts')} />
+        {items.length > 0 && <TickBar items={items} checked={ticks} draft />}
+        <ModelList items={items} sel={sel} onPick={pick} empty={t('web.no_drafts')} checked={ticks} />
       </div>
       <div className="stage">
         <Viewer3D url={m ? fileUrl(m.glb, m.time) : null} empty={t('web.check_empty')} person />
@@ -116,7 +129,7 @@ export default function ModelCheck({ go }: { go: (r: Route) => void }) {
             <div className="field-note">{t('web.release_to', `export/${m.category}/${m.stem}/`)}</div>
             <Group grow>
               <Button variant="default" leftSection={<IconFolder size={16} />} onClick={() => post('/api/open', { path: m.dir })}>{t('ui.char_open_folder')}</Button>
-              <Button variant="default" color="red" leftSection={<IconTrash size={16} />} onClick={discard}>{t('web.discard')}</Button>
+              <Button variant="default" color="red" leftSection={<IconTrash size={16} />} onClick={() => askRemove([{ id: `${m.category}/${m.stem}`, draft: true }])}>{t('web.rm_one')}</Button>
             </Group>
             <Button variant="subtle" color="gray" onClick={() => go({ section: 'models', step: 'create' })}>{t('web.make_again')}</Button>
           </Stack>

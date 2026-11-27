@@ -38,6 +38,7 @@ import anims as AN  # noqa: E402
 import creature as CRW  # noqa: E402
 import env as EV  # noqa: E402
 import tools_api as TA  # noqa: E402
+import remove as RM  # noqa: E402
 
 for k, env in (("export_dir", "SF3D_EXPORT_DIR"), ("work_dir", "SF3D_WORK_DIR")):
     if os.environ.get(env):
@@ -344,6 +345,24 @@ async def model_discard(req: Request):
     return M.discard(p.get("category") or "", p.get("stem") or "")
 
 
+# ------------------------------------------------------------------ deleting models (web/remove.py): into the Recycle Bin
+def _active_tasks() -> list:
+    return [t for t in list(tasks.tasks.values()) if t.status in ("queued", "running")]
+
+
+@app.post("/api/models/remove/plan")
+async def model_remove_plan(req: Request):
+    """items [{id: "<category>/<name>", draft}]: every path each would take, the sizes, a task on it, the game's copies."""
+    return await asyncio.to_thread(RM.plan, (await req.json()).get("items") or [], _active_tasks())
+
+
+@app.post("/api/models/remove")
+async def model_remove(req: Request):
+    r = await asyncio.to_thread(RM.remove, (await req.json()).get("items") or [], _active_tasks())
+    bus.publish({"type": "objects"})   # (the pages' lists and the current object read again)
+    return r
+
+
 # ------------------------------------------------------------------ «Models → Improve» (web/improve.py, tool/model_improve.py)
 import improve as IM  # noqa: E402
 
@@ -480,7 +499,7 @@ async def char_add(req: Request):
 
 @app.post("/api/char/delete")
 async def char_delete(req: Request):
-    return CH.delete(_char((await req.json()).get("id") or ""))
+    return CH.delete(_char((await req.json()).get("id") or ""), _active_tasks())
 
 
 @app.post("/api/char/rig")

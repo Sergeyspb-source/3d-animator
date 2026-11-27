@@ -1,7 +1,7 @@
 // Character → Overview: what the current character has (skeleton, face, looks, clips, pieces, the fitting room),
 // each with the step that makes it; the character in 3D; add another from a GLB, open its folder, delete it.
 import { useEffect, useState } from 'react';
-import { Button, FileButton, Group, Modal, ScrollArea, Stack, Text, UnstyledButton } from '@mantine/core';
+import { Button, FileButton, Group, ScrollArea, Stack, Text, UnstyledButton } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconFolder, IconPlus, IconTrash } from '@tabler/icons-react';
 import { fileUrl, get, live, post, upload, useStore } from '../api';
@@ -9,6 +9,7 @@ import { useT } from '../i18n';
 import { asCharacter, PickList, useCurrent, useObjects } from '../objects';
 import type { Route } from '../nav';
 import Viewer3D from '../components/Viewer3D';
+import { askRemove, ObjectsChecklist } from '../components/RemoveModels';
 
 export interface Overview {
   id: string; name: string; dir: string; source: string | null; rigged: string | null; parts: string | null;
@@ -45,7 +46,6 @@ export default function CharOverview({ go }: { go: (r: Route) => void }) {
   const cur = useCurrent();
   const objs = useObjects();
   const o = useOverview(asCharacter(cur) ? cur.id : null);
-  const [ask, setAsk] = useState(false);
   const model = o ? o.rigged || o.source : null;
 
   const add = async (f: File | null) => {
@@ -58,13 +58,6 @@ export default function CharOverview({ go }: { go: (r: Route) => void }) {
       objs.choose(r.id);
       notifications.show({ color: 'patina', message: t('web.char_added', r.id.split('/')[1]) });
     } catch (e) { notifications.show({ color: 'rust', message: String(e) }); }
-  };
-  const del = async () => {
-    if (!o) return;
-    const r = await post<{ ok: boolean; log: string }>('/api/char/delete', { id: o.id });
-    setAsk(false);
-    notifications.show({ color: r.ok ? 'gray' : 'rust', message: r.log });
-    if (r.ok) { objs.choose(null); objs.refresh(); }
   };
 
   const rig = o?.rig;
@@ -106,18 +99,14 @@ export default function CharOverview({ go }: { go: (r: Route) => void }) {
               <summary>{t('web.files', o.files.length)}</summary>
               {o.files.map((f) => <div key={f.name} className="file-row"><span>{f.name}</span><span>{f.when}</span></div>)}
             </details>)}
-          {o && <Button variant="subtle" color="rust" leftSection={<IconTrash size={16} />} onClick={() => setAsk(true)}>{t('ui.char_delete')}</Button>}
+          {o && <Button variant="subtle" color="rust" leftSection={<IconTrash size={16} />} onClick={() => askRemove([{ id: o.id, draft: false }])}>{t('ui.char_delete')}</Button>}
+          {objs.characters.length > 0 && (
+            <details className="files">
+              <summary>{t('web.rm_manage', objs.characters.length)}</summary>
+              <ObjectsChecklist list={objs.characters} />
+            </details>)}
         </Stack>
       </ScrollArea>
-      <Modal opened={ask} onClose={() => setAsk(false)} title={t('web.delete_title')} centered>
-        <Stack>
-          <Text size="sm">{o ? t('web.delete_text', o.name, o.dir) : ''}</Text>
-          <Group justify="flex-end">
-            <Button variant="default" onClick={() => setAsk(false)}>{t('web.cancel')}</Button>
-            <Button color="rust" onClick={del}>{t('ui.char_delete')}</Button>
-          </Group>
-        </Stack>
-      </Modal>
     </div>
   );
 }

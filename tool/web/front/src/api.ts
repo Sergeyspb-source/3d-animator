@@ -63,11 +63,12 @@ interface Live {
   logs: Record<string, string[]>;
   gpu: Gpu;
   finished: number;           // grows whenever a task ends (lists refresh on it)
+  objects: number;            // grows when models are deleted (the objects are read again; the lists too, by «finished»)
   selected: string | null;    // the task whose log the dock shows
 }
 export const live = createStore<Live>({
   connected: false, tasks: {}, logs: {}, gpu: { used: null, total: null, free: null, util: null, sf3d: false },
-  finished: 0, selected: null,
+  finished: 0, objects: 0, selected: null,
 });
 const ended = (t?: TaskSummary) => !!t && ['done', 'error', 'cancelled'].includes(t.status);
 type Finish = (t: TaskSummary) => void;
@@ -105,6 +106,8 @@ export function connect() {
         });
       } else if (ev.type === 'gpu') {
         live.set((s) => ({ ...s, gpu: ev.gpu }));
+      } else if (ev.type === 'objects') {
+        live.set((s) => ({ ...s, objects: s.objects + 1, finished: s.finished + 1 }));
       }
     };
   };

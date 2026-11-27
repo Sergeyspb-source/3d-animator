@@ -2,11 +2,12 @@
 // the model released last from Check; the draft worked on in Check, while it is not released, is named on top.
 import { useEffect, useState } from 'react';
 import { Alert, Button, ScrollArea, Select, Stack, Text } from '@mantine/core';
-import { IconFolder } from '@tabler/icons-react';
+import { IconFolder, IconTrash } from '@tabler/icons-react';
 import { fileUrl, get, live, post, useStore, type ModelInfo } from '../api';
 import { useT } from '../i18n';
 import Viewer3D from '../components/Viewer3D';
-import { CAT_KEY, ModelFacts, ModelList } from './ModelCheck';
+import { CAT_KEY, ModelFacts, ModelList, TickBar } from './ModelCheck';
+import { askRemove } from '../components/RemoveModels';
 import type { Route } from '../nav';
 import { ZoomImage } from '../components/Zoom';
 
@@ -19,6 +20,7 @@ export default function ModelRelease({ go }: { go: (r: Route) => void }) {
   const [cat, setCat] = useState('all');
   const [sel, setSel] = useState<string | null>(() => stored('sf3d.release_sel'));
   const [drafts, setDrafts] = useState<ModelInfo[]>([]);
+  const ticks = useState<Set<string>>(new Set());
   useEffect(() => { get<ModelInfo[]>('/api/models/released').then(setItems); get<ModelInfo[]>('/api/models/drafts').then(setDrafts).catch(() => setDrafts([])); }, [finished]);
   const checking = stored('sf3d.check_sel');
   const draft = drafts.find((d) => `${d.category}/${d.stem}` === checking) ?? null;   // (the one worked on in Check, not released yet)
@@ -34,7 +36,8 @@ export default function ModelRelease({ go }: { go: (r: Route) => void }) {
             <Text size="xs">{t('web.release_still_draft', draft.stem)}</Text>
             <Button size="compact-xs" mt={6} variant="default" onClick={() => go({ section: 'models', step: 'check' })}>{t('web.release_to_check')}</Button>
           </Alert>)}
-        <ModelList items={shown} sel={m ? `${m.category}/${m.stem}` : null} onPick={(x) => setSel(`${x.category}/${x.stem}`)} empty={t('web.no_released')} />
+        {shown.length > 0 && <TickBar items={shown} checked={ticks} draft={false} />}
+        <ModelList items={shown} sel={m ? `${m.category}/${m.stem}` : null} onPick={(x) => setSel(`${x.category}/${x.stem}`)} empty={t('web.no_released')} checked={ticks} />
       </div>
       <div className="stage"><Viewer3D url={m ? fileUrl(m.glb, m.time) : null} empty={t('web.no_released')} person /></div>
       <ScrollArea className="panel">
@@ -45,6 +48,7 @@ export default function ModelRelease({ go }: { go: (r: Route) => void }) {
             {m.preview && <ZoomImage src={m.preview} url={fileUrl(m.preview, m.time)} caption={t('web.zoom_views')} radius="sm" />}
             <div className="field-note">{m.files.join(', ')}</div>
             <Button variant="default" leftSection={<IconFolder size={16} />} onClick={() => post('/api/open', { path: m.dir })}>{t('ui.char_open_folder')}</Button>
+            <Button variant="subtle" color="rust" leftSection={<IconTrash size={16} />} onClick={() => askRemove([{ id: `${m.category}/${m.stem}`, draft: false }])}>{t('web.rm_one')}</Button>
             <Text size="xs" c="dimmed">{t('web.release_game_note')}</Text>
           </Stack>)}
       </ScrollArea>

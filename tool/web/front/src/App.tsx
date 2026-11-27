@@ -15,6 +15,7 @@ import { ObjectsProvider, useObjects } from './objects';
 import { Guard } from './components/ErrorBoundary';
 import { useUndoToFrames } from './undo';
 import { ZoomHost } from './components/Zoom';
+import { RemoveHost } from './components/RemoveModels';
 import ModelCreate from './screens/ModelCreate';
 import ModelCheck from './screens/ModelCheck';
 import ModelImprove from './screens/ModelImprove';
@@ -114,6 +115,7 @@ export default function App({ initial }: { initial: AppState }) {
         <AppShell.Footer><Guard compact><Dock open={dockOpen} toggle={() => setDockOpen(!dockOpen)} /></Guard></AppShell.Footer>
       </AppShell>
       <ZoomHost />
+      <RemoveHost />
       <Spotlight actions={actions} shortcut={['mod + K']} nothingFound={t('web.nothing_found')} highlightQuery
         searchProps={{ leftSection: <IconSearch size={18} />, placeholder: t('web.search_ph') }} />
     </ObjectsProvider>

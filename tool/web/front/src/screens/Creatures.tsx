@@ -2,7 +2,7 @@
 // the markup viewer whose requests move the joints, mark the jaw and put the eyes in), its clips, its colouring, the
 // Godot view. Each page of the app works here unchanged; its requests come through the hidden fields below it.
 import { useEffect, useRef, useState } from 'react';
-import { Button, Checkbox, FileButton, Group, Modal, ScrollArea, SegmentedControl, Stack, Text, UnstyledButton, useMantineColorScheme } from '@mantine/core';
+import { Button, Checkbox, FileButton, Group, ScrollArea, SegmentedControl, Stack, Text, UnstyledButton, useMantineColorScheme } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconFolder, IconPlus, IconTrash } from '@tabler/icons-react';
 import { fileUrl, get, live, onTaskFinished, post, upload, useStore, type TaskSummary } from '../api';
@@ -12,6 +12,7 @@ import type { Route } from '../nav';
 import EditorFrame from '../components/EditorFrame';
 import Viewer3D from '../components/Viewer3D';
 import { ZoomImage } from '../components/Zoom';
+import { askRemove, ObjectsChecklist } from '../components/RemoveModels';
 
 interface CrOverview {
   id: string; name: string; dir: string; source: string | null; rigged: string | null;
@@ -48,19 +49,12 @@ export function CrOverviewScreen({ go }: { go: (r: Route) => void }) {
   const t = useT();
   const objs = useObjects();
   const { id, o } = useCreature();
-  const [ask, setAsk] = useState(false);
   const add = async (f: File | null) => {
     if (!f) return;
     const [up] = await upload([f]);
     const r = await post<{ ok: boolean; id?: string; log?: string }>('/api/cr/add', { path: up.path });
     if (!r.ok || !r.id) { notifications.show({ color: 'rust', message: r.log || '' }); return; }
     objs.refresh(); objs.choose(r.id);
-  };
-  const del = async () => {
-    if (!o) return;
-    const r = await post<{ ok: boolean; log: string }>('/api/char/delete', { id: o.id });
-    setAsk(false); notifications.show({ color: r.ok ? 'gray' : 'rust', message: r.log });
-    if (r.ok) { objs.choose(null); objs.refresh(); }
   };
   const row = (title: string, state: string, ok: boolean, step: string, note?: string) => (
     <UnstyledButton className="ov-row" onClick={() => go({ section: 'creatures', step })}>
@@ -89,15 +83,14 @@ export function CrOverviewScreen({ go }: { go: (r: Route) => void }) {
             <FileButton onChange={add} accept=".glb">{(p) => <Button {...p} variant="default" leftSection={<IconPlus size={16} />}>{t('ui.char_add')}</Button>}</FileButton>
             {o && <Button variant="default" leftSection={<IconFolder size={16} />} onClick={() => post('/api/open', { path: o.dir })}>{t('ui.char_open_folder')}</Button>}
           </Group>
-          {o && <Button variant="subtle" color="rust" leftSection={<IconTrash size={16} />} onClick={() => setAsk(true)}>{t('ui.char_delete')}</Button>}
+          {o && <Button variant="subtle" color="rust" leftSection={<IconTrash size={16} />} onClick={() => askRemove([{ id: o.id, draft: false }])}>{t('ui.char_delete')}</Button>}
+          {objs.creatures.length > 0 && (
+            <details className="files">
+              <summary>{t('web.rm_manage', objs.creatures.length)}</summary>
+              <ObjectsChecklist list={objs.creatures} />
+            </details>)}
         </Stack>
       </ScrollArea>
-      <Modal opened={ask} onClose={() => setAsk(false)} title={t('web.delete_title')} centered>
-        <Stack>
-          <Text size="sm">{o ? t('web.delete_text', o.name, o.dir) : ''}</Text>
-          <Group justify="flex-end"><Button variant="default" onClick={() => setAsk(false)}>{t('web.cancel')}</Button><Button color="rust" onClick={del}>{t('ui.char_delete')}</Button></Group>
-        </Stack>
-      </Modal>
     </div>
   );
 }

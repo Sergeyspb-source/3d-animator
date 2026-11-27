@@ -70,9 +70,11 @@ def add(path: str) -> dict:
     return {"ok": bool(value), "id": value, "log": value or ""}
 
 
-def delete(value: str) -> dict:
-    ok = UI._delete_model(value)   # (only a folder of export/character, checked there)
-    return {"ok": bool(ok), "log": _t("web.char_deleted", value) if ok else _t("web.char_not_deleted", value)}
+def delete(value: str, active=()) -> dict:
+    """The character with every trace, into the Recycle Bin (web/remove.py; the page asks through /api/models/remove)."""
+    import remove as RM
+    r = RM.remove([{"id": value, "draft": False}], active)
+    return {"ok": r["ok"], "log": _t("web.char_deleted", value) if r["ok"] else r["log"] or _t("web.char_not_deleted", value)}
 
 
 # ------------------------------------------------------------------ generator jobs of the app's handlers, as tasks

@@ -208,3 +208,7 @@ body { overflow: hidden; font-variant-numeric: tabular-nums; background: var(--r
   padding: 6px 8px; border-radius: 8px; background: var(--panel); border: 1px solid var(--seam); max-width: calc(100vw - 32px); }
 .zoom-cap { color: var(--mantine-color-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 40px; }
 .zoom-help { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); color: #a8adb5; text-align: center; padding: 0 16px; }
+/* deleting models (components/RemoveModels.tsx): each model with its paths and sizes */
+.rm-item { border: 1px solid var(--seam); border-radius: 6px; padding: 8px 10px; background: var(--lift); display: flex; flex-direction: column; gap: 3px; }
+.rm-item.off { opacity: .6; }
+.rm-path { padding-left: 10px; border-left: 2px solid var(--seam); }
