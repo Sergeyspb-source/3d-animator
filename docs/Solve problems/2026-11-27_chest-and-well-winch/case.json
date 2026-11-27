@@ -1,0 +1,73 @@
+{
+  "id": "2026-11-27_chest-and-well-winch",
+  "title_ru": "Как заставить сундук открываться, а ведро — опускаться в колодец?",
+  "title_en": "How do you make a chest open and a bucket go down a well?",
+  "hook_ru": "Цепь не умеет растягиваться, поэтому её собрали телескопом из восьми кусков, а старое ведро висело у края, потому что игра показывала копию копии.",
+  "status": "solved",
+  "date": "2026-11-27",
+  "sessions": [
+    {"name": "sand3d-research (claude/sand3d-research-c5af5c)", "id": ""},
+    {"name": "Расширение карты Home до большого мира (заказ колодца)", "id": "local_b6e54bdd-a00f-4d8a-b379-a81d691da2ec"}
+  ],
+  "commits": ["game:c00184be", "game:72300b0f", "game:95e93fb2"],
+  "tags": ["sand3d", "godot", "joints", "props", "interaction"],
+  "video": {
+    "potential": 4,
+    "why_ru": "Результат виден прямо в игре: крышка и ведро двигаются по E. Две смешные ловушки (сундук в стене, призрачное ведро) и хитрая цепь-телескоп.",
+    "wow_moment_ru": "Призрачное ведро: старое висит у края, а новая цепь уходит сквозь него в шахту — игра показывала копию декораций.",
+    "length_seconds": 100,
+    "thumbnail": {"image": "src/well_down_close.png", "text_ru": "ЦЕПЬ-ТЕЛЕСКОП"}
+  },
+  "numbers": [
+    {"what_ru": "Сундук: команды отрисовки", "before": 10, "after": 5, "unit_ru": "команд", "better": "lower",
+     "measured_on": "модель GLB", "note_ru": "сначала каждая деталь отдельно, потом склейка по материалу"},
+    {"what_ru": "Сундук: время открытия до 110°", "before": null, "after": 0.9, "unit_ru": "секунды", "better": "lower",
+     "measured_on": "игра Godot 4.7.2, ноутбук RTX 4060 8 ГБ, часы стенда", "note_ru": ""},
+    {"what_ru": "Сундук: треугольники", "before": null, "after": 1044, "unit_ru": "треугольника", "better": "lower",
+     "measured_on": "модель GLB", "note_ru": ""},
+    {"what_ru": "Ведро: высота дна", "before": 1.3, "after": -2.67, "unit_ru": "метра", "better": "lower",
+     "measured_on": "игра Godot 4.7.2, стенд", "note_ru": "вода на −2,5 м; после подъёма ровно 1,300 м"},
+    {"what_ru": "Ведро: время спуска", "before": null, "after": 2.6, "unit_ru": "секунды", "better": "lower",
+     "measured_on": "игра Godot 4.7.2, часы стенда", "note_ru": "2,5–2,6 с в разных прогонах"},
+    {"what_ru": "Колодец: команды отрисовки", "before": 0, "after": 13, "unit_ru": "команд", "better": "lower",
+     "measured_on": "модель GLB", "note_ru": "старый ворот был частью общих запечённых декораций"},
+    {"what_ru": "Колодец: треугольники", "before": null, "after": 7164, "unit_ru": "треугольника", "better": "lower",
+     "measured_on": "модель GLB", "note_ru": ""},
+    {"what_ru": "Вырезано из декораций", "before": null, "after": 1068, "unit_ru": "треугольников", "better": "lower",
+     "measured_on": "скрипт выреза", "note_ru": "248 дерева + 820 железа, в декорациях и в их копии для большой карты"}
+  ],
+  "media": [
+    {"file": "img/01_chest_shut_open.jpg", "clean": "src/chest_shut.png", "kind": "screenshot", "role": "after", "pair": "chest",
+     "caption_ru": "Сундук закрыт и открыт по E, одна камера. Чистые кадры: src/chest_shut.png и src/chest_open.png."},
+    {"file": "img/02_chest_yard.jpg", "clean": "src/chest_yard.png", "kind": "screenshot", "role": "context", "pair": "",
+     "caption_ru": "Сундук за трибунами тренировочного двора, у стены замка."},
+    {"file": "img/03_well_rest_down.jpg", "clean": "src/well_rest_close.png", "kind": "screenshot", "role": "after", "pair": "well-close",
+     "caption_ru": "Ведро наверху и в воде, одна камера. Чистые кадры: src/well_rest_close.png и src/well_down_close.png."},
+    {"file": "img/04_well_three_moments.jpg", "clean": "src/well_rest.png", "kind": "screenshot", "role": "result", "pair": "well-wide",
+     "caption_ru": "Покой, 1,6 секунды после E и низ, одна камера. Чистые кадры: src/well_rest.png, src/well_turning.png, src/well_down.png."},
+    {"file": "img/05_prompts_in_hud.jpg", "clean": "src/hud_chest_prompt.png", "kind": "screenshot", "role": "context", "pair": "",
+     "caption_ru": "Подсказки E у сундука и у колодца, как их видит игрок (снимки 1280×720 с HUD)."}
+  ],
+  "models": [
+    {"role": "after", "path": "game:assets/models/home/town_blocks/props/training_chest.glb", "label_ru": "Сундук тренировочного двора"},
+    {"role": "after", "path": "game:assets/models/home/town_blocks/props/market_well_winch.glb", "label_ru": "Лебёдка рыночного колодца"}
+  ],
+  "beats": [
+    {"n": 1, "seconds": 10, "say_ru": "В нашем городе почти ничего нельзя потрогать. Даже ворот у колодца — просто часть декорации.", "show": ["src/well_rest.png"]},
+    {"n": 2, "seconds": 15, "say_ru": "Пишем модель как программу и прямо в ней указываем, вокруг какой оси крутится деталь. Один общий скрипт двигает что угодно.", "show": ["diagram:программа sand3d → модель с петлями → общий скрипт → E двигает деталь"]},
+    {"n": 3, "seconds": 15, "say_ru": "Первым стал сундук. По плану двора он оказался внутри стены замка. Перенесли за трибуны. E — и крышка встаёт за секунду.", "show": ["src/chest_yard.png", "src/chest_shut.png", "src/chest_open.png"]},
+    {"n": 4, "seconds": 20, "say_ru": "У колодца засада: цепь не растягивается. Собрали телескоп из восьми кусков, шаг — восемь звеньев, внизу звенья совпадают.", "show": ["diagram:восемь кусков цепи, каждый опускается на k/8 пути ведра", "src/well_turning.png"]},
+    {"n": 5, "seconds": 20, "say_ru": "Старый ворот вырезали, а старое ведро всё висит у края, и наша цепь проходит сквозь него. Игра показывала копию декораций для большой карты.", "show": ["diagram:декорации → копия для большой карты → игра"]},
+    {"n": 6, "seconds": 15, "say_ru": "Вырезали и там. Теперь ведро уходит в воду и возвращается ровно на место.", "show": ["src/well_rest_close.png", "src/well_down_close.png", "model:after"]}
+  ],
+  "reproduce_in_app": [
+    "Это не приложение SF3D, а сама игра.",
+    "Дом → тренировочный двор → за трибунами у стены замка сундук → подойти, E открывает и закрывает.",
+    "Дом → рыночная площадь → колодец → подойти к кольцу, E опускает ведро, E ещё раз поднимает."
+  ],
+  "regenerate": [
+    "Скопировать src/zz_case_shots_tmp.gd в tests/ игры, затем: powershell -File \"docs/Solve problems/2026-11-27_chest-and-well-winch/src/run_case_shots.ps1\" (в скрипте поправить путь к копии игры). После съёмки удалить tests/zz_case_shots_tmp.gd.",
+    "D:\\conda\\envs\\sf3d\\python.exe \"docs/Solve problems/_tools/sheet.py\" img/01_chest_shut_open.jpg \"Закрыт\" src/chest_shut.png \"Открыт по E: крышка на 110°\" src/chest_open.png --cols 2",
+    "D:\\conda\\envs\\sf3d\\python.exe \"docs/Solve problems/_tools/sheet.py\" img/04_well_three_moments.jpg \"Покой\" src/well_rest.png \"Через 1,6 с: ведро в шахте\" src/well_turning.png \"Внизу\" src/well_down.png --cols 3"
+  ]
+}
