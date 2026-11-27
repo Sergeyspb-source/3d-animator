@@ -1,0 +1,254 @@
+{
+ "id": "2026-11-18_armour-by-body-slots",
+ "title_ru": "Почему удар в кирасу не ранит, а такой же удар по голой груди снимает 20 здоровья?",
+ "title_en": "Why does a blow on a cuirass do nothing, while the same blow on a bare chest takes 20 health?",
+ "hook_ru": "Пять ударов по 200 кираса держит, не пропуская ни капли. Шестой ломает её, и до тела доходит сразу 130.",
+ "status": "solved",
+ "date": "2026-11-18",
+ "sessions": [
+  {
+   "name": "Новая модель героя: латник с бронёй по частям тела (эта сессия)",
+   "id": null
+  },
+  {
+   "name": "Расширение карты Home до большого мира (дала задачу; правила попаданий G-D090)",
+   "id": "local_b6e54bdd-a00f-4d8a-b379-a81d691da2ec"
+  }
+ ],
+ "commits": [
+  "game:cd9fa813",
+  "game:e5d5d84f",
+  "game:ac8b5b4d"
+ ],
+ "tags": [
+  "armour",
+  "combat",
+  "godot",
+  "balance"
+ ],
+ "video": {
+  "potential": 3,
+  "why_ru": "Понятная игровая механика с живыми цифрами: зритель видит, как броня тает и ломается.",
+  "wow_moment_ru": "Пять ударов по 200 без единой царапины, и шестой — сразу 130 по телу, кираса исчезает с модели.",
+  "length_seconds": 80,
+  "thumbnail": {
+   "image": "src/s2_cuirass_broken.png",
+   "text_ru": "ШЕСТОЙ УДАР"
+  }
+ },
+ "numbers": [
+  {
+   "what_ru": "Урон по телу от удара 20 в грудь",
+   "before": 20,
+   "after": 0,
+   "unit_ru": "здоровья",
+   "better": "lower",
+   "measured_on": "манекен брони, зерно 90, 27.11",
+   "run": null,
+   "note_ru": "before — без брони, after — в стальной кирасе (−5 прочности)"
+  },
+  {
+   "what_ru": "Прочность кирасы после 5 ударов по 200",
+   "before": 260,
+   "after": 10,
+   "unit_ru": "прочности",
+   "better": null,
+   "measured_on": "манекен брони, зерно 90",
+   "run": null,
+   "note_ru": "по телу за эти 5 ударов — 0"
+  },
+  {
+   "what_ru": "Урон по телу от 6-го удара 200",
+   "before": 0,
+   "after": 130,
+   "unit_ru": "здоровья",
+   "better": null,
+   "measured_on": "манекен брони, зерно 90",
+   "run": null,
+   "note_ru": "before — удары 1–5; кираса задержала 40, рубаха 30"
+  },
+  {
+   "what_ru": "Слотов брони на теле",
+   "before": 1,
+   "after": 15,
+   "unit_ru": "слотов",
+   "better": "higher",
+   "measured_on": "data/combat/armor_pieces.json",
+   "run": null,
+   "note_ru": "частей брони и одежды — 16"
+  },
+  {
+   "what_ru": "Укусов нургла до смерти: без брони и в полных латах",
+   "before": 16,
+   "after": 161,
+   "unit_ru": "укусов",
+   "better": "higher",
+   "measured_on": "замер главной ветки 16.11 (G-D090): 400 прогонов, укус 8, здоровье 100",
+   "run": null,
+   "note_ru": "в одежде 23, в кольчуге и коже 32"
+  }
+ ],
+ "media": [
+  {
+   "file": "img/01_kits.jpg",
+   "clean": "src/s2_kit_full_plate.png",
+   "kind": "render",
+   "role": "context",
+   "pair": "kits-front",
+   "caption_ru": "Полные латы, 15 частей"
+  },
+  {
+   "file": "img/01_kits.jpg",
+   "clean": "src/s2_kit_mail_and_leather.png",
+   "kind": "render",
+   "role": "context",
+   "pair": "kits-front",
+   "caption_ru": "Кольчуга и кожа, 5 частей"
+  },
+  {
+   "file": "img/01_kits.jpg",
+   "clean": "src/s2_kit_clothes.png",
+   "kind": "render",
+   "role": "context",
+   "pair": "kits-front",
+   "caption_ru": "Одежда, 2 части"
+  },
+  {
+   "file": "img/01_kits.jpg",
+   "clean": "src/s2_kit_naked.png",
+   "kind": "render",
+   "role": "context",
+   "pair": "kits-front",
+   "caption_ru": "Без брони"
+  },
+  {
+   "file": "img/02_dummy.jpg",
+   "clean": "src/s2_dummy_log.png",
+   "kind": "screenshot",
+   "role": "result",
+   "pair": null,
+   "caption_ru": "Манекен: слоты и прочность слева, журнал ударов справа; рубаха сломана"
+  },
+  {
+   "file": "img/03_cuirass_broken.jpg",
+   "clean": "src/s2_kit_full_plate.png",
+   "kind": "render",
+   "role": "before",
+   "pair": "cuirass-front",
+   "caption_ru": "Кираса целая"
+  },
+  {
+   "file": "img/03_cuirass_broken.jpg",
+   "clean": "src/s2_cuirass_broken.png",
+   "kind": "render",
+   "role": "after",
+   "pair": "cuirass-front",
+   "caption_ru": "Кираса сломана и снята с модели, под ней рубаха"
+  },
+  {
+   "file": "img/04_dummy_cuirass_broke.jpg",
+   "clean": "src/s2_dummy_cuirass_broke.png",
+   "kind": "screenshot",
+   "role": "result",
+   "pair": null,
+   "caption_ru": "Шестой удар по 200: кираса и рубаха сломаны, по телу 130"
+  },
+  {
+   "file": null,
+   "clean": "src/s2_dummy_start.png",
+   "kind": "screenshot",
+   "role": "context",
+   "pair": null,
+   "caption_ru": "Манекен до ударов: полные латы, прочность у всех частей целая"
+  }
+ ],
+ "models": [
+  {
+   "role": "after",
+   "path": "game:assets/models/hero/man_test/man_muscul.glb",
+   "label_ru": "Латник (тело)",
+   "height_m": 1.8,
+   "front_yaw_deg": 0,
+   "quirks_ru": "в файле рост 1 м, в игре масштаб 1,8; поза покоя «Т»; броня — отдельные файлы"
+  },
+  {
+   "role": "reference",
+   "path": "game:assets/models/hero/man_test/armor/cuirass_steel_2.glb",
+   "label_ru": "Стальная кираса",
+   "height_m": 1.8,
+   "front_yaw_deg": 0,
+   "quirks_ru": "внутри полный скелет латника, кираса привязана к нему; без тела висит в воздухе на высоте груди; рядом .mask.json — какие точки тела она закрывает"
+  }
+ ],
+ "beats": [
+  {
+   "n": 1,
+   "seconds": 13,
+   "say_ru": "Раньше доспех героя был одной вещью. Он просто срезал весь урон на сколько-то процентов. А пользователь захотел иначе: подбирать броню по частям, покупать отдельно шлем, наручи, поножи.",
+   "sub_ru": "Было: 1 слот брони = общий множитель урона",
+   "show": [
+    "img/01_kits.jpg"
+   ]
+  },
+  {
+   "n": 2,
+   "seconds": 12,
+   "say_ru": "Так у тела появилось пятнадцать слотов, от головы до ступней. В каждом своя часть брони со своей прочностью. Помятая кираса не значит помятый шлем: у каждой части свой запас.",
+   "sub_ru": "15 слотов · у каждой части своя прочность",
+   "show": [
+    "src/s2_dummy_start.png"
+   ]
+  },
+  {
+   "n": 3,
+   "seconds": 12,
+   "say_ru": "Проверяем на манекене. Удар в голую грудь — двадцать урона, всё по телу. Тот же удар в кирасу — ноль по телу, а кираса теряет пять прочности из двухсот шестидесяти.",
+   "sub_ru": "Голая грудь: 20 → 20 по телу. Кираса: 20 → 0, прочность 260 → 255",
+   "show": [
+    "src/s2_kit_naked.png",
+    "src/s2_kit_full_plate.png",
+    "img/02_dummy.jpg"
+   ]
+  },
+  {
+   "n": 4,
+   "seconds": 12,
+   "say_ru": "Латы гасят удар легко: тратят только четверть его силы. Кольчуга тратит почти половину, ткань — всю. Рубаха выдерживает один удар, на втором ломается, и остаток уходит в тело.",
+   "sub_ru": "Износ: латы 0,25 · кольчуга 0,45 · кожа 0,7 · ткань 1. Рубаха 30: −20, потом сломана, 10 по телу",
+   "show": [
+    "diagram:удар → есть броня? → щель? → часть держит и теряет прочность / ломается → остаток по телу",
+    "src/s2_kit_clothes.png"
+   ]
+  },
+  {
+   "n": 5,
+   "seconds": 8,
+   "say_ru": "Теперь бьём по латам изо всех сил: двести урона. Первый удар, второй, пятый — по телу ноль, только кираса тает.",
+   "sub_ru": "200 ×5: по телу 0, кираса 260 → 10",
+   "show": [
+    "src/s2_dummy_cuirass_broke.png"
+   ]
+  },
+  {
+   "n": 6,
+   "seconds": 12,
+   "say_ru": "Шестой удар её ломает. Кираса исчезает с модели, остаток пробивает рубаху, и до тела доходит сразу сто тридцать. Броня держит до последнего, а потом сдаётся вся сразу.",
+   "sub_ru": "6-й удар: кираса −10 (держит 40), рубаха −30, по телу 130",
+   "show": [
+    "img/03_cuirass_broken.jpg",
+    "img/04_dummy_cuirass_broke.jpg"
+   ]
+  }
+ ],
+ "reproduce_in_app": [
+  "Редактор Godot: открыть game/combat/anatomy/armour_dummy.tscn, F6",
+  "Слева «Набор: Без брони», кнопка «Грудь»; затем «Полные латы», «Грудь»",
+  "«Базовый урон» 200, шесть раз «Грудь»",
+  "В игре: -- --hero-model=man --hero-kit=full_plate, клавиша «'» меняет набор"
+ ],
+ "regenerate": [
+  "Кадры манекена: .scratch/hero_story/dummy_stand.gd в папке игры (не в git), tools/run_queued.ps1 -Lane godot -Exe <godot> --path . --resolution 1280x720 --script res://.scratch/hero_story/dummy_stand.gd",
+  "Кадры латника: .scratch/hero_story/stand.gd + shots.json (s2_*)",
+  "D:\\conda\\envs\\sf3d\\python.exe \"docs/Solve problems/_tools/sheet.py\" img/01_kits.jpg \"Полные латы\" src/s2_kit_full_plate.png \"Кольчуга и кожа\" src/s2_kit_mail_and_leather.png \"Одежда\" src/s2_kit_clothes.png \"Без брони\" src/s2_kit_naked.png --cols 4 --crop"
+ ]
+}
