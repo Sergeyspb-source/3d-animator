@@ -116,6 +116,8 @@ class Field:
         me.calc_loop_triangles()
         self.tris = [tuple(t.vertices) for t in me.loop_triangles]
         self.bvh = BVHTree.FromPolygons(self.W, self.tris)
+        M3 = M.to_3x3()
+        self.N = [(M3 @ v.normal).normalized() for v in me.vertices]
         self.groups = [{g.group: g.weight for g in v.groups if g.weight > 1e-4} for v in me.vertices]
         self.keys = []
         sk = me.shape_keys
@@ -268,6 +270,7 @@ def build(face, solved, balls, job, src_me, base_pixels):
     bm.to_mesh(me)
     bm.free()
     me.update()
+    rep["seam_normals"] = _seam_normals(face, field, bake) if job.get("lid_seam_normals", True) else 0
     # the texture: the face's colours where the patch lies on skin, the rest filled from them
     for b in bake:
         _bake(b, src, tex, known)
@@ -323,6 +326,48 @@ def _peel(face, solved, times):
     bm.free()
     me.update()
     return gone
+
+
+def _seam_normals(face, field, outs):
+    """one shading across the old skin's edge over the lid: the corners there (the old skin's and the lid's under it,
+    within a band round the cut's loop, on the skin as it was) get the face's own smooth normal at their place - else
+    the edge read as a line: the old skin's normals and the lid's differ"""
+    me = face.data
+    M = face.matrix_world
+    M3i = M.inverted().to_3x3()
+    W = [M @ v.co for v in me.vertices]
+    try:
+        cn = [Vector(x.vector) for x in me.corner_normals]
+    except AttributeError:
+        return 0
+    changed = 0
+    for o in outs:
+        fine, c, r = o["fine"], o["c"], o["r"]
+        near = {}
+        for vi, p in enumerate(W):
+            if math.hypot(p.x - c.x, p.z - c.z) > 4. * r:
+                continue
+            if seg_dist2(p.x, p.z, fine) > .3 * r:
+                continue
+            loc, n_, ti, dist = field.bvh.find_nearest(p)
+            if loc is None or dist > .06 * r:
+                continue
+            vs = field.tris[ti]
+            w = poly_3d_calc([field.W[j] for j in vs], loc)
+            n = sum((field.N[j] * float(x) for j, x in zip(vs, w)), Vector()).normalized()
+            near[vi] = n
+        for li, lp in enumerate(me.loops):
+            n = near.get(lp.vertex_index)
+            if n is None:
+                continue
+            nl = (M3i @ n).normalized()
+            if nl.dot(cn[li]) < 0:
+                nl = -nl
+            cn[li] = nl
+            changed += 1
+    if changed:
+        me.normals_split_custom_set([tuple(v) for v in cn])
+    return changed
 
 
 def _skin_colour(src, sv):
@@ -477,7 +522,8 @@ def _one_eye(bm, Mo, sd, sv, balls, job, field, src, deform, shape, uvl, mats, b
         gx, gz = x + dx / d * g * r, z + dz / d * g * r
         if mid_x is not None and (gx - c.x) * (mid_x - c.x) > 0:   # (toward the nose: short of the face's middle,
             # each loop shorter than the next out - on one line the band between them came out folded flat)
-            lim = (.7 if cut else .55 + .29 * min(1., g3[2] / GROW["orb2"][2])) * abs(mid_x - c.x)
+            top_ = float(job.get("lid_nose", .84))
+            lim = (.7 if cut else .55 + (top_ - .55) * min(1., g3[2] / GROW["orb2"][2])) * abs(mid_x - c.x)
             if abs(gx - c.x) > lim:
                 gx = c.x + math.copysign(lim, gx - c.x)
         return gx, gz
@@ -540,12 +586,21 @@ def _one_eye(bm, Mo, sd, sv, balls, job, field, src, deform, shape, uvl, mats, b
     # them: its edge lies over the patch, pressed onto it - nothing to weld. (Zipped to the cut's edge the band met
     # every layer the source has there - a fold under a brow, its inner shells, a flap by the temple - and left holes
     # here and there, a different few on every model)
+    def outward(p):   # (the skin's normal there, out of the head: a short ray that way meets no skin)
+        loc, n, _i, _d = skin_bvh.find_nearest(p)
+        if loc is None:
+            return (p - c).normalized()
+        n = n.normalized()
+        if skin_bvh.ray_cast(loc + n * (.01 * r), n, .3 * r)[0] is not None:
+            n = -n
+        return n
     for k in range(len(RINGS)):
         for i in range(N):
             s_ = share(k, i)
-            if s_ > 0.:
+            if s_ > 0.:   # (under the skin along its own normal: on a steep wall - the nose's side - the line from
+                # the ball's centre runs along the skin, and the lid's edge stood off it in a dark slit)
                 p = rings[k][i]
-                rings[k][i] = p - (p - c).normalized() * ((.02 if k == len(RINGS) - 1 else .012) * r * s_)
+                rings[k][i] = p - outward(p) * ((.02 if k == len(RINGS) - 1 else .012) * r * s_)
     cut2 = [grown(CUT, i, True) for i in range(N)]
     for _ in range(2):
         cut2 = [(cut2[i][0] * .5 + (cut2[i - 1][0] + cut2[(i + 1) % N][0]) * .25,
@@ -615,17 +670,62 @@ def _one_eye(bm, Mo, sd, sv, balls, job, field, src, deform, shape, uvl, mats, b
                 bmesh.ops.connect_verts(bm, verts=cv)
             except Exception:  # noqa: BLE001
                 pass
-    kill = [f for f in bm.faces if not any(v in patch for v in f.verts) and (lambda q: ins(q) and band(q))(Mo @ f.calc_center_median())]
+    M3_ = Mo.to_3x3()
+    side_keep = float(job.get("lid_side_keep", 0.))
+
+    def goes(f):   # (inside the loop, near the patch; by the loop not a face turned sideways - the nose's side wall: the
+        # lid lay on another part of it and a slit stayed open between them)
+        q = Mo @ f.calc_center_median()
+        if not (ins(q) and band(q)):
+            return False
+        if side_keep > 0 and seg_dist2(q.x, q.z, fine) < .35 * r and abs((M3_ @ f.normal).normalized().y) < side_keep:
+            return False
+        return True
+    kill = [f for f in bm.faces if not any(v in patch for v in f.verts) and goes(f)]
     bmesh.ops.delete(bm, geom=kill, context="FACES")
     bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces and math.hypot(P(v).x - c.x, P(v).z - c.z) < 6 * r], context="VERTS")
     # the old skin's new edge pressed onto the patch (from outside, along the line from the ball's centre): its outer
     # layer only - the inner ones' edges stay under the patch, unseen
     dl = lambda p: seg_dist2(p.x, p.z, fine)   # noqa: E731
     shapes_ = list(bm.verts.layers.shape.values())
+    M3i_ = Moi.to_3x3()
+
+    def move(v, d_world):
+        dlt = M3i_ @ d_world
+        v.co += dlt
+        for lay in shapes_:
+            v[lay] += dlt
+    # (the edge as cut is ragged - a face not split leaves a tooth -, its twins along the unwrap's seams apart: it
+    # read as a jagged line over the lid. Twins welded, teeth off, the edge relaxed along itself)
+    ev = [v for v in bm.verts if v.is_boundary and v not in patch and dl(P(v)) < .1 * r]
+    if ev:
+        bmesh.ops.remove_doubles(bm, verts=ev, dist=.004 * r)
+    def over(q, tol=.05):   # (the lid right under it, along the line to the ball's centre - not just beside its edge)
+        d_ = (q - c).normalized()
+        h_ = pbvh.ray_cast(q + d_ * (.2 * r), -d_, .4 * r)
+        return h_[0] is not None and (h_[0] - q).length < tol * r
+    for _ in range(2 if job.get("lid_edge_clean", False) else 0):   # (only over the lid: past its edge a tooth off was a hole)
+        teeth = [f for f in bm.faces if not any(v in patch for v in f.verts) and dl(Mo @ f.calc_center_median()) < .15 * r
+                 and sum(1 for e in f.edges if e.is_boundary) >= 2 and all(over(P(v)) for v in f.verts)]
+        if not teeth:
+            break
+        bmesh.ops.delete(bm, geom=teeth, context="FACES")
+        bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces and math.hypot(P(v).x - c.x, P(v).z - c.z) < 6 * r], context="VERTS")
+    for _ in range(6 if job.get("lid_edge_clean", False) else 0):
+        ring_ = {}
+        for v in bm.verts:
+            if v.is_boundary and v not in patch and dl(P(v)) < .2 * r:
+                nb_ = [e.other_vert(v) for e in v.link_edges if e.is_boundary]
+                if len(nb_) == 2:
+                    ring_[v] = (P(nb_[0]) + P(nb_[1])) * .5
+        for v, m_ in ring_.items():
+            to = P(v) + (m_ - P(v)) * .5
+            if over(to, .08):   # (it stays over the lid)
+                move(v, to - P(v))
     snapped = 0
     for v in [v for v in bm.verts if v.is_boundary and v not in patch]:
         p = P(v)
-        if dl(p) > .06 * r or not band(p):
+        if dl(p) > .12 * r or not band(p):
             continue
         d = (p - c).normalized()
         h = pbvh.ray_cast(p + d * (1.5 * r), -d, 3. * r)
@@ -776,10 +876,12 @@ def _one_eye(bm, Mo, sd, sv, balls, job, field, src, deform, shape, uvl, mats, b
             faces.append(f)
     # the winding: the lid's rows face out, away from the ball
     out_, in_ = 0, 0
-    for f in faces:
+    M3n = Mo.to_3x3().inverted().transposed()
+    for f in faces:   # (a new face's normal is not there until it is computed: read as zero, nothing was ever turned)
+        f.normal_update()
         k_ = pidx_k.get(f)
         if k_ is not None and IW + 1 <= k_ <= IW + 4:
-            if f.normal.dot(Mo.inverted().to_3x3() @ (f.calc_center_median() - Moi @ c)) >= 0:
+            if (M3n @ f.normal).dot(Mo @ f.calc_center_median() - c) >= 0:
                 out_ += 1
             else:
                 in_ += 1
@@ -793,7 +895,7 @@ def _one_eye(bm, Mo, sd, sv, balls, job, field, src, deform, shape, uvl, mats, b
     outline2 = [(p.x, p.z) for p in curve]
     report = {"columns": N, "rings": len(RINGS), "cut_faces": len(kill), "edge_snapped": snapped, "flipped": bool(flip),
               "clamped_corners": clamped, "bulge": round(bulge / r, 3)}
-    return {"report": report, "grid": grid, "shares": shares, "block": (y0, TH1, TW), "N": N, "outline": outline2,
+    return {"report": report, "grid": grid, "shares": shares, "block": (y0, TH1, TW), "N": N, "outline": outline2, "fine": fine, "c": c,
             "r": r, "crease": [k for k, x in enumerate(RINGS) if x[0] == "crease"][0], "is_up": is_up}
 
 
