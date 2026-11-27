@@ -1,0 +1,78 @@
+{
+  "id": "2026-11-26_palette-match-picture",
+  "title_ru": "Почему зелёный гоблин стал коричневым и как вернуть ему цвет?",
+  "title_en": "Why did the green goblin turn brown, and how do you give him his colour back?",
+  "hook_ru": "Подгонка цвета честно сравнивала модель с картинкой — только смотрела ещё и на спину, которой на картинке нет.",
+  "status": "solved",
+  "date": "2026-11-26",
+  "sessions": [
+    {"name": "TRELLIS.2 — проверка и встраивание", "id": "запущена из local_e34b3455"},
+    {"name": "Правки проекта (координатор, передал замечание пользователя)", "id": "local_e34b3455"}
+  ],
+  "commits": ["462597d"],
+  "tags": ["trellis", "color", "texture", "albedo"],
+  "video": {
+    "potential": 4,
+    "why_ru": "Наглядное «было/стало» на одном персонаже, простая причина (смотрели на спину, которой нет на картинке) и ловушка с тёплым освещением.",
+    "wow_moment_ru": "Коричневый гоблин рядом с картинкой — щелчок — и кожа становится оливковой, как на рисунке.",
+    "length_seconds": 75,
+    "thumbnail": {"image": "src/goblin_after_tex_front.png", "text_ru": "ВЕРНУЛИ ЦВЕТ"}
+  },
+  "numbers": [
+    {"what_ru": "Оттенок кожи гоблина (картинка 85°)", "before": 65, "after": 84, "unit_ru": "градусов", "better": "higher",
+     "measured_on": "текстура, видимая спереди, Lab", "note_ru": "старая подгонка 0,7 давала 77°"},
+    {"what_ru": "Светлота гоблина (картинка 51)", "before": 40, "after": 51, "unit_ru": "из 100", "better": "higher",
+     "measured_on": "текстура, видимая спереди, Lab", "note_ru": ""},
+    {"what_ru": "Светлота рыцаря (картинка 47)", "before": 28, "after": 47, "unit_ru": "из 100", "better": "higher",
+     "measured_on": "текстура, видимая спереди, Lab", "note_ru": ""},
+    {"what_ru": "Светлота таверны (картинка 31)", "before": 15, "after": 31, "unit_ru": "из 100", "better": "higher",
+     "measured_on": "текстура, видимая спереди, Lab", "note_ru": ""},
+    {"what_ru": "Во сколько раз TRELLIS темнее картинки", "before": 2.2, "after": 1.0, "unit_ru": "раз", "better": "lower",
+     "measured_on": "светлота Lab, 4 модели 24 ноября", "note_ru": "до подгонки — от 1,4 до 2,2 раза"}
+  ],
+  "media": [
+    {"file": "img/01_goblin_before_after.jpg", "clean": "src/goblin_before_tex_front.png", "kind": "render", "role": "before",
+     "pair": "goblin-front", "caption_ru": "Гоблин от TRELLIS.2 как есть: коричневый"},
+    {"file": "img/01_goblin_before_after.jpg", "clean": "src/goblin_after_tex_front.png", "kind": "render", "role": "after",
+     "pair": "goblin-front", "caption_ru": "После подгонки: оливковый, как на картинке"},
+    {"file": "img/01_goblin_before_after.jpg", "clean": "src/goblin_before_tex_q34.png", "kind": "render", "role": "before",
+     "pair": "goblin-q34", "caption_ru": "Гоблин в три четверти, до"},
+    {"file": "img/01_goblin_before_after.jpg", "clean": "src/goblin_after_tex_q34.png", "kind": "render", "role": "after",
+     "pair": "goblin-q34", "caption_ru": "Гоблин в три четверти, после"},
+    {"file": "img/02_knight_tavern.jpg", "clean": null, "kind": "render", "role": "result", "pair": null,
+     "caption_ru": "Рыцарь и таверна до и после подгонки"},
+    {"file": "img/03_warm_light_trap.jpg", "clean": null, "kind": "render", "role": "cause", "pair": null,
+     "caption_ru": "Тот же гоблин без освещения и под тёплым HDRI"},
+    {"file": "img/04_lightness_chart.png", "clean": null, "kind": "chart", "role": "result", "pair": null,
+     "caption_ru": "Светлота пяти моделей до и после против картинки"}
+  ],
+  "models": [
+    {"role": "before", "path": "work/trellis_test/colormatch/goblin_0.0.glb", "label_ru": "Гоблин TRELLIS.2 без подгонки"},
+    {"role": "attempt", "path": "work/trellis_test/colormatch/goblin_0.7.glb", "label_ru": "Гоблин, новая подгонка 0,7"},
+    {"role": "after", "path": "work/trellis_test/colormatch/goblin_1.0.glb", "label_ru": "Гоблин после подгонки 1,0"},
+    {"role": "reference", "path": "work/trellis/character/goblin_boy_7_years_old_tr2/raw_cutout.png", "label_ru": "Исходная картинка гоблина (вырезанная)"}
+  ],
+  "beats": [
+    {"n": 1, "seconds": 12, "say_ru": "Пользователь нарисовал зелёного гоблина и сделал из него 3D-модель новой нейросетью. Форма вышла отличная, а гоблин — коричневый.",
+     "show": ["work/trellis/character/goblin_boy_7_years_old_tr2/raw_cutout.png", "src/goblin_before_tex_front.png"]},
+    {"n": 2, "seconds": 14, "say_ru": "Подгонка цвета была, но не помогла. Оттенок на картинке — восемьдесят пять градусов, у модели — шестьдесят пять, подгонка дотягивала до семидесяти семи.",
+     "show": ["diagram:цветовой круг: 65° → 77° → 85°"]},
+    {"n": 3, "seconds": 14, "say_ru": "Она сравнивала с картинкой всю текстуру — со спиной, подошвами и подмышками, которых на картинке нет. И сдвигала цвета, а надо было повернуть оттенок.",
+     "show": ["diagram:текстура целиком против видимой спереди части"]},
+    {"n": 4, "seconds": 12, "say_ru": "Теперь программа смотрит только на видимую сторону и поворачивает оттенок. Восемьдесят четыре из восьмидесяти пяти. Гоблин снова зелёный.",
+     "show": ["img/01_goblin_before_after.jpg", "model:after"]},
+    {"n": 5, "seconds": 10, "say_ru": "На рыцаре, щите, бочке и таверне цвет тоже совпал с картинкой.",
+     "show": ["img/04_lightness_chart.png", "img/02_knight_tavern.jpg"]},
+    {"n": 6, "seconds": 10, "say_ru": "И урок: тёплое освещение на листах сравнения рыжит любую модель. Цвет надо проверять без него.",
+     "show": ["img/03_warm_light_trap.jpg"]}
+  ],
+  "reproduce_in_app": [
+    "Модели → Создание → Движок: TRELLIS.2 — одна картинка → картинка гоблина → «Подгонка палитры под ваши картинки» стоит на 1 → Создать",
+    "Для сравнения: тот же запуск с подгонкой 0"
+  ],
+  "regenerate": [
+    "D:\\conda\\envs\\sf3d\\python.exe work/trellis_test/colormatch_test.py",
+    "D:\\conda\\envs\\sf3d\\python.exe tool/blender_queue.py -- -b -P \"docs/Solve problems/_tools/render_models.py\" -- \"D:/My projects/SF3D/docs/Solve problems/2026-11-26_palette-match-picture/src\" --looks tex goblin_before=work/trellis_test/colormatch/goblin_0.0.glb goblin_after=work/trellis_test/colormatch/goblin_1.0.glb",
+    "D:\\conda\\envs\\sf3d\\python.exe \"docs/Solve problems/_tools/sheet.py\" \"docs/Solve problems/2026-11-26_palette-match-picture/img/01_goblin_before_after.jpg\" \"Исходная картинка\" work/trellis/character/goblin_boy_7_years_old_tr2/raw_cutout.png \"TRELLIS.2 без подгонки\" src/goblin_before_tex_front.png \"После подгонки к картинке\" src/goblin_after_tex_front.png --cols 3 --crop"
+  ]
+}
