@@ -1,0 +1,68 @@
+{
+  "id": "2026-11-25_trellis2-third-engine",
+  "title_ru": "Как встроить в программу третью нейросеть и не сломать первые две?",
+  "title_en": "How do you add a third neural network to an app without breaking the first two?",
+  "hook_ru": "Самая опасная строчка оказалась не в нейросети, а в «пресете»: он молча обнулил бы металл, который TRELLIS только что нарисовал.",
+  "status": "solved",
+  "date": "2026-11-25",
+  "sessions": [
+    {"name": "TRELLIS.2 — проверка и встраивание", "id": "запущена из local_e34b3455"},
+    {"name": "Правки проекта (координатор)", "id": "local_e34b3455"},
+    {"name": "Улучшение сгенерированной модели (нашла нормали)", "id": "local_1c2e5843"}
+  ],
+  "commits": ["116c700", "69bb9e5", "b5372a6", "623d476", "7a138e7"],
+  "tags": ["trellis", "integration", "pbr", "batch", "godot"],
+  "video": {
+    "potential": 3,
+    "why_ru": "Понятный баг «умножили на ноль», путь модели от картинки до игрового движка и пакет, который сам раздаёт работу двум нейросетям.",
+    "wow_moment_ru": "Рыцарь из одной картинки в Godot: латы блестят, внутри скелет из 34 костей.",
+    "length_seconds": 70,
+    "thumbnail": {"image": "img/03_godot_metal.jpg", "text_ru": "ТРЕТИЙ ДВИЖОК"}
+  },
+  "numbers": [
+    {"what_ru": "Рыцарь: модель в приложении", "before": 517, "after": 115, "unit_ru": "секунд", "better": "lower",
+     "measured_on": "RTX 4060 8 ГБ", "note_ru": "before — Hunyuan3D по 4 картинкам; after — TRELLIS.2 с постобработкой и превью"},
+    {"what_ru": "Рыцарь: скелет", "before": null, "after": 443, "unit_ru": "секунд", "better": "lower",
+     "measured_on": "RTX 4060 8 ГБ", "note_ru": "34 кости, карта металла сохранилась"},
+    {"what_ru": "Щит по картинке без прозрачного фона", "before": null, "after": 125, "unit_ru": "секунд", "better": "lower",
+     "measured_on": "RTX 4060 8 ГБ", "note_ru": "фон убран за ~19 с"},
+    {"what_ru": "Изменилось в моделях SF3D и Hunyuan после правки", "before": null, "after": 0, "unit_ru": "байт", "better": "lower",
+     "measured_on": "сравнение файлов", "note_ru": "совпали байт в байт"},
+    {"what_ru": "Сборка TRELLIS.2 из исходников", "before": null, "after": 25, "unit_ru": "минут", "better": "lower",
+     "measured_on": "ноутбук, 8 потоков", "note_ru": "один раз при установке"}
+  ],
+  "media": [
+    {"file": "img/01_engine_choice.png", "clean": null, "kind": "screenshot", "role": "result", "pair": null,
+     "caption_ru": "Третий вариант в «Движок» с подсказкой про здания"},
+    {"file": "img/02_app_knight_rig.jpg", "clean": null, "kind": "screenshot", "role": "result", "pair": null,
+     "caption_ru": "Рыцарь в тестовой копии приложения: модель за 115 с и скелет из 34 костей"},
+    {"file": "img/03_godot_metal.jpg", "clean": null, "kind": "screenshot", "role": "result", "pair": null,
+     "caption_ru": "Рыцарь и щит в Godot 4.7: металл блестит"}
+  ],
+  "models": [
+    {"role": "after", "path": "work/trellis_test/app/export/character/tr_knight/tr_knight_rigged.glb", "label_ru": "Рыцарь TRELLIS.2 со скелетом"},
+    {"role": "after", "path": "work/trellis_test/app/export/item/tr_shield/tr_shield.glb", "label_ru": "Щит TRELLIS.2 по картинке без прозрачности"},
+    {"role": "reference", "path": "work/hunyuan/character/skeleton_knight/view_front.png", "label_ru": "Исходная картинка рыцаря"}
+  ],
+  "beats": [
+    {"n": 1, "seconds": 10, "say_ru": "Мы нашли нейросеть, которая делает героев лучше и быстрее. Осталось встроить её в нашу программу.",
+     "show": ["img/01_engine_choice.png"]},
+    {"n": 2, "seconds": 16, "say_ru": "Первая ловушка нашлась ещё до запуска. Нейросеть рисует карту металла, а наша доводка умножила бы её на ноль: у персонажей металл по умолчанию выключен. Научили доводку беречь чужую карту.",
+     "show": ["diagram:карта металла × 0 = матовые латы"]},
+    {"n": 3, "seconds": 10, "say_ru": "Дальше скрипты установки: сборка из исходного кода и проверка каждого файла весов.",
+     "show": ["diagram:исходники → сборка 25 минут → 8 файлов весов → контрольные суммы"]},
+    {"n": 4, "seconds": 14, "say_ru": "Рыцарь прошёл весь путь в приложении: модель за две минуты, скелет из тридцати четырёх костей.",
+     "show": ["img/02_app_knight_rig.jpg", "model:after"]},
+    {"n": 5, "seconds": 10, "say_ru": "И в игровом движке латы блестят.",
+     "show": ["img/03_godot_metal.jpg"]},
+    {"n": 6, "seconds": 10, "say_ru": "А папку картинок программа теперь разбирает сама: героев и предметы отдаёт новой нейросети, здания — старой.",
+     "show": ["diagram:папка → персонажи и предметы → TRELLIS.2; здания → Hunyuan3D"]}
+  ],
+  "reproduce_in_app": [
+    "Модели → Создание → Движок: TRELLIS.2 — одна картинка → картинка → категория «Персонаж» → Создать",
+    "Пакетная обработка → папка с подпапками character, item, building → Сканировать (столбец «Движок») → Запустить"
+  ],
+  "regenerate": [
+    "картинки — кадры тестов: work/trellis_test/app/shots/knight_char_done.png, shield_done.png (puppeteer: work/wear_test/ui/trellis/tr_gen.mjs), work/trellis_test/godot/shots/godot_check.png (Godot: work/trellis_test/godot/check.gd)"
+  ]
+}
