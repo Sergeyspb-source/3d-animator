@@ -3556,5 +3556,7 @@
  "web.imp_legs": "Legs",
  "web.imp_legs_note": "both legs laid flat: the hip at the top, the foot at the bottom",
  "web.imp_legs_tip": "Each leg laid out round itself: the right leg on the left, the left leg on the right; the leg's front in the middle of its half, its back at the edges. Drag a feature of the pictures (a knee, a trouser's hem) to its place on the relief; on one leg, the other is mirrored.",
- "web.imp_body_none": "Could not cut the body: it needs the hand, elbow and knee landmarks (the «Landmarks» mode on the front picture)"
+ "web.imp_body_none": "Could not cut the body: it needs the hand, elbow and knee landmarks (the «Landmarks» mode on the front picture)",
+ "web.imp_pe_relief": "Relief",
+ "web.imp_pe_relief_tip": "The model's heights as lines over the picture, like contours on a map: orange rings stand out (a nose, lips, brows, an ear's rim), blue ones sink (eye sockets, nostrils, the mouth's line), white marks edges and steps. The lines show the model itself and the pins do not bend them: drag a feature of the picture to its lines."
 }

@@ -20,7 +20,7 @@ import { useT } from '../i18n';
 export type Pin = [number, number, number, number];   // the picture's point (sx, sy) -> lands on the model at (dx, dy)
 interface P { id: number; s: [number, number]; d: [number, number]; mate?: number }
 export interface Mark { name: string; kind: string; model: [number, number] | null; pic: [number, number]; set: boolean }
-export interface AlignData { picture: string; model: string; size: [number, number]; mid_x: number | null; pins: Pin[]; marks?: Mark[] }
+export interface AlignData { picture: string; model: string; lines?: string; size: [number, number]; mid_x: number | null; pins: Pin[]; marks?: Mark[] }
 interface State { pins: P[]; marks: Mark[] }
 
 // ------------------------------------------------------------------ the warp (model_improve.pin_field)
@@ -91,6 +91,7 @@ export default function PinEditor({ data, onSave, onClose, onMark3d }: {
   const [sym, setSym] = useState(data.mid_x != null);
   const [op, setOp] = useState(0.55);
   const [show, setShow] = useState<'mix' | 'pic' | 'model'>('mix');
+  const [relief, setRelief] = useState(true);   // the model's relief as height lines over everything (not bent by the pins)
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [busy3d, setBusy3d] = useState(false);
@@ -131,6 +132,10 @@ export default function PinEditor({ data, onSave, onClose, onMark3d }: {
     const sheet = new THREE.Mesh(geo, mat);
     sheet.position.set(W / 2, -H / 2, 1);
     scene.add(sheet);
+    const lines = data.lines ? new THREE.Mesh(new THREE.PlaneGeometry(W, H),
+      new THREE.MeshBasicMaterial({ map: tex(fileUrl(data.lines)), transparent: true, depthTest: false })) : null;
+    if (lines) { lines.position.set(W / 2, -H / 2, 2); lines.renderOrder = 2; lines.visible = relief; scene.add(lines); }
+    sheet.renderOrder = 1;
     const draw = () => {
       const r = el.getBoundingClientRect();
       renderer.setSize(r.width, r.height, false);
@@ -140,11 +145,11 @@ export default function PinEditor({ data, onSave, onClose, onMark3d }: {
       cam.updateProjectionMatrix();
       renderer.render(scene, cam);
     };
-    gl.current = { geo, mat, ground, draw, renderer };
+    gl.current = { geo, mat, ground, lines, draw, renderer };
     const ro = new ResizeObserver(() => { fit(); draw(); redraw((x) => x + 1); });
     ro.observe(el);
     return () => { ro.disconnect(); renderer.dispose(); el.removeChild(renderer.domElement); };
-  }, [data.picture, data.model]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [data.picture, data.model, data.lines]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fit = () => {   // the whole picture in view
     const r = host.current!.getBoundingClientRect();
@@ -168,8 +173,9 @@ export default function PinEditor({ data, onSave, onClose, onMark3d }: {
     const g = gl.current; if (!g) return;
     g.mat.opacity = show === 'model' ? 0 : show === 'pic' ? 1 : op;
     g.ground.visible = show !== 'pic';
+    if (g.lines) g.lines.visible = relief;
     g.draw();
-  }, [op, show]);
+  }, [op, show, relief]);
 
   // ---- mouse
   const toPic = (e: { clientX: number; clientY: number }): [number, number] => {
@@ -316,6 +322,8 @@ export default function PinEditor({ data, onSave, onClose, onMark3d }: {
         <SegmentedControl size="xs" value={show} onChange={(x) => setShow(x as any)} data={[
           { value: 'mix', label: t('web.imp_pe_mix') }, { value: 'pic', label: t('web.imp_pe_pic') }, { value: 'model', label: t('web.imp_pe_model') }]} />
         <div style={{ width: 110 }}><Slider size="xs" min={0.1} max={0.9} step={0.05} value={op} onChange={setOp} label={null} disabled={show !== 'mix'} /></div>
+        {data.lines && <Tooltip label={t('web.imp_pe_relief_tip')} multiline w={320}>
+          <Checkbox size="xs" label={t('web.imp_pe_relief')} checked={relief} onChange={(e) => setRelief(e.currentTarget.checked)} /></Tooltip>}
         {mid != null && <Checkbox size="xs" label={t('web.imp_pe_sym')} checked={sym} onChange={(e) => setSym(e.currentTarget.checked)} />}
         <Button size="compact-xs" variant="default" onClick={() => { fit(); gl.current?.draw(); redraw((x) => x + 1); }}>{t('web.imp_pe_fit')}</Button>
         {mode === 'pins'

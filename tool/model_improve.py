@@ -734,6 +734,117 @@ def shade_render(M, view, cam, W, H):
     return Image.fromarray(out, "RGBA")
 
 
+def relief_lines(h, scale, size, facing=None, min_facing=0.35):
+    """the model's relief as lines, to see over the picture where the nose, the lips, the eye sockets are: h (H, W) the
+    surface's height in model units (along the radius on a skin, towards the camera in a view; NaN off the model),
+    scale = pixels per model unit, size = the model's height. Its detail (h minus h smoothed over 1.5 % of the model's
+    height) drawn as height lines every 0.25 %: orange where it stands out (a nose, lips, brows, an ear's rim), blue
+    where it sinks (eye sockets, nostrils, the mouth's line); white: steps in the surface (an ear's edge over the head)
+    and the model's edge. Each line with a dark rim. Only the first 4 lines of a bump (an ear standing far out would be
+    a solid blot of them), none where the surface turns away from the way h is measured (facing < min_facing: the
+    top of the head on its skin; in a view 0.65 - a limb's sides curve away there and every limb got a blue rim).
+    -> RGBA image"""
+    from scipy.ndimage import binary_dilation, gaussian_filter
+    ok = np.isfinite(h)
+    H, W = h.shape
+    img = np.zeros((H, W, 4), np.uint8)
+    if not ok.any():
+        return Image.fromarray(img, "RGBA")
+    h0 = np.where(ok, h, 0.0)
+    okf = ok.astype(np.float64)
+
+    def blur(sig):   # (inside the model only: normalised by the blurred mask)
+        return gaussian_filter(h0, sig) / np.maximum(gaussian_filter(okf, sig), 1e-6)
+    hs = blur(max(1.0, 0.0006 * size * scale))
+    det = hs - blur(max(4.0, 0.015 * size * scale))
+    step = 0.0025 * size
+    lev = np.floor(det / step).astype(np.int64)
+    lev[~ok] = 0
+    fine = ok if facing is None else ok & (np.nan_to_num(facing, nan=0.0) > min_facing)
+    iso = np.zeros((H, W), bool)
+    weak = np.zeros((H, W), bool)
+    for a, b in (((slice(None), slice(1, None)), (slice(None), slice(None, -1))),
+                 ((slice(1, None), slice(None)), (slice(None, -1), slice(None)))):
+        lo, hi = np.minimum(lev[a], lev[b]), np.maximum(lev[a], lev[b])
+        # (not the zero line, -1 | 0: it wanders over every flat patch; not past the 4th line out or in; the first
+        # line out and in drawn faint: on a broad gentle swell it wanders too)
+        ch = (lo != hi) & fine[a] & fine[b] & ~((lo == -1) & (hi == 0)) & (hi <= 4) & (lo >= -5)
+        first = ((lo == 0) & (hi == 1)) | ((lo == -2) & (hi == -1))
+        iso[b] |= ch & ~first
+        weak[b] |= ch & first
+    # steps: neighbours far apart in height; the model's edge
+    gy, gx = np.gradient(np.where(ok, hs, np.nan))
+    # (a step: more than 0.4 % of the model's height between neighbours, and steeper than 80 degrees - in a view the
+    # sides turning away from the camera are steep without any step)
+    jump = np.nan_to_num(np.hypot(gx, gy), nan=0.0) > max(0.004 * size, 6.0 / scale)
+    edge = ok & binary_dilation(~ok, iterations=1)
+    white = jump | edge
+    wk = binary_dilation(weak, iterations=1)
+    img[wk & (det > 0)] = (255, 170, 60, 110)
+    img[wk & (det <= 0)] = (80, 210, 255, 110)
+    core = binary_dilation(iso | white, iterations=1)
+    rim = binary_dilation(core, iterations=1) & ~core
+    img[rim] = (20, 24, 30, 150)
+    up = core & (det > 0)
+    img[up] = (255, 170, 60, 235)
+    img[core & ~up] = (80, 210, 255, 235)
+    img[binary_dilation(white, iterations=1)] = (250, 250, 250, 220)
+    return Image.fromarray(img, "RGBA")
+
+
+def skin_height(view, xyz, prm, nrm):
+    """a skin's surface height for relief_lines: along the cylinder's radius (the head, the torso, an arm, a leg), along
+    the panel's facing side (an ear) -> (h, pixels per model unit, facing = the normal along that way)"""
+    ok = np.isfinite(xyz[..., 0])
+    h = np.full(ok.shape, np.nan)
+    fc = np.zeros(ok.shape)
+    Hh, Ww = ok.shape
+    yy, xx = np.mgrid[0:Hh, 0:Ww] + 0.5
+
+    def radial(m, R, a=None):
+        if a is not None:
+            R = R - (R @ a)[:, None] * a
+        r = np.linalg.norm(R, axis=1)
+        h[m] = r
+        fc[m] = (nrm[m] * R).sum(1) / np.maximum(r, 1e-9)
+    if view == "skin_head":
+        R = xyz[ok].astype(np.float64) - [prm["cx"], 0.0, prm["cz"]]
+        R[:, 1] = 0
+        radial(ok, R)
+        return h, prm["scale"], fc
+    if view == "skin_ears":
+        P = prm["P"]
+        for e in prm["ears"].values():
+            c, Nn = np.asarray(e["c"]), np.asarray(e["N"])
+            for side, sgn in (("front", 1.0), ("back", -1.0)):
+                x0 = e["cx"][side] - P / 2
+                m = ok & (xx >= x0) & (xx < x0 + P)
+                h[m] = sgn * ((xyz[m] - c) @ Nn)
+                fc[m] = sgn * (nrm[m] @ Nn)
+        return h, float(np.mean([e["sc"] for e in prm["ears"].values()])), fc
+    for p in prm["parts"].values():
+        x0, y0, x1, y1 = p["rect"]
+        m = ok & (xx >= x0) & (xx < x1) & (yy >= y0) & (yy < y1)
+        O, a = np.asarray(p["O"], float), np.asarray(p["a"], float)
+        radial(m, xyz[m].astype(np.float64) - O, a)
+    return h, float(np.mean([p["s"] for p in prm["parts"].values()])), fc
+
+
+def view_lines(M, view, cam, W, H):
+    """relief_lines for a picture's view: the height towards the fitted camera"""
+    P2, z = project_pts(M["V"], view, cam)
+    fid, bary, zb = raster(P2, M["F"], W, H, z=z)
+    ok = fid >= 0
+    h = np.where(ok, zb, np.nan)
+    N = M.get("N")
+    if N is None:
+        N = M["N"] = smooth_normals(M["V"], M["F"])
+    fc = np.zeros((H, W))
+    n = (N[M["F"][fid[ok]]] * bary[ok][..., None]).sum(1)
+    fc[ok] = (n @ view_axes(view)[0]) / np.maximum(np.linalg.norm(n, axis=1), 1e-9)
+    return relief_lines(h, cam[0], float(np.ptp(M["V"][:, 1])), fc, min_facing=0.65)
+
+
 # ------------------------------------------------------------------ C: which half to keep
 def pick_half(M, alpha, cam):
     """the half (pos = the model's own left, +X / neg) whose front silhouette matches the concept better"""
@@ -2085,8 +2196,12 @@ def align(cat: str, stem: str, cfg: dict, draft_dir: Path, view: str) -> dict:
         sizes = {v: Image.open(x["path"]).size for v, x in pics.items()}
         vp = view_pins(st, cams, {v: x["path"] for v, x in pics.items()}, bool(mirror), sizes)
         skin_pictures(M, xyz, nrm, sp, use, cams, vp).save(d / f"{view}_pics.png")
+        lines = d / f"{view}_lines.png"   # (the model's relief as height lines, made again with the skin)
+        if not lines.exists() or lines.stat().st_mtime < (d / f"{view}_xyz.npy").stat().st_mtime:
+            h, sc, fc = skin_height(view, xyz, sp, nrm)
+            relief_lines(h, sc, float(np.ptp(M["V"][:, 1])), fc).save(lines)
         return {"ok": True, "view": view, "picture": str(d / f"{view}_pics.png"), "model": str(d / f"{view}_guide.png"),
-                "size": [sp["W"], sp["H"]], "cam": None, "iou": None, "mid_x": sp["W"] / 2,
+                "lines": str(lines), "size": [sp["W"], sp["H"]], "cam": None, "iou": None, "mid_x": sp["W"] / 2,
                 "pins": (st.get("pins") or {}).get(view, []), "kind": "skin", "marks": []}
     if view not in pics:
         return {"ok": False, "view": view}
@@ -2095,9 +2210,11 @@ def align(cat: str, stem: str, cfg: dict, draft_dir: Path, view: str) -> dict:
     M = M or load(base)
     W, H = Image.open(pic).size
     png = d / f"align_{view}.png"
+    lines = d / f"lines_{view}.png"
     key = (st.get("cams") or {}).get(view, {}).get("key")
-    if not png.exists() or (st.get("align_keys") or {}).get(view) != key:
+    if not png.exists() or not lines.exists() or (st.get("align_keys") or {}).get(view) != key:
         shade_render(M, view, cam, W, H).save(png)
+        view_lines(M, view, cam, W, H).save(lines)
         st.setdefault("align_keys", {})[view] = key
         save_state(d, st)
     mid = cam[1] if view in ("front", "back") else None
@@ -2105,7 +2222,7 @@ def align(cat: str, stem: str, cfg: dict, draft_dir: Path, view: str) -> dict:
     if st.get("marks3d") is None and cat_ in ("character", "creature"):
         _marks3d(st, base, M, cat_)
         save_state(d, st)
-    return {"ok": True, "view": view, "picture": pic, "model": str(png), "size": [W, H], "cam": list(cam),
+    return {"ok": True, "view": view, "picture": pic, "model": str(png), "lines": str(lines), "size": [W, H], "cam": list(cam),
             "iou": iou, "mid_x": mid, "pins": (st.get("pins") or {}).get(view, []), "kind": pics[view]["kind"],
             "marks": marks_for_editor(st, view, cam, pic, W, H, mid)}
 
