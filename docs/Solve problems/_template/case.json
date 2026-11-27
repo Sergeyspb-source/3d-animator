@@ -17,18 +17,23 @@
   },
   "numbers": [
     {"what_ru": "Время формы персонажа", "before": 254, "after": 28, "unit_ru": "секунд",
-     "better": "lower", "measured_on": "RTX 4060 8 ГБ", "note_ru": ""}
+     "better": "lower", "measured_on": "RTX 4060 8 ГБ", "run": "repeat", "note_ru": ""}
   ],
   "media": [
     {"file": "img/01_before_after.jpg", "clean": "src/01_before.png", "kind": "render", "role": "before",
-     "pair": "knight-front", "caption_ru": "Что видно и куда смотреть"}
+     "pair": "knight-front", "caption_ru": "Что видно и куда смотреть"},
+    {"file": null, "clean": "src/clip_app.mp4", "kind": "clip", "role": "result",
+     "pair": null, "caption_ru": "Запись экрана: что в ней происходит"}
   ],
   "models": [
-    {"role": "before", "path": "work/hunyuan/character/x/shape.glb", "label_ru": "Как было"},
-    {"role": "after", "path": "work/hy_turbo_test/out/x/shape.glb", "label_ru": "Как стало"}
+    {"role": "before", "path": "work/hunyuan/character/x/shape.glb", "label_ru": "Как было",
+     "height_m": 1.8, "front_yaw_deg": 0, "quirks_ru": "нет нормалей"},
+    {"role": "after", "path": "work/hy_turbo_test/out/x/shape.glb", "label_ru": "Как стало",
+     "height_m": 1.8, "front_yaw_deg": 0, "quirks_ru": ""}
   ],
   "beats": [
-    {"n": 1, "seconds": 8, "say_ru": "Что сказать в этой сцене.", "show": ["img/01_before_after.jpg"]}
+    {"n": 1, "seconds": 8, "say_ru": "Что сказать в этой сцене: имена по-русски, числа словами.",
+     "sub_ru": "Что написать на экране: 254 → 28 с", "show": ["img/01_before_after.jpg"]}
   ],
   "reproduce_in_app": ["Модели → Создание → ..."],
   "regenerate": ["\"D:\\Blender 5.2\\blender.exe\" -b -P \"docs/Solve problems/_tools/render_models.py\" -- ..."]
