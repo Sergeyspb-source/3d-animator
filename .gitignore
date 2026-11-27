@@ -44,6 +44,9 @@
 *.7z
 # the README screenshots are the exception
 !docs/images/**
+# so are the pictures of the problem write-ups; their full-size frames and clips (src/) stay on the disk
+!docs/Solve problems/*/img/**
+docs/Solve problems/*/src/
 
 # ---- Python / tools ----
 __pycache__/

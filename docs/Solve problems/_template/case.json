@@ -1,0 +1,35 @@
+{
+  "id": "2026-11-24_example-slug",
+  "title_ru": "Вопрос-заголовок",
+  "title_en": "Question-style title",
+  "hook_ru": "Одна фраза-крючок",
+  "status": "solved",
+  "date": "2026-11-24",
+  "sessions": [{"name": "Название ветки", "id": "local_..."}],
+  "commits": ["abc1234"],
+  "tags": ["hunyuan", "speed"],
+  "video": {
+    "potential": 4,
+    "why_ru": "Почему зрителю интересно",
+    "wow_moment_ru": "Самый сильный момент",
+    "length_seconds": 90,
+    "thumbnail": {"image": "src/hero.png", "text_ru": "2-4 СЛОВА"}
+  },
+  "numbers": [
+    {"what_ru": "Время формы персонажа", "before": 254, "after": 28, "unit_ru": "секунд",
+     "better": "lower", "measured_on": "RTX 4060 8 ГБ", "note_ru": ""}
+  ],
+  "media": [
+    {"file": "img/01_before_after.jpg", "clean": "src/01_before.png", "kind": "render", "role": "before",
+     "pair": "knight-front", "caption_ru": "Что видно и куда смотреть"}
+  ],
+  "models": [
+    {"role": "before", "path": "work/hunyuan/character/x/shape.glb", "label_ru": "Как было"},
+    {"role": "after", "path": "work/hy_turbo_test/out/x/shape.glb", "label_ru": "Как стало"}
+  ],
+  "beats": [
+    {"n": 1, "seconds": 8, "say_ru": "Что сказать в этой сцене.", "show": ["img/01_before_after.jpg"]}
+  ],
+  "reproduce_in_app": ["Модели → Создание → ..."],
+  "regenerate": ["\"D:\\Blender 5.2\\blender.exe\" -b -P \"docs/Solve problems/_tools/render_models.py\" -- ..."]
+}
