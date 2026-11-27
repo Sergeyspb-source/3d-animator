@@ -1,0 +1,307 @@
+{
+ "id": "2026-11-18_hero-new-body-live-retarget",
+ "title_ru": "Как переодеть героя в другое тело, не переделав ни одной анимации?",
+ "title_en": "How do you give the hero a new body without remaking a single animation?",
+ "hook_ru": "Новый герой-латник двигается руками невидимого гоблина: тот играет все анимации, а латник только повторяет его позу.",
+ "status": "solved",
+ "date": "2026-11-18",
+ "sessions": [
+  {
+   "name": "Новая модель героя: латник с бронёй по частям тела (эта сессия)",
+   "id": null
+  },
+  {
+   "name": "Расширение карты Home до большого мира (дала задачу)",
+   "id": "local_b6e54bdd-a00f-4d8a-b379-a81d691da2ec"
+  }
+ ],
+ "commits": [
+  "game:cd9fa813",
+  "game:e5d5d84f"
+ ],
+ "tags": [
+  "godot",
+  "retarget",
+  "animation",
+  "armour",
+  "sf3d"
+ ],
+ "video": {
+  "potential": 4,
+  "why_ru": "Кривые позы при неправильном переносе смешные и понятны без объяснений, а разгадка простая: невидимый гоблин-кукловод.",
+  "wow_moment_ru": "Скрюченный латник рядом с ровной стойкой и раскрытие, что внутри героя всё время ходит невидимый гоблин.",
+  "length_seconds": 90,
+  "thumbnail": {
+   "image": "src/s1_raw_guard_q34.png",
+   "text_ru": "ГОБЛИН ВНУТРИ"
+  }
+ },
+ "numbers": [
+  {
+   "what_ru": "Анимаций, переделанных под новое тело",
+   "before": null,
+   "after": 0,
+   "unit_ru": "штук",
+   "better": "lower",
+   "measured_on": "подсчёт по коду",
+   "run": null,
+   "note_ru": "все анимации героя переносятся каждый кадр"
+  },
+  {
+   "what_ru": "Костей в скелете гоблина и латника",
+   "before": 65,
+   "after": 65,
+   "unit_ru": "костей",
+   "better": null,
+   "measured_on": "Godot 4.7.2, импорт GLB",
+   "run": null,
+   "note_ru": "имена одинаковые, поза покоя разная"
+  },
+  {
+   "what_ru": "Высота таза в покое, доля роста",
+   "before": 0.486,
+   "after": 0.551,
+   "unit_ru": "доля роста",
+   "better": null,
+   "measured_on": "Godot 4.7.2, кости покоя",
+   "run": null,
+   "note_ru": "отсюда множитель 1,13 для движения таза; before — гоблин, after — латник"
+  },
+  {
+   "what_ru": "Частей брони и одежды на латнике",
+   "before": 0,
+   "after": 16,
+   "unit_ru": "частей",
+   "better": "higher",
+   "measured_on": "data/combat/armor_pieces.json",
+   "run": null,
+   "note_ru": "плюс 3 своих оружия из SF3D"
+  }
+ ],
+ "media": [
+  {
+   "file": "img/01_before_after.jpg",
+   "clean": "src/s1_goblin_idle_front.png",
+   "kind": "render",
+   "role": "before",
+   "pair": "idle-front",
+   "caption_ru": "Прежний герой-гоблин в покое, камера спереди"
+  },
+  {
+   "file": "img/01_before_after.jpg",
+   "clean": "src/s1_man_idle_front.png",
+   "kind": "render",
+   "role": "after",
+   "pair": "idle-front",
+   "caption_ru": "Латник в полных латах, та же камера и та же анимация"
+  },
+  {
+   "file": "img/02_rest_poses.jpg",
+   "clean": "src/s1_rest.png",
+   "kind": "render",
+   "role": "cause",
+   "pair": null,
+   "caption_ru": "Поза покоя: латник раскинул руки буквой «Т», гоблин держит их внизу"
+  },
+  {
+   "file": "img/03_attempts.jpg",
+   "clean": "src/s1_goblin_guard_q34.png",
+   "kind": "render",
+   "role": "context",
+   "pair": "guard-q34",
+   "caption_ru": "Гоблин в стойке с оружием: так должно быть"
+  },
+  {
+   "file": "img/03_attempts.jpg",
+   "clean": "src/s1_raw_guard_q34.png",
+   "kind": "render",
+   "role": "attempt",
+   "pair": "guard-q34",
+   "caption_ru": "Повороты костей как есть: латник скрючен (оружие убрано)"
+  },
+  {
+   "file": "img/03_attempts.jpg",
+   "clean": "src/s1_nolay_guard_q34.png",
+   "kind": "render",
+   "role": "attempt",
+   "pair": "guard-q34",
+   "caption_ru": "Поворот от покоя без выравнивания: руки задраны"
+  },
+  {
+   "file": "img/03_attempts.jpg",
+   "clean": "src/s1_man_guard_q34.png",
+   "kind": "render",
+   "role": "after",
+   "pair": "guard-q34",
+   "caption_ru": "С выравниванием: стойка как у гоблина"
+  },
+  {
+   "file": "img/04_weapons.jpg",
+   "clean": "src/s1_goblin_weapons_q34.png",
+   "kind": "render",
+   "role": "before",
+   "pair": "weapons-q34",
+   "caption_ru": "Ржавый меч и круглый щит гоблина на латнике"
+  },
+  {
+   "file": "img/04_weapons.jpg",
+   "clean": "src/s1_man_guard_q34.png",
+   "kind": "render",
+   "role": "after",
+   "pair": "weapons-q34",
+   "caption_ru": "Его собственные меч и ростовой щит из SF3D"
+  },
+  {
+   "file": "img/05_skin_through.jpg",
+   "clean": "src/s1_clothes_nocut_walk.png",
+   "kind": "render",
+   "role": "problem",
+   "pair": "skin-walk",
+   "caption_ru": "Тело целое: кожа пятнами проступает сквозь рубаху и шоссы"
+  },
+  {
+   "file": "img/05_skin_through.jpg",
+   "clean": "src/s1_clothes_cut_walk.png",
+   "kind": "render",
+   "role": "after",
+   "pair": "skin-walk",
+   "caption_ru": "Кожа под одеждой вырезана по маскам"
+  },
+  {
+   "file": "img/06_motion.jpg",
+   "clean": "src/s1_man_walk_q34.png",
+   "kind": "render",
+   "role": "result",
+   "pair": null,
+   "caption_ru": "Шаг в стойке"
+  },
+  {
+   "file": "img/06_motion.jpg",
+   "clean": "src/s1_man_run_q34.png",
+   "kind": "render",
+   "role": "result",
+   "pair": null,
+   "caption_ru": "Бег"
+  },
+  {
+   "file": "img/06_motion.jpg",
+   "clean": "src/s1_man_attack_q34.png",
+   "kind": "render",
+   "role": "result",
+   "pair": null,
+   "caption_ru": "Удар мечом"
+  },
+  {
+   "file": "img/06_motion.jpg",
+   "clean": "src/s1_man_great_q34.png",
+   "kind": "render",
+   "role": "result",
+   "pair": null,
+   "caption_ru": "Двуручник"
+  },
+  {
+   "file": null,
+   "clean": "src/s1_home_back.png",
+   "kind": "screenshot",
+   "role": "context",
+   "pair": null,
+   "caption_ru": "Латник в Доме, вид со спины. 1886×1061, снят при загруженной машине. На щите крест — в ролик крупно не брать"
+  }
+ ],
+ "models": [
+  {
+   "role": "before",
+   "path": "game:assets/models/hero/goblin.glb",
+   "label_ru": "Гоблин, прежний герой",
+   "height_m": 1.8,
+   "front_yaw_deg": 0,
+   "quirks_ru": "в файле рост 1 м, в игре масштаб 1,8; лицом к +Z; поза покоя руки вниз"
+  },
+  {
+   "role": "after",
+   "path": "game:assets/models/hero/man_test/man_muscul.glb",
+   "label_ru": "Латник (тело без брони)",
+   "height_m": 1.8,
+   "front_yaw_deg": 0,
+   "quirks_ru": "в файле рост 1 м, в игре масштаб 1,8; лицом к +Z; поза покоя «Т»; броня — отдельные файлы в man_test/armor/, надеваются на тот же скелет"
+  },
+  {
+   "role": "reference",
+   "path": "export/character/man_muscul_no_segment_no_rig/man_muscul_no_segment_no_rig_landmarks_rigged.glb",
+   "label_ru": "Исходник в SF3D",
+   "height_m": 1.0,
+   "front_yaw_deg": 0,
+   "quirks_ru": "кроме тела в файле глаза, веки, зубы и язык отдельными сетками"
+  }
+ ],
+ "beats": [
+  {
+   "n": 1,
+   "seconds": 16,
+   "say_ru": "Наш герой — гоблин. Под него неделями собирали анимации: ходьбу, бег, стойку, удары, лук. А теперь нужен латник в настоящих доспехах. Броня под него уже есть: шестнадцать частей, от шлема до шосс. Переделывать все анимации? Нет.",
+   "sub_ru": "Гоблин → латник: 16 частей брони, анимации не переделываем",
+   "show": [
+    "img/01_before_after.jpg",
+    "model:after"
+   ]
+  },
+  {
+   "n": 2,
+   "seconds": 14,
+   "say_ru": "У гоблина и латника одинаковые скелеты: шестьдесят пять костей с одними и теми же именами. Берём повороты костей гоблина и отдаём латнику. И получаем вот это. Голова вывернута, руки перекручены.",
+   "sub_ru": "65 костей, имена Mixamo. Повороты «как есть» → кривая поза",
+   "show": [
+    "src/s1_goblin_guard_q34.png",
+    "src/s1_raw_guard_q34.png"
+   ]
+  },
+  {
+   "n": 3,
+   "seconds": 6,
+   "say_ru": "Дело в позе покоя. Гоблин стоит с опущенными руками, а латник раскинул их буквой «Т».",
+   "sub_ru": "Поза покоя: руки вниз против «Т»",
+   "show": [
+    "img/02_rest_poses.jpg"
+   ]
+  },
+  {
+   "n": 4,
+   "seconds": 16,
+   "say_ru": "Поправляем: переносим не сам поворот, а насколько кость повернулась от покоя. Ноги встали, а руки задраны вверх. Последний шаг: перед переносом укладываем каждую кость латника вдоль кости гоблина. И вот он стоит в той же стойке.",
+   "sub_ru": "Поворот от покоя → руки вверх. + выравнивание → стойка как у гоблина",
+   "show": [
+    "src/s1_nolay_guard_q34.png",
+    "src/s1_man_guard_q34.png",
+    "img/03_attempts.jpg"
+   ]
+  },
+  {
+   "n": 5,
+   "seconds": 13,
+   "say_ru": "Хитрость в том, что гоблин никуда не делся. Он стоит внутри героя невидимым, играет все анимации и держит меч. А латник каждый кадр просто повторяет его позу, как кукла за кукловодом.",
+   "sub_ru": "Невидимый гоблин играет анимации, латник повторяет позу каждый кадр",
+   "show": [
+    "diagram:клавиши → невидимый гоблин (анимации, слои, кулак) → перенос позы → латник (тело, броня, оружие)",
+    "img/06_motion.jpg"
+   ]
+  },
+  {
+   "n": 6,
+   "seconds": 13,
+   "say_ru": "Оружие гоблина спрятано, вместо него у латника свой меч и свой щит. Кожа под одеждой вырезана, чтобы не проступала на ходу. Одна клавиша, и герой снова гоблин. Ни одной новой анимации.",
+   "sub_ru": "Своё оружие из SF3D · кожа под одеждой вырезана · клавиша «;» · 0 новых анимаций",
+   "show": [
+    "img/04_weapons.jpg",
+    "img/05_skin_through.jpg"
+   ]
+  }
+ ],
+ "reproduce_in_app": [
+  "Игра: запустить с параметрами -- --hero-model=man --hero-kit=full_plate (или в Доме нажать «;»)",
+  "«'» — следующий набор брони: полные латы, кольчуга и кожа, одежда, без брони"
+ ],
+ "regenerate": [
+  "Кадры src/: стенд .scratch/hero_story/stand.gd в папке игры (не в git), список кадров shots.json; запуск: tools/run_queued.ps1 -Lane godot -Exe <godot> --path . --resolution 1280x720 --script res://.scratch/hero_story/stand.gd",
+  "D:\\conda\\envs\\sf3d\\python.exe \"docs/Solve problems/_tools/sheet.py\" img/03_attempts.jpg \"Гоблин: так должно быть\" src/s1_goblin_guard_q34.png \"Повороты костей как есть\" src/s1_raw_guard_q34.png \"Без выравнивания позы покоя\" src/s1_nolay_guard_q34.png \"Готово: с выравниванием\" src/s1_man_guard_q34.png --cols 4 --crop"
+ ]
+}
