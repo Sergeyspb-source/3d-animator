@@ -68,8 +68,8 @@
       <label class="chk"><input type="checkbox" id="labels"> {{ct.labels}}</label>
       <label class="chk"><input type="checkbox" id="mirror" checked> {{ct.mirror}}</label>
       <div class="sep"></div>
-      <button id="undo" title="Ctrl+Z">↶ {{ct.undo}}</button>
-      <button id="redo" title="Ctrl+Y">↷ {{ct.redo}}</button>
+      <button id="undo" title="{{ui.undo_tip}}" disabled>↶ {{ct.undo}}</button>
+      <button id="redo" title="{{ui.redo_tip}}" disabled>↷ {{ct.redo}}</button>
     </div>
     <div class="stage" id="stage">
       <div class="labels" id="labelLayer"></div>
@@ -200,6 +200,18 @@ const spheres = {};
 let lines = null;
 const cx = MK.cx || 0;
 let sel = null;
+// ---- undo / redo, as in every editor of the app: Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y (by the key's place: any layout), the
+// ↶ ↷ buttons, the app's page passing the keys on ({type: 'sf3d-undo', redo}); a text field keeps the keys for its typing.
+// A joint's drag is one step (the joints before it, kept only when they moved); 100 steps; another creature is another page
+const UNDO_MAX = 100;
+const typing = (t) => !!(t && t.closest && t.closest('input:not([type]), input[type=text], input[type=number], input[type=search], textarea, [contenteditable]'));
+function undoKeys(run) {
+  addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey || (e.code !== 'KeyZ' && e.code !== 'KeyY') || typing(e.target)) return;
+    e.preventDefault(); e.stopImmediatePropagation(); run(e.shiftKey || e.code === 'KeyY');
+  }, true);
+  addEventListener('message', (e) => { if (e.origin === location.origin && e.data && e.data.type === 'sf3d-undo') run(!!e.data.redo); });
+}
 const hist = [], redo = [];
 const snap = () => JSON.stringify(Object.fromEntries(Object.entries(P).map(([k, v]) => [k, v.toArray()])));
 function restore(s) {
@@ -208,13 +220,12 @@ function restore(s) {
   betweenOffsets();
   draw();
 }
-function push() { hist.push(snap()); if (hist.length > 100) hist.shift(); redo.length = 0; }
-$('undo').onclick = () => { if (hist.length) { redo.push(snap()); restore(hist.pop()); } };
-$('redo').onclick = () => { if (redo.length) { hist.push(snap()); restore(redo.pop()); } };
-addEventListener('keydown', (e) => {
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); (e.shiftKey ? $('redo') : $('undo')).click(); }
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); $('redo').click(); }
-});
+const histUi = () => { $('undo').disabled = !hist.length; $('redo').disabled = !redo.length; };
+function push(before) { if (before === snap()) return; hist.push(before); if (hist.length > UNDO_MAX) hist.shift(); redo.length = 0; histUi(); }
+function step(back) { const from = back ? hist : redo, to = back ? redo : hist; if (drag || !from.length) return; to.push(snap()); restore(from.pop()); histUi(); }
+$('undo').onclick = () => step(true);
+$('redo').onclick = () => step(false);
+undoKeys((r) => step(!r));
 
 for (const id of TPL.all) {
   const p = MK.joints[id];
@@ -322,10 +333,9 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
   if (!id) return;
   e.stopPropagation();
   sel = id;
-  push();
   const n = new V3();
   camera.getWorldDirection(n);
-  drag = { id, plane: new THREE.Plane().setFromNormalAndCoplanarPoint(n, P[id]) };
+  drag = { id, before: snap(), plane: new THREE.Plane().setFromNormalAndCoplanarPoint(n, P[id]) };
   controls.enabled = false;
   renderer.domElement.setPointerCapture(e.pointerId);
   draw();
@@ -340,7 +350,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
   move(drag.id, q);
   draw();
 });
-const endDrag = () => { if (drag) { drag = null; controls.enabled = true; status(''); } };
+const endDrag = () => { if (drag) { const b = drag.before; drag = null; push(b); controls.enabled = true; status(''); } };
 renderer.domElement.addEventListener('pointerup', endDrag);
 renderer.domElement.addEventListener('pointercancel', endDrag);
 

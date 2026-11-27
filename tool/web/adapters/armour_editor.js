@@ -58,7 +58,7 @@
   const ACTIONS = ['go', 'room', 'qa', 'qaHide', 'layersGo', 'bakeStop'];   // (the buttons the shell may press)
   function pick(piece, style) {
     const b = button(`button[data-piece="${piece}"]` + (style ? `[data-style="${style}"]` : ':not([data-style])')) || button(`button[data-piece="${piece}"]`);
-    if (b && !b.classList.contains('on')) b.click();
+    if (b && !b.classList.contains('on')) { b.click(); if (window.agHistReset) window.agHistReset(); }   // (a piece from the catalog: another object, its undo history anew)
     return !!b;
   }
   function openSaved(item) {   // one made before, from the editor's own list of them (an option «<item> — <kind>»)

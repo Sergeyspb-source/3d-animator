@@ -249,7 +249,7 @@
       <label><input type="checkbox" id="mxMirror"> {{ed.sc_mirror}}</label>
       <label>{{ed.tx_colour}} <input type="color" id="mxC" value="#8a7a3c" title="{{ed.mx_colour_title}}"></label>
       <div class="seg"><button id="mxFill" hidden>{{ed.mx_fill}}</button></div>
-      <div class="seg"><button id="mxUndo" title="Ctrl+Z">{{ed.undo_2}}</button><button id="mxRedo" title="Ctrl+Shift+Z">{{ed.redo}}</button></div>
+      <div class="seg"><button id="mxUndo" title="{{ui.undo_tip}}" disabled>{{ed.undo_2}}</button><button id="mxRedo" title="{{ui.redo_tip}}" disabled>{{ed.redo}}</button></div>
       <div class="seg"><button id="mxSave" title="{{ed.mx_save_title}}">{{ed.sc_save}}</button><button id="mxClear" title="{{ed.mx_clear_title}}">{{ed.sc_clear}}</button><button id="mxDone">{{ed.sc_done}}</button></div>
       <div class="st" id="mxSt"></div>
     </div>
@@ -260,7 +260,7 @@
       <label>{{ed.sc_radius}} <input type="range" id="txR" min="1" max="100" value="12"><span id="txRv"></span></label>
       <label>{{ed.sc_strength}} <input type="range" id="txS" min="5" max="100" value="60"><span id="txSv"></span></label>
       <label><input type="checkbox" id="txMirror" checked> {{ed.sc_mirror}}</label>
-      <div class="seg"><button id="txUndo" title="Ctrl+Z">{{ed.undo_2}}</button><button id="txRedo" title="Ctrl+Shift+Z">{{ed.redo}}</button></div>
+      <div class="seg"><button id="txUndo" title="{{ui.undo_tip}}" disabled>{{ed.undo_2}}</button><button id="txRedo" title="{{ui.redo_tip}}" disabled>{{ed.redo}}</button></div>
       <div class="seg"><button id="txSave" title="{{ed.tx_save_title}}">{{ed.sc_save}}</button><button id="txClear" title="{{ed.tx_clear_title}}">{{ed.sc_clear}}</button><button id="txDone">{{ed.sc_done}}</button></div>
       <div class="st" id="txSt"></div>
     </div>
@@ -272,7 +272,7 @@
       <label>{{ed.sc_radius}} <input type="range" id="scR" min="3" max="60" value="14"><span id="scRv"></span></label>
       <label>{{ed.sc_strength}} <input type="range" id="scS" min="5" max="100" value="50"><span id="scSv"></span></label>
       <label><input type="checkbox" id="scMirror" checked> {{ed.sc_mirror}}</label>
-      <div class="seg"><button id="scUndo" title="Ctrl+Z">{{ed.undo_2}}</button><button id="scRedo" title="Ctrl+Shift+Z">{{ed.redo}}</button><button id="scDrop" title="{{ed.sc_drop_title}}">{{ed.sc_drop}}</button></div>
+      <div class="seg"><button id="scUndo" title="{{ui.undo_tip}}" disabled>{{ed.undo_2}}</button><button id="scRedo" title="{{ui.redo_tip}}" disabled>{{ed.redo}}</button><button id="scDrop" title="{{ed.sc_drop_title}}">{{ed.sc_drop}}</button></div>
       <div class="seg"><button id="scSave" title="{{ed.sc_save_title}}">{{ed.sc_save}}</button><button id="scClear" title="{{ed.sc_clear_title}}">{{ed.sc_clear}}</button><button id="scDone">{{ed.sc_done}}</button></div>
       <div class="st" id="scSt"></div>
     </div>
@@ -363,7 +363,7 @@
       <div class="small warn" id="warn"></div>
       <div class="sync" id="sync" style="margin-top:6px"></div>
       <div class="row">
-        <button id="undo" title="Ctrl+Z">{{ed.undo_2}}</button><button id="redo" title="Ctrl+Shift+Z">{{ed.redo}}</button>
+        <button id="undo" title="{{ui.undo_tip}}" disabled>{{ed.undo_2}}</button><button id="redo" title="{{ui.redo_tip}}" disabled>{{ed.redo}}</button>
         <button id="rebuild" title="{{ed.recompute_the_pelvis_spine_neck}}">{{ed.recompute_derived_joints}}</button>
         <span class="grow"></span>
         <button id="reset" class="danger" title="{{ed.delete_the_whole_markup}}">{{ed.start_over}}</button>
@@ -969,14 +969,45 @@ function refreshAll() {
   $('warn').innerHTML = w.length ? w.map((x) => '⚠ ' + x.text).join('<br>') : (S.phase === 'edit' ? '{{js:ed.joint_bends_are_normal}}' : '');
   $('sym').checked = S.sym; $('faceSym').checked = S.face_sym !== false; $('faceSym').disabled = !S.sym; $('xray').classList.toggle('on', xray);
   $('yawTxt').textContent = S.yaw ? `{{raw:ed.model_turned_by}}` : '';
-  $('rebuild').disabled = S.phase !== 'edit'; $('undo').disabled = poseOn && poseRoot ? !poseUndo.length : !undoStack.length; $('redo').disabled = poseOn && poseRoot ? !poseRedo.length : !redoStack.length;
+  $('rebuild').disabled = S.phase !== 'edit'; mainUndoUi();
   for (const [id, v] of [['vFront', 'front'], ['vSide', 'side'], ['vFree', 'free']]) $(id).classList.toggle('on', view === v);
   $('badge').textContent = { front: '{{js:ed.front_view}}', side: '{{js:ed.side_view_from_the_character_s_left}}', free: '{{js:ed.free_view}}' }[view];
 }
 
+// ---------------------------------------------------------------- undo / redo, as in every editor of the app: Ctrl+Z,
+// Ctrl+Shift+Z or Ctrl+Y (by the key's place: any layout), the ↶ ↷ buttons, the app's page passing the keys on
+// ({type: 'sf3d-undo', redo}); a text field keeps the keys for its typing. One history at a time: the skin's brush,
+// its texture or its mesh while that mode is on, else the armour being fitted, else the pose, else the markup.
+// A drag, a slider's pull or a brush's stroke is one step; 100 steps (the texture's 30: each holds pictures); another
+// character is another page, another armour piece starts its history anew
+var UNDO_MAX = 100;
+var WH = { undo: [], redo: [], at: null, quiet: false };   // (var: sync() may run before the armour's part of the page)
+const typing = (t) => !!(t && t.closest && t.closest('input:not([type]), input[type=text], input[type=number], input[type=search], textarea, [contenteditable]'));
+function undoKeys(run) {
+  addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey || (e.code !== 'KeyZ' && e.code !== 'KeyY') || typing(e.target)) return;
+    e.preventDefault(); e.stopImmediatePropagation(); run(e.shiftKey || e.code === 'KeyY');
+  }, true);
+  addEventListener('message', (e) => { if (e.origin === location.origin && e.data && e.data.type === 'sf3d-undo') run(!!e.data.redo); });
+}
+const wearHist = () => document.body.classList.contains('wear') && !!wear;   // (the class first: «wear» is declared further down)
+function undoRun(r) {
+  if (SC.on) return r ? scRedo() : scUndo();
+  if (TX.on) return r ? txRedo() : txUndo();
+  if (MX.on) return r ? mxRedo() : mxUndo();
+  if (wearHist()) return wearHistStep(!r);
+  if (poseOn && poseRoot) return poseStep(r ? poseRedo : poseUndo, r ? poseUndo : poseRedo);
+  (r ? redo : undo)();
+}
+function mainUndoUi() {   // the footer's ↶ ↷: the armour's history in its mode, the pose's while posing, else the markup's
+  const [u, d] = wearHist() ? [WH.undo.length, WH.redo.length] : poseOn && poseRoot ? [poseUndo.length, poseRedo.length] : [undoStack.length, redoStack.length];
+  $('undo').disabled = !u; $('redo').disabled = !d;
+}
+undoKeys(undoRun);
+
 // ---------------------------------------------------------------- state changes
 const snap = () => JSON.stringify(S);
-function pushUndo() { undoStack.push(snap()); if (undoStack.length > 100) undoStack.shift(); redoStack.length = 0; }
+function pushUndo() { undoStack.push(snap()); if (undoStack.length > UNDO_MAX) undoStack.shift(); redoStack.length = 0; }
 function stepBack(from, to) {   // undo: from the undo stack, the state now onto the redo one (redo: the other way)
   if (!from.length) return; to.push(snap()); Object.assign(S, JSON.parse(from.pop()));
   if (selected && S.phase !== 'edit') select(null); else if (selected) attach();
@@ -1018,8 +1049,8 @@ function attach() {
   handle.position.copy(V(S.pos[selected])); handle.quaternion.copy(getRot(selected)); handle.updateMatrixWorld();
   tc.attach(handle);
 }
-let dragBase = null;
-tc.addEventListener('mouseDown', () => { pushUndo(); dragBase = JSON.parse(snap()); });
+let dragBase = null, dragSnap = null;
+tc.addEventListener('mouseDown', () => { dragSnap = snap(); dragBase = JSON.parse(dragSnap); });
 tc.addEventListener('objectChange', () => {
   if (!selected || !dragBase) return;
   if (tc.getMode() === 'translate') moveJoint(selected, handle.position);
@@ -1029,7 +1060,10 @@ tc.addEventListener('objectChange', () => {
   }
   refreshFields(); draw();
 });
-tc.addEventListener('mouseUp', () => { dragBase = null; refreshAll(); sync(); });
+tc.addEventListener('mouseUp', () => {   // (a drag is a step only when it moved something)
+  if (dragSnap !== null && snap() !== dragSnap) { undoStack.push(dragSnap); if (undoStack.length > UNDO_MAX) undoStack.shift(); redoStack.length = 0; }
+  dragSnap = null; dragBase = null; refreshAll(); sync();
+});
 
 function fieldChange() {
   if (!selected) return; pushUndo();
@@ -1994,12 +2028,7 @@ addEventListener('pointerdown', (e) => {   // the app's page too: a Ctrl+A there
 addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT') return;
   const k = e.key.toLowerCase();
-  if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyZ' || e.code === 'KeyY')) {
-    e.preventDefault();
-    const back = !(e.shiftKey || e.code === 'KeyY');
-    if (poseOn && poseRoot) { poseStep(back ? poseUndo : poseRedo, back ? poseRedo : poseUndo); return; }   // posing: the pose's history
-    (back ? undo : redo)();
-  }
+  if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyZ' || e.code === 'KeyY')) return;   // (undoKeys: undoRun)
   else if (k === 'g' || k === 'п') { tc.setMode('translate'); refreshFields(); }
   else if (k === 'r' || k === 'к') { tc.setMode('rotate'); refreshFields(); }
   else if (e.key === 'Escape') { if (ovalMode) $('ovalBtn').onclick(); else select(null); }
@@ -2012,8 +2041,8 @@ $('vFront').onclick = () => setView('front'); $('vSide').onclick = () => setView
 $('xray').onclick = () => setXray(!xray);
 $('mMove').onclick = () => { tc.setMode('translate'); refreshFields(); };
 $('mRot').onclick = () => { tc.setMode('rotate'); refreshFields(); };
-$('undo').onclick = () => { if (poseOn && poseRoot) poseStep(poseUndo, poseRedo); else undo(); };
-$('redo').onclick = () => { if (poseOn && poseRoot) poseStep(poseRedo, poseUndo); else redo(); };
+$('undo').onclick = () => { if (wearHist()) wearHistStep(true); else if (poseOn && poseRoot) poseStep(poseUndo, poseRedo); else undo(); };
+$('redo').onclick = () => { if (wearHist()) wearHistStep(false); else if (poseOn && poseRoot) poseStep(poseRedo, poseUndo); else redo(); };
 $('sym').onchange = () => {
   pushUndo(); S.sym = $('sym').checked;
   if (S.sym) { rightMarks(); if (S.phase === 'edit') for (const j of live()) if (j.id.endsWith('_L')) setPos(j.id, V(S.pos[j.id])); }
@@ -2371,8 +2400,8 @@ addEventListener('pointerup', () => { if (dragId) { dragId = null; dragStart = n
 let dragStart = null;
 const poseUndo = [], poseRedo = [];
 const poseSnap = () => [...REST.keys()].map((b) => [b, b.quaternion.clone(), b.position.clone()]);
-const poseButtons = () => { $('undo').disabled = !poseUndo.length; $('redo').disabled = !poseRedo.length; };
-function posePush() { if (!poseRoot) return; poseUndo.push(poseSnap()); if (poseUndo.length > 100) poseUndo.shift(); poseRedo.length = 0; poseButtons(); }
+const poseButtons = () => mainUndoUi();
+function posePush() { if (!poseRoot) return; poseUndo.push(poseSnap()); if (poseUndo.length > UNDO_MAX) poseUndo.shift(); poseRedo.length = 0; poseButtons(); }
 function poseStep(from, to) {
   if (!from.length) return false;
   to.push(poseSnap());
@@ -2805,7 +2834,7 @@ addEventListener('pointerup', () => {
   if (!st.old.size) return;
   scLight(st.old);
   const now = new Map(); for (const code of st.old.keys()) { const it = SC.items[Math.floor(code / 1e7)], i = code % 1e7; now.set(code, [it.arr[3 * i], it.arr[3 * i + 1], it.arr[3 * i + 2]]); }
-  SC.undo.push({ key: SC.key, old: st.old, now }); if (SC.undo.length > 60) SC.undo.shift(); SC.redo.length = 0;
+  SC.undo.push({ key: SC.key, old: st.old, now }); if (SC.undo.length > UNDO_MAX) SC.undo.shift(); SC.redo.length = 0;
   scGrid(); scStatus();
 }, true);
 function scSet(rec, which) {   // undo / redo of a stroke: every vertex back to its values, the points and the light too
@@ -2824,10 +2853,6 @@ function scSet(rec, which) {   // undo / redo of a stroke: every vertex back to 
 }
 function scUndo() { const r = SC.undo.pop(); if (!r || r.key !== SC.key) { if (r) SC.undo.push(r); return; } scSet(r, 'old'); SC.redo.push(r); scStatus(); }
 function scRedo() { const r = SC.redo.pop(); if (!r || r.key !== SC.key) { if (r) SC.redo.push(r); return; } scSet(r, 'now'); SC.undo.push(r); scStatus(); }
-addEventListener('keydown', (e) => {
-  if (!SC.on || !(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'z' && e.key.toLowerCase() !== 'я') return;
-  e.preventDefault(); e.stopImmediatePropagation(); if (e.shiftKey) scRedo(); else scUndo();
-}, true);
 function scChanges() {   // {key: [{mesh, prim, v: [[i, rest x, y, z, offset x, y, z]]}]}: what moved since the model was loaded (or saved)
   const out = {};
   for (const [key, per] of SC.orig) {
@@ -3313,7 +3338,7 @@ function lcApply() {
   if (st.old.size) {
     scLight(st.old);
     const now = new Map(); for (const code of st.old.keys()) { const it = SC.items[Math.floor(code / 1e7)], i = code % 1e7; now.set(code, [it.arr[3 * i], it.arr[3 * i + 1], it.arr[3 * i + 2]]); }
-    SC.undo.push({ key: SC.key, old: st.old, now }); if (SC.undo.length > 60) SC.undo.shift(); SC.redo.length = 0;
+    SC.undo.push({ key: SC.key, old: st.old, now }); if (SC.undo.length > UNDO_MAX) SC.undo.shift(); SC.redo.length = 0;
     scGrid();
   }
   LC.off.clear(); lcMeasure(); lcDraw(); scStatus();
@@ -3463,10 +3488,6 @@ function txPut(patches, reverse) {
 }
 function txUndo() { const r = TX.undo.pop(); if (!r) return; txPut(r.before, true); TX.redo.push(r); txStatus(); }
 function txRedo() { const r = TX.redo.pop(); if (!r) return; txPut(r.after, false); TX.undo.push(r); txStatus(); }
-addEventListener('keydown', (e) => {
-  if (!TX.on || !(e.ctrlKey || e.metaKey) || (e.key.toLowerCase() !== 'z' && e.key.toLowerCase() !== 'я')) return;
-  e.preventDefault(); e.stopImmediatePropagation(); if (e.shiftKey) txRedo(); else txUndo();
-}, true);
 function txStatus(text) {
   $('txSt').textContent = text || (TX.dirty ? '{{js:ed.tx_unsaved}}' : '{{js:ed.sc_nothing_unsaved}}');
   $('txUndo').disabled = !TX.undo.length; $('txRedo').disabled = !TX.redo.length;
@@ -3657,7 +3678,7 @@ function mxFill() {
   const patch = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: new THREE.Color(...col), roughness: .75, side: THREE.DoubleSide })); scene.add(patch);
   const pa = (pt) => { const a = pt.m.geometry.attributes.position; return [a.getX(pt.i), a.getY(pt.i), a.getZ(pt.i)]; };
   const fill = { mesh: lp.name, loop: lp.ids.map((id) => pa(lp.R.pts[id])), tris: tris.flat(), colour: col.map((x) => +x.toFixed(4)) };
-  MX.fills.push(fill); MX.patches.push(patch); MX.undo.push({ fill, patch }); MX.redo.length = 0;
+  MX.fills.push(fill); MX.patches.push(patch); MX.undo.push({ fill, patch }); if (MX.undo.length > UNDO_MAX) MX.undo.shift(); MX.redo.length = 0;
   mxShowLoop(null); $('mxSt').textContent = '{{js:ed.mx_patched}}'.replace('{0}', tris.length);
 }
 canvas.addEventListener('pointerdown', (e) => {
@@ -3688,7 +3709,7 @@ addEventListener('pointerup', () => {
   if (!MX.on || !MX.stroke) return;
   const st = MX.stroke; MX.stroke = null; orbit.enabled = true;
   if (!st.length) return;
-  MX.undo.push({ cut: st }); MX.redo.length = 0; mxBuild(); mxWires($('mxWire').checked); $('mxSt').textContent = '{{js:ed.mx_cut}}'.replace('{0}', st.length);
+  MX.undo.push({ cut: st }); if (MX.undo.length > UNDO_MAX) MX.undo.shift(); MX.redo.length = 0; mxBuild(); mxWires($('mxWire').checked); $('mxSt').textContent = '{{js:ed.mx_cut}}'.replace('{0}', st.length);
 }, true);
 function mxUndo() {
   const r = MX.undo.pop(); if (!r) return; MX.redo.push(r);
@@ -3700,10 +3721,6 @@ function mxRedo() {
   if (r.cut) { for (const [m, f, tri] of r.cut) { const ix = m.geometry.index.array; ix[3 * f + 1] = ix[3 * f + 2] = ix[3 * f]; m.geometry.index.needsUpdate = true; if (!MX.cuts.has(m.uuid)) MX.cuts.set(m.uuid, new Map()); MX.cuts.get(m.uuid).set(f, tri); } mxBuild(); mxWires($('mxWire').checked); }
   else { r.patch.visible = true; MX.fills.push(r.fill); }
 }
-addEventListener('keydown', (e) => {
-  if (!MX.on || !(e.ctrlKey || e.metaKey) || (e.key.toLowerCase() !== 'z' && e.key.toLowerCase() !== 'я')) return;
-  e.preventDefault(); e.stopImmediatePropagation(); if (e.shiftKey) mxRedo(); else mxUndo();
-}, true);
 function mxMode(m) { MX.mode = m; for (const x of $('mxModes').querySelectorAll('button')) x.classList.toggle('on', x.dataset.m === m); mxShowLoop(null);
   $('mxSt').textContent = m === 'fill' ? '{{js:ed.mx_fill_help}}' : '{{js:ed.mx_cut_help}}'; }
 function mxEnter() {
@@ -4993,6 +5010,28 @@ const WEAR_NAMES = [[/boot|shoe|sabaton|сапог|ботин/i, 'boot'], [/cuis
   [/greave|shin|понож|голен/i, 'leg'], [/pauldron|spaulder|shoulder|наплеч/i, 'pauldron'], [/rerebrace|upper_?arm/i, 'arm'],
   [/gauntlet|glove|перчат|рукавиц/i, 'hand'], [/bracer|vambrace|forearm|наруч/i, 'forearm'],
   [/helm|hat|hood|head|шлем|голов/i, 'head'], [/cuirass|breast|chest|vest|torso|armou?r_?plate|нагруд|кирас|торс/i, 'torso']];
+// ---- the armour's undo / redo: a step is the whole fitting as wearState() has it (the part and side, the sliders, the
+// gizmo's move, turn and scale, the fit by the skin, the points, the openings); noted when the mouse is let go, a field
+// is changed or a button of the panel clicked, so a drag or a slider's pull is one step; another piece opened: anew
+function wearHistCommit() {
+  if (WH.quiet || !wearHist()) return;
+  const now = JSON.stringify(wearState());
+  if (WH.at !== null && now !== WH.at) { WH.undo.push(WH.at); if (WH.undo.length > UNDO_MAX) WH.undo.shift(); WH.redo.length = 0; }
+  WH.at = now; mainUndoUi();
+}
+function wearHistReset() { WH.undo.length = WH.redo.length = 0; WH.at = null; wearHistCommit(); mainUndoUi(); }
+function wearHistStep(back) {
+  if (!wear || tcW.dragging) return;
+  wearHistCommit();
+  const from = back ? WH.undo : WH.redo, to = back ? WH.redo : WH.undo;
+  if (!from.length) return;
+  to.push(WH.at); WH.at = from.pop();
+  WH.quiet = true;
+  try { if (wearRestore(JSON.parse(WH.at))) { wearSelect(-1); wearEdited(); } } finally { WH.quiet = false; }
+  mainUndoUi();
+}
+for (const ev of ['pointerup', 'change']) addEventListener(ev, () => { if (wearHist()) setTimeout(wearHistCommit, 0); }, true);
+addEventListener('click', (e) => { if (wearHist() && e.target.closest && e.target.closest('#wearPanel')) setTimeout(wearHistCommit, 0); }, true);
 const wearGuessPart = (name) => (WEAR_NAMES.find(([re]) => re.test(name)) || [])[1] || null;
 const wearItem = (name) => name.replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'item';
 async function wearLoad(buf, name, state, keepPart = false, ready = false) {
@@ -5039,6 +5078,7 @@ async function wearLoad(buf, name, state, keepPart = false, ready = false) {
   }
   wearGroup.visible = true;
   wearShowOthers();
+  wearHistReset();
 }
 function wearListFits() {
   $('wSavedRow').hidden = !wearFits.length;
@@ -5097,6 +5137,7 @@ async function wearMode(on) {
   $('poseBar').hidden = on || !poseOn;
   hoverId = dragId = null; poseHighlight();
   if (!on) tcW.detach();
+  if (on) wearHistCommit(); mainUndoUi();   // (the footer's ↶ ↷ now the armour's, or back to the pose's)
 }
 function wearGizmo(mode) {
   if (!wear || isSkelMode()) return;

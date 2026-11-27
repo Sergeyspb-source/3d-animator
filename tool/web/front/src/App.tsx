@@ -13,6 +13,7 @@ import NavMenu from './components/NavMenu';
 import Dock from './components/Dock';
 import { ObjectsProvider, useObjects } from './objects';
 import { Guard } from './components/ErrorBoundary';
+import { useUndoToFrames } from './undo';
 import ModelCreate from './screens/ModelCreate';
 import ModelCheck from './screens/ModelCheck';
 import ModelImprove from './screens/ModelImprove';
@@ -47,6 +48,7 @@ export default function App({ initial }: { initial: AppState }) {
     return () => window.removeEventListener('hashchange', on);
   }, []);
   const go = (r: Route) => { location.hash = hashOf(r); };
+  useUndoToFrames();   // Ctrl+Z / Ctrl+Shift+Z pressed on the app's own panels: to the editor frame on screen
 
   // keys: Ctrl+K every command, ` the dock, Alt+1..7 the steps of this section
   const sec = SECTIONS.find((s) => s.id === route.section);

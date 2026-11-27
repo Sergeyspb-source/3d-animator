@@ -96,8 +96,8 @@
       <div class="sep"></div>
       <button id="reset" title="{{sv.reset_tip}}">{{sv.reset}}</button>
       <button id="keepPose" class="primary" hidden title="{{sv.keep_pose_tip}}">{{sv.keep_pose}}</button>
-      <button id="undo" hidden title="Ctrl+Z">↶ {{sv.undo}}</button>
-      <button id="redo" hidden title="Ctrl+Y, Ctrl+Shift+Z">↷ {{sv.redo}}</button>
+      <button id="undo" hidden disabled title="{{ui.undo_tip}}">↶ {{sv.undo}}</button>
+      <button id="redo" hidden disabled title="{{ui.redo_tip}}">↷ {{sv.redo}}</button>
       <span class="status" id="kStatus" style="margin:0"></span>
     </div>
     <div class="stage" id="stage">
@@ -798,14 +798,26 @@ renderer.domElement.addEventListener('pointermove', (e) => { if (painting) paint
 addEventListener('pointerup', () => { if (painting) strokeEnd(); painting = false; });
 
 // ---- undo / redo in the edit modes: a brush's stroke (each vertex's state before it), a mark or joint moved, «Clear»,
-// «Even», «Mirror» (the markup's points before them)
+// «Even», «Mirror» (the markup's points before them). As in every editor of the app: Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y (by
+// the key's place: any layout), the ↶ ↷ buttons, the app's page passing the keys on ({type: 'sf3d-undo', redo}); a text
+// field keeps the keys for its typing; 100 steps; another model is another page
+const UNDO_MAX = 100;
+const typing = (t) => !!(t && t.closest && t.closest('input:not([type]), input[type=text], input[type=number], input[type=search], textarea, [contenteditable]'));
+function undoKeys(run) {
+  addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey || (e.code !== 'KeyZ' && e.code !== 'KeyY') || typing(e.target)) return;
+    e.preventDefault(); e.stopImmediatePropagation(); run(e.shiftKey || e.code === 'KeyY');
+  }, true);
+  addEventListener('message', (e) => { if (e.origin === location.origin && e.data && e.data.type === 'sf3d-undo') run(!!e.data.redo); });
+}
 const undoStack = [], redoStack = [];
+const histPush = (x) => { undoStack.push(x); if (undoStack.length > UNDO_MAX) undoStack.shift(); redoStack.length = 0; };
 let stroke = null;
 const pstate = (mi, i) => (paint[mi].plus.has(i) ? '+' : paint[mi].minus.has(i) ? '-' : '');
 function pset(mi, i, v) { paint[mi].plus.delete(i); paint[mi].minus.delete(i); if (v === '+') paint[mi].plus.add(i); else if (v === '-') paint[mi].minus.add(i); }
 function strokeStart() { stroke = new Map(); }
 function strokeNote(mi, i) { if (stroke && !stroke.has(mi + ':' + i)) stroke.set(mi + ':' + i, pstate(mi, i)); }
-function strokeEnd() { if (stroke && stroke.size) { undoStack.push({ t: 'paint', ch: stroke }); redoStack.length = 0; } stroke = null; histUi(); }
+function strokeEnd() { if (stroke && stroke.size) histPush({ t: 'paint', ch: stroke }); stroke = null; histUi(); }
 function snapMarks() {   // every point of the markup as it is now
   return { pts: new Map([...mk.pts].map(([b, p]) => [b, p.clone()])), ends: new Map([...mk.ends].map(([b, p]) => [b, p.clone()])),
            mouth: Object.fromEntries(Object.entries(mouth).map(([k, v]) => [k, v.clone()])),
@@ -821,13 +833,15 @@ function putMarks(sn) {
   if (mk.sel) { helper.position.copy(markPos(mk.sel)); helper.updateMatrixWorld(); }
   if (mode === 'mouth') mouthPaint();
 }
-function marksDone(before) { undoStack.push({ t: 'marks', before, after: snapMarks() }); redoStack.length = 0; histUi(); }
+const marksKey = (sn) => JSON.stringify([[...sn.pts.values(), ...sn.ends.values(), ...Object.values(sn.mouth)].map((p) => p.toArray()), sn.eyes]);
+function marksDone(before) { const after = snapMarks(); if (marksKey(after) !== marksKey(before)) histPush({ t: 'marks', before, after }); histUi(); }   // (a click that moved nothing: no step)
 function histUi() {
   const on = EDIT && mode !== 'view';
   $('undo').hidden = $('redo').hidden = !on;
   $('undo').disabled = !undoStack.length; $('redo').disabled = !redoStack.length;
 }
 function undoRedo(from, to) {
+  if (painting || dragBefore) return;   // (not in the middle of a stroke or a drag)
   const e = from.pop();
   if (!e) return;
   if (e.t === 'paint') {
@@ -843,12 +857,7 @@ function undoRedo(from, to) {
 }
 $('undo').onclick = () => undoRedo(undoStack, redoStack);
 $('redo').onclick = () => undoRedo(redoStack, undoStack);
-addEventListener('keydown', (e) => {
-  if (!EDIT || mode === 'view' || !(e.ctrlKey || e.metaKey)) return;
-  const k = e.key.toLowerCase();
-  if (k === 'z' && !e.shiftKey) { e.preventDefault(); undoRedo(undoStack, redoStack); }
-  else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); undoRedo(redoStack, undoStack); }
-});
+undoKeys((r) => { if (EDIT && mode !== 'view') (r ? undoRedo(redoStack, undoStack) : undoRedo(undoStack, redoStack)); });
 // a mark or joint dragged: its markup before the drag
 let dragBefore = null;
 gizmo.addEventListener('mouseDown', () => { if (EDIT && mode !== 'view') dragBefore = snapMarks(); });

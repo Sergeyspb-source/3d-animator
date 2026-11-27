@@ -112,7 +112,7 @@
       </span>
       <span class="seg"><button id="poseEd" title="{{ag.pose_edit_title}}">{{ag.pose_edit}}</button><button id="poseReset" title="{{ag.pose_reset_title}}">{{ag.pose_reset}}</button></span>
       <span class="sep"></span>
-      <span class="seg"><button id="undoBtn" title="{{ag.undo_title}}">↶</button><button id="redoBtn" title="{{ag.redo_title}}">↷</button></span>
+      <span class="seg"><button id="undoBtn" title="{{ui.undo_tip}}" disabled>↶</button><button id="redoBtn" title="{{ui.redo_tip}}" disabled>↷</button></span>
       <span class="seg" id="clothBar" hidden><button id="clothOn" title="{{ag.cloth_on_title}}">{{ag.cloth_on}}</button></span>
       <label id="clothWindBox" hidden style="font-size:12px">{{ag.cloth_wind}} <input type="range" id="clothWind" min="0" max="1" step="0.05" value="0" style="width:80px;vertical-align:middle"></label>
       <span class="grow"></span>
@@ -271,7 +271,7 @@ let gizmoMode = 'translate', gizmoDrag = null;
 gizmo.addEventListener('dragging-changed', (e) => {
   controls.enabled = !e.value;
   if (e.value) { gizmoDrag = { size: S.p.s_size }; if (POSE_ED.on) poseDragStart(); }
-  else { gizmoDrag = null; gizmoObj.scale.set(1, 1, 1); if (POSE_ED.on) { poseEdSync(); poseSave(); } else histCommit(); }
+  else { gizmoDrag = null; gizmoObj.scale.set(1, 1, 1); if (POSE_ED.on) { poseHistDone(); poseEdSync(); poseSave(); } else histCommit(); }
 });
 gizmo.addEventListener('objectChange', () => gizmoMoved());
 // the middle button pans the view, not the page (browser autoscroll); the wheel zooms, it does not scroll the app
@@ -8659,10 +8659,29 @@ $('poseEd').addEventListener('click', () => {
   POSE_ED.on = !POSE_ED.on; POSE_ED.bone = null; poseShow();
   if (POSE_ED.on && PINCH.on) { PINCH.on = false; hot([], null); pinchSync(); }
   $('status').textContent = POSE_ED.on ? '{{js:ag.pose_edit_hint}}' : '';
-  poseEdSync(); gizmoSync();
+  poseEdSync(); gizmoSync(); histSync();
 });
 poseEdSync();
-$('poseReset').addEventListener('click', () => { delete POSE_EDITS[pose]; POSE_ED.bone = null; applyPose(); poseEdSync(); poseSave(); });
+$('poseReset').addEventListener('click', () => { POSE_ED.hb = poseEditsNow(); delete POSE_EDITS[pose]; POSE_ED.bone = null; poseHistDone(); applyPose(); poseEdSync(); poseSave(); });
+// the pose's own undo / redo while «Fix the pose» is on (Ctrl+Z and the ↶ ↷ then work on it): a gizmo's turn or a reset
+// is one step, {pose, b: its turns before, a: after}; a step undone is saved as it is now (the character's poses file)
+const POSE_HIST = { undo: [], redo: [] };
+const poseEditsNow = () => JSON.stringify(POSE_EDITS[pose] || {});
+function poseHistDone() {
+  const b = POSE_ED.hb, a = poseEditsNow(); POSE_ED.hb = null;
+  if (b == null || a === b) return;
+  POSE_HIST.undo.push({ pose, b, a }); if (POSE_HIST.undo.length > UNDO_MAX) POSE_HIST.undo.shift(); POSE_HIST.redo.length = 0; histSync();
+}
+function poseHistStep(back) {
+  if (gizmo.dragging) return;
+  const from = back ? POSE_HIST.undo : POSE_HIST.redo, to = back ? POSE_HIST.redo : POSE_HIST.undo, r = from.pop();
+  if (!r) return;
+  to.push(r);
+  const x = JSON.parse(back ? r.b : r.a);
+  if (Object.keys(x).length) POSE_EDITS[r.pose] = x; else delete POSE_EDITS[r.pose];
+  if (r.pose === pose) { POSE_ED.bone = null; applyPose(); }
+  poseEdSync(); gizmoSync(); poseSave(); histSync();
+}
 function poseJointAt(e) {   // the bone of the skeleton shown nearest the click (its line from its joint to its child's), a few pixels at most
   const rc = cnv.getBoundingClientRect(), scr = (b) => { const v = b.getWorldPosition(new V3()).project(camera); return v.z > 1 ? null : [rc.left + (v.x + 1) / 2 * rc.width, rc.top + (1 - v.y) / 2 * rc.height]; };
   let best = null, bd = Infinity;
@@ -8701,6 +8720,7 @@ cnv.addEventListener('pointerup', (e) => {
 });
 function poseDragStart() {
   const b = POSE_ED.bone; if (!b) return;
+  POSE_ED.hb = poseEditsNow();
   POSE_ED.g0 = gizmoObj.quaternion.clone(); POSE_ED.q0 = b.getWorldQuaternion(new Q());
   const e = (POSE_EDITS[pose] || {})[b.name];
   POSE_ED.base = b.quaternion.clone().multiply(e ? new Q(...e).invert() : new Q());   // what the pose itself gives it
@@ -9466,8 +9486,20 @@ $('pinchMode').addEventListener('click', (e) => { if (e.target.dataset.m) { PINC
 $('pinchKind').addEventListener('click', (e) => { if (e.target.dataset.k) { PINCH.kind = e.target.dataset.k; pinchSync(); } });
 $('pinchClear').addEventListener('click', () => { if ((S.p.pinches || []).length) { S.p.pinches = []; changed('pinch'); } });
 
-// ------------------------------------------------------------------ undo / redo (Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y, the ↶ ↷ buttons):
-// the piece, its sides, style and parameters (pinches too). A slider's moves in a row are one step
+// ------------------------------------------------------------------ undo / redo, as in every editor of the app: Ctrl+Z,
+// Ctrl+Shift+Z or Ctrl+Y (by the key's place: any layout), the ↶ ↷ buttons, the app's page passing the keys on
+// ({type: 'sf3d-undo', redo}); a text field keeps the keys for its typing. The piece, its sides, style and parameters
+// (pinches and paint too); a slider's moves in a row are one step, a drag one; 100 steps; a saved piece opened, or
+// another character, starts it anew. While «Fix the pose» is on: the pose's own history (POSE_HIST)
+const UNDO_MAX = 100;
+const typing = (t) => !!(t && t.closest && t.closest('input:not([type]), input[type=text], input[type=number], input[type=search], textarea, [contenteditable]'));
+function undoKeys(run) {
+  addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey || (e.code !== 'KeyZ' && e.code !== 'KeyY') || typing(e.target)) return;
+    e.preventDefault(); e.stopImmediatePropagation(); run(e.shiftKey || e.code === 'KeyY');
+  }, true);
+  addEventListener('message', (e) => { if (e.origin === location.origin && e.data && e.data.type === 'sf3d-undo') run(!!e.data.redo); });
+}
 const HIST = { undo: [], redo: [], at: null, timer: 0, restoring: false };
 // (the name with the piece: an undo back to another piece kept the opened item's name, and «Generate» then made that
 // item as the other piece - a bracer saved as a greave)
@@ -9480,7 +9512,7 @@ function histNote(what) {
 function histCommit() {
   clearTimeout(HIST.timer); HIST.timer = 0;
   const now = snapS();
-  if (HIST.at !== null && now !== HIST.at) { HIST.undo.push(HIST.at); if (HIST.undo.length > 200) HIST.undo.shift(); HIST.redo.length = 0; }
+  if (HIST.at !== null && now !== HIST.at) { HIST.undo.push(HIST.at); if (HIST.undo.length > UNDO_MAX) HIST.undo.shift(); HIST.redo.length = 0; }
   HIST.at = now; histSync();
 }
 function histStep(from, to) {
@@ -9499,8 +9531,10 @@ function histStep(from, to) {
   finally { HIST.restoring = false; }
   histSync();
 }
-function histSync() { $('undoBtn').disabled = !HIST.undo.length; $('redoBtn').disabled = !HIST.redo.length; }
-const undo = () => histStep(HIST.undo, HIST.redo), redo = () => histStep(HIST.redo, HIST.undo);
+function histSync() { const h = POSE_ED.on ? POSE_HIST : HIST; $('undoBtn').disabled = !h.undo.length; $('redoBtn').disabled = !h.redo.length; }
+function histReset() { clearTimeout(HIST.timer); HIST.timer = 0; HIST.undo.length = HIST.redo.length = 0; HIST.at = snapS(); histSync(); }
+window.agHistReset = histReset;   // (the app's catalog picking a piece: tool/web/adapters/armour_editor.js)
+const undo = () => (POSE_ED.on ? poseHistStep(true) : histStep(HIST.undo, HIST.redo)), redo = () => (POSE_ED.on ? poseHistStep(false) : histStep(HIST.redo, HIST.undo));
 $('undoBtn').addEventListener('click', undo); $('redoBtn').addEventListener('click', redo);
 // Ctrl+A outside a field selects nothing; any click takes a selection away (the 3D view's clicks do not on their own)
 const inField = (t) => !!(t && t.closest && t.closest('input[type=text], input[type=number], textarea, select'));
@@ -9526,14 +9560,10 @@ window.agGizmoDrag = (move, turn, axis) => {   // (the tests) a drag: the gizmo 
   gizmoDrag = { size: S.p.s_size }; if (POSE_ED.on) poseDragStart();
   gizmoObj.position.add(new V3(...move));
   if (turn) gizmoObj.quaternion.multiply(new Q().setFromAxisAngle(new V3(...axis), THREE.MathUtils.degToRad(turn)));
-  gizmoMoved(); gizmoDrag = null; if (POSE_ED.on) { poseEdSync(); poseSave(); } else histCommit();
+  gizmoMoved(); gizmoDrag = null; if (POSE_ED.on) { poseHistDone(); poseEdSync(); poseSave(); } else histCommit();
   return { px: S.p.s_px, py: S.p.s_py, pz: S.p.s_pz, rx: S.p.s_rx, ry: S.p.s_ry, rz: S.p.s_rz, want: { p: gizmoObj.position.toArray(), q: gizmoObj.quaternion.toArray() } };
 };
-window.addEventListener('keydown', (e) => {   // by the key's place, so the Russian layout works too
-  if (!(e.ctrlKey || e.metaKey) || (e.code !== 'KeyZ' && e.code !== 'KeyY')) return;
-  if (e.target.closest('input[type=text], input[type=number], textarea, select')) return;
-  e.preventDefault(); (e.shiftKey || e.code === 'KeyY' ? redo : undo)();
-});
+undoKeys((r) => (r ? redo : undo)());
 window.sf3dPinchTest = { hit: (x, y) => { const h = pinchHit({ clientX: x, clientY: y }); return h && { point: h.point.toArray(), n: h.n.toArray() }; },
   list: () => S.p.pinches, paints: () => S.p.paints, paintState: PAINT, state: PINCH, lens: () => BRUSH.uBrushOn.value > .5 && BRUSH.uLens.value > .5,
   hidden: (x, y) => { const h = pinchHit({ clientX: x, clientY: y }); return h && hiddenByBody(h.point); }, hist: () => ({ undo: HIST.undo.length, redo: HIST.redo.length }) };
@@ -9895,6 +9925,7 @@ $('saved').addEventListener('change', (e) => {
   const x = DATA.saved[+e.target.value]; if (e.target.value === '' || !x) return;
   S.p = { ...DEFAULTS, ...PIECES[x.piece].defaults, ...x.params, ...('w_magnet' in (x.params || {}) ? {} : { w_magnet: false }) }; S.sides = x.sides && x.sides.length ? [...x.sides] : ['L', 'R'];
   S.name = x.item; S.nameTouched = true; setPiece(x.piece, true);
+  histReset();   // (another object: no step back to the piece before it)
 });
 
 

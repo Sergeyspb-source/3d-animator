@@ -110,7 +110,7 @@
       <div id="parts" style="margin-top:6px"></div>
       <div class="row" style="margin-top:6px">
         <button id="brushOn" title="{{cp.brush_tip}}">🖌 {{cp.brush}}</button><button id="eraser">{{cp.eraser}}</button>
-        <button id="pUndo" title="Ctrl+Z">↶</button><button id="pRedo" title="Ctrl+Y">↷</button><button id="pClear">{{cp.clear_part}}</button>
+        <button id="pUndo" title="{{ui.undo_tip}}" disabled>↶</button><button id="pRedo" title="{{ui.redo_tip}}" disabled>↷</button><button id="pClear">{{cp.clear_part}}</button>
       </div>
       <div class="sl" style="margin-top:4px"><span>{{cp.brush_size}}</span><input type="range" id="bSize" min="0.003" max="0.08" step="0.001" value="0.015"></div>
       <div class="small" id="pInfo"></div>
@@ -332,6 +332,7 @@ new GLTFLoader().parse(b64(GLB), '', (gltf) => {
   load(DATA.current && DATA.variants && DATA.variants[DATA.current] ? DATA.variants[DATA.current].params : null);
   varsUi();
   draftLoad();
+  histReset();
 }, (err) => { $('msg').textContent = '{{js:sv.load_failed}} ' + (err && err.message || err); });
 
 // ---------------------------------------------------------------- the colour zones: k-means of the skin's colours
@@ -425,7 +426,7 @@ function apply() {
   U.pStripe.value.set(+$('stripe_size').value, +$('stripe_warp').value, +$('stripe_dir').value);
   U.pDirt.value.set(+$('dirt_size').value, 0, 0);
   parts.forEach((q, k) => { U.qC.value[k].set(...q.c); U.qT.value[k].set(...q.t); U.qM.value[k] = q.m; });
-  draftLater();
+  draftLater(); histNote();
 }
 // ---------------------------------------------------------------- the draft: what is being painted, kept in this
 // browser on every change (a reload, another creature picked and back: the work goes on where it was); a variant saved
@@ -511,7 +512,6 @@ $('orig').onpointerdown = () => showOrig(true);
 // per vertex (seam twins together: by position), kept with the variant as the painted vertices' rest positions
 let parts = [0, 1, 2].map(() => ({ m: 1, t: [0.9, 0.85, 0.7], c: [0.5, 0.5, 0.5] }));
 let part = 0, brush = '', painting = false;
-const undoP = [], redoP = [];
 const snapP = () => skins.map((s) => s.mesh.geometry.attributes.sfParts.array.slice());
 const putP = (sn) => { skins.forEach((s, i) => { const a = s.mesh.geometry.attributes.sfParts; a.array.set(sn[i]); a.needsUpdate = true; }); };
 function partsUi() {
@@ -608,23 +608,63 @@ $('bSize').addEventListener('input', () => {
   ringShow();
 });
 renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
-renderer.domElement.addEventListener('pointerdown', (e) => { if (brush && e.button === 0) { painting = true; undoP.push(snapP()); if (undoP.length > 30) undoP.shift(); redoP.length = 0; brushAt(e); } });
+renderer.domElement.addEventListener('pointerdown', (e) => { if (brush && e.button === 0) { histCommit(); painting = true; brushAt(e); } });
 renderer.domElement.addEventListener('pointermove', (e) => { if (painting) brushAt(e); });
-addEventListener('pointerup', () => { if (!painting) return; painting = false; partColour(part); apply(); partsInfo(); });
+addEventListener('pointerup', () => { if (!painting) return; painting = false; partColour(part); apply(); partsInfo(); histCommit(); });   // (a stroke: one step)
 $('vname').addEventListener('input', () => draftLater());
-function undoRedo(from, to) { const sn = from.pop(); if (!sn) return; to.push(snapP()); putP(sn); [0, 1, 2].forEach(partColour); apply(); partsInfo(); }
-$('pUndo').onclick = () => undoRedo(undoP, redoP);
-$('pRedo').onclick = () => undoRedo(redoP, undoP);
-addEventListener('keydown', (e) => {
-  if (!(e.ctrlKey || e.metaKey)) return;
-  const k = e.key.toLowerCase();
-  if (k === 'z' && !e.shiftKey) { e.preventDefault(); undoRedo(undoP, redoP); }
-  else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); undoRedo(redoP, undoP); }
-});
+// ---- undo / redo, as in every editor of the app: Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y (by the key's place: any layout), the
+// ↶ ↷ buttons, the app's page passing the keys on ({type: 'sf3d-undo', redo}); a text field keeps the keys for its typing.
+// A step is the whole look: the zones, tone, patterns, seed, the parts and what the brush painted. A brush's stroke is
+// one step, a slider's or a colour's moves in a row are one; 100 steps; another variant opened starts it anew
+const UNDO_MAX = 100;
+const typing = (t) => !!(t && t.closest && t.closest('input:not([type]), input[type=text], input[type=number], input[type=search], textarea, [contenteditable]'));
+function undoKeys(run) {
+  addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey || (e.code !== 'KeyZ' && e.code !== 'KeyY') || typing(e.target)) return;
+    e.preventDefault(); e.stopImmediatePropagation(); run(e.shiftKey || e.code === 'KeyY');
+  }, true);
+  addEventListener('message', (e) => { if (e.origin === location.origin && e.data && e.data.type === 'sf3d-undo') run(!!e.data.redo); });
+}
+const HIST = { undo: [], redo: [], at: null, timer: 0, restoring: false };
+function lookNow() {   // (the params without the parts' points: the painted marks go as the arrays, shared while unchanged)
+  const L = Object.fromEntries(LAYERS.map((l) => [l.k, { c: unhex($(l.k + 'C').value), a: +$(l.k + 'A').value,
+    ...Object.fromEntries(l.extra.map(([x]) => [x, +$(l.k + '_' + x).value])) }]));
+  const j = JSON.stringify({ zones: zones.map((z) => ({ c: z.c, t: z.t, m: z.m, share: z.share })), sig: U.zSig.value,
+    tone: { hue: +$('hue').value, sat: +$('sat').value, val: +$('val').value, con: +$('con').value }, layers: L, seed: U.pSeed.value,
+    parts: parts.map((q) => ({ m: q.m, t: q.t, c: q.c })) });
+  const now = snapP(), was = HIST.at && HIST.at.a;
+  const same = was && was.length === now.length && now.every((a, i) => a.length === was[i].length && a.every((v, k) => v === was[i][k]));
+  return { j, a: same ? was : now };
+}
+const sameLook = (x, y) => x.j === y.j && x.a === y.a;
+function histNote() { if (HIST.restoring || !skins.length) return; clearTimeout(HIST.timer); HIST.timer = setTimeout(histCommit, 500); }
+function histCommit() {
+  clearTimeout(HIST.timer); HIST.timer = 0;
+  if (HIST.restoring || !skins.length) return;
+  const now = lookNow();
+  if (HIST.at && !sameLook(now, HIST.at)) { HIST.undo.push(HIST.at); if (HIST.undo.length > UNDO_MAX) HIST.undo.shift(); HIST.redo.length = 0; }
+  HIST.at = now; histUi();
+}
+function histReset() { clearTimeout(HIST.timer); HIST.undo.length = HIST.redo.length = 0; HIST.at = null; histCommit(); }
+function histUi() { $('pUndo').disabled = !HIST.undo.length; $('pRedo').disabled = !HIST.redo.length; }
+function histStep(back) {
+  if (painting) return;
+  histCommit();   // (a slider's last moves first)
+  const from = back ? HIST.undo : HIST.redo, to = back ? HIST.redo : HIST.undo;
+  if (!from.length) return;
+  to.push(HIST.at); HIST.at = from.pop();
+  const p = JSON.parse(HIST.at.j);
+  HIST.restoring = true;
+  try { load(p, true); parts = p.parts.map((q) => ({ ...q })); putP(HIST.at.a); partsUi(); apply(); }
+  finally { HIST.restoring = false; }
+  histUi();
+}
+$('pUndo').onclick = () => histStep(true);
+$('pRedo').onclick = () => histStep(false);
+undoKeys((r) => histStep(!r));
 $('pClear').onclick = () => {
-  undoP.push(snapP()); redoP.length = 0;
   skins.forEach((s) => { const a = s.mesh.geometry.attributes.sfParts; for (let i = part; i < a.array.length; i += 3) a.array[i] = 0; a.needsUpdate = true; });
-  partsInfo();
+  partsInfo(); histCommit();
 };
 function partsSave() {   // each part: its mode, colours and the rest positions of its vertices (a position once)
   return parts.map((q, k) => {
@@ -655,7 +695,6 @@ function partsLoad(saved) {   // the parts kept onto this model's vertices (by d
       A.needsUpdate = true;
     });
   }
-  undoP.length = 0; redoP.length = 0;
   partsUi();
 }
 
@@ -711,7 +750,7 @@ function varsUi() {
     current = el.dataset.v;
     const v = current && vs[current];
     $('vname').value = v ? (v.title || current) : '';
-    draftOn = false; load(v ? v.params : null); varsUi(); draftOn = true;
+    draftOn = false; load(v ? v.params : null); varsUi(); draftOn = true; histReset();
   });
   $('del').disabled = !current;
   if (current && vs[current] && !$('vname').value) $('vname').value = vs[current].title || current;
@@ -723,7 +762,7 @@ function send(req) {
   ta.dispatchEvent(new Event('input', { bubbles: true }));
   setTimeout(() => doc.querySelector('#' + DATA.req_go).click(), 400);
 }
-$('fresh').onclick = () => { current = ''; $('vname').value = ''; load(null); varsUi(); };   // (the parts cleared too)
+$('fresh').onclick = () => { current = ''; $('vname').value = ''; load(null); varsUi(); histReset(); };   // (the parts cleared too)
 $('del').onclick = () => { if (!current) return; send({ action: 'delete', variant: current }); $('status').textContent = '{{js:sv.sent}}'; };
 $('save').onclick = async () => {
   const title = $('vname').value.trim();

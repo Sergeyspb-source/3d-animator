@@ -5,6 +5,8 @@
 // and back views). Shift+click: a pin that holds its place. Right click on a pin: removes it (and its mate). Wheel:
 // zoom at the cursor, drag with the middle button or Space held: pan.
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Snapshots, useUndoKeys } from '../undo';
+import UndoButtons from './UndoButtons';
 import * as THREE from 'three';
 import { Button, Checkbox, SegmentedControl, Slider, Text } from '@mantine/core';
 import { fileUrl } from '../api';
@@ -79,6 +81,16 @@ export default function PinEditor({ data, onSave, onClose }: { data: AlignData; 
   const [, redraw] = useState(0);
   const gl = useRef<any>(null);
   const field = useMemo(() => pinField(toPins(pins)), [pins]);
+  // undo / redo (Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y, the ↶ ↷ buttons): a pin put, dragged (one step for the drag), removed,
+  // «Clear»; the editor is drawn anew for another model or view, its history with it
+  const hist = useRef(new Snapshots<P[]>()).current;
+  const mark = (before: P[]) => { hist.mark(before); redraw((x) => x + 1); };
+  const histStep = (back: boolean) => {
+    if (drag.current) return;
+    const x = hist.step(back, pins); if (!x) return;
+    setPins(x); setDirty(true);
+  };
+  useUndoKeys((redo) => histStep(!redo));
 
   // ---- three.js: the model picture as the ground, the picture on a bent grid over it
   useEffect(() => {
@@ -144,7 +156,7 @@ export default function PinEditor({ data, onSave, onClose }: { data: AlignData; 
     const r = host.current!.getBoundingClientRect(), v = view.current;
     return [(e.clientX - r.left) / v.s + v.x, (e.clientY - r.top) / v.s + v.y];
   };
-  const drag = useRef<{ kind: 'pin' | 'pan'; id?: number; at?: [number, number]; v0?: { s: number; x: number; y: number } } | null>(null);
+  const drag = useRef<{ kind: 'pin' | 'pan'; id?: number; at?: [number, number]; v0?: { s: number; x: number; y: number }; before?: P[]; moved?: boolean } | null>(null);
   const space = useRef(false);
   useEffect(() => {
     const kd = (e: KeyboardEvent) => { if (e.code === 'Space') space.current = true; };
@@ -170,6 +182,7 @@ export default function PinEditor({ data, onSave, onClose }: { data: AlignData; 
       add[0].mate = id + 1;
       add.push({ id: id + 1, s: e.shiftKey ? [mx, my] : [mx + ex, my + ey], d: [mx, my], mate: id });
     }
+    mark(pins);   // (the pin put and its drag: one step)
     setPins((ps) => [...ps, ...add]);
     setDirty(true);
     drag.current = e.shiftKey ? null : { kind: 'pin', id };
@@ -182,6 +195,7 @@ export default function PinEditor({ data, onSave, onClose }: { data: AlignData; 
       gl.current?.draw(); redraw((x) => x + 1); return;
     }
     const q = toPic(e);
+    if (d.before && !d.moved) { d.moved = true; mark(d.before); }   // (an existing pin dragged: a step once it moves)
     setPins((ps) => {
       const me = ps.find((p) => p.id === d.id); if (!me) return ps;
       return ps.map((p) => (p.id === d.id ? { ...p, d: q } : sym && mid != null && p.id === me.mate ? { ...p, d: mirrorPt(q) } : p));
@@ -193,10 +207,11 @@ export default function PinEditor({ data, onSave, onClose }: { data: AlignData; 
     e.stopPropagation();
     if (e.button === 2) return;
     (e.target as Element).setPointerCapture?.(e.pointerId);
-    drag.current = { kind: 'pin', id };
+    drag.current = { kind: 'pin', id, before: pins };
   };
   const removePin = (e: React.MouseEvent, id: number) => {
     e.preventDefault(); e.stopPropagation();
+    mark(pins);
     setPins((ps) => { const me = ps.find((p) => p.id === id); return ps.filter((p) => p.id !== id && p.id !== me?.mate); });
     setDirty(true);
   };
@@ -218,7 +233,8 @@ export default function PinEditor({ data, onSave, onClose }: { data: AlignData; 
         <div style={{ width: 120 }}><Slider size="xs" min={0.1} max={0.9} step={0.05} value={op} onChange={setOp} label={null} disabled={show !== 'mix'} /></div>
         {mid != null && <Checkbox size="xs" label={t('web.imp_pe_sym')} checked={sym} onChange={(e) => setSym(e.currentTarget.checked)} />}
         <Button size="compact-xs" variant="default" onClick={() => { fit(); gl.current?.draw(); redraw((x) => x + 1); }}>{t('web.imp_pe_fit')}</Button>
-        <Button size="compact-xs" variant="default" color="red" disabled={!pins.length} onClick={() => { setPins([]); setDirty(true); }}>{t('web.imp_pe_clear')}</Button>
+        <Button size="compact-xs" variant="default" color="red" disabled={!pins.length} onClick={() => { mark(pins); setPins([]); setDirty(true); }}>{t('web.imp_pe_clear')}</Button>
+        <UndoButtons can={[hist.undo.length > 0, hist.redo.length > 0]} onStep={histStep} />
         <div style={{ flex: 1 }} />
         <Text size="xs" c="dimmed">{t('web.imp_pe_count', pins.length)}</Text>
         <Button size="compact-sm" onClick={save} loading={saving} disabled={!dirty}>{t('web.imp_pe_save')}</Button>
