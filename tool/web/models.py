@@ -156,6 +156,15 @@ def generate_task(p: dict):
 
 
 # ------------------------------------------------------------------ drafts and released models
+def source_work(src) -> Path | None:
+    """The generation's work folder from a model's <name>.json «source»: the source picture's folder, or the folder
+    itself (Hunyuan from several views writes its work folder there, not a picture)."""
+    if not src:
+        return None
+    src = Path(src)
+    return src if src.is_dir() else src.parent
+
+
 def _info(folder: Path, cat: str, draft: bool) -> dict | None:
     stem = folder.name
     glb = folder / f"{stem}.glb"
@@ -166,8 +175,10 @@ def _info(folder: Path, cat: str, draft: bool) -> dict | None:
     except (OSError, ValueError):
         stats = {}
     src = Path(stats["source"]) if stats.get("source") else None
-    work = src.parent if src else None
+    work = source_work(src)
     preview = work / "preview.png" if work and (work / "preview.png").exists() else None
+    if src and src.is_dir():   # Hunyuan from several views: «source» is its work folder; the picture is the front view
+        src = next((src / n for n in ("source_front.png", "view_front.png") if (src / n).exists()), None)
     icon = folder / f"{stem}_icon.png"
     rigged = folder / f"{stem}_rigged.glb"
     eng = str(stats.get("engine") or ("hunyuan" if work and "hunyuan" in work.parts else "sf3d")).lower()
@@ -233,7 +244,7 @@ def release(cat: str, stem: str, replace: bool = False) -> dict:
     # the post-processing's record (re-run later by «sf3d-tool post») points at the released model now
     try:
         stats = json.loads((dst / f"{stem}.json").read_text(encoding="utf-8"))
-        pp = Path(stats["source"]).parent / "pp_params.json"
+        pp = source_work(stats["source"]) / "pp_params.json"
         if Path(cfg["work_dir"]).resolve() not in pp.resolve().parents:   # (only this work_dir's own records)
             raise ValueError(pp)
         rec = json.loads(pp.read_text(encoding="utf-8"))

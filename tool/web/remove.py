@@ -23,7 +23,7 @@ from pathlib import Path
 
 import sf3d_tool as T
 from i18n import t as _t
-from models import CATEGORY_KEYS, drafts_root
+from models import CATEGORY_KEYS, drafts_root, source_work
 
 GAME_DEFAULT = Path(r"D:\My projects\game-project-godot")
 GAME_DIRS = ("assets", "source_assets", "game")   # where the game keeps models (its other folders: code, docs)
@@ -65,14 +65,18 @@ def _owner(stem: str, known: set) -> str | None:
 def _source_dir(folder: Path, name: str, work: Path) -> Path | None:
     """The generation's work folder its <name>.json names (only one inside work_dir, never work_dir itself)."""
     try:
-        src = Path(json.loads((folder / f"{name}.json").read_text(encoding="utf-8"))["source"]).parent
+        src = source_work(json.loads((folder / f"{name}.json").read_text(encoding="utf-8"))["source"])
     except (OSError, ValueError, KeyError, TypeError):
+        return None
+    if src is None:
         return None
     try:
         rel = src.resolve().relative_to(work.resolve())
     except ValueError:
         return None
-    return src if len(rel.parts) >= 2 and src.is_dir() else None
+    # one model's folder only: work/<category>/<name>, work/<engine>/<category>/<name> - never a whole category's
+    deep = 3 if rel.parts and rel.parts[0] in ("hunyuan", "trellis", "improve", "web_drafts") else 2
+    return src if len(rel.parts) >= deep and src.is_dir() else None
 
 
 def _size(p: Path) -> int:
