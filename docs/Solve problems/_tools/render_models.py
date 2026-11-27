@@ -1,6 +1,8 @@
 """Models for a problem write-up, all under one camera (Blender 5.2, headless).
 
-    "D:\\Blender 5.2\\blender.exe" -b -P "docs/Solve problems/_tools/render_models.py" -- OUT_DIR [options] [label=]model.glb ...
+    D:\\conda\\envs\\sf3d\\python.exe tool\\blender_queue.py -- -b -P "docs/Solve problems/_tools/render_models.py" -- OUT_DIR [options] [label=]model.glb ...
+
+(through tool\\blender_queue.py: parallel sessions take turns instead of eating the whole CPU and dropping the network)
 
 Options:
     --size 2560x1440    frame size (16:9 for the video)
