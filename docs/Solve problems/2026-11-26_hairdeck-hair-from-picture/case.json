@@ -1,0 +1,73 @@
+{
+  "id": "2026-11-26_hairdeck-hair-from-picture",
+  "title_ru": "Может ли нейросеть сделать причёску для игры по одной картинке?",
+  "title_en": "Can a neural network make a game hairstyle from a single picture?",
+  "hook_ru": "Нейросеть честно сделала причёску за 16 секунд, но научилась она этому на аниме, а наши герои — гоблины.",
+  "status": "solved",
+  "date": "2026-11-26",
+  "sessions": [{"name": "Проверка HairDeck (ветка, запущенная координатором)", "id": null},
+               {"name": "Правки проекта (координатор)", "id": "local_e34b3455"}],
+  "commits": ["9648ef8"],
+  "tags": ["hairdeck", "hair", "neural", "vram", "godot"],
+  "video": {
+    "potential": 4,
+    "why_ru": "Модная нейросеть, честный провал на «чужом» стиле и находка (пружины), которая пригодилась в другом месте.",
+    "wow_moment_ru": "Аниме-девушка и гоблин рядом: у неё пышная причёска, у гоблина вместо хвоста — клочки.",
+    "length_seconds": 100,
+    "thumbnail": {"image": "img/01_concept_ours_hairdeck.jpg", "text_ru": "ПРИЧЁСКА ПО КАРТИНКЕ?"}
+  },
+  "numbers": [
+    {"what_ru": "Загрузка нейросетей", "before": null, "after": 68, "unit_ru": "секунд", "better": "lower",
+     "measured_on": "RTX 4060 Laptop 8 ГБ", "note_ru": "один раз на запуск"},
+    {"what_ru": "Первая картинка после загрузки", "before": null, "after": 556, "unit_ru": "секунд", "better": "lower",
+     "measured_on": "RTX 4060 Laptop 8 ГБ", "note_ru": "538 с из них — поиск волос и лица (SAM 3), разовый прогрев"},
+    {"what_ru": "Следующие картинки", "before": null, "after": 15.6, "unit_ru": "секунд (от 15,6 до 39,2)", "better": "lower",
+     "measured_on": "RTX 4060 Laptop 8 ГБ", "note_ru": "сама причёска 3,4–7,4 с, цвет 1,3–7,6 с, кости 2,4–4,9 с"},
+    {"what_ru": "Видеопамять, вся карта", "before": 1.36, "after": 7.93, "unit_ru": "ГБ из 8", "better": "lower",
+     "measured_on": "RTX 4060 Laptop 8 ГБ", "note_ru": "до запуска 1,36 ГБ занимал рабочий стол"},
+    {"what_ru": "Удачных причёсок из 6 рисунков гоблинов", "before": 6, "after": 2, "unit_ru": "штук", "better": "higher",
+     "measured_on": "на глаз по листам", "note_ru": "было — наш генератор, стало — HairDeck"},
+    {"what_ru": "Скорость скачивания", "before": 0.1, "after": 3.5, "unit_ru": "МБ/с", "better": "higher",
+     "measured_on": "домашний интернет через прокси", "note_ru": "одно соединение против своих загрузчиков в 8–12 потоков (около 3–4 МБ/с)"}
+  ],
+  "media": [
+    {"file": "img/01_concept_ours_hairdeck.jpg", "clean": null, "kind": "render", "role": "result", "pair": null,
+     "caption_ru": "Рисунок, наш генератор и HairDeck на одном гоблине: длинные, коса, «горшок»"},
+    {"file": "img/02_masks.jpg", "clean": "src/masks_long.png", "kind": "screenshot", "role": "context", "pair": null,
+     "caption_ru": "Маски волос и лица, которые HairDeck строит сам"},
+    {"file": "img/03_hairdeck_raw.jpg", "clean": "src/hd_ex02_clay_q34.png", "kind": "render", "role": "attempt", "pair": null,
+     "caption_ru": "Причёски HairDeck до посадки на его собственной голове-яйце"},
+    {"file": "img/04_short_styles.jpg", "clean": null, "kind": "render", "role": "problem", "pair": null,
+     "caption_ru": "Короткая стрижка и хвост у HairDeck не вышли"},
+    {"file": "img/05_anime_photo.jpg", "clean": null, "kind": "render", "role": "cause", "pair": null,
+     "caption_ru": "На аниме-примере HairDeck делает полную причёску: его учили на аниме"},
+    {"file": "img/06_hairdeck_springs_godot.jpg", "clean": "src/hairdeck_ex02_springs.mp4", "kind": "clip", "role": "result", "pair": null,
+     "caption_ru": "Причёска HairDeck качается на костях-пружинах в Godot"}
+  ],
+  "models": [
+    {"role": "attempt", "path": "work/hairdeck_test/out/long/hair_seed0.glb", "label_ru": "HairDeck: длинные по рисунку гоблина"},
+    {"role": "attempt", "path": "work/hairdeck_test/out/bowl/hair_seed0.glb", "label_ru": "HairDeck: «горшок»"},
+    {"role": "attempt", "path": "work/hairdeck_test/out/ex02/hair_seed0.glb", "label_ru": "HairDeck: аниме-пример"},
+    {"role": "after", "path": "work/hairdeck_test/fit/hd_long.glb", "label_ru": "Гоблин с причёской HairDeck после посадки и с костями"},
+    {"role": "before", "path": "work/hairdeck_test/fit/ours_long.glb", "label_ru": "Гоблин с длинными волосами нашего генератора"},
+    {"role": "reference", "path": "work/hairdeck_test/inputs/long.png", "label_ru": "Рисунок: длинные волосы"},
+    {"role": "reference", "path": "work/hairdeck_test/inputs/bowl.png", "label_ru": "Рисунок: «горшок»"}
+  ],
+  "beats": [
+    {"n": 1, "seconds": 12, "say_ru": "Мы делаем игру про гоблинов, и каждому нужна своя причёска. Наш генератор умеет делать причёски по рецептам: длинные, косы, хвосты. А что если просто показать нейросети рисунок?",
+     "show": ["work/hairdeck_test/inputs/long.png", "work/hairdeck_test/inputs/bowl.png"]},
+    {"n": 2, "seconds": 16, "say_ru": "Вышла нейросеть HairDeck. Даёшь ей картинку — она строит причёску из прядей и даже подвешивает их на пружины. Мы поставили её на ноутбук с восемью гигабайтами видеопамяти. Видеокарта забилась почти до отказа, зато сама причёска строится за три–семь секунд.",
+     "show": ["img/02_masks.jpg", "src/hd_ex02_clay_q34.png"]},
+    {"n": 3, "seconds": 18, "say_ru": "Мы дали ей шесть рисунков гоблинов. Длинные прямые волосы — похоже. Стрижка «горшок» с чёлкой — отлично. А вот коса превратилась в плоскую ленту. Вместо короткой стрижки — клочки на лысой голове. Хвоста нет совсем.",
+     "show": ["img/01_concept_ours_hairdeck.jpg", "img/04_short_styles.jpg"]},
+    {"n": 4, "seconds": 14, "say_ru": "Почему? Нейросеть училась на аниме-аватарах. На аниме-картинке она рисует пышную, красивую причёску. А наши гоблины для неё — чужой стиль.",
+     "show": ["img/05_anime_photo.jpg", "diagram:Картинка → маски → пряди → цвет → кости"]},
+    {"n": 5, "seconds": 14, "say_ru": "Поэтому HairDeck в игру не взяли. Но подсмотрели у неё главное — пружины. И теперь волосы наших гоблинов качаются при каждом повороте головы.",
+     "show": ["src/hairdeck_ex02_springs.mp4", "img/06_hairdeck_springs_godot.jpg"]}
+  ],
+  "reproduce_in_app": ["В программе HairDeck нет: проверка шла отдельно, в work/hairdeck_test (см. REPORT.md)."],
+  "regenerate": [
+    "\"D:\\Blender 5.2\\blender.exe\" -b -P \"docs/Solve problems/_tools/render_models.py\" -- \"D:/My projects/SF3D/docs/Solve problems/2026-11-26_hairdeck-hair-from-picture/src\" --views front,q34 --looks clay hd_long=work/hairdeck_test/out/long/hair_seed0.glb hd_bowl=work/hairdeck_test/out/bowl/hair_seed0.glb hd_ex02=work/hairdeck_test/out/ex02/hair_seed0.glb",
+    "D:\\conda\\envs\\sf3d\\python.exe work/hairdeck_test/build_case_media.py"
+  ]
+}
