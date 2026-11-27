@@ -12,6 +12,7 @@ the seams of Tripo / TRELLIS models welded first; a serpent sized by its length)
 """
 import json
 import math
+import re
 import sys
 from pathlib import Path
 
@@ -89,6 +90,65 @@ bpy.ops.object.mode_set(mode="OBJECT")
 
 # ---------------------------------------------------------------- skin
 rep = blender_heat.proxy_heat(meshes, rig, smooth=int(job.get("smooth", 6)), size="max" if TPL == "serpent" else "height")
+LIMB = re.compile(r"^(leg_[A-Z]{2}|leg_[LR]\d+|wingx?_[LR])_")
+
+
+def limb_of(bone):
+    m = LIMB.match(bone)
+    return m[1] if m else None
+
+
+def one_limb():
+    """the skin between two legs follows the body, not both legs: heat and its smoothing leak through the chest and the
+    belly, and a right elbow's skin kept 4-10 % of the left upper arm - when the legs went apart (a gallop, a jump) its
+    triangles stretched up to 4.8 times into spikes. Where two limbs share a vertex, the strongest keeps only what it
+    has over the others (nothing on the line between them, where they are even, all of it far from it), the rest goes
+    to the bone it hangs from (the chest, the hips): the leg's hold fades smoothly toward the middle, no seam. (Giving
+    each vertex to its strongest leg whole cut a seam down the brisket: 6.6 times there in the walk.)"""
+    bones = arm_data.bones
+    root_of = {}
+    for b in bones:
+        k = limb_of(b.name)
+        if k and (b.parent is None or limb_of(b.parent.name) != k):
+            root_of[k] = b.parent.name if b.parent else b.name
+    moved = 0
+    for o in meshes:
+        gn = {g.index: g.name for g in o.vertex_groups}
+        for v in o.data.vertices:
+            per = {}
+            for g in v.groups:
+                k = limb_of(gn[g.group])
+                if k and g.weight > 1e-4:
+                    per[k] = per.get(k, 0.0) + g.weight
+            if len(per) < 2:
+                continue
+            keep = max(per, key=per.get)
+            rest_ = sum(w for k, w in per.items() if k != keep)
+            share = max(0.0, per[keep] - rest_) / per[keep]   # (of the strongest limb's weight, what it keeps)
+            extra = 0.0
+            for g in list(v.groups):
+                k = limb_of(gn[g.group])
+                if not k:
+                    continue
+                if k == keep:
+                    extra += g.weight * (1.0 - share)
+                    if share > 1e-4:
+                        o.vertex_groups[g.group].add([v.index], g.weight * share, "REPLACE")
+                    else:
+                        o.vertex_groups[g.group].remove([v.index])
+                else:
+                    extra += g.weight
+                    o.vertex_groups[g.group].remove([v.index])
+            body = root_of.get(keep)
+            if body:
+                vg = o.vertex_groups.get(body) or o.vertex_groups.new(name=body)
+                old = next((g.weight for g in v.groups if g.group == vg.index), 0.0)
+                vg.add([v.index], old + extra, "REPLACE")
+            moved += 1
+    return moved
+
+
+rep["one_limb_vertices"] = one_limb()
 
 
 def loose_pieces():
@@ -135,7 +195,16 @@ def loose_pieces():
         else:
             lo_[c], hi_[c] = p.copy(), p.copy()
     # (small in both: few vertices and short - a long loose tail keeps its own heat weights along its bones)
-    small = {c for c, k in count.items() if k < 0.02 * n and (hi_[c] - lo_[c]).length < 0.06 * size}
+    # a small piece the legs would pull apart (its vertices led by different legs: a hair strip under the belly between
+    # the hind legs stretched 4.4 times into a spike in the walk) - one piece with the skin under it, whatever its length
+    lead_limbs = {}
+    for i, (o, vi) in enumerate(owner):
+        gs = o.data.vertices[vi].groups
+        if gs:
+            k = limb_of(o.vertex_groups[max(gs, key=lambda g: g.weight).group].name)
+            if k:
+                lead_limbs.setdefault(comp[i], set()).add(k)
+    small = {c for c, k in count.items() if k < 0.02 * n and ((hi_[c] - lo_[c]).length < 0.06 * size or len(lead_limbs.get(c, ())) > 1)}
     if not small:
         return 0
     groups = {o: {g.index: g.name for g in o.vertex_groups} for o in meshes}
