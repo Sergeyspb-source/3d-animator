@@ -1,0 +1,56 @@
+{
+  "id": "2026-11-26_ai-source-setting",
+  "title_ru": "Где думать ИИ игры: на своей видеокарте или в интернете?",
+  "title_en": "Where should the game's AI think: on your own graphics card or online?",
+  "hook_ru": "Одна и та же модель через подписку обходилась втрое дороже: к каждой реплике прилипало около пяти тысяч токенов чужих инструкций.",
+  "status": "partial",
+  "date": "2026-11-26",
+  "sessions": [
+    {"name": "Тест ИИ: диалоги жителей (ветка claude/ai-dialogue-test-7347db)", "id": ""}
+  ],
+  "commits": ["game:8509160a"],
+  "tags": ["llm", "settings", "ui", "godot", "openrouter"],
+  "video": {
+    "potential": 3,
+    "why_ru": "Вкладка настроек скромная, но история про лишние токены агента и втрое меньшую цену понятна любому.",
+    "wow_moment_ru": "Одна и та же модель, а на входе 6,4 тысячи токенов против 1,3 тысячи.",
+    "length_seconds": 75,
+    "thumbnail": {"image": "src/ai_tab_openrouter.png", "text_ru": "ИИ: СВОЙ ИЛИ ОБЛАЧНЫЙ?"}
+  },
+  "numbers": [
+    {"what_ru": "Токенов на входе одной реплики", "before": 6400, "after": 1300, "unit_ru": "токенов", "better": "lower",
+     "measured_on": "DeepSeek V4.1 Flash, 90 реплик", "note_ru": "До — через агента OpenCode, после — напрямую через OpenRouter."},
+    {"what_ru": "Время одной реплики, медиана", "before": 2.39, "after": 1.32, "unit_ru": "секунды", "better": "lower",
+     "measured_on": "DeepSeek V4.1 Flash, 90 реплик", "note_ru": "OpenCode — вместе с запуском программы."},
+    {"what_ru": "Цена одной реплики", "before": 0.00037, "after": 0.00012, "unit_ru": "долларов", "better": "lower",
+     "measured_on": "DeepSeek V4.1 Flash, 90 реплик", "note_ru": "У OpenCode Go — доля месячного лимита по прайсу Go, у OpenRouter — деньги с баланса."},
+    {"what_ru": "Оценка речи жителей", "before": 4.30, "after": 4.79, "unit_ru": "из 5", "better": "higher",
+     "measured_on": "11 сцен, 90 реплик, оценка по чтению", "note_ru": "До — своя Gemma 4 E4B, после — DeepSeek через OpenRouter."},
+    {"what_ru": "Ответ на кнопку «Проверить»", "before": null, "after": 549, "unit_ru": "мс", "better": "lower",
+     "measured_on": "OpenRouter, один запрос", "note_ru": "Отдельный запрос из кода — 735 мс."}
+  ],
+  "media": [
+    {"file": "img/01_ai_tab_openrouter.png", "clean": "src/ai_tab_openrouter.png", "kind": "screenshot", "role": "after",
+     "caption_ru": "Выбран OpenRouter: ключ найден (не показан), цена и что уйдёт в интернет."},
+    {"file": "img/02_local_and_opencode.png", "clean": "src/ai_tab_local.png", "kind": "screenshot", "role": "result",
+     "caption_ru": "Слева вариант по умолчанию, ключ не нужен. Справа OpenCode Go без ключа: предупреждение и серая кнопка."},
+    {"file": "img/03_opencode_vs_openrouter.png", "clean": "src/03_opencode_vs_openrouter.png", "kind": "chart", "role": "cause",
+     "caption_ru": "Одна модель: через OpenRouter вход впятеро меньше, ответ вдвое быстрее, реплика втрое дешевле."}
+  ],
+  "models": [],
+  "beats": [
+    {"n": 1, "seconds": 12, "say_ru": "Жители говорят моделью на видеокарте игрока: бесплатно, без интернета. Но модель в интернете говорит лучше.", "show": ["diagram:своя видеокарта 4,3 против интернета 4,8"]},
+    {"n": 2, "seconds": 15, "say_ru": "Одна и та же DeepSeek через подписку OpenCode: две с половиной секунды и втрое дороже.", "show": ["src/03_opencode_vs_openrouter.png"]},
+    {"n": 3, "seconds": 15, "say_ru": "Программа для программистов добавляла к каждой фразе трактирщика пять тысяч токенов своих инструкций.", "show": ["src/03_opencode_vs_openrouter.png"]},
+    {"n": 4, "seconds": 12, "say_ru": "Напрямую через OpenRouter — секунда с третью и одна сотая цента за реплику. Час разговоров — около пяти центов.", "show": ["src/03_opencode_vs_openrouter.png"]},
+    {"n": 5, "seconds": 15, "say_ru": "В настройках вкладка «ИИ»: своя видеокарта, OpenRouter или подписка — только для себя. Ключ игра не хранит и не показывает.", "show": ["src/ai_tab_openrouter.png", "src/ai_tab_local.png", "src/ai_tab_opencode_go.png"]},
+    {"n": 6, "seconds": 8, "say_ru": "Нет сети или ключа — отвечает своя модель, а приказы в бою всегда разбирает она.", "show": ["src/ai_tab_opencode_go.png"]}
+  ],
+  "reproduce_in_app": [
+    "Игра из ветки claude/ai-dialogue-test-7347db → Главное меню → Настройки → вкладка «ИИ» → Источник: «OpenRouter (через интернет)» → «Проверить» (нужна переменная окружения OPENROUTER_API_KEY со своим ключом)."
+  ],
+  "regenerate": [
+    "Кадры вкладки (Godot через очередь godot; для кадра «ключ найден» задать OPENROUTER_API_KEY, сам ключ на кадре не виден): $env:APPDATA = '<папка .scratch>\\appdata'; $env:SHOT_OUT = 'D:\\My projects\\SF3D\\docs\\Solve problems\\2026-11-26_ai-source-setting\\src'; powershell -NoProfile -ExecutionPolicy Bypass -File \"D:\\My projects\\game-project-godot\\tools\\run_queued.ps1\" -Lane godot -Exe \"D:/Godot_v4.7.2-stable_win64.exe/Godot_v4.7.2-stable_win64_console.exe\" --path \"D:\\My projects\\game-project-godot-worktrees\\ai-dialogue-test-7347db\" --resolution 1280x720 --script \"D:\\My projects\\SF3D\\docs\\Solve problems\\2026-11-26_ai-source-setting\\ai_tab_shot.gd\"",
+    "node \"docs/Solve problems/2026-11-26_ai-source-setting/pictures.mjs\""
+  ]
+}
