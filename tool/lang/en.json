@@ -3601,5 +3601,17 @@
  "ed.item_size_hint": "The piece's height (cm of a man 1.75 m tall). Finer: the «Size» button.",
  "ed.item_turn": "Turn, °",
  "ed.item_tilt": "Tilt, °",
- "ed.item_tilt_hint": "Tilted forward or back about the piece's own cross axis."
+ "ed.item_tilt_hint": "Tilted forward or back about the piece's own cross axis.",
+ "web.imp_ai_codex": "Fill the holes with ChatGPT",
+ "web.imp_ai_codex_tip": "The skin's spots no picture sees (behind an ear, under the chin) painted by ChatGPT to match the skin round them and the front picture. Only those spots are taken, with a soft edge; the rest stays. Through Codex on the ChatGPT plan, 1-5 min; the brush strokes count.",
+ "web.imp_ai_download": "Download for an AI",
+ "web.imp_ai_download_tip": "Two files: the skin with its holes bright magenta, and the holes' mask. Give the skin to any AI asking to paint only the magenta to match the skin round it and leave the rest; load its answer with «Load the painted one».",
+ "web.imp_ai_upload": "Load the painted one",
+ "web.imp_ai_upload_tip": "The skin painted by an AI. Only its holes are taken (a soft edge); the rest stays as it was even if the AI changed something there.",
+ "web.imp_ai_drop": "Drop the painted",
+ "web.imp_ai_queued": "ChatGPT is painting the skin's holes - 1-5 min; the skin updates by itself",
+ "web.imp_ai_downloaded": "Downloaded: the skin and the holes' mask (holes: {0} % of the skin)",
+ "web.imp_ai_taken": "The painted holes are taken: press «Improve»",
+ "web.imp_ai_aspect": "Taken, but the picture's proportions differ from the skin's: check the holes landed in place",
+ "web.imp_ai_dropped": "The painted one dropped"
 }

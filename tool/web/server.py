@@ -413,6 +413,23 @@ async def improve_picture(req: Request):
     return IM.picture(p["category"], p["stem"], p["view"], path)
 
 
+@app.get("/api/models/improve/skin_export")
+async def improve_skin_export(category: str, stem: str, view: str):
+    return await asyncio.to_thread(IM.skin_export, category, stem, view)
+
+
+@app.post("/api/models/improve/skin_ai")
+async def improve_skin_ai(req: Request):
+    p = await req.json()
+    return await asyncio.to_thread(IM.skin_ai, p["category"], p["stem"], p["view"], p.get("path"))
+
+
+@app.post("/api/models/improve/skin_ai_codex")
+async def improve_skin_ai_codex(req: Request):
+    p = await req.json()
+    return {"ok": True, "task": tasks.submit(IM.skin_ai_task(p)).summary()}
+
+
 @app.post("/api/models/improve/codex_accept")
 async def improve_codex_accept(req: Request):
     p = await req.json()

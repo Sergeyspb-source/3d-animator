@@ -31,7 +31,8 @@ export interface Stroke { kind: 'only' | 'clone'; view?: string; off?: [number, 
 export interface FaceGrid { x0: number; y0: number; step: number; k: number; nx: number; ny: number; d: number[] }
 export interface AlignData { picture: string; model: string; lines?: string; size: [number, number]; mid_x: number | null; pins: Pin[]; marks?: Mark[];
   kind?: string; brush?: Stroke[]; left_x?: number; views?: string[]; ver?: number; face?: FaceGrid | null;
-  layers?: Record<string, string>; prio?: Record<string, number>; sharp?: number; wrap?: boolean }
+  layers?: Record<string, string>; prio?: Record<string, number>; sharp?: number; wrap?: boolean;
+  ai?: { when?: string; source?: string } | null }
 interface State { pins: P[]; marks: Mark[]; strokes: Stroke[] }
 type Tool = 'front' | 'side' | 'back' | 'clone' | 'erase';
 const TOOL_COLOR: Record<string, string> = { front: '#4aa8ff', left: '#5fd38a', right: '#5fd38a', back: '#b48cff', clone: '#ffa94d' };
@@ -90,10 +91,11 @@ const MARK_KEY: Record<string, string> = { ear_tip: 'web.imp_mk_ear_tip', ear_ho
 
 // pending: the page's handle on unsaved work - set to «save it» while something is unsaved, null when all is saved
 // (the page saves it before another model is picked or «Improve» runs; leaving the page saves it too)
-export default function PinEditor({ data, onSave, onClose, onMark3d, pending }: {
+export default function PinEditor({ data, onSave, onClose, onMark3d, pending, tools }: {
   data: AlignData; onSave: (pins: Pin[], marks: Record<string, [number, number]>, brush?: Stroke[]) => Promise<void> | void; onClose: () => void;
   onMark3d?: (name: string, x: number, y: number, mirror: boolean) => Promise<AlignData | null>;
   pending?: React.MutableRefObject<(() => Promise<void>) | null>;
+  tools?: React.ReactNode;   // (a skin's own actions, shown in the brush bar: the AI painting its holes)
 }) {
   const t = useT();
   const host = useRef<HTMLDivElement>(null);
@@ -485,6 +487,7 @@ export default function PinEditor({ data, onSave, onClose, onMark3d, pending }: 
           <Text size="xs" c="dimmed">{t('web.imp_br_size')}</Text>
           <div style={{ width: 120 }}><Slider size="xs" min={4} max={120} step={1} value={radius} onChange={setRadius} label={(x) => x} /></div>
           {tool === 'clone' && <Text size="xs" c={src ? 'dimmed' : 'yellow'}>{src ? t('web.imp_br_src_set') : t('web.imp_br_need_src')}</Text>}
+          {tools}
         </div>
       )}
       {mode === 'marks' && (

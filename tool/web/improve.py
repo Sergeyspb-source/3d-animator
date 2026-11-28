@@ -63,6 +63,41 @@ def run_task(p: dict) -> Task:
     return Task("improve", f"{stem}", run, gpu=False, meta={"category": cat, "stem": stem})
 
 
+SKINS = ("skin_head", "skin_ears", "skin_torso", "skin_arms", "skin_legs")
+
+
+def skin_export(cat: str, stem: str, view: str) -> dict:
+    """a skin for an AI to paint: the picture with its holes magenta, the holes' mask, the relief (paths)"""
+    cfg, d = _draft(cat, stem)
+    return MI.skin_export(cat, stem, cfg, d, view) if view in SKINS else {"ok": False}
+
+
+def skin_ai(cat: str, stem: str, view: str, path) -> dict:
+    """an AI's painted skin taken in its holes (path), or dropped (None) -> the skin's editor data again"""
+    cfg, d = _draft(cat, stem)
+    if view not in SKINS:
+        return {"ok": False}
+    if path and not (MI.improve_dir(cfg, cat, stem) / f"{view}_holes.png").exists():
+        MI.skin_export(cat, stem, cfg, d, view)
+    r = MI.skin_ai_accept(cat, stem, cfg, view, path)
+    a = MI.align(cat, stem, cfg, d, view)
+    a["accepted"] = r
+    return a
+
+
+def skin_ai_task(p: dict) -> Task:
+    """the skin's holes painted by ChatGPT (Codex) - a task, not on the GPU"""
+    cat, stem, view = p.get("category") or "", p.get("stem") or "", p.get("view") or ""
+
+    def run(task):
+        cfg, d = _draft(cat, stem)
+        lines = []
+        say = _logger(task, lines)
+        r = MI.skin_ai_codex(cat, stem, cfg, d, view, log=say)
+        return {"category": cat, "stem": stem, "view": view, "skin_ai": r}
+    return Task("improve_skin_ai", f"ChatGPT · {stem} · {view}", run, gpu=False, meta={"category": cat, "stem": stem, "view": view})
+
+
 def codex_task(p: dict) -> Task:
     cat, stem = p.get("category") or "", p.get("stem") or ""
     views = [v for v in (p.get("views") or []) if v in MI.VIEWS]

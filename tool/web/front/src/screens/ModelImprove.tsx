@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button, Checkbox, FileButton, Group, ScrollArea, SegmentedControl, Slider, Stack, Switch, Text, Tooltip } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconPin, IconPhotoUp, IconX, IconCheck, IconArrowBackUp, IconSparkles } from '@tabler/icons-react';
+import { IconPin, IconPhotoUp, IconX, IconCheck, IconArrowBackUp, IconSparkles, IconDownload } from '@tabler/icons-react';
 import { fileUrl, get, live, post, upload, useStore, type ModelInfo } from '../api';
 import { useT } from '../i18n';
 import type { Route } from '../nav';
@@ -61,6 +61,50 @@ export default function ModelImprove({ go }: { go: (r: Route) => void }) {
   useEffect(() => { loadList(); }, [finished]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setOpts(null); setDraw([]); setPinView(null); setLook('after'); }, [sel]);
   useEffect(() => { loadStatus(); }, [sel, finished, m?.time]); // eslint-disable-line react-hooks/exhaustive-deps
+  // a skin open: a task finished (ChatGPT painting its holes) -> its pictures again (the editor keeps what is placed)
+  useEffect(() => {
+    if (!m || !pinView || !pinView.startsWith('skin_') || !align) return;
+    get<AlignData & { ok: boolean }>(`/api/models/improve/align?${q}&view=${pinView}`).then((a) => { if (a.ok) setAlign(a); }).catch(() => {});
+  }, [finished]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ---- a skin's holes (where no picture paints) painted by an AI: ChatGPT here, or any AI by hand (download, upload)
+  const aiDownload = async () => {
+    if (!m || !pinView) return;
+    await savePending();
+    const r = await get<{ ok: boolean; image: string; holes: string; guide: string; holes_share: number }>(`/api/models/improve/skin_export?${q}&view=${pinView}`);
+    if (!r.ok) return;
+    for (const [path, name] of [[r.image, `${m.stem}_${pinView}_for_ai.png`], [r.holes, `${m.stem}_${pinView}_holes.png`]]) {
+      const a = document.createElement('a'); a.href = fileUrl(path, Date.now()); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    }
+    notifications.show({ color: 'patina', message: t('web.imp_ai_downloaded', Math.round(r.holes_share * 100)) });
+  };
+  const aiSet = async (f: File | null) => {
+    if (!m || !pinView) return;
+    await savePending();
+    const path = f ? (await upload([f]))[0].path : null;
+    const a = await post<AlignData & { ok: boolean; accepted?: { aspect?: number } }>('/api/models/improve/skin_ai', { category: m.category, stem: m.stem, view: pinView, path });
+    if (a.ok) setAlign(a);
+    const bad = a.accepted?.aspect && Math.abs(a.accepted.aspect - 1) > 0.05;
+    notifications.show({ color: bad ? 'yellow' : 'patina', message: t(!f ? 'web.imp_ai_dropped' : bad ? 'web.imp_ai_aspect' : 'web.imp_ai_taken') });
+  };
+  const aiCodex = async () => {
+    if (!m || !pinView) return;
+    await savePending();
+    const r = await post<{ ok: boolean; log?: string }>('/api/models/improve/skin_ai_codex', { category: m.category, stem: m.stem, view: pinView });
+    notifications.show({ color: r.ok ? 'patina' : 'red', message: r.ok ? t('web.imp_ai_queued') : r.log || '' });
+  };
+  const skinTools = pinView && pinView.startsWith('skin_') ? (
+    <Group gap={4} wrap="nowrap" style={{ marginLeft: 'auto' }}>
+      <Tooltip label={t('web.imp_ai_codex_tip')} multiline w={320}>
+        <Button size="compact-xs" variant="default" leftSection={<IconSparkles size={14} />} onClick={aiCodex}>{t('web.imp_ai_codex')}</Button></Tooltip>
+      <Tooltip label={t('web.imp_ai_download_tip')} multiline w={320}>
+        <Button size="compact-xs" variant="default" leftSection={<IconDownload size={14} />} onClick={aiDownload}>{t('web.imp_ai_download')}</Button></Tooltip>
+      <FileButton accept="image/png,image/jpeg,image/webp" onChange={(f) => f && aiSet(f)}>
+        {(props) => <Tooltip label={t('web.imp_ai_upload_tip')} multiline w={320}>
+          <Button size="compact-xs" variant="default" leftSection={<IconPhotoUp size={14} />} {...props}>{t('web.imp_ai_upload')}</Button></Tooltip>}
+      </FileButton>
+      {align?.ai && <Button size="compact-xs" variant="subtle" color="gray" onClick={() => aiSet(null)}>{t('web.imp_ai_drop')}</Button>}
+    </Group>) : null;
   const pick = async (x: ModelInfo) => { await savePending(); setPinView(null); setAlign(null); const id = `${x.category}/${x.stem}`; setSel(id); localStorage.setItem('sf3d.improve_sel', id); };
 
   const openPins = async (v: ViewName | SkinView) => {
@@ -132,7 +176,7 @@ export default function ModelImprove({ go }: { go: (r: Route) => void }) {
         <ModelList items={items} sel={sel} onPick={pick} empty={t('web.no_drafts')} />
       </div>
       <div className="stage">
-        {pinView ? (align ? <PinEditor key={`${sel}/${pinView}`} data={align} onSave={savePins} onMark3d={moveMark3d} pending={pinsUnsaved} onClose={() => { setPinView(null); setAlign(null); }} />
+        {pinView ? (align ? <PinEditor key={`${sel}/${pinView}`} data={align} onSave={savePins} onMark3d={moveMark3d} pending={pinsUnsaved} tools={skinTools} onClose={() => { setPinView(null); setAlign(null); }} />
           : <div className="stage-wait"><Text c="dimmed" size="sm">{aligning ? t('web.imp_fitting') : ''}</Text></div>) : (
           <>
             <Viewer3D url={m ? fileUrl(look === 'before' && st?.before ? st.before : m.glb, m.time) : null} empty={t('web.check_empty')} />

@@ -639,7 +639,7 @@ def set_normals(src_glb, out_glb):
 
 # ------------------------------------------------------------------ A: the pictures projected
 def project(glb, out, pics, mirror=False, res=None, c0=0.1, c1=0.55, sharp=4.0, prio=None, delight_k=0.0, pins=None,
-            cams=None, mr_smooth=True, detail=0.7, log=None, skin_warp=None, brush=None, face=None, seam=0.06,
+            cams=None, mr_smooth=True, detail=0.7, log=None, skin_warp=None, brush=None, face=None, seam=0.06, ai=None,
             seam_pow=2.0):
     """pics: {view: path or ("flip", path)}; cams: {view: (s, tx, ty)} already fitted (else fitted here);
     pins: {view: [(sx, sy, dx, dy), ...]}. -> info {views: {view: {iou, cam, ...}}, seconds, coverage}"""
@@ -751,6 +751,25 @@ def project(glb, out, pics, mirror=False, res=None, c0=0.1, c1=0.55, sharp=4.0, 
     own = lab(sample(M["tex"].astype(np.float32), uvpix).clip(0, 255))
     own2 = fill_hybrid(M, Tx, proj, own, a_, detail=detail)
     final = proj * a_[:, None] + own2 * (1 - a_[:, None])
+    if ai:   # (a skin painted by an AI where no picture sees: its fine detail on the tone round it - no seam in tone)
+        n = len(final)
+        lowF = None
+        for view_, sp_, faces_, rgba_ in ai:
+            ids, q = skin_coords(view_, sp_, faces_, pos0, nrm0, Tx["fid"], M)
+            if not len(ids):
+                continue
+            m = sample(rgba_[..., 3].astype(np.float32), q) / 255
+            sel = m > 0.002
+            if not sel.any():
+                continue
+            mm = np.zeros(n); mm[ids[sel]] = m[sel]
+            ca = np.zeros((n, 3)); ca[ids[sel]] = lab(sample(rgba_[..., :3].astype(np.float32), q[sel]).clip(0, 255))
+            if lowF is None:
+                lowF = smooth_weighted(M, Tx, final, np.ones(n), 0.015)
+            hi = ca - smooth_weighted(M, Tx, ca, mm, 0.015)
+            on = mm > 0
+            final[on] = final[on] * (1 - mm[on, None]) + (lowF[on] + hi[on]) * mm[on, None]
+            info.setdefault("ai", []).append(view_)
     img = np.zeros((R * R, 3), np.uint8)
     img[Tx["idx"]] = rgb(final)
     mask = np.zeros(R * R, bool); mask[Tx["idx"]] = True
@@ -1347,7 +1366,8 @@ def run(cat: str, stem: str, cfg: dict, draft_dir: Path, opts: dict, log=None) -
                          sharp=float(opts.get("sharp", 4.0)), delight_k=float(opts.get("delight", 0.0)),
                          seam=float(opts.get("seam", 0.06)),
                          pins=view_pins(st, cams, {v: x["path"] for v, x in pics.items()}, bool(opts.get("mirror")), sizes),
-                         cams=cams, skin_warp=skin_warp_of(d, st, base), brush=brush_of(d, st, base, M), face=face)
+                         cams=cams, skin_warp=skin_warp_of(d, st, base), brush=brush_of(d, st, base, M), face=face,
+                         ai=skin_ai_of(d, st, base, M))
         a_info["face"] = bool(face)
         a_info["marks"] = sum(len(v) for v in (st.get("marks") or {}).values())
         secs["project"] = round(time.time() - t, 1)
@@ -1462,7 +1482,7 @@ def codex_sides(cat: str, stem: str, cfg: dict, draft_dir: Path, views: list, lo
         sizes = {v: Image.open(x["path"]).size for v, x in pics.items()}
         project(base, d / "codex_base.glb", {v: x["path"] for v, x in pics.items()}, cams=cams,
                 pins=view_pins(st, cams, {v: x["path"] for v, x in pics.items()}, False, sizes), skin_warp=skin_warp_of(d, st, base),
-                brush=brush_of(d, st, base, M))
+                brush=brush_of(d, st, base, M), ai=skin_ai_of(d, st, base, M))
         src = d / "codex_base.glb"
     fw, fh = Image.open(front).size
     w = 864
@@ -2443,6 +2463,179 @@ def set_brush(cat: str, stem: str, cfg: dict, view: str, strokes: list) -> dict:
     return st
 
 
+# ------------------------------------------------------------------ a skin painted by an AI where no picture sees
+# A skin laid flat is a picture an image AI can paint: its holes (where no picture paints - behind an ear, under the
+# chin) marked magenta, the rest the pictures as the projection lays them. The AI's answer is taken only in the holes
+# (a soft edge where the pictures see a little): the rest stays ours whatever the AI changed. Kept as <view>_ai.png
+# (RGBA: its colour, how much it counts). The projection takes its fine detail (pores, colour flecks) on the tone the
+# texture has round it, so a hole never shows as a patch of another shade; the editor shows it tone-matched.
+SKIN_AI_PROMPT = (
+    "The FIRST attached picture is the skin of a 3D game character laid out flat (an unwrapped map: {what}). The bright "
+    "magenta (#FF00FF) areas are holes nobody painted. ALL magenta is skin - also the magenta strips along the picture's "
+    "top and bottom edges (the top of the head, under the chin, where the map squeezes the surface). Paint ONLY the "
+    "magenta so it continues the skin around it seamlessly: the same skin colour and brightness as right next to it, "
+    "the same fine texture (pores, soft colour variation), no lighting and no shadows (a flat albedo map). No outlines, "
+    "no rims, no darker or lighter bands along the edges of the painted areas, no seams: where a painted area meets "
+    "the old skin there must be no visible border at all. Match the character in the SECOND attached picture. Leave "
+    "every pixel outside the magenta exactly as it is: do not move, redraw, recolour, sharpen or blur anything there; "
+    "the dark background around the skin stays dark. Keep the exact picture size and layout. The result: the same "
+    "picture with the holes filled.")
+SKIN_WHAT = {"skin_head": "the face in the middle, the sides of the head and the ears to the left and right, the back of "
+             "the head at both edges", "skin_ears": "four panels, each ear's back and front",
+             "skin_torso": "the chest and the belly in the middle, the back at both edges",
+             "skin_arms": "both arms side by side, the shoulders in the middle, the hands at the edges",
+             "skin_legs": "both legs side by side, each one's front in the middle of its half, the hips at the top"}
+
+
+def _skin_of(d: Path, st: dict, base: Path, view: str, M=None):
+    """(params, faces or None, xyz, nrm, M) of a skin, or None"""
+    if view == "skin_head":
+        sp, xyz, nrm, M = skin_state(d, st, base, M)
+        return sp, None, xyz, nrm, M
+    if view == "skin_ears":
+        return ears_state(d, st, base, M)
+    if view in BODY_SKINS:
+        return body_state(d, st, base, view, M)
+    return None
+
+
+def skin_export(cat: str, stem: str, cfg: dict, draft_dir: Path, view: str) -> dict:
+    """the skin for an AI: <view>_for_ai.png (the pictures as laid, with the strokes; the holes magenta; off the skin
+    dark), <view>_holes.png (white: to paint), the relief guide -> their paths"""
+    a = align(cat, stem, cfg, draft_dir, view)   # (the skin, its pictures layer and layers made or taken from the cache)
+    if not a.get("ok"):
+        return {"ok": False}
+    d = improve_dir(cfg, cat, stem)
+    st = load_state(d)
+    base = d / "before.glb"
+    sk = _skin_of(d, st, base, view)
+    sp, _, xyz, nrm, M = sk
+    ok = np.isfinite(xyz[..., 0])
+    pics = np.asarray(Image.open(d / f"{view}_pics.png").convert("RGBA")).astype(np.float32)
+    strokes = (st.get("brush") or {}).get(view) or []
+    if strokes:   # (the strokes as the projection takes them: the layers mixed again with them)
+        info_p = Path(draft_dir) / f"{stem}.json"
+        info = json.loads(info_p.read_text(encoding="utf-8")) if info_p.exists() else {}
+        pp = pictures(st, info)
+        cams, use = {}, {}
+        for v, x in pp.items():
+            cams[v], _, M = fitted(d, st, base, v, x["path"], M)
+            use[v] = x["path"]
+        mirror = (st.get("options") or {}).get("mirror", (info.get("category") or cat) == "character")
+        if mirror and "left" in use and "right" not in use:
+            cams["right"], _, M = fitted(d, st, base, "right", use["left"], M, flip=True); use["right"] = ("flip", use["left"])
+        if mirror and "right" in use and "left" not in use:
+            cams["left"], _, M = fitted(d, st, base, "left", use["right"], M, flip=True); use["left"] = ("flip", use["right"])
+        M = M or load(base)
+        sizes = {v: Image.open(x["path"]).size for v, x in pp.items()}
+        vp = view_pins(st, cams, {v: x["path"] for v, x in pp.items()}, bool(mirror), sizes)
+        face = _face_on(d, st, base, info, cat, cfg, pp, cams, M)
+        pics = np.asarray(skin_pictures(M, xyz, nrm, sp, use, cams, vp, brush=brush_masks(strokes, sp["W"], sp["H"]),
+                                        wrap=view == "skin_head", face=face)).astype(np.float32)
+    al = pics[..., 3] / 255
+    holes = ok & (al < 0.5)
+    Image.fromarray(pics.clip(0, 255).astype(np.uint8), "RGBA").save(d / f"{view}_ours.png")
+    # (how much the AI's paint counts: 1 in the holes, fading out where the pictures see well - a soft edge)
+    take = np.clip((0.7 - al) / 0.25, 0, 1) * ok
+    Image.fromarray((take * 255).astype(np.uint8)).save(d / f"{view}_take.png")
+    img = np.zeros((sp["H"], sp["W"], 3), np.float32)
+    img[:] = (24, 24, 28)
+    img[ok] = pics[ok, :3] * al[ok, None] + np.array([255.0, 0, 255]) * (1 - al[ok, None])
+    img[holes] = (255, 0, 255)
+    Image.fromarray(img.clip(0, 255).astype(np.uint8)).save(d / f"{view}_for_ai.png")
+    Image.fromarray((holes * 255).astype(np.uint8)).save(d / f"{view}_holes.png")
+    return {"ok": True, "image": str(d / f"{view}_for_ai.png"), "holes": str(d / f"{view}_holes.png"),
+            "guide": str(d / f"{view}_guide.png"), "holes_share": round(float(holes.sum() / max(ok.sum(), 1)), 3),
+            "size": [sp["W"], sp["H"]]}
+
+
+def skin_ai_accept(cat: str, stem: str, cfg: dict, view: str, path) -> dict:
+    """an AI's painted skin (any size: scaled to the skin's) taken in the holes only (grown 4 px, a 3 px soft edge) ->
+    <view>_ai.png; path None: the painted skin dropped"""
+    from scipy.ndimage import binary_dilation, gaussian_filter
+    d = improve_dir(cfg, cat, stem)
+    st = load_state(d)
+    out = d / f"{view}_ai.png"
+    if not path:
+        out.unlink(missing_ok=True)
+        (st.get("skin_ai") or {}).pop(view, None)
+        save_state(d, st)
+        return {"ok": True, "removed": True}
+    holes = np.asarray(Image.open(d / f"{view}_holes.png")) > 127
+    H, W = holes.shape
+    im = Image.open(path).convert("RGB")
+    aspect = (im.width / im.height) / (W / H)
+    im = np.asarray(im.resize((W, H), Image.LANCZOS)).astype(np.float32)
+    tp = d / f"{view}_take.png"
+    if tp.exists():
+        m = gaussian_filter(np.asarray(Image.open(tp)).astype(np.float32) / 255, 1.5)
+    else:
+        m = np.clip(gaussian_filter(binary_dilation(holes, iterations=4).astype(np.float32), 1.5) * 1.5, 0, 1)
+    # (still magenta where the AI left a hole, or dark like the background round the skin: not taken)
+    mag = (im[..., 0] > 200) & (im[..., 1] < 80) & (im[..., 2] > 200)
+    mag |= im.max(-1) < 70
+    m[mag] = 0
+    op = d / f"{view}_ours.png"
+    if op.exists():   # (an AI paints its own light: its tone pulled to ours over a ring round the holes, spread smoothly in)
+        ours = np.asarray(Image.open(op).convert("RGBA")).astype(np.float32)
+        ring = (ours[..., 3] > 150) & (m < 0.05) & binary_dilation(m > 0.05, iterations=40) & ~mag
+        if ring.sum() > 50:
+            la, lo = lab(im[ring]), lab(ours[ring][:, :3])
+            diff = np.zeros((H, W, 3))
+            diff[ring] = lo - la
+            sig = max(12.0, 0.03 * W)
+            wr = gaussian_filter(ring.astype(np.float64), sig)
+            fld = np.stack([gaussian_filter(diff[..., c], sig) for c in range(3)], -1) / np.maximum(wr, 1e-4)[..., None]
+            gm = (lo - la).mean(0)   # (far from any ring: the mean shift)
+            far = np.clip(wr / 0.02, 0, 1)[..., None]
+            fld = fld * far + gm * (1 - far)
+            sel = m > 0.002
+            im[sel] = rgb(lab(im[sel]) + fld[sel]).astype(np.float32)
+    rgba = np.concatenate([im, (m * 255)[..., None]], -1).clip(0, 255).astype(np.uint8)
+    Image.fromarray(rgba, "RGBA").save(out)
+    st.setdefault("skin_ai", {})[view] = {"source": str(path), "when": time.strftime("%Y-%m-%d %H:%M"),
+                                          "aspect": round(aspect, 3), "left_magenta": int((mag & holes).sum())}
+    save_state(d, st)
+    return {"ok": True, "aspect": round(aspect, 3), "left_magenta": int((mag & holes).sum())}
+
+
+def skin_ai_codex(cat: str, stem: str, cfg: dict, draft_dir: Path, view: str, log=None) -> dict:
+    """the skin's holes painted by ChatGPT (Codex, the user's plan), taken in"""
+    import refgen as RF
+    say = log or (lambda *_: None)
+    ex = skin_export(cat, stem, cfg, draft_dir, view)
+    if not ex.get("ok"):
+        raise RuntimeError("no skin")
+    d = improve_dir(cfg, cat, stem)
+    st = load_state(d)
+    info_p = Path(draft_dir) / f"{stem}.json"
+    info = json.loads(info_p.read_text(encoding="utf-8")) if info_p.exists() else {}
+    front = (pictures(st, info).get("front") or {}).get("path")
+    t = time.time()
+    say("Codex")
+    out = d / f"{view}_ai_codex.png"
+    RF.codex_image(SKIN_AI_PROMPT.format(what=SKIN_WHAT.get(view, "a part of the body")),
+                   [ex["image"]] + ([front] if front else []), out, timeout=900)
+    r = skin_ai_accept(cat, stem, cfg, view, out)
+    r["seconds"] = round(time.time() - t, 1)
+    return r
+
+
+def skin_ai_of(d: Path, st: dict, base: Path, M=None):
+    """the painted skins for project(): [(view, params, faces, rgba (H, W, 4))]"""
+    out = []
+    for view in (st.get("skin_ai") or {}):
+        p = d / f"{view}_ai.png"
+        if not p.exists():
+            continue
+        sk = _skin_of(d, st, base, view, M)
+        if not sk:
+            continue
+        sp, faces, _, _, M = sk
+        out.append((view, sp, faces, np.asarray(Image.open(p).convert("RGBA"))))
+    return out or None
+
+
 # ------------------------------------------------------------------ landmarks: named pins whose model end is a 3D point
 # For characters: ear tips, ear holes, elbows, hands (the palm's middle), knees; L = the model's own left (+X). The model
 # point lives in 3D (one for every view: an ear tip marked once lands in the front AND the side picture - the ear fitted
@@ -2691,6 +2884,16 @@ def align(cat: str, stem: str, cfg: dict, draft_dir: Path, view: str) -> dict:
         skin_pictures(M, xyz, nrm, sp, use, cams, vp, wrap=view == "skin_head", face=face, layers=layers).save(d / f"{view}_pics.png")
         for v_, L_ in layers.items():
             Image.fromarray(L_, "RGBA").save(d / f"{view}_layer_{v_}.png")
+        aip = d / f"{view}_ai.png"
+        if aip.exists():   # (a skin painted by an AI: over the pictures where it counts, as the projection lays it)
+            pim = np.asarray(Image.open(d / f"{view}_pics.png").convert("RGBA")).astype(np.float32)
+            aim = np.asarray(Image.open(aip).convert("RGBA")).astype(np.float32)
+            if aim.shape == pim.shape:
+                m, pa = aim[..., 3:] / 255, pim[..., 3:] / 255   # (the AI's paint over the pictures, «over»)
+                oa = m + pa * (1 - m)
+                pim[..., :3] = (aim[..., :3] * m + pim[..., :3] * pa * (1 - m)) / np.maximum(oa, 1e-6)
+                pim[..., 3:] = oa * 255
+                Image.fromarray(pim.clip(0, 255).astype(np.uint8), "RGBA").save(d / f"{view}_pics.png")
         lines = d / f"{view}_lines.png"   # (the model's relief as height lines, made again with the skin)
         if not lines.exists() or lines.stat().st_mtime < (d / f"{view}_xyz.npy").stat().st_mtime:
             h, sc, fc = skin_height(view, xyz, sp, nrm)
@@ -2701,6 +2904,7 @@ def align(cat: str, stem: str, cfg: dict, draft_dir: Path, view: str) -> dict:
                 # (the model's left on the skin: the right half, but the ears' panels have the left ear on the left)
                 "left_x": -1 if view == "skin_ears" else 1, "views": sorted(use, key=ORDER.index),
                 "layers": {v_: str(d / f"{view}_layer_{v_}.png") for v_ in layers}, "sharp": 4.0,
+                "ai": (st.get("skin_ai") or {}).get(view) if (d / f"{view}_ai.png").exists() else None,
                 "prio": {"front": 1.0, "back": 0.85, "left": 0.6, "right": 0.6}, "wrap": view == "skin_head",
                 "ver": (d / f"{view}_pics.png").stat().st_mtime_ns // 1000000}
     if view not in pics:
