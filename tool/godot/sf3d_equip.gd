@@ -1660,6 +1660,7 @@ const CINCH_LAYER := 0.5   # mm over a soft piece's own thickness under a belt p
 const CINCH_GAP := 1.2   # mm a belt pulled tight stands off what is under it (the editor's waistRing)
 const CINCH_MAX := 20.0   # mm a soft piece pressed in under a belt at most (loose clothes of another set: 4 cm in, the layers swapped)
 const HARD_NEAR := 15.0   # mm: armour under a belt only where it lies on what is under it (a back plate's edge standing off: over the belt)
+const BAND_TILT := 0.35   # across per along at most, a band pulled tight (stiff leather: not a lampshade over a seat)
 const BAND_SPAN := 150.0   # mm along the body at most for a band (a quiver's strap from a shoulder to the hip goes round half of it)
 
 
@@ -1915,16 +1916,59 @@ static func _items_over(skel: Skeleton3D, items: Array, ax: Dictionary, ctx := {
 			var cS0: float = ctx["S0"]
 			var cNR: int = ctx["NR"]
 			var tight := _band_over(ctx, flos, S0, NR, gap)
+			# (each way round the band moved as a whole: its lower and its upper edge each by one amount, the points between on
+			# the line between them, smoothed round - moved point by point by its cell its round strap was crushed flat and
+			# ragged; a line that keeps every row of it out of what is under it)
+			var r0: PackedInt32Array = ctx["r0"]
+			var r1: PackedInt32Array = ctx["r1"]
+			var b0: PackedFloat32Array = ctx["b0"]
+			var b1: PackedFloat32Array = ctx["b1"]
+			var mlo := PackedFloat32Array()
+			var mhi := PackedFloat32Array()
+			mlo.resize(NA)
+			mhi.resize(NA)
+			var have := []
+			have.resize(NA)
+			have.fill(false)
+			for jj in NA:
+				if r0[jj] < 0:
+					continue
+				var lo_ := INF
+				var hi_ := INF
+				var any_ := INF
+				for ii in range(r0[jj], r1[jj] + 1):
+					var nd: float = tight[ii][jj] - bin_[ii][jj] if tight[ii][jj] < INF and bin_[ii][jj] < INF else INF
+					if nd < INF:
+						any_ = minf(any_, nd)
+						if lo_ == INF:
+							lo_ = nd
+						hi_ = nd
+				if any_ == INF:
+					continue
+				var lift := 0.0
+				for ii in range(r0[jj], r1[jj] + 1):
+					if tight[ii][jj] < INF and bin_[ii][jj] < INF:
+						var f_ := float(ii - r0[jj]) / maxf(1.0, float(r1[jj] - r0[jj]))
+						lift = maxf(lift, tight[ii][jj] - bin_[ii][jj] - lerpf(lo_, hi_, f_))
+				mlo[jj] = lo_ + lift
+				mhi[jj] = hi_ + lift
+				have[jj] = true
+			_fill_round(mlo, have)
+			_fill_round(mhi, have)
 			for root in band:
 				if not by.has(root):
 					continue
 				for k in by[root]:
 					var c := _cyl(ax, P[k])
-					var i := clampi(int((c.x - cS0) / ds), 0, cNR - 1)
-					var t := _cell_at(tight, cS0, ds, c.x, c.y)
-					var inn: float = bin_[i][cols[k]]
-					if t < INF and inn < INF:
-						move[k] = clampf(t - inn, -40.0 * mm, OVER_MAX * mm)
+					var y := (c.y / TAU + 1.0) * NA - 0.5
+					var j0 := posmod(int(floor(y)), NA)
+					var g: float = y - floor(y)
+					var j1 := (j0 + 1) % NA
+					var jn := posmod(int(round(y)), NA)
+					var lv: float = lerpf(mlo[j0], mlo[j1], g)
+					var hv: float = lerpf(mhi[j0], mhi[j1], g)
+					var fb := clampf((c.x - b0[jn]) / maxf(b1[jn] - b0[jn], 1e-9), 0.0, 1.0) if b0[jn] < INF else 0.5
+					move[k] = clampf(lerpf(lv, hv, fb), -40.0 * mm, OVER_MAX * mm)
 					bandk.append(k)
 		for root in by:
 			var ks: Array = by[root]
@@ -2236,11 +2280,8 @@ static func _under_weights(skel: Skeleton3D, items: Array, pts: PackedVector3Arr
 						var kw := pow(1.0 - sqrt(d / R2), 2)
 						var bn0: PackedStringArray = src[i][0]
 						var wn0: PackedFloat32Array = src[i][1]
-						for e in bn0.size():   # (the body's: not a leg's - between the buttocks both thighs pulled the belt apart)
-							var lw := bn0[e].to_lower()
-							if body and ("leg" in lw or "foot" in lw or "toe" in lw):
-								continue
-							acc[bn0[e]] = acc.get(bn0[e], 0.0) + wn0[e] * kw
+						for e in bn0.size():   # (the legs' too: in Godot the belt held by the hips alone tore apart over the seat;
+							acc[bn0[e]] = acc.get(bn0[e], 0.0) + wn0[e] * kw   # the bakes leave them out - tool/wear_over.py)
 		if acc.is_empty():
 			var bn1: PackedStringArray = src[best][0]
 			var wn1: PackedFloat32Array = src[best][1]
@@ -2275,6 +2316,35 @@ static func _bind_of(skel: Skeleton3D, mi: MeshInstance3D, bone_name: String) ->
 		mi.set_meta("sf3d_skin_own", true)
 	mi.skin.add_named_bind(bone_name, skel.get_bone_global_rest(maxi(bone, 0)).affine_inverse() * mi.transform)
 	return mi.skin.get_bind_count() - 1
+
+
+# values round the body (one each way round, CINCH_NA): the missing ones the nearest's, then a moving mean of five
+static func _fill_round(arr: PackedFloat32Array, have: Array) -> void:
+	var n := arr.size()
+	var known := []
+	for j in n:
+		if have[j]:
+			known.append(j)
+	if known.is_empty():
+		arr.fill(0.0)
+		return
+	for j in n:
+		if have[j]:
+			continue
+		var best: int = known[0]
+		var bd := n
+		for q in known:
+			var d := mini(posmod(q - j, n), posmod(j - q, n))
+			if d < bd:
+				bd = d
+				best = q
+		arr[j] = arr[best]
+	var src := arr.duplicate()
+	for j in n:
+		var sm := 0.0
+		for q in range(-2, 3):
+			sm += src[posmod(j + q, n)]
+		arr[j] = sm / 5.0
 
 
 # cells' value at [along, angle], between the four round it (INF ones left out; all INF: INF)
@@ -2525,9 +2595,13 @@ static func _tight(skel: Skeleton3D, ctx: Dictionary, soft: Array) -> void:
 			continue
 		var a: float = T[r0[j]][j]
 		var b: float = T[r1[j]][j]
-		for i in range(r0[j], r1[j] + 1):   # (its middle not under its edges' line: a strap is stiff across)
+		var wdt := (r1[j] - r0[j]) * ds   # (a strap stiff across: a straight line from edge to edge, tilted BAND_TILT at most -
+		a = minf(a, b + BAND_TILT * wdt)   # over a seat's top its lower edge stood out as a lampshade; what bulges under it
+		b = minf(b, a + BAND_TILT * wdt)   # is pressed in)
+		for i in range(r0[j], r1[j] + 1):
 			var f := float(i - r0[j]) / maxf(1.0, float(r1[j] - r0[j]))
-			tight[i][j] = maxf(T[i][j], lerpf(a, b, f)) + CINCH_GAP * mm
+			var ln := lerpf(a, b, f)
+			tight[i][j] = clampf(T[i][j], ln, ln + 2.0 * mm) + CINCH_GAP * mm
 	var wall := _cells(NR, NA, INF)
 	for i in NR:
 		for j in NA:
@@ -2656,9 +2730,9 @@ static func _cinch_press(skel: Skeleton3D, pieces: Array, ctx: Dictionary) -> Ar
 			for e in here.size():
 				rs[here[e]] += e
 				rc[here[e]] += 1
-	var key := []
+	var key := []   # (by their layers - a shirt let down over the breeches; as they lie only between equal ones)
 	for q in n:
-		key.append(rs[q] / rc[q] if rc[q] > 0 else float(pieces[q].get_meta("sf3d_layer", 0.0)))
+		key.append(float(pieces[q].get_meta("sf3d_layer", 0.0)) + 0.001 * (rs[q] / rc[q] if rc[q] > 0 else 0.0))
 	var order := range(n)
 	order.sort_custom(func(x, y): return key[x] < key[y])
 	for i in NR:
@@ -2670,9 +2744,8 @@ static func _cinch_press(skel: Skeleton3D, pieces: Array, ctx: Dictionary) -> Ar
 					HI[q][i][j] = OUT[q][i][j]
 			if ks.is_empty() or wall[i][j] == INF or floor_[i][j] == -INF:
 				continue
-			var need: float = OUT[ks[-1]][i][j] - wall[i][j]
-			if need <= 0.0 or need > OVER_PEN * mm:   # (loose enough; or deeper - not under the band: a skirt off the legs)
-				continue
+			if OUT[ks[-1]][i][j] - wall[i][j] > OVER_PEN * mm:   # (deeper - not under the band: a skirt off the legs; loose
+				continue   # enough or not, the order kept - a breeches' top came out through the shirt in teeth under the belt)
 			var th := {}
 			var himin := {}
 			var lo: float = floor_[i][j] + gp
@@ -2694,8 +2767,8 @@ static func _cinch_press(skel: Skeleton3D, pieces: Array, ctx: Dictionary) -> Ar
 		var press := _cells(NR, NA, 0.0)
 		for i in NR:
 			for j in NA:
-				if OUT[q][i][j] > -INF and HI[q][i][j] > -INF:
-					press[i][j] = maxf(0.0, OUT[q][i][j] - HI[q][i][j])
+				if OUT[q][i][j] > -INF and HI[q][i][j] > -INF:   # (in only: the layers' push keeps their order drawn - pushed
+					press[i][j] = maxf(0.0, OUT[q][i][j] - HI[q][i][j])   # out as well, a mail shirt came out over the belt)
 		out.append(press)
 	return out
 
@@ -2714,7 +2787,7 @@ static func _cinch_mesh(skel: Skeleton3D, mi: MeshInstance3D, base: Mesh, ctx: D
 	var most := 0.0
 	for i in NR:
 		for j in NA:
-			most = maxf(most, press[i][j])
+			most = maxf(most, absf(press[i][j]))
 	var pressed := most >= 1.5 * mm   # (else made under it, or loose enough: as it is, no folds added again)
 	var at := func(s: float, ang: float) -> float:
 		var x := (s - S0) / ds - 0.5
@@ -2749,10 +2822,11 @@ static func _cinch_mesh(skel: Skeleton3D, mi: MeshInstance3D, base: Mesh, ctx: D
 			var rn: float = r
 			var jh := _col(c.y)
 			var oh: float = absf(c.x - 0.5 * (b0[jh] + b1[jh])) - 0.5 * (b1[jh] - b0[jh]) if b0[jh] < INF else INF
-			# (held wholly up to CINCH_TAPER over the band, then let go as far again - a mail skirt's top over the belt,
-			# held for a few mm only, still came out through the breeches with the thighs; below the band let go at once)
-			var up: bool = b0[jh] < INF and c.x > 0.5 * (b0[jh] + b1[jh])
-			var hf: float = 1.0 - (smoothstep(CINCH_TAPER * mm, 2.0 * CINCH_TAPER * mm, oh) if up else smoothstep(0.0, CINCH_TAPER * mm, oh))
+			# (held wholly up to CINCH_TAPER over and under the band, then let go as far again - a mail skirt's top over the
+			# belt, held for a few mm only, still came out through the breeches with the thighs)
+			# (below it too: held by the body's hips and spine, a mail skirt let go at once came out over the belt's lower
+			# edge with the thighs in a clip)
+			var hf: float = 1.0 - smoothstep(CINCH_TAPER * mm, 2.0 * CINCH_TAPER * mm, oh)
 			if hf > 0.0:
 				held.append([sfc, k, hf, p])
 			if pressed and r > 1e-6:

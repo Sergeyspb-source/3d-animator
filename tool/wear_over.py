@@ -32,6 +32,8 @@ MAX_PEN_MM = 45.0   # deeper under something than this: not a layer under it (an
 CINCH_LAYER_MM, CINCH_GAP_MM = .5, 1.2   # over a soft piece's own thickness under a belt pulled tight; the belt off it
 CINCH_MAX_MM = 20.0   # a soft piece pressed in under a belt at most (loose clothes of another set: 4 cm in, the layers swapped)
 HARD_NEAR_MM = 15.0   # armour under a belt only where it lies on what is under it (a back plate's edge standing off: over the belt)
+ARMOUR, ARMOUR_GAP_MM = ("cuirass",), 1.5   # what the soft clothes are always kept under; how far off its inside
+BAND_TILT = .35   # across per along at most, a band pulled tight (stiff leather: not a lampshade over a seat)
 BAND_SPAN_MM = 150.0   # along the body at most for a band (a quiver's strap from a shoulder to the hip goes round half of it)
 
 
@@ -192,12 +194,182 @@ def _soft(o):
     return False
 
 
+def _stack_press(OUT, INN, wall, flo, cap, mm, layers):
+    """the soft pieces' stack (OUT, INN: each piece's outside, inside in the cells) pressed in under the wall as one: in the
+    order of their layers (between equal ones as they lie in most of the cells - each cell's own order flipped at a skirt's
+    top edge: shards; pressed one by one they had swapped places), each its thickness and
+    0.5 mm apart, the outermost no farther out than the wall, none deeper than cap, none into the body (flo: what is under
+    them), and in that order where the wall needs no press too; cells needing more than MAX_PEN_MM left (not under it: a
+    skirt off the legs, a sleeve). Each piece's press"""
+    pres = np.isfinite(OUT) & np.isfinite(INN)
+    TH = np.where(pres, np.clip(OUT - INN, .5 * mm, 25 * mm), 0)
+    HI = np.where(pres, OUT, -np.inf)
+    MID = np.where(pres, (OUT + INN) / 2, np.inf)
+    gp = .5 * mm
+    zone = np.isfinite(wall) & (pres.sum(0) >= 2)
+    rk = np.argsort(np.argsort(MID, axis=0), axis=0).astype(float)
+    # (by their layers' numbers - the set's own say: a shirt let down over the breeches; how they lie in most cells only
+    # between equal ones - the breeches' wide waistband taken for the outer one came out below the belt)
+    key = np.array([layers[k] + 1e-3 * (rk[k][zone & pres[k]].mean() if (zone & pres[k]).any() else 0) for k in range(len(OUT))])
+    for i, j in zip(*np.where(np.isfinite(wall) & pres.any(0) & np.isfinite(flo))):
+        ks = [k for k in np.argsort(key, kind="stable") if pres[k, i, j]]
+        if OUT[ks[-1], i, j] - wall[i, j] > MAX_PEN_MM * mm:
+            continue   # (loose enough or not: the order kept - a breeches' top came out through the shirt in teeth under
+                       # the belt, where the shirt needed no press)
+        lo, himin = flo[i, j] + gp, {}
+        for k in ks:   # (the least each can be: on what is under it)
+            himin[k] = lo + TH[k, i, j]
+            lo = himin[k] + gp
+        top = wall[i, j]
+        for k in reversed(ks):   # (from the outside in: under the wall, under the one over it)
+            HI[k, i, j] = max(min(OUT[k, i, j], top), himin[k], OUT[k, i, j] - cap)
+            top = HI[k, i, j] - TH[k, i, j] - gp
+        below = -np.inf
+        for k in ks:   # (and in their order: one that could not go deeper keeps those over it out)
+            HI[k, i, j] = max(HI[k, i, j], below + TH[k, i, j] + gp)
+            below = HI[k, i, j]
+    # (out as well, by 25 mm at most: one over a piece that could not go deeper under it lies over it - a shirt over the
+    # breeches' thick waistband, which stood out through it under the belt as a torn strip)
+    return np.where(pres, np.clip(OUT - HI, -25 * mm, None), 0)
+
+
+def _frame(body, arm):
+    """the torso's axis (hips -> neck) and its cells: (A, u, p1, p2, mm) or None"""
+    bone = lambda w: next((b for b in arm.data.bones if b.name.lower().split(":")[-1] == w or b.name.lower().endswith("_" + w)), None)
+    hb, nb_ = bone("hips"), bone("neck")
+    if not hb or not nb_:
+        return None
+    A = np.array(arm.matrix_world @ hb.head_local)
+    B = np.array(arm.matrix_world @ nb_.head_local)
+    u = (B - A) / np.linalg.norm(B - A)
+    p1 = np.array([0, -1, 0.]) if abs(u[1]) < .9 else np.array([1, 0, 0.])
+    p1 = p1 - u * p1.dot(u)
+    p1 /= np.linalg.norm(p1)
+    bodyP = np.concatenate([_pts(o) for o in body])
+    return A, u, p1, np.cross(u, p1), (bodyP[:, 2].max() - bodyP[:, 2].min()) / 1.75 / 1000
+
+
+def under_armour(worn, body, arm, log=print):
+    """The soft clothes worn under a cuirass (ARMOUR) pressed in under its inside, ARMOUR_GAP_MM off it, out of it at a
+    slant (SLOPE) for TAPER_MM past its edges: one stack, in the order they lie, none into the body (_stack_press). A set put
+    together from pieces made for others (the guards): a shirt made over a thin undershirt, worn under a tight brigandine,
+    stood out through its back by 17-37 mm (the user, muscular_06: «a grey patch of the shirt over the brigandine in the
+    middle of the back»); the layers' push hides it in Godot, a bake is one mesh"""
+    covers = [o for o in worn if str(o.get("kind", "")) in ARMOUR]
+    fr_ = _frame(body, arm) if covers else None
+    if not fr_:
+        return {}
+    lay = min(float(c.get("layer", 4.0)) for c in covers)
+    soft = sorted([o for o in worn if _soft(o) and float(o.get("layer", 0)) < lay], key=lambda q: float(q.get("layer", 0)))
+    if not soft:
+        return {}
+    A, u, p1, p2, mm = fr_
+    ds = CELL_MM * mm
+
+    def cyl(P):
+        d = P - A
+        s = d @ u
+        d = d - np.outer(s, u)
+        return s, np.arctan2(d @ p2, d @ p1), np.linalg.norm(d, axis=1)
+    col = lambda ang: np.floor((ang / (2 * np.pi) + 1) * NA).astype(int) % NA
+    CP = [(_pts(c), _limb_free(c)) for c in covers]
+    cs = np.concatenate([cyl(P)[0][lf] for P, lf in CP])
+    S0g = cs.min() - (TAPER_MM + 40) * mm
+    NR = int((cs.max() + (TAPER_MM + 40) * mm - S0g) / ds) + 1
+
+    def binned(P, ok, lo=False):
+        s, a, r = cyl(P)
+        i = ((s - S0g) / ds).astype(int)
+        m = (i >= 0) & (i < NR) & ok
+        c = np.full((NR, NA), np.inf if lo else -np.inf)
+        (np.minimum if lo else np.maximum).at(c, (i[m], col(a)[m]), r[m])
+        return c
+
+    def grow(c, lo=False, times=3):
+        none = np.inf if lo else -np.inf
+        for _ in range(times):
+            g = c.copy()
+            for di in (-1, 0, 1):
+                for dj in (-1, 0, 1):
+                    sh = np.roll(np.roll(c, dj, 1), di, 0)
+                    if di == 1:
+                        sh[0] = none
+                    elif di == -1:
+                        sh[-1] = none
+                    g = np.minimum(g, sh) if lo else np.maximum(g, sh)
+            c = np.where(c == none, g, c)
+        return c
+    cin = np.full((NR, NA), np.inf)
+    for P, lf in CP:
+        cin = np.minimum(cin, binned(P, lf, True))
+    cin = grow(cin, True)
+    wall = cin - ARMOUR_GAP_MM * mm
+    sl = SLOPE * ds
+    for i in range(1, NR):
+        wall[i] = np.minimum(wall[i], wall[i - 1] + sl)
+    for i in range(NR - 2, -1, -1):
+        wall[i] = np.minimum(wall[i], wall[i + 1] + sl)
+    tr = int(TAPER_MM * mm / ds)
+    for j in range(NA):   # (past its edges only TAPER_MM: breeches' legs, a skirt's flare free)
+        rr = np.where(np.isfinite(cin[:, j]))[0]
+        if not len(rr):
+            wall[:, j] = np.inf
+            continue
+        wall[:max(0, rr.min() - tr), j] = np.inf
+        wall[rr.max() + tr + 1:, j] = np.inf
+    info = []
+    for o in soft:
+        P, lf = _pts(o), _limb_free(o)
+        info.append((o, P, lf, grow(binned(P, lf)), grow(binned(P, lf, True), True)))
+    OUT = np.stack([q[3] for q in info])
+    INN = np.stack([q[4] for q in info])
+    innermost = np.where(np.isfinite(OUT) & np.isfinite(INN), INN, np.inf).min(0)
+    fs, fa, frr = cyl(np.concatenate([_pts(o) for o in body]))
+    fi = ((fs - S0g) / ds).astype(int)
+    fok = (fi >= 0) & (fi < NR)
+    fj = col(fa)
+    flo = np.full((NR, NA), -np.inf)
+    sel = fok.copy()
+    sel[fok] = frr[fok] <= innermost[fi[fok], fj[fok]] + 5 * mm
+    np.maximum.at(flo, (fi[sel], fj[sel]), frr[sel])
+    # (and round the waist below it, where two of them lie one on the other with no armour over them: in their layers'
+    # order all the same - the breeches' thick waistband of another set stood out over the shirt let down over them, a
+    # torn strip under the belt; the shirt over it)
+    pres2 = (np.isfinite(OUT) & np.isfinite(INN)).sum(0) >= 2
+    wall = np.where(np.isfinite(wall) | ~pres2, wall, np.where(np.isfinite(OUT), OUT, -np.inf).max(0) + mm)
+    PRESS = _stack_press(OUT, INN, wall, grow(flo), MAX_PEN_MM * mm, mm, [float(o.get("layer", 0)) for o in soft])
+    stats = {}
+    for n, (o, P, lf, _, _) in enumerate(info):
+        press = PRESS[n]
+        if np.abs(press).max() < .5 * mm:
+            continue
+        s, ang, r = cyl(P)
+        x = (s - S0g) / ds - .5
+        i0 = np.clip(np.floor(x).astype(int), 0, NR - 2)
+        f = np.clip(x - i0, 0, 1)
+        y = (ang / (2 * np.pi) + 1) * NA - .5
+        j0 = np.floor(y).astype(int) % NA
+        g = y - np.floor(y)
+        j1 = (j0 + 1) % NA
+        m = (press[i0, j0] * (1 - g) + press[i0, j1] * g) * (1 - f) + (press[i0 + 1, j0] * (1 - g) + press[i0 + 1, j1] * g) * f
+        m[(x < 0) | (x > NR - 1) | ~lf] = 0
+        d = P - A
+        d = d - np.outer(d @ u, u)
+        nrm = np.linalg.norm(d, axis=1, keepdims=True)
+        nrm[nrm < 1e-9] = 1
+        _put(o, P - d / nrm * m[:, None])
+        stats[o.name] = [round(float(press.max() / mm), 1), int((np.abs(m) > .5 * mm).sum())]
+    log("UNDER_ARMOUR " + str(stats))
+    return stats
+
+
 def over_clothes(worn, body, arm, log=print):
     bone = lambda w: next((b for b in arm.data.bones if b.name.lower().split(":")[-1] == w or b.name.lower().endswith("_" + w)), None)
     hb, nb_ = bone("hips"), bone("neck")
+    ua = under_armour(worn, body, arm, log)   # (the clothes under a cuirass first: the belt lies on them as they are then)
     items = [o for o in worn if str(o.get("kind", "")) in ITEMS]
     if not items or not hb or not nb_:
-        return {}
+        return {"under_armour": ua} if ua else {}
     A = np.array(arm.matrix_world @ hb.head_local)
     B = np.array(arm.matrix_world @ nb_.head_local)
     u = (B - A) / np.linalg.norm(B - A)
@@ -224,7 +396,7 @@ def over_clothes(worn, body, arm, log=print):
     col = lambda ang: np.floor((ang / (2 * np.pi) + 1) * NA).astype(int) % NA
     soft = sorted([o for o in worn if o not in items and _soft(o)], key=lambda q: float(q.get("layer", 0)))
     under = [o for o in worn if o not in items and str(o.get("kind", "")) not in SKIP]
-    stats = {"pressed": {}, "items_out_mm": {}, "soft": [o.name for o in soft]}
+    stats = {"pressed": {}, "items_out_mm": {}, "soft": [o.name for o in soft], "under_armour": ua}
     # 1. the bands: each item's islands going round the body as a band (round most of it, not far along it - a quiver's
     # strap from a shoulder to the hip goes round half of it), their whole faces (a strap's points are at its edges)
     allI = [(o, _pts(o)) for o in items]
@@ -350,7 +522,13 @@ def over_clothes(worn, body, arm, log=print):
                 continue
             ii = np.arange(r0[j], r1[j] + 1)
             f = (ii - r0[j]) / max(1, r1[j] - r0[j])
-            tight[ii, j] = np.maximum(T[ii, j], T[r0[j], j] + (T[r1[j], j] - T[r0[j], j]) * f) + CINCH_GAP_MM * mm
+            # (a strap stiff across: a straight line from edge to edge, tilted BAND_TILT at most - over a seat's top its
+            # lower edge stood out as a lampshade, torn into teeth in the bake; what bulges under it is pressed in)
+            a_, b_ = T[r0[j], j], T[r1[j], j]
+            wdt = (r1[j] - r0[j]) * ds
+            a_, b_ = min(a_, b_ + BAND_TILT * wdt), min(b_, a_ + BAND_TILT * wdt)
+            line = a_ + (b_ - a_) * f
+            tight[ii, j] = np.clip(T[ii, j], line, line + 2 * mm) + CINCH_GAP_MM * mm
     # 3. the soft clothes pressed in under it (its inside, out of it at a slant up to TAPER_MM above and below), their
     # thickness kept, never into what is under them, folds above and below; under it held to the body (its skin weights:
     # a mail skirt's top made to bend with the thighs came out through the belt in a clip)
@@ -391,45 +569,20 @@ def over_clothes(worn, body, arm, log=print):
         OUT = np.stack([q[6] for q in info])
         INN = np.stack([q[7] for q in info])
         pres = np.isfinite(OUT) & np.isfinite(INN)
-        TH = np.where(pres, np.clip(OUT - INN, .5 * mm, 25 * mm), 0)
         innermost = np.where(pres, INN, np.inf).min(0)
         flo = np.full((NR, NA), -np.inf)
         sel = fok.copy()
         sel[fok] = fr[fok] <= innermost[fi[fok], fj[fok]] + 5 * mm
         np.maximum.at(flo, (fi[sel], fj[sel]), fr[sel])
         flo = grow(flo)
-        HI = np.where(pres, OUT, -np.inf)
-        MID = np.where(pres, (OUT + INN) / 2, np.inf)
-        gp, cap = .5 * mm, CINCH_MAX_MM * mm
-        # (their order one for all the band: how they lie in most of its cells - each cell's own flipped at a skirt's
-        # top edge, the mail out through the breeches in shards)
-        zone = np.isfinite(wall) & (pres.sum(0) >= 2)
-        rk = np.argsort(np.argsort(MID, axis=0), axis=0).astype(float)
-        key = np.array([rk[k][zone & pres[k]].mean() if (zone & pres[k]).any() else float(soft[k].get("layer", 0)) for k in range(len(info))])
-        for i, j in zip(*np.where(np.isfinite(wall) & pres.any(0) & np.isfinite(flo))):
-            ks = [k for k in np.argsort(key, kind="stable") if pres[k, i, j]]
-            if not OUT[ks[-1], i, j] - wall[i, j] > 0 or OUT[ks[-1], i, j] - wall[i, j] > MAX_PEN_MM * mm:
-                continue   # (loose enough; or deeper - not under the band: a skirt hanging off the legs at its row)
-            lo, himin = flo[i, j] + gp, {}
-            for k in ks:   # (the least each can be: on what is under it)
-                himin[k] = lo + TH[k, i, j]
-                lo = himin[k] + gp
-            top = wall[i, j]
-            for k in reversed(ks):   # (from the outside in: under the wall, under the one over it)
-                HI[k, i, j] = max(min(OUT[k, i, j], top), himin[k], OUT[k, i, j] - cap)
-                top = HI[k, i, j] - TH[k, i, j] - gp
-            below = -np.inf
-            for k in ks:   # (and in their order: one that could not go deeper keeps those over it out)
-                HI[k, i, j] = max(HI[k, i, j], below + TH[k, i, j] + gp)
-                below = HI[k, i, j]
-        PRESS = np.where(pres, np.clip(OUT - HI, 0, None), 0)
+        PRESS = _stack_press(OUT, INN, wall, flo, CINCH_MAX_MM * mm, mm, [float(o.get("layer", 0)) for o in soft])
         for n, (o, P, s, ang, r, lf, _, _) in enumerate(info):
             press = PRESS[n]
             jj2 = col(ang)
             sc_ = np.nan_to_num((b0[jj2] + b1[jj2]) / 2)
             off = np.where(np.isfinite(b0[jj2]), np.abs(s - sc_) - np.nan_to_num((b1[jj2] - b0[jj2]) / 2), 1e9)
             rn = r.copy()
-            if press.max() >= 1.5 * mm:
+            if np.abs(press).max() >= 1.5 * mm:
                 x = (s - S0g) / ds - .5
                 i0 = np.clip(np.floor(x).astype(int), 0, NR - 2)
                 f = np.clip(x - i0, 0, 1)
@@ -449,10 +602,9 @@ def over_clothes(worn, body, arm, log=print):
                 rn = np.where(lf, r - m + gath, r)
                 _put(o, P + radial(P) * (rn - r)[:, None])
                 stats["pressed"][o.name] = round(float(press.max() / mm), 1)
-            # (held wholly up to TAPER_MM over the band, then let go as far again - a mail skirt's top over the belt, held
-            # for a few mm only, still came out through the breeches with the thighs; below the band let go at once)
-            up = s > sc_
-            t2 = np.clip(np.where(up, off / (TAPER_MM * mm) - 1, off / (TAPER_MM * mm)), 0, 1)
+            # (held wholly up to TAPER_MM over and under the band, then let go as far again - a mail skirt's top over the
+            # belt, held for a few mm only, still came out through the breeches with the thighs)
+            t2 = np.clip(off / (TAPER_MM * mm) - 1, 0, 1)   # (below it too: a mail skirt let go at once came out over the belt)
             hf = 1 - t2 * t2 * (3 - 2 * t2)
             hold = lf & (hf > 0) & (off < 2 * TAPER_MM * mm)
             if hold.any() and bodyW:
@@ -503,11 +655,41 @@ def over_clothes(worn, body, arm, log=print):
         move = np.zeros(len(P))
         dirs = radial(P)
         if bmask.any() and np.isfinite(tgt).any():
-            tb = cell_at(tgt, s[bmask], a[bmask])
-            ib = band_in[i[bmask], j[bmask]]
-            okb = np.isfinite(tb) & np.isfinite(ib)
-            mb = np.where(okb, np.clip(tb - ib, -40 * mm, MAX_MM * mm), 0)
-            move[bmask] = mb
+            # (each way round the band moved as a whole: its lower and its upper edge each by one amount, the points between
+            # on the line between them, smoothed round - moved point by point by its cell its round strap was crushed flat
+            # and ragged; a line that keeps every row of it out of what is under it)
+            mlo, mhi = np.full(NA, np.nan), np.full(NA, np.nan)
+            for jj in range(NA):
+                if r0[jj] < 0:
+                    continue
+                rows = np.arange(r0[jj], r1[jj] + 1)
+                nd_ = tgt[rows, jj] - band_in[rows, jj]
+                ok_ = np.isfinite(nd_)
+                if not ok_.any():
+                    continue
+                f_ = (rows - r0[jj]) / max(1, r1[jj] - r0[jj])
+                lo_ = nd_[ok_][0] if ok_[0] else np.nanmin(nd_)
+                hi_ = nd_[ok_][-1] if ok_[-1] else np.nanmin(nd_)
+                lift = np.max(nd_[ok_] - (lo_ + (hi_ - lo_) * f_[ok_]))
+                mlo[jj], mhi[jj] = lo_ + max(lift, 0), hi_ + max(lift, 0)
+            for arr in (mlo, mhi):
+                if np.isnan(arr).all():
+                    arr[:] = 0
+                idx = np.where(~np.isnan(arr))[0]
+                for jj in np.where(np.isnan(arr))[0]:
+                    d_ = np.minimum((idx - jj) % NA, (jj - idx) % NA)
+                    arr[jj] = arr[idx[np.argmin(d_)]]
+                arr[:] = sum(np.roll(arr, q) for q in (-2, -1, 0, 1, 2)) / 5
+            yb = (a[bmask] / (2 * np.pi) + 1) * NA - .5
+            j0b = np.floor(yb).astype(int) % NA
+            gb = yb - np.floor(yb)
+            j1b = (j0b + 1) % NA
+            lo_v = mlo[j0b] * (1 - gb) + mlo[j1b] * gb
+            hi_v = mhi[j0b] * (1 - gb) + mhi[j1b] * gb
+            jn = np.round(yb).astype(int) % NA
+            bb0, bb1 = np.nan_to_num(b0[jn]), np.nan_to_num(b1[jn])
+            fb = np.clip((s[bmask] - bb0) / np.maximum(bb1 - bb0, 1e-9), 0, 1)
+            move[bmask] = np.clip(lo_v + (hi_v - lo_v) * fb, -40 * mm, MAX_MM * mm)
         bidx = np.where(bmask)[0]
         for k in np.unique(isl):
             sel = (isl == k) & ~bmask
