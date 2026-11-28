@@ -606,6 +606,9 @@ def _wear(cfg, req, rigged: Path, item: str, put_on: bool) -> dict:
     piece.write_bytes(piece_bytes)
     out = WF.path(rigged, item, ".glb", make=True)
     keep = bool(req.get("keep_weights"))   # a procedural piece corrected by hand: its own skin, weights and mask stay
+    hang = any(p.get("hang") for p in req["placements"])   # a thing hung on a belt hides none of the body (as a quiver)
+    if hang and WF.path(rigged, item, ".mask.json").exists():
+        WF.path(rigged, item, ".mask.json").unlink()
     mask_keep = WF.path(rigged, item, ".mask.json")
     if keep and mask_keep.exists():   # what it hid as made (ears under a helmet...): kept aside, the new one adds to it
         shutil.copy2(mask_keep, work / "mask_made.json")
@@ -614,7 +617,7 @@ def _wear(cfg, req, rigged: Path, item: str, put_on: bool) -> dict:
            "placements": req["placements"], "offset": float(req.get("offset", 0.0)), "deforms": req.get("deforms", []),
            "conform": float(req.get("conform", 0.5)), "rigidity": float(req.get("rigidity", 0.8)), "wall": req.get("wall"),
            "rings": req.get("rings", []), "under": _under(rigged, item, req.get("under") or []),
-           "report": str(work / "report.json"), "mask": str(work / "mask.json")}
+           "report": str(work / "report.json"), "mask": None if hang else str(work / "mask.json")}
     (work / "job.json").write_text(json.dumps(job, ensure_ascii=False), encoding="utf-8")
     blender = cfg.get("blender_exe") or r"D:\Blender 5.2\blender.exe"
     r = subprocess.run([blender, "-b", "--factory-startup", "-P", str(ROOT / "blender_wear_fit.py"), "--", str(work / "job.json")],

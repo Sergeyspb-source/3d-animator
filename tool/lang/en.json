@@ -3587,5 +3587,19 @@
  "web.imp_pe_back_tip": "Back to the model in 3D; everything is saved",
  "web.imp_pe_back_save_tip": "The pins are saved and «Improve» takes them. They are saved too when you pick another model or press «Improve»",
  "web.imp_seam": "Soft seams",
- "web.imp_seam_note": "How wide a band one picture's colour fades into the other's, in shares of the model's height. Fine detail (pores, brows, lids) still comes from one picture and does not double; 0: the seam as before."
+ "web.imp_seam_note": "How wide a band one picture's colour fades into the other's, in shares of the model's height. Fine detail (pores, brows, lids) still comes from one picture and does not double; 0: the seam as before.",
+ "ed.on_the_belt": "On the belt (hangs from it)",
+ "ed.belt_worn": "Belt",
+ "ed.belt_worn_hint": "The belt worn (or a scabbard's, a quiver's belt) the piece hangs from, at its lower edge. No belt: at the waist.",
+ "ed.belt_none": "no belt: at the waist",
+ "ed.belt_side": "Side",
+ "ed.round_the_waist": "Round, °",
+ "ed.round_the_waist_hint": "Where on the belt: 0 in front, 90 at the side, 180 behind, on the side chosen.",
+ "ed.below_the_belt": "Lower, cm",
+ "ed.below_the_belt_hint": "How far below the belt the piece hangs (cm of a man 1.75 m tall).",
+ "ed.item_size": "Height, cm",
+ "ed.item_size_hint": "The piece's height (cm of a man 1.75 m tall). Finer: the «Size» button.",
+ "ed.item_turn": "Turn, °",
+ "ed.item_tilt": "Tilt, °",
+ "ed.item_tilt_hint": "Tilted forward or back about the piece's own cross axis."
 }

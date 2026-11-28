@@ -1,0 +1,47 @@
+{
+  "id": "2026-11-28_ready-item-on-belt",
+  "title_ru": "Как повесить на пояс вещь, сгенерированную по картинке?",
+  "title_en": "How do you hang a piece generated from a picture on a belt?",
+  "hook_ru": "Свиток с картинки мага за пару секунд стал 3D-моделью. Но надеть его было некуда: у редактора не было места «на поясе».",
+  "status": "solved",
+  "date": "2026-11-28",
+  "sessions": [{"name": "Одежда магов и пояса (ветка, запущенная координатором)", "id": "local_1013af94"},
+               {"name": "Правки проекта (координатор)", "id": "local_e34b3455"}],
+  "commits": [],
+  "tags": ["armour", "belt", "generation", "godot"],
+  "video": {
+    "potential": 3,
+    "why_ru": "Понятная задача (повесить свиток на пояс), быстрый путь от картинки до вещи в движении, один зрелищный провал (свиток исчез в бедре).",
+    "wow_moment_ru": "Свиток с концепта за секунды становится моделью и висит на поясе бегущего гоблина.",
+    "length_seconds": 70,
+    "thumbnail": {"image": "src/hero.png", "text_ru": "СВИТОК НА ПОЯС"}
+  },
+  "numbers": [
+    {"what_ru": "Мест для готовой вещи в «Броне»", "before": 12, "after": 13, "unit_ru": "частей тела", "better": "higher",
+     "measured_on": "", "note_ru": "новое — «На поясе»"},
+    {"what_ru": "Генерация футляра по картинке (SF3D)", "before": null, "after": 4, "unit_ru": "секунды", "better": "lower",
+     "measured_on": "RTX 4060 Laptop 8 ГБ", "note_ru": "10 тысяч граней"},
+    {"what_ru": "Вынос футляра поверх одежды при «Надеть»", "before": 0, "after": 4, "unit_ru": "см (единицы модели)", "better": "higher",
+     "measured_on": "", "note_ru": "из бедра и края жилета наружу"}
+  ],
+  "media": [
+    {"file": "img/01_godot_before_after.jpg", "clean": "src/hero.png", "kind": "render", "role": "before_after",
+     "pair": null, "caption_ru": "Примерочная Godot: покой, ходьба, бег, удар; снизу футляр на левом бедре"},
+    {"file": "img/02_reference_to_model.jpg", "clean": null, "kind": "render", "role": "process",
+     "pair": null, "caption_ru": "Фрагмент концепта мага №24 и модель SF3D из него"},
+    {"file": "img/03_editor_side.jpg", "clean": null, "kind": "screenshot", "role": "result",
+     "pair": null, "caption_ru": "Редактор «Броня», вид сбоку: футляр висит с ремня поверх жилета"}
+  ],
+  "models": [
+    {"role": "result", "path": "work/belt_item/export/character/man_muscul_no_segment_no_rig/armor/belt_scroll_cases.glb",
+     "label_ru": "Футляр на поясе (надет)", "height_m": null, "front_yaw_deg": 0, "quirks_ru": "плоский сбоку: одна картинка"}
+  ],
+  "beats": [
+    {"t": 0, "ru": "Концепт мага: свитки на поясе"},
+    {"t": 10, "ru": "Свитки вырезаны и за 4 секунды стали моделью"},
+    {"t": 20, "ru": "В редакторе нет места «на поясе»: на бедре труба, на торсе неподвижен"},
+    {"t": 35, "ru": "Новое место: ремень, сторона, угол — вещь встаёт на ремень"},
+    {"t": 45, "ru": "Провал: свиток исчез в бедре; выталкивание наружу"},
+    {"t": 55, "ru": "Гоблин бежит, свиток качается с ногой"}
+  ]
+}

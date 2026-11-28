@@ -31,6 +31,8 @@
   /* an opening's and a point's sliders only while one is chosen (else they change nothing) */
   .wearpanel.noring .needring, .wearpanel.nopoint .needpoint { display:none !important; }
   .wearpanel:not(.ready) .readyonly { display:none !important; }
+  .wearpanel:not(.belt) .beltonly { display:none !important; }
+  .wearpanel .beltonly input[type=number] { width:4.5em; }
   .anchor { display:grid; grid-template-columns:repeat(3, 18px); gap:2px; }
   .anchor button { width:18px; height:18px; padding:0; border-radius:3px; font-size:10px; line-height:1; }
   .anchor button.on { background:var(--accent); color:var(--accent-fg); }
@@ -189,9 +191,19 @@
         <option value="pauldron">{{ed.pauldron}}</option>
         <option value="torso">{{ed.torso_breastplate}}</option><option value="head">{{ed.head_helmet}}</option>
         <option value="skeleton">{{ed.the_whole_piece_by_its_own_skeleton}}</option>
-        <option value="ready">{{ed.ready_piece}}</option></select></label>
+        <option value="ready">{{ed.ready_piece}}</option>
+        <option value="belt">{{ed.on_the_belt}}</option></select></label>
       <label class="notready">{{ed.side_2}} <select id="wSide"><option value="L">{{ed.left_on_the_right_of_the_screen}}</option><option value="R">{{ed.right_on_the_left_of_the_screen}}</option></select></label>
       <label class="chk notready"><input type="checkbox" id="wMirror" checked> {{ed.mirror_onto_the_other_side}}</label>
+      <label class="beltonly" title="{{ed.belt_worn_hint}}">{{ed.belt_worn}} <select id="wBelt"></select></label>
+      <label class="beltonly" title="{{ed.round_the_waist_hint}}">{{ed.belt_side}} <select id="wBeltSide"><option value="L">{{ed.left_on_the_right_of_the_screen}}</option><option value="R">{{ed.right_on_the_left_of_the_screen}}</option></select></label>
+      <div class="row beltonly">
+        <label title="{{ed.round_the_waist_hint}}">{{ed.round_the_waist}} <input type="number" id="wAround" min="0" max="180" step="5" value="75"></label>
+        <label title="{{ed.below_the_belt_hint}}">{{ed.below_the_belt}} <input type="number" id="wDrop" min="-10" max="40" step="0.5" value="0"></label></div>
+      <div class="row beltonly">
+        <label title="{{ed.item_size_hint}}">{{ed.item_size}} <input type="number" id="wSize" min="3" max="90" step="1" value="28"></label>
+        <label>{{ed.item_turn}} <input type="number" id="wYaw" min="-180" max="180" step="5" value="0"></label>
+        <label title="{{ed.item_tilt_hint}}">{{ed.item_tilt}} <input type="number" id="wTilt" min="-80" max="80" step="5" value="0"></label></div>
       <label class="limbonly">{{ed.position_along}} <input type="range" id="wPos" min="-0.3" max="1.2" step="0.01"></label>
       <label class="limbonly">{{ed.length}} <input type="range" id="wLen" min="0.5" max="2" step="0.01" value="1"></label>
       <label class="limbonly" title="{{ed.scale_across_the_arm_the_whole_piece}}">{{ed.girth}} <input type="range" id="wThick" min="0.6" max="1.6" step="0.01" value="1"></label>
@@ -4169,7 +4181,8 @@ const jointAt = (id, sd) => S.pos[id] || S.pos[id + '_' + sd];
 const isUpright = (part) => !!WEAR_MID[part] || part === 'boot';
 const isCap = (part) => part === 'pauldron';   // a dome on the shoulder joint: rigid, between the collarbone and the arm
 const WEAR_BONE = { boot: 'leg' };   // the bone a piece follows when it is not its segment's first joint
-const WEAR_SLIDERS = ['wPos', 'wLen', 'wThick', 'wWall', 'wTwist', 'wGap', 'wConform', 'wRigid'];
+const BELT_NUMS = ['wAround', 'wDrop', 'wSize', 'wYaw', 'wTilt'];
+const WEAR_SLIDERS = ['wPos', 'wLen', 'wThick', 'wWall', 'wTwist', 'wGap', 'wConform', 'wRigid', ...BELT_NUMS];
 let wear = null, wearOn = false;
 const wearFits = [...(DATA.fits || [])];   // the saved fittings of this character: {item, fit, src, glb}
 const wearGroup = new THREE.Group(); scene.add(wearGroup);
@@ -4773,7 +4786,94 @@ const isSkelMode = () => $('wPart').value === 'skeleton';
 // a piece made in «Equipment: procedural» (or by its generators), opened as it was made: already on this character with
 // its own weights; moved, turned, sized as a whole, reshaped by points, openings and its wall, then Blender keeps its
 // weights and mask (blender_wear_fit.py keep_weights)
-const isReady = () => $('wPart').value === 'ready';
+const isReady = () => ['ready', 'belt'].includes($('wPart').value);
+// a ready piece hung on a belt worn (a scroll case, a bag generated from a picture: the user, 2026-11-28, «повесить на пояс
+// … двигаться вместе с одеждой … логика типа ножен и колчанов»): placed as a ready one (the gizmo about its anchor, here
+// its top middle) on the belt's lower edge, round the waist on its side; rigid - the hips' and its side's thigh's weights,
+// as the procedural belt's things (armour_gen_editor beltPiece thingAcc); blender_wear_fit «hang» moves it out over the
+// belt and the clothes under it whole; its name belt_… makes it a belt's thing for SF3DEquip (over the clothes, in the
+// layer of what it lies on) and for the bakes (tool/wear_over.py)
+const isBelt = () => $('wPart').value === 'belt';
+const BELT_HIP = .55;   // the hips' share of its weights, the rest its side's thigh (a leg swung out pushes it aside)
+const BELT_UNDER = /^(undercloth|trousers|tunic|vest|hauberk|gambeson|apron|skirt|tassets|cuirass|belt|sheath)_/;   // what it may lie over
+const beltCache = new Map();   // a belt's glb -> its points (world, at rest)
+let beltPicked = false;   // the belt chosen by hand (or opened so): else the first one worn
+const beltItem = () => (/^(belt|sheath)_/.test(wear.item) ? wear.item : 'belt_' + wear.item);
+const beltUnder = () => wearFits.filter((f) => f.glb && BELT_UNDER.test(f.item) && f.item !== beltItem()).map((f) => f.item);
+function beltList() {   // the belts put on (a belt, a scabbard's or a quiver's belt): their fitted results
+  const cur = $('wBelt').value;
+  const fits = wearFits.filter((f) => f.glb && /^(belt|sheath)_/.test(f.item) && f.item !== (wear ? beltItem() : ''));
+  $('wBelt').innerHTML = '<option value="">{{js:ed.belt_none}}</option>' + fits.map((f) => `<option value="${f.glb}">${f.item}</option>`).join('');
+  if ((cur || beltPicked) && [...$('wBelt').options].some((o) => o.value === cur)) $('wBelt').value = cur;
+  else if (fits.length) $('wBelt').value = fits[0].glb;
+}
+async function beltLoad(path) {
+  if (!path || beltCache.has(path)) return;
+  beltCache.set(path, null);
+  try {
+    const gltf = await new GLTFLoader().loadAsync(fileUrl(path) + '?t=' + Date.now());
+    gltf.scene.updateMatrixWorld(true);
+    const out = [], v = new V3();
+    gltf.scene.traverse((o) => { if (!o.isMesh) return; const p = o.geometry.attributes.position;
+      for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i).applyMatrix4(o.matrixWorld); out.push(v.x, v.y, v.z); } });
+    beltCache.set(path, new Float32Array(out));
+  } catch (e) { beltCache.delete(path); console.warn('belt', path, e); }
+}
+// how far the piece (placed by M) must go out along dir to clear the body and the pieces shown by the gap - as
+// blender_wear_fit hang_out: rays from out past its points back in, the first surface at a point or out past it (not
+// farther out than half the piece: an arm hanging by); a flat scroll case on the hip hung half inside the thigh
+function beltOut(M, dir) {
+  const tg = [...meshes]; if (wearOthers.visible) wearOthers.traverse((o) => { if (o.isMesh) tg.push(o); });
+  const size = wear.box.getSize(new V3()).length() * new V3().setFromMatrixScale(M).x, gap = 6 * H / 1750;
+  const rc = new THREE.Raycaster(), v = new V3(), back = dir.clone().negate();
+  let need = 0;
+  for (const p of wear.parts) {
+    const a = p.geo.attributes.position, step = Math.max(1, Math.floor(a.count / 200));
+    for (let i = 0; i < a.count; i += step) {
+      v.fromBufferAttribute(a, i).applyMatrix4(M);
+      rc.set(v.clone().addScaledVector(dir, size), back); rc.far = 2 * size;
+      const h = rc.intersectObjects(tg, false)[0]; if (!h) continue;
+      const ts = h.point.clone().sub(v).dot(dir);
+      if (ts > -gap && ts < .5 * size) need = Math.max(need, ts + gap);
+    }
+  }
+  return need;
+}
+// the piece on the belt from the numbers: the belt's band at that way round (its points within 10° of it at its own
+// height - not a frog's, a pouch's below), its lower edge; the piece's top middle there, out of the band by 8 mm (on a
+// man 1.75 m tall), lowered by «Ниже пояса»; its own upright kept, its front turned out, then «Поворот», «Наклон»;
+// «Высота» its height. Without a belt: the waist, out of the torso by its radius
+function beltPlace() {
+  if (!wear || !wear.box) return;
+  const T = limbOf('torso', 'C'); if (!T) return;
+  const path = $('wBelt').value, pts = path ? beltCache.get(path) : null;
+  if (path && pts === undefined) beltLoad(path).then(() => { if (wear && isBelt()) { beltPlace(); wearEdited(); } });
+  const fwd = new V3(0, 0, 1).addScaledVector(T.u, -T.u.z).normalize(), lft = T.u.clone().cross(fwd).normalize();
+  const sgn = $('wBeltSide').value === 'L' ? 1 : -1, a = sgn * THREE.MathUtils.degToRad(+$('wAround').value || 0);
+  const dir = fwd.clone().multiplyScalar(Math.cos(a)).addScaledVector(lft, Math.sin(a)), k = H / 175;
+  let s0 = .12 * T.len, r0 = 1.05 * T.r;
+  if (pts && pts.length) {
+    const S = [], cand = [], d = new V3(), win = THREE.MathUtils.degToRad(10);
+    for (let i = 0; i < pts.length; i += 3) {
+      d.set(pts[i], pts[i + 1], pts[i + 2]).sub(T.A);
+      const s = d.dot(T.u); d.addScaledVector(T.u, -s); S.push(s);
+      let da = Math.abs(Math.atan2(d.dot(lft), d.dot(fwd)) - a); if (da > Math.PI) da = 2 * Math.PI - da;
+      if (da < win) cand.push([s, d.length()]);
+    }
+    S.sort((x, y) => x - y);
+    const sm = S[S.length >> 1], band = cand.filter(([s]) => Math.abs(s - sm) < 4 * k);
+    if (band.length) { s0 = Math.min(...band.map((b) => b[0])); r0 = Math.max(...band.map((b) => b[1])); }
+  }
+  const P = T.A.clone().addScaledVector(T.u, s0 - (+$('wDrop').value || 0) * k).addScaledVector(dir, r0 + .8 * k);
+  const hgt = Math.max(wear.box.max.y - wear.box.min.y, 1e-6), sc = (+$('wSize').value || 28) * k / hgt;
+  const yaw = Math.atan2(dir.x, dir.z) + THREE.MathUtils.degToRad(+$('wYaw').value || 0);
+  wearHelper.quaternion.setFromAxisAngle(new V3(0, 1, 0), yaw).multiply(new Q().setFromAxisAngle(new V3(1, 0, 0), THREE.MathUtils.degToRad(+$('wTilt').value || 0)));
+  wearHelper.scale.set(sc, sc, sc);
+  wear.anchor = 1; wear.mid = anchorPoint(1); wear.off = P.clone().sub(wear.mid); wear.beltDir = dir;
+  wear.off.addScaledVector(dir, beltOut(wearMatrices()[0].M, dir));   // (out over the hip, the clothes)
+  for (const b of $('wAnchor').children) b.classList.toggle('on', +b.dataset.a === 1);
+  wearDraw();
+}
 // the anchor (3 x 3 cells as seen from the front: 0 top left ... 4 the middle ... 8 bottom right): the point of the
 // piece's box the gizmo sizes and turns about, so it grows away from it (top middle: the straps stay on the shoulders)
 function anchorPoint(k) {
@@ -4811,11 +4911,13 @@ const wv = (id) => +$(id).value;
 function wearAuto() {
   $('wearPanel').classList.toggle('skel', isSkelMode());
   $('wearPanel').classList.toggle('ready', isReady());
+  $('wearPanel').classList.toggle('belt', isBelt());
   if (isReady()) {   // where it is; the gizmo about the anchor (its middle unless chosen), in the world's frame
     const box = new THREE.Box3(); for (const p of wear.parts) { p.geo.computeBoundingBox(); box.union(p.geo.boundingBox); }
     wear.box = box; wear.fit = {}; wear.off = new V3(); wear.q0 = new Q(); wear.mid = anchorPoint(wear.anchor ?? 4);
     for (const b of $('wAnchor').children) b.classList.toggle('on', +b.dataset.a === (wear.anchor ?? 4));
     wearHelper.quaternion.identity(); wearHelper.scale.set(1, 1, 1); $('wWall').value = 1; tcW.detach(); wearDeform();
+    if (isBelt()) { beltList(); beltPlace(); }
     return true;
   }
   if (isSkelMode()) {
@@ -4935,7 +5037,7 @@ function wearPlacement(L) {   // armour space -> world, from the sliders (withou
 }
 function wearMatrices() {   // [{side, M, M0, L}]: every copy (M0 as placed, M with its fit by the skin) and its limb
   const part = $('wPart').value, sd = $('wSide').value;
-  if (part === 'ready') {   // as made, with the gizmo's move, turn and size about its middle
+  if (part === 'ready' || part === 'belt') {   // as made, with the gizmo's move, turn and size about its middle
     const mid = wear.mid, h = mid.clone().add(wear.off || new V3());
     const E = new THREE.Matrix4().compose(h, wearHelper.quaternion, wearHelper.scale).multiply(new THREE.Matrix4().makeTranslation(-mid.x, -mid.y, -mid.z));
     return [{ side: 'C', M: E, M0: E, L: null }];
@@ -5138,7 +5240,8 @@ function wearState() {
                fit: Object.fromEntries(Object.entries(wear.fit || {}).map(([k, m]) => [k, Array.from(m.elements)])),
                handles: wear.handles.map((h) => ({ p: h.p.toArray(), d: h.d.toArray(), r: h.r })),
                rings: (wear.rings || []).map((g) => ({ pts: g.pts.map((p) => p.toArray()), s: g.s, b: g.b, sym: g.sym })),
-               under: wear.under ? [...wear.under] : null, anchor: wear.anchor ?? 4 };
+               under: wear.under ? [...wear.under] : null, anchor: wear.anchor ?? 4,
+               belt: $('wBelt').value, beltSide: $('wBeltSide').value };
   for (const id of WEAR_SLIDERS) st[id] = wv(id);
   return st;
 }
@@ -5146,9 +5249,13 @@ function wearRestore(st) {
   $('wPart').value = st.part; $('wSide').value = st.side; $('wMirror').checked = st.mirror !== false;
   wear.under = st.under ? new Set(st.under) : null;
   wear.anchor = st.anchor ?? 4;
+  if (st.part === 'belt') {   // its belt and numbers before it is placed by them
+    beltPicked = st.belt != null; beltList(); if (st.belt != null) $('wBelt').value = st.belt; if (st.beltSide) $('wBeltSide').value = st.beltSide;
+    for (const id of BELT_NUMS) if (st[id] != null) $(id).value = st[id];
+  }
   if (!wearAuto()) return false;
   for (const id of WEAR_SLIDERS) if (st[id] != null) $(id).value = st[id];
-  wear.off = new V3().fromArray(st.off || [0, 0, 0]);
+  if (st.off || !isBelt()) wear.off = new V3().fromArray(st.off || [0, 0, 0]);   // (on a belt with none saved: where its numbers put it)
   if (st.q) wearHelper.quaternion.fromArray(st.q);
   if (st.sc) wearHelper.scale.fromArray(st.sc);
   wear.fit = Object.fromEntries(Object.entries(st.fit || {}).map(([k, m]) => [k, new THREE.Matrix4().fromArray(m)]));
@@ -5224,6 +5331,7 @@ async function wearLoad(buf, name, state, keepPart = false, ready = false) {
   } else if (!state && !keepPart && guess) { $('wPart').value = guess; if (wear.skel) $('wSide').value = wear.skel.side; }
   $('wearPanel').classList.toggle('skel', isSkelMode());
   $('wearPanel').classList.toggle('ready', isReady());
+  $('wearPanel').classList.toggle('belt', isBelt());
   if (state ? wearRestore(state) : wearAuto()) {
     wearDraw();
     $('wStatus').textContent = state ? '{{js:ed.saved_fitting_opened}}' : '{{js:ed.the_piece_is_in_place_adjust_it_with}}';
@@ -5234,6 +5342,7 @@ async function wearLoad(buf, name, state, keepPart = false, ready = false) {
   wearHistReset();
 }
 function wearListFits() {
+  if (isBelt()) beltList();
   $('wSavedRow').hidden = !wearFits.length;
   $('wSaved').innerHTML = wearFits.map((f, i) => `<option value="${i}">${f.item}${f.glb ? '' : '{{js:ed.not_put_on}}'}</option>`).join('');
 }
@@ -5409,6 +5518,18 @@ function capWeights(sd) {   // a pauldron moves as one piece: the same weights e
   return sh && ar ? { [sh]: 1 - k, [ar]: k } : { [sh || ar]: 1 };
 }
 async function wearRequest() {   // the piece, where it sits and how to fit it: for «Надеть» and «Сохранить»
+  if (isBelt()) {   // rigid on its side's hips and thigh, out over the belt and the clothes under it (blender_wear_fit «hang»)
+    const h = wear.mid.clone().add(wear.off || new V3()), sd = h.x >= cx ? 'L' : 'R';
+    const hip = PBNAME.hips, leg = PBNAME['upleg_' + sd];
+    const weights = hip && leg ? { [hip]: BELT_HIP, [leg]: 1 - BELT_HIP } : { [hip || leg]: 1 };
+    return { item: beltItem(), glb: wear.b64, offset: 0, conform: 0, rigidity: 1,
+             wall: { k: wv('wWall'), mid: wear.pca.mid.toArray(), axis: wear.pca.axis.toArray() },
+             deforms: wear.handles.filter((hd) => hd.d.lengthSq() > 0).map((hd) => ({ p: hd.p.toArray(), d: hd.d.toArray(), r: hd.r })),
+             rings: ringList().map((g) => ({ c: g.c.toArray(), n: g.n.toArray(), r: g.r, s: g.s, b: g.b })), under: beltUnder(),
+             placements: [{ side: 'C', matrix: Array.from(wearMatrices()[0].M.elements), weights,
+                            hang: { dir: (wear.beltDir || new V3(0, 0, 1)).toArray(), gap: 6 * H / 1750 } }],
+             state: wearState() };
+  }
   if (isReady()) {   // the piece as made goes as it is: its move, its reshaping; its weights stay
     return { item: wear.item, glb: wear.b64, keep_weights: true, offset: 0, conform: 0, rigidity: 0,
              wall: { k: wv('wWall'), mid: wear.pca.mid.toArray(), axis: wear.pca.axis.toArray() },
@@ -5478,6 +5599,10 @@ for (const id of ['wPart', 'wSide']) $(id).addEventListener('change', () => {
   if (wear.tooLong && !isSkelMode()) $('wStatus').textContent = '{{js:ed.the_piece_is_much_longer_than_this_2}}' + (wear.skel ? '{{js:ed.choose_the_whole_piece_by_its_own}}' : '');
 });
 $('wAnchor').addEventListener('click', (e) => { const k = e.target.dataset.a; if (k !== undefined) setAnchor(+k); });
+for (const id of [...BELT_NUMS, 'wBelt', 'wBeltSide']) $(id).addEventListener(id === 'wBelt' || id === 'wBeltSide' ? 'change' : 'input', () => {
+  if (id === 'wBelt') beltPicked = true;
+  if (wear && isBelt()) { beltPlace(); wearEdited(); }
+});
 $('wMove').onclick = () => wearGizmo('translate'); $('wRot').onclick = () => wearGizmo('rotate'); $('wScale').onclick = () => wearGizmo('scale');
 $('wReset').onclick = () => { if (wear && wearAuto()) wearEdited(); };
 $('wFit').onclick = () => { if (!wear) return; wearFitAll(); wearEdited(); $('wStatus').textContent = '{{js:ed.fitted_to_the_skin_over_the_whole}}'; };

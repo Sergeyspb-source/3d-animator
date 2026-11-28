@@ -512,6 +512,34 @@ def cap_under_need(J, near_r):
     return need
 
 
+def hang_out(me, hang):
+    """A ready thing hung on a belt (the editor's «На поясе»): moved whole along its way out (hang["dir"], glTF) until it
+    clears the skin and the pieces it lies over (job "under": the belt, the clothes under it) by hang["gap"] - pushed
+    vertex by vertex it would be dented; it keeps its shape, as SF3DEquip moves a scabbard, a hip quiver out over the
+    clothes. Rays from out past each vertex back in: the first surface met that is at it or out past it (not farther
+    out than half the thing: an arm hanging by) sets how far. Returns how far it went (model units)."""
+    d = (CONV.to_3x3() @ Vector(hang["dir"])).normalized()
+    gap = float(hang.get("gap", 0.0))
+    trees = [t for t in (bvh, under_bvh) if t is not None]
+    if not trees or not len(me.vertices):
+        return 0.0
+    lo = Vector([min(v.co[i] for v in me.vertices) for i in range(3)])
+    size = (Vector([max(v.co[i] for v in me.vertices) for i in range(3)]) - lo).length
+    need = 0.0
+    for k in range(0, len(me.vertices), max(1, len(me.vertices) // 4000)):
+        co = me.vertices[k].co
+        for t in trees:
+            hit = t.ray_cast(co + d * size, -d, 2 * size)
+            if hit[0] is not None:
+                ts = (hit[0] - co).dot(d)
+                if -gap < ts < .5 * size:
+                    need = max(need, ts + gap)
+    if need > 0:
+        for v in me.vertices:
+            v.co += d * need
+    return need
+
+
 def push_out(me, radius, need_of=None, rigid=False, foreign=(), skip=()):
     """Stage 2: what is under the skin or nearer than the offset moves out along the normal of the nearest skin
     point (or by need_of(co): a push vector or None). The push of every vertex spreads over its neighbours within the radius (on a sample of at most ~3000
@@ -681,6 +709,10 @@ for pl in job["placements"]:
         limb = Limb((CONV @ Vector(pl["limb"]["a"]).to_4d()).to_3d(), (CONV @ Vector(pl["limb"]["b"]).to_4d()).to_3d())
         tight = [(CONV @ Vector(p).to_4d()).to_3d() for p in pl.get("tight") or []]   # glTF -> Blender
         rep.update(fit_limb(me, limb, tight, ("Arm", "Hand") if tight else (), pl.get("follow") != "down"))
+    elif pl.get("hang"):   # a ready thing on a belt: out over the belt and the clothes whole (hang_out), rigid (its weights)
+        lo = Vector([min(v.co[i] for v in me.vertices) for i in range(3)])
+        size = (Vector([max(v.co[i] for v in me.vertices) for i in range(3)]) - lo).length
+        rep["moved_out"] = round(hang_out(me, pl["hang"]), 5)
     else:   # placed by the skeleton in the editor (a boot, a whole arm), or a pauldron: no limb axis, only the push
         # along the normal (a pauldron is rigid: its push spreads over a third of it, so it moves rather than dents)
         lo = Vector([min(v.co[i] for v in me.vertices) for i in range(3)])
