@@ -1,0 +1,527 @@
+"""Blender: belts and what hangs on them over the clothes, whatever they were made over (2026-11-28, the user: «quivers,
+sheaths must always stay on top of the clothes, not covered by them»; «the belt either under the clothes or over them -
+here over»). A set put together from pieces made for different sets (the guards: a scabbard made over a shirt worn over a
+mail shirt) had the mail come out over the belt, the scabbard half sunk in it.
+
+    import wear_over
+    stats = wear_over.over_clothes(worn, body, arm)   # worn: the pieces' meshes, each with o["kind"]; body: the skin's
+
+At rest (the meshes' own vertices, in the world), round the torso's axis (hips -> neck, cells CELL_MM along it, NA ways
+round):
+1. the bands: each item's islands going round the body (round most of it, not more than BAND_SPAN_MM along it), their
+   whole faces (a strap's points are at its edges, its top ones and its bottom ones at other angles);
+2. where a band lies pulled tight (the editor's waistRing over clothes; the user: «the belt in a half circle, smoothly
+   round the waist», «its upper edge on the clothes, not square to the ground»): in each of its rows the body's
+   outermost, on it each soft piece's own thickness, over what is hard there - each row its own (tilted as the body is),
+   snug round, its middle not under its edges' line;
+3. the soft clothes (SOFT, a tassets skirt only of mail) pressed in under it, out of it at a slant (SLOPE) for TAPER_MM
+   above and below, their thickness kept, never into what is under them, folds above and below; under it held to the
+   body (its skin weights - a mail skirt's top made to bend with the thighs came out through the belt in a clip);
+4. the band onto those rows (no deeper than the clothes as pressed), held to the body too; a ring that is no band (a
+   strap across) out over what is under it way round by way round; what hangs from it (a scabbard, a pouch, a quiver)
+   whole along its own way out, with the band it hangs from; a quiver's arrows as the quiver.
+The cells between a mesh's points take their neighbours' (else a checkerboard pressed: the cloth in teeth).
+The same rule as SF3DEquip._cinch (Godot) and the armour editor's cinchShown."""
+import numpy as np
+
+ITEMS = ("belt", "sheath")
+SOFT = ("undercloth", "trousers", "tunic", "vest", "hauberk", "gambeson", "apron", "skirt")
+SKIP = ("hair", "beard", "brows", "lashes", "weapon", "shield")
+NA, CELL_MM, GAP_MM, SLOPE, TAPER_MM, REACH_MM, GATHER_MM, FOLDS, MAX_MM = 72, 4.0, 2.5, .6, 30.0, 75.0, 7.0, 9, 80.0
+MAX_PEN_MM = 45.0   # deeper under something than this: not a layer under it (an arm held out past a quiver's strap)
+CINCH_LAYER_MM, CINCH_GAP_MM = .5, 1.2   # over a soft piece's own thickness under a belt pulled tight; the belt off it
+BAND_SPAN_MM = 150.0   # along the body at most for a band (a quiver's strap from a shoulder to the hip goes round half of it)
+
+
+def _pts(o):
+    n = len(o.data.vertices)
+    co = np.empty(n * 3)
+    o.data.vertices.foreach_get("co", co)
+    M = np.array(o.matrix_world)
+    P = co.reshape(-1, 3)
+    return P @ M[:3, :3].T + M[:3, 3]
+
+
+def _put(o, P):
+    M = np.array(o.matrix_world)
+    Mi = np.linalg.inv(M)
+    loc = P @ Mi[:3, :3].T + Mi[:3, 3]
+    o.data.vertices.foreach_set("co", loc.reshape(-1))
+    o.data.update()
+
+
+def _limb_free(o):
+    """which of its vertices move mostly with the torso or the legs, not an arm (an arm held out past a quiver's strap is
+    not a layer under it)"""
+    names = [g.name.lower() for g in o.vertex_groups]
+    armg = np.array(["arm" in n or "hand" in n or "elbow" in n for n in names] + [False])
+    out = np.ones(len(o.data.vertices), bool)
+    if not armg.any():
+        return out
+    for v in o.data.vertices:
+        best, bw = -1, 0.0
+        for g in v.groups:
+            if g.weight > bw:
+                best, bw = g.group, g.weight
+        if best >= 0 and armg[best]:
+            out[v.index] = False
+    return out
+
+
+def _group(objs):
+    """the meshes of one piece together (a quiver and its arrows: by the piece's id, else the name before «__»)"""
+    by = {}
+    for o in objs:
+        key = str(o.get("pid", "")) or o.name.split("__")[0]
+        by.setdefault(key, []).append(o)
+    return [sorted(g, key=lambda o: ("__" in o.name, o.name)) for g in by.values()]
+
+
+def _islands(o):
+    """each vertex's island (connected by edges)"""
+    n = len(o.data.vertices)
+    par = np.arange(n)
+
+    def find(x):
+        while par[x] != x:
+            par[x] = par[par[x]]
+            x = par[x]
+        return x
+    ed = np.empty(len(o.data.edges) * 2, dtype=np.int64)
+    o.data.edges.foreach_get("vertices", ed)
+    for a, b in ed.reshape(-1, 2):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            par[rb] = ra
+    # (and the vertices at one place: a glTF's are split at its UV seams and hard edges - a belt fell into dozens of bits)
+    co = np.empty(n * 3)
+    o.data.vertices.foreach_get("co", co)
+    key = np.round(co.reshape(-1, 3) * 1e4).astype(np.int64)
+    first = {}
+    for i, kk in enumerate(map(tuple, key)):
+        j = first.setdefault(kk, i)
+        if j != i:
+            ra, rb = find(j), find(i)
+            if ra != rb:
+                par[rb] = ra
+    return np.array([find(i) for i in range(n)])
+
+
+def _face_pts(o, P, keep, step):
+    """points over its triangles no farther apart than step, of the vertices kept (a strap's points are at its edges,
+    its top ones and its bottom ones at other angles round: its whole face)"""
+    me = o.data
+    me.calc_loop_triangles()
+    tri = np.empty(len(me.loop_triangles) * 3, dtype=np.int64)
+    me.loop_triangles.foreach_get("vertices", tri)
+    tri = tri.reshape(-1, 3)
+    tri = tri[keep[tri[:, 0]]]
+    out = [P[np.unique(tri)]] if len(tri) else []
+    for a, b, c in tri:
+        A, B, C = P[a], P[b], P[c]
+        n = int(np.clip(np.ceil(max(np.linalg.norm(A - B), np.linalg.norm(B - C), np.linalg.norm(C - A)) / step), 1, 32))
+        p, q = np.meshgrid(np.arange(n + 1), np.arange(n + 1), indexing="ij")
+        ok = p + q <= n
+        w1, w2 = (p[ok] / n)[:, None], (q[ok] / n)[:, None]
+        out.append(A + (B - A) * w1 + (C - A) * w2)
+    return np.concatenate(out) if out else np.zeros((0, 3))
+
+
+def _weights_of(body):
+    """the body's points (world) in a KD-tree and their skin weights ({group: weight} each)"""
+    from mathutils import Vector, kdtree
+    pts, ws = [], []
+    for o in body:
+        names = [g.name for g in o.vertex_groups]
+        pts.append(_pts(o))
+        for v in o.data.vertices:
+            ws.append({names[g.group]: g.weight for g in v.groups if g.weight > 1e-4 and g.group < len(names)})
+    if not pts or not ws:
+        return None
+    P = np.concatenate(pts)
+    tree = kdtree.KDTree(len(P))
+    for k, p in enumerate(P):
+        tree.insert(Vector(p), k)
+    tree.balance()
+    return tree, ws
+
+
+def _hold(o, idx, at, f, bodyW, mm, keep=4):
+    """its points idx (now at «at», in the world) bent with the body there: their skin weights moved toward the body's
+    by f (1: the body's) - of its points within 30 mm, nearer ones more (the nearest alone jumped from one to the next:
+    the clothes bent in streaks); the most weighty «keep» of them, summing to 1"""
+    from mathutils import Vector
+    tree, ws = bodyW
+    R = 30 * mm
+    vg = o.vertex_groups
+    for k, p, fk in zip(idx, at, f):
+        found = tree.find_range(Vector(p), R) or [tree.find(Vector(p))]
+        body = {}
+        for _, i, d in found:
+            kw = (1 - d / R) ** 2 if d < R else 1.0
+            for nm, w in ws[i].items():
+                body[nm] = body.get(nm, 0.0) + w * kw
+        tb = sum(body.values())
+        if tb <= 1e-9:
+            continue
+        v = o.data.vertices[int(k)]
+        own = {vg[g.group].name: g.weight for g in v.groups if g.group < len(vg)}
+        to = sum(own.values())
+        mix = {nm: w / tb * fk for nm, w in body.items()}
+        for nm, w in own.items():
+            mix[nm] = mix.get(nm, 0.0) + (w / to if to > 1e-9 else 0.0) * (1 - fk)
+        top = sorted(mix.items(), key=lambda e: -e[1])[:keep]
+        s = sum(w for _, w in top)
+        for nm in own:
+            vg[nm].remove([int(k)])
+        for nm, w in top:
+            g = vg.get(nm) or vg.new(name=nm)
+            g.add([int(k)], w / s, "REPLACE")
+
+
+def _soft(o):
+    k = str(o.get("kind", ""))
+    if k in SOFT:
+        return True
+    if k == "tassets":   # (of mail: soft; of plates: not pressed)
+        names = [m.name.lower() for m in o.data.materials if m]
+        return any(n.endswith("_mail") or "mail" in n for n in names) and not any(n.endswith("_plate") for n in names)
+    return False
+
+
+def over_clothes(worn, body, arm, log=print):
+    bone = lambda w: next((b for b in arm.data.bones if b.name.lower().split(":")[-1] == w or b.name.lower().endswith("_" + w)), None)
+    hb, nb_ = bone("hips"), bone("neck")
+    items = [o for o in worn if str(o.get("kind", "")) in ITEMS]
+    if not items or not hb or not nb_:
+        return {}
+    A = np.array(arm.matrix_world @ hb.head_local)
+    B = np.array(arm.matrix_world @ nb_.head_local)
+    u = (B - A) / np.linalg.norm(B - A)
+    p1 = np.array([0, -1, 0.]) if abs(u[1]) < .9 else np.array([1, 0, 0.])
+    p1 = p1 - u * p1.dot(u)
+    p1 /= np.linalg.norm(p1)
+    p2 = np.cross(u, p1)
+    bodyP = np.concatenate([_pts(o) for o in body])
+    mm = (bodyP[:, 2].max() - bodyP[:, 2].min()) / 1.75 / 1000
+    ds = CELL_MM * mm
+
+    def cyl(P):
+        d = P - A
+        s = d @ u
+        d = d - np.outer(s, u)
+        return s, np.arctan2(d @ p2, d @ p1), np.linalg.norm(d, axis=1)
+
+    def radial(P):
+        d = P - A
+        d = d - np.outer(d @ u, u)
+        n = np.linalg.norm(d, axis=1, keepdims=True)
+        n[n < 1e-9] = 1
+        return d / n
+    col = lambda ang: np.floor((ang / (2 * np.pi) + 1) * NA).astype(int) % NA
+    soft = sorted([o for o in worn if o not in items and _soft(o)], key=lambda q: float(q.get("layer", 0)))
+    under = [o for o in worn if o not in items and str(o.get("kind", "")) not in SKIP]
+    stats = {"pressed": {}, "items_out_mm": {}, "soft": [o.name for o in soft]}
+    # 1. the bands: each item's islands going round the body as a band (round most of it, not far along it - a quiver's
+    # strap from a shoulder to the hip goes round half of it), their whole faces (a strap's points are at its edges)
+    allI = [(o, _pts(o)) for o in items]
+    IS = np.concatenate([cyl(P)[0] for _, P in allI])
+    S0g, S1g = IS.min() - (REACH_MM + 60) * mm, IS.max() + (REACH_MM + 60) * mm
+    NR = int((S1g - S0g) / ds) + 1
+    rowof = lambda s: np.clip(((s - S0g) / ds).astype(int), 0, NR - 1)
+
+    def binned(P, ok=None, lo=False):
+        s, a, r = cyl(P)
+        i = ((s - S0g) / ds).astype(int)
+        m = (i >= 0) & (i < NR)
+        if ok is not None:
+            m &= ok
+        c = np.full((NR, NA), np.inf if lo else -np.inf)
+        (np.minimum if lo else np.maximum).at(c, (i[m], col(a)[m]), r[m])
+        return c
+
+    def grow(c, lo=False, times=3):   # (cells between a mesh's points: their neighbours')
+        none = np.inf if lo else -np.inf
+        for _ in range(times):
+            g = c.copy()
+            for di in (-1, 0, 1):
+                for dj in (-1, 0, 1):
+                    sh = np.roll(np.roll(c, dj, 1), di, 0)
+                    if di == 1:
+                        sh[0] = none
+                    elif di == -1:
+                        sh[-1] = none
+                    g = np.minimum(g, sh) if lo else np.maximum(g, sh)
+            c = np.where(c == none, g, c)
+        return c
+
+    def cell_at(c, s, ang):   # (between the four cells round it, unset ones left out)
+        x = np.clip((s - S0g) / ds - .5, 0, NR - 1.001)
+        i = np.floor(x).astype(int)
+        f = x - i
+        y = (ang / (2 * np.pi) + 1) * NA - .5
+        j = np.floor(y).astype(int) % NA
+        g = y - np.floor(y)
+        j1, i1 = (j + 1) % NA, np.minimum(i + 1, NR - 1)
+        num, den = np.zeros(len(s)), np.zeros(len(s))
+        for v, w in ((c[i, j], (1 - f) * (1 - g)), (c[i, j1], (1 - f) * g), (c[i1, j], f * (1 - g)), (c[i1, j1], f * g)):
+            okv = np.isfinite(v)
+            num += np.where(okv, v * w, 0)
+            den += np.where(okv, w, 0)
+        return np.where(den > 1e-9, num / np.maximum(den, 1e-12), c[np.clip(np.round(x).astype(int), 0, NR - 1), np.round(y).astype(int) % NA])
+
+    def snug(row, ok):   # (moving means of seven ways round, never in: round the body, not into a back's hollow)
+        orig = np.where(ok, row, -np.inf)
+        for _ in range(2):
+            row = np.maximum(orig, sum(np.roll(row, d) for d in range(-3, 4)) / 7)
+        return row
+
+    band_in = np.full((NR, NA), np.inf)
+    bands = {}
+    for o, P in allI:
+        s, a, r = cyl(P)
+        j = col(a)
+        isl = _islands(o)
+        ring = np.zeros(len(P), bool)
+        for k in np.unique(isl):
+            sel = isl == k
+            if len(np.unique(j[sel])) >= .6 * NA and np.ptp(s[sel]) <= BAND_SPAN_MM * mm:
+                ring |= sel
+        if ring.any():
+            bands[o.name] = ring
+            s2, a2, r2 = cyl(_face_pts(o, P, ring, .5 * ds))
+            np.minimum.at(band_in, (rowof(s2), col(a2)), r2)
+    stats["band_cells"] = int(np.isfinite(band_in).sum())
+    have = np.isfinite(band_in).any(0)
+    if have.any():
+        for j in np.where(~have)[0]:   # (a way round the band misses: its nearest neighbour's)
+            for k in range(1, NA // 2):
+                q = (j + k) % NA if have[(j + k) % NA] else (j - k) % NA if have[(j - k) % NA] else -1
+                if q >= 0:
+                    band_in[:, j] = band_in[:, q]
+                    break
+    r0, r1 = np.full(NA, -1), np.full(NA, -1)
+    for j in range(NA):
+        rr = np.where(np.isfinite(band_in[:, j]))[0]
+        if len(rr):
+            r0[j], r1[j] = rr.min(), rr.max()
+    b0 = np.where(r0 >= 0, S0g + r0 * ds, np.nan)
+    b1 = np.where(r0 >= 0, S0g + (r1 + 1) * ds, np.nan)
+    bodyW = _weights_of(body)
+    # 2. where the band lies pulled tight (the editor's waistRing over clothes): the body's outermost, on it each soft
+    # piece's own thickness, over what is hard there; each row its own (tilted as the body is: its upper edge on the
+    # clothes), snug round, its middle not under its edges' line
+    tight = np.full((NR, NA), np.inf)
+    if (r0 >= 0).any():
+        own = np.full((NR, NA), -np.inf)
+        for o in body:
+            own = np.maximum(own, binned(_pts(o), _limb_free(o)))
+        own = grow(own)
+        hard = np.full((NR, NA), -np.inf)
+        th = np.zeros((NR, NA))
+        for o in under:
+            P, lf = _pts(o), _limb_free(o)
+            if o not in soft:
+                hard = np.maximum(hard, binned(P, lf))
+                continue
+            hi, lo = binned(P, lf), binned(P, lf, True)
+            t = grow(np.where(np.isfinite(hi), hi - lo, -np.inf))
+            th += np.where(np.isfinite(t), np.clip(t, .5 * mm, 25 * mm) + CINCH_LAYER_MM * mm, 0)
+        hard = grow(hard)
+        T = np.maximum(np.where(np.isfinite(own), own + th, -np.inf), hard)
+        for i in range(NR):
+            row = T[i].copy()
+            v = row[np.isfinite(row)]
+            if not len(v):
+                continue
+            ok = np.isfinite(row) & (row <= np.median(v) + 60 * mm)   # (not an arm by the body there)
+            idx = np.where(ok)[0]
+            for j in np.where(~ok)[0]:
+                d = np.minimum((idx - j) % NA, (j - idx) % NA)
+                row[j] = row[idx[d == d.min()]].max()
+            T[i] = snug(row, ok)
+        for j in range(NA):
+            if r0[j] < 0 or not (np.isfinite(T[r0[j], j]) and np.isfinite(T[r1[j], j])):
+                continue
+            ii = np.arange(r0[j], r1[j] + 1)
+            f = (ii - r0[j]) / max(1, r1[j] - r0[j])
+            tight[ii, j] = np.maximum(T[ii, j], T[r0[j], j] + (T[r1[j], j] - T[r0[j], j]) * f) + CINCH_GAP_MM * mm
+    # 3. the soft clothes pressed in under it (its inside, out of it at a slant up to TAPER_MM above and below), their
+    # thickness kept, never into what is under them, folds above and below; under it held to the body (its skin weights:
+    # a mail skirt's top made to bend with the thighs came out through the belt in a clip)
+    if np.isfinite(tight).any() and soft:
+        wall = tight - .8 * mm
+        sl = SLOPE * ds
+        for i in range(1, NR):
+            wall[i] = np.minimum(wall[i], wall[i - 1] + sl)
+        for i in range(NR - 2, -1, -1):
+            wall[i] = np.minimum(wall[i], wall[i + 1] + sl)
+        si = S0g + (np.arange(NR) + .5) * ds
+        for j in range(NA):
+            if r0[j] < 0:
+                wall[:, j] = np.inf
+            else:
+                wall[(si < b0[j] - TAPER_MM * mm) | (si > b1[j] + TAPER_MM * mm), j] = np.inf
+        fs, fa, fr = cyl(np.concatenate([_pts(o) for o in body]))
+        fi = ((fs - S0g) / ds).astype(int)
+        fok = (fi >= 0) & (fi < NR)
+        fj = col(fa)
+        stack = np.full((NR, NA), -np.inf)
+        reach = REACH_MM * mm
+        for o in soft:   # (inside first: each over the ones under it)
+            P = _pts(o)
+            s, ang, r = cyl(P)
+            ii = ((s - S0g) / ds).astype(int)
+            lf = _limb_free(o)   # (not a sleeve: a quiver's strap over a shoulder does not draw in what goes along an arm)
+            ok = (ii >= 0) & (ii < NR) & lf
+            jj = col(ang)
+            outer = np.full((NR, NA), -np.inf)
+            inner = np.full((NR, NA), np.inf)
+            np.maximum.at(outer, (ii[ok], jj[ok]), r[ok])
+            np.minimum.at(inner, (ii[ok], jj[ok]), r[ok])
+            outer, inner = grow(outer), grow(inner, True)
+            flo = np.full((NR, NA), -np.inf)
+            sel = fok.copy()
+            sel[fok] = fr[fok] <= inner[fi[fok], fj[fok]] + 5 * mm
+            np.maximum.at(flo, (fi[sel], fj[sel]), fr[sel])
+            flo = np.maximum(grow(flo), grow(stack))
+            press = np.where(np.isfinite(wall) & np.isfinite(outer), outer - wall, 0)
+            press = np.where((press > 0) & np.isfinite(flo), np.clip(np.minimum(press, inner - flo - .5 * mm), 0, None), 0)
+            press = np.nan_to_num(press, nan=0, posinf=0, neginf=0)
+            press[press > MAX_PEN_MM * mm] = 0   # (deeper: not under the band - a skirt hanging off the legs at its row)
+            jj2 = col(ang)
+            sc_ = np.nan_to_num((b0[jj2] + b1[jj2]) / 2)
+            off = np.where(np.isfinite(b0[jj2]), np.abs(s - sc_) - np.nan_to_num((b1[jj2] - b0[jj2]) / 2), 1e9)
+            rn = r.copy()
+            if press.max() >= 1.5 * mm:
+                x = (s - S0g) / ds - .5
+                i0 = np.clip(np.floor(x).astype(int), 0, NR - 2)
+                f = np.clip(x - i0, 0, 1)
+                y = (ang / (2 * np.pi) + 1) * NA - .5
+                j0 = np.floor(y).astype(int) % NA
+                g = y - np.floor(y)
+                j1 = (j0 + 1) % NA
+                m = (press[i0, j0] * (1 - g) + press[i0, j1] * g) * (1 - f) + (press[i0 + 1, j0] * (1 - g) + press[i0 + 1, j1] * g) * f
+                m[(x < 0) | (x > NR - 1)] = 0
+                ph = np.where(s > sc_, 0, .5)
+                fo = np.maximum(0, np.sin(ang * FOLDS / 2 + ph * np.pi / 2 + .3 * np.sin(ang * 3)))
+                fidx = np.round(ang * FOLDS / (2 * np.pi) * 2).astype(np.int64)
+                hv = ((fidx * 374761393 + 5 * 668265263 + 31) % 1000) / 1000
+                t = np.clip(off / (12 * mm), 0, 1)
+                smt = t * t * (3 - 2 * t)
+                gath = np.where((off > 0) & (off < reach), GATHER_MM * mm * smt * np.clip(1 - off / reach, 0, 1) ** 1.4 * fo * fo * (.6 + .4 * hv), 0)
+                rn = np.where(lf, r - m + gath, r)
+                _put(o, P + radial(P) * (rn - r)[:, None])
+                stats["pressed"][o.name] = round(float(press.max() / mm), 1)
+            hold = lf & (off < TAPER_MM * mm)
+            if hold.any() and bodyW:
+                t = np.clip(off[hold] / (TAPER_MM * mm), 0, 1)
+                _hold(o, np.where(hold)[0], (P + radial(P) * (rn - r)[:, None])[hold], 1 - t * t * (3 - 2 * t), bodyW, mm)
+            stk = np.full((NR, NA), -np.inf)
+            np.maximum.at(stk, (ii[ok], jj[ok]), rn[ok] + .5 * mm)
+            stack = np.maximum(stack, stk)
+    # 4. the items over what is under them: a band onto the tight rows (no deeper than the clothes as pressed), its
+    # thickness kept, held to the body; a ring that is no band (a strap across) out way round by way round; what hangs
+    # whole along its own way out, with the band it hangs from; a quiver's arrows as the quiver
+    flo = np.full((NR, NA), -np.inf)
+    for o in under + list(body):
+        flo = np.maximum(flo, binned(_pts(o), _limb_free(o)))
+    fl2 = flo.copy()
+    for di in (-1, 0, 1):
+        for dj in (-1, 0, 1):
+            fl2 = np.maximum(fl2, np.roll(np.roll(flo, di, 0), dj, 1))
+    gap = GAP_MM * mm
+    tgt = np.full((NR, NA), np.inf)
+    if np.isfinite(tight).any():
+        flg = grow(flo)
+        lift = np.where(np.isfinite(flg) & (flg + gap - tight <= MAX_PEN_MM * mm), np.maximum(tight, flg + gap), tight)
+        tgt = np.where(np.isfinite(tight), lift, np.inf)
+        for i in range(NR):
+            okr = np.isfinite(tgt[i])
+            if okr.any():
+                v = np.where(okr, tgt[i], 0)
+                cnt = sum(np.roll(okr, d) for d in range(-3, 4))
+                for _ in range(2):
+                    mean = sum(np.roll(v, d) for d in range(-3, 4)) / np.maximum(cnt, 1)
+                    v = np.where(okr, np.maximum(np.where(okr, tgt[i], 0), mean), 0)
+                tgt[i] = np.where(okr, v, np.inf)
+    for grp in _group(items):
+        Ps = [_pts(o) for o in grp]
+        P = np.concatenate(Ps)
+        s, a, r = cyl(P)
+        i = rowof(s)
+        j = col(a)
+        need = np.where(np.isfinite(fl2[i, j]), fl2[i, j] + gap - r, -np.inf)
+        need[need > MAX_PEN_MM * mm] = -np.inf
+        off, isl, bmask = 0, [], []
+        for o, Po in zip(grp, Ps):   # (islands of each mesh; a quiver's arrows: islands of their own, moved as the quiver)
+            isl.append(_islands(o) + off)
+            bmask.append(bands.get(o.name, np.zeros(len(Po), bool)))
+            off += len(Po)
+        isl, bmask = np.concatenate(isl), np.concatenate(bmask)
+        move = np.zeros(len(P))
+        dirs = radial(P)
+        if bmask.any() and np.isfinite(tgt).any():
+            tb = cell_at(tgt, s[bmask], a[bmask])
+            ib = band_in[i[bmask], j[bmask]]
+            okb = np.isfinite(tb) & np.isfinite(ib)
+            mb = np.where(okb, np.clip(tb - ib, -40 * mm, MAX_MM * mm), 0)
+            move[bmask] = mb
+        bidx = np.where(bmask)[0]
+        for k in np.unique(isl):
+            sel = (isl == k) & ~bmask
+            if not sel.any():
+                continue
+            js = np.unique(j[sel])
+            if len(js) >= NA // 2:   # (round the body, no band: way round by way round)
+                per = np.full(NA, 0.0)
+                np.maximum.at(per, j[sel], np.clip(need[sel], 0, None))
+                o_k = int(np.searchsorted(np.cumsum([len(q) for q in Ps]), np.where(sel)[0][0], side="right"))
+                base = sum(len(q) for q in Ps[:o_k])
+                keep = np.zeros(len(Ps[o_k]), bool)
+                keep[np.where(sel)[0] - base] = True
+                fs2, fa2, fr2 = cyl(_face_pts(grp[o_k], Ps[o_k], keep, .5 * ds))   # (its whole face: what is under it all)
+                fi2 = ((fs2 - S0g) / ds).astype(int)
+                okf = (fi2 >= 0) & (fi2 < NR)
+                fj2 = col(fa2)
+                ef = fl2[fi2[okf], fj2[okf]] + gap - fr2[okf]
+                okk = np.isfinite(ef) & (ef <= MAX_PEN_MM * mm)
+                np.maximum.at(per, fj2[okf][okk], np.clip(ef[okk], 0, None))
+                per = np.maximum.reduce([np.roll(per, q) for q in (-2, -1, 0, 1, 2)])
+                move[sel] = np.minimum(per[j[sel]], MAX_MM * mm)
+            else:   # (hanging from it: whole, along its own way out - with the band it hangs from, in as well)
+                nk = float(need[sel].max()) if np.isfinite(need[sel]).any() else -np.inf
+                dk = radial(P[sel].mean(0)[None])[0]
+                dirs[sel] = dk
+                mk = max(nk, 0.0)
+                if len(bidx):
+                    d2 = ((P[sel][:, None, :] - P[bidx][None, :, :]) ** 2).sum(2)
+                    q = np.unravel_index(np.argmin(d2), d2.shape)
+                    if d2[q] < (25 * mm) ** 2:
+                        mk = max(nk, float(move[bidx[q[1]]]))
+                move[sel] = float(np.clip(mk, -40 * mm, MAX_MM * mm))
+        # (bits lying in or on another island - arrows in a quiver - move as the island they are in)
+        if len(grp) > 1:
+            n0 = len(Ps[0])
+            for k in np.unique(isl[n0:]):
+                sel = isl == k
+                c = P[sel].mean(0)
+                q = int(np.argmin(((P[:n0] - c) ** 2).sum(1)))
+                move[sel] = move[q]
+                dirs[sel] = dirs[q]
+        most = float(np.abs(move).max()) if len(move) else 0.0
+        if most > 1e-6:
+            off = 0
+            for o, Po in zip(grp, Ps):
+                n = len(Po)
+                _put(o, Po + dirs[off:off + n] * move[off:off + n, None])
+                off += n
+        off = 0
+        for o, Po in zip(grp, Ps):   # (a band held to the body: bent with it, not with the hips alone)
+            bm = bmask[off:off + len(Po)]
+            if bm.any() and bodyW:
+                _hold(o, np.where(bm)[0], (Po + dirs[off:off + len(Po)] * move[off:off + len(Po), None])[bm], np.ones(int(bm.sum())), bodyW, mm)
+            off += len(Po)
+        stats["items_out_mm"][grp[0].name] = round(most / mm, 1)
+    log("WEAR_OVER " + str(stats))
+    return stats
