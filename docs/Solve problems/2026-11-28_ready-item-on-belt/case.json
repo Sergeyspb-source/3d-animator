@@ -7,7 +7,7 @@
   "date": "2026-11-28",
   "sessions": [{"name": "Одежда магов и пояса (ветка, запущенная координатором)", "id": "local_1013af94"},
                {"name": "Правки проекта (координатор)", "id": "local_e34b3455"}],
-  "commits": [],
+  "commits": ["b34e246"],
   "tags": ["armour", "belt", "generation", "godot"],
   "video": {
     "potential": 3,
