@@ -1,0 +1,65 @@
+{
+  "id": "2026-11-28_trellis-cascade-1024",
+  "title_ru": "Как выжать из видеокарты на 8 ГБ режим, которому «нужно 16»?",
+  "title_en": "How do you run a mode that 'needs 16 GB' on an 8 GB card?",
+  "hook_ru": "Автор писал, что подробному режиму нужно 16 ГБ видеопамяти. На нашей восьмигигабайтной он занял пять с небольшим — и у гоблина открылись глаза.",
+  "status": "solved",
+  "date": "2026-11-28",
+  "sessions": [
+    {"name": "TRELLIS.2 — проверка и встраивание", "id": "запущена из local_e34b3455"},
+    {"name": "Правки проекта (координатор)", "id": "local_e34b3455"}
+  ],
+  "commits": ["353e3f7"],
+  "tags": ["trellis", "vram", "detail", "cascade"],
+  "video": {
+    "potential": 4,
+    "why_ru": "Короткая история с сильной картинкой: гоблин открывает глаза, и урок «проверь, а не верь инструкции».",
+    "wow_moment_ru": "Гоблин с закрытыми глазами — щелчок — глаза открыты, лицо взрослеет.",
+    "length_seconds": 50,
+    "thumbnail": {"image": "src/goblin_1024_clay_q34.png", "text_ru": "НУЖНО 16 ГБ?"}
+  },
+  "numbers": [
+    {"what_ru": "Пик видеопамяти каскада 1024 (самый тяжёлый, щит)", "before": 16, "after": 5.3, "unit_ru": "ГБ", "better": "lower",
+     "measured_on": "RTX 4060 8 ГБ", "note_ru": "before — сколько обещала инструкция; after — замер вместе с рабочим столом"},
+    {"what_ru": "Рыцарь, время", "before": 62, "after": 218, "unit_ru": "секунд", "better": "lower",
+     "measured_on": "RTX 4060 8 ГБ", "note_ru": "512 → 1024: цена подробности"},
+    {"what_ru": "Гоблин, время", "before": 48, "after": 132, "unit_ru": "секунд", "better": "lower",
+     "measured_on": "RTX 4060 8 ГБ", "note_ru": ""},
+    {"what_ru": "Щит, время", "before": 85, "after": 346, "unit_ru": "секунд", "better": "lower",
+     "measured_on": "RTX 4060 8 ГБ", "note_ru": ""}
+  ],
+  "media": [
+    {"file": "img/01_goblin_512_vs_1024.jpg", "clean": "src/goblin_512_clay_q34.png", "kind": "render", "role": "before",
+     "pair": "goblin-q34", "caption_ru": "Гоблин на 512: глаза закрыты, лицо пухлое"},
+    {"file": "img/01_goblin_512_vs_1024.jpg", "clean": "src/goblin_1024_clay_q34.png", "kind": "render", "role": "after",
+     "pair": "goblin-q34", "caption_ru": "Гоблин на 1024: глаза открыты, видны скулы и мышцы"},
+    {"file": "img/02_knight.jpg", "clean": null, "kind": "render", "role": "result", "pair": null,
+     "caption_ru": "Рыцарь 512 и 1024: шлем, пальцы, рваные края"},
+    {"file": "img/03_shield.jpg", "clean": null, "kind": "render", "role": "result", "pair": null,
+     "caption_ru": "Щит 512 и 1024: ржавый обод и трещины, дыры остались"}
+  ],
+  "models": [
+    {"role": "before", "path": "work/trellis_test/out/goblin/goblin.glb", "label_ru": "Гоблин, 512"},
+    {"role": "after", "path": "work/trellis_test/out_c1024/goblin/goblin.glb", "label_ru": "Гоблин, каскад 1024"},
+    {"role": "before", "path": "work/trellis_test/out/knight/knight.glb", "label_ru": "Рыцарь, 512"},
+    {"role": "after", "path": "work/trellis_test/out_c1024/knight/knight.glb", "label_ru": "Рыцарь, каскад 1024"},
+    {"role": "reference", "path": "work/hunyuan/character/goblin_boy_7_years_old/view_front.png", "label_ru": "Исходная картинка гоблина"}
+  ],
+  "beats": [
+    {"n": 1, "seconds": 10, "say_ru": "В инструкции к нейросети написано: подробному режиму нужна видеокарта на шестнадцать гигабайт. У нас восемь. Мы и не пробовали.",
+     "show": ["diagram:16 ГБ против 8 ГБ"]},
+    {"n": 2, "seconds": 8, "say_ru": "Пока пользователь не спросил: а почему нейросеть берёт меньше половины памяти?",
+     "show": ["model:before"]},
+    {"n": 3, "seconds": 12, "say_ru": "Попробовали. Подробный режим занял пять с небольшим гигабайт. А у гоблина открылись глаза.",
+     "show": ["img/01_goblin_512_vs_1024.jpg", "model:after"]},
+    {"n": 4, "seconds": 10, "say_ru": "В лёгком режиме на лицо приходилось несколько десятков кубиков, и глаза слипались. В подробном сетка вдвое мельче.",
+     "show": ["diagram:сетка 512 против 1024 на лице"]},
+    {"n": 5, "seconds": 8, "say_ru": "Цена — время: две минуты вместо одной.",
+     "show": ["img/02_knight.jpg"]}
+  ],
+  "reproduce_in_app": ["Модели → Создание → Движок: TRELLIS.2 → Параметры TRELLIS.2 → Детализация: 512 или 1024 → Создать"],
+  "regenerate": [
+    "D:\\conda\\envs\\sf3d\\python.exe tool/blender_queue.py -- -b -P \"D:/My projects/SF3D/docs/Solve problems/_tools/render_models.py\" -- \"D:/My projects/SF3D/docs/Solve problems/2026-11-28_trellis-cascade-1024/src\" goblin_512=work/trellis_test/out/goblin/goblin.glb goblin_1024=work/trellis_test/out_c1024/goblin/goblin.glb",
+    "D:\\conda\\envs\\sf3d\\python.exe \"docs/Solve problems/_tools/sheet.py\" \"docs/Solve problems/2026-11-28_trellis-cascade-1024/img/01_goblin_512_vs_1024.jpg\" \"Детализация 512, 48 с\" src/goblin_512_clay_q34.png \"Каскад 1024, 132 с\" src/goblin_1024_clay_q34.png --cols 2 --crop"
+  ]
+}
