@@ -99,18 +99,25 @@ def limb_of(bone):
 
 
 def one_limb():
-    """the skin between two legs follows the body, not both legs: heat and its smoothing leak through the chest and the
-    belly, and a right elbow's skin kept 4-10 % of the left upper arm - when the legs went apart (a gallop, a jump) its
-    triangles stretched up to 4.8 times into spikes. Where two limbs share a vertex, the strongest keeps only what it
-    has over the others (nothing on the line between them, where they are even, all of it far from it), the rest goes
-    to the bone it hangs from (the chest, the hips): the leg's hold fades smoothly toward the middle, no seam. (Giving
-    each vertex to its strongest leg whole cut a seam down the brisket: 6.6 times there in the walk.)"""
+    """a leg leads no skin of another leg: heat and its smoothing leak through the chest and the belly, and a right
+    elbow's skin kept 4-10 % of the left upper arm - when the legs went apart (a gallop, a jump) its triangles
+    stretched up to 4.8 times into spikes. Where two limbs share a vertex, a small share of another limb (under 20 % of
+    the strongest one's) goes to the bone the strongest hangs from (the chest, the hips); toward an even share (the
+    middle line between the legs: the brisket, the crotch) it is kept more and more, whole when even - so the skin
+    there still follows both legs and nothing jumps where the strongest changes. (Giving each vertex to its strongest
+    leg whole cut a seam down the brisket: 6.6 times there in the walk. Letting the strongest keep only what it has
+    over the others gave the crotch to the hips - a steep step from the hips to the shin, 5.2 times in a turning
+    gallop.)"""
     bones = arm_data.bones
     root_of = {}
     for b in bones:
         k = limb_of(b.name)
         if k and (b.parent is None or limb_of(b.parent.name) != k):
             root_of[k] = b.parent.name if b.parent else b.name
+
+    def kept(r):   # of another limb's weight, what stays: none under 0.2 of the strongest, all of it at 0.8 and up
+        t = min(1.0, max(0.0, (r - 0.2) / 0.6))
+        return t * t * (3.0 - 2.0 * t)
     moved = 0
     for o in meshes:
         gn = {g.index: g.name for g in o.vertex_groups}
@@ -123,28 +130,23 @@ def one_limb():
             if len(per) < 2:
                 continue
             keep = max(per, key=per.get)
-            rest_ = sum(w for k, w in per.items() if k != keep)
-            share = max(0.0, per[keep] - rest_) / per[keep]   # (of the strongest limb's weight, what it keeps)
             extra = 0.0
             for g in list(v.groups):
                 k = limb_of(gn[g.group])
-                if not k:
+                if not k or k == keep:
                     continue
-                if k == keep:
-                    extra += g.weight * (1.0 - share)
-                    if share > 1e-4:
-                        o.vertex_groups[g.group].add([v.index], g.weight * share, "REPLACE")
-                    else:
-                        o.vertex_groups[g.group].remove([v.index])
+                share = kept(per[k] / per[keep])
+                extra += g.weight * (1.0 - share)
+                if share > 1e-4:
+                    o.vertex_groups[g.group].add([v.index], g.weight * share, "REPLACE")
                 else:
-                    extra += g.weight
                     o.vertex_groups[g.group].remove([v.index])
             body = root_of.get(keep)
-            if body:
+            if body and extra > 1e-6:
                 vg = o.vertex_groups.get(body) or o.vertex_groups.new(name=body)
                 old = next((g.weight for g in v.groups if g.group == vg.index), 0.0)
                 vg.add([v.index], old + extra, "REPLACE")
-            moved += 1
+                moved += 1
     return moved
 
 
@@ -152,10 +154,17 @@ rep["one_limb_vertices"] = one_limb()
 
 
 def loose_pieces():
-    """small loose pieces (bristles, a fringe, tusks, horns, claws: islands of the skin welded by position, few vertices and
-    short) take the weights of the main skin they sit on - one set for the whole piece, so it moves as
-    one with it (heat finds no way into a closed small piece and gives it the nearest bones by distance: a chin's fringe
-    went with the shoulders)"""
+    """loose pieces (bristles, hair strips, a leg's fringe, tusks, horns, claws: islands of the skin welded by position,
+    apart from the body - the biggest island and any island with a bone inside it, a tail made as a piece of its own)
+    take the weights of the body skin they grow from. A short piece (under 12 % of the model's size: a strip, a tusk, a
+    bristle) moves as one with the skin at its root (the third of the piece nearest the body). A long one (a fringe
+    along a leg) takes the skin under each of its vertices, from the body part it grows from: the limbs holding 30 % of
+    its root's weight and the body bones; the rest of a vertex's weight is its root's - so the fringe bends with the
+    leg at the elbow and the wrist. (Heat finds no way into a closed small piece and gives it the nearest bones by
+    distance: a chin's fringe went with the shoulders, the tusks with the shoulder blades. One set of weights for a
+    long piece could not bend: a plate of the fringe under the wrist stayed with the forearm and stuck out when the
+    wrist bent. The skin under every vertex of a short strip hanging under the belly by a thigh tore it 23 times.)"""
+    from mathutils.bvhtree import BVHTree
     from mathutils.kdtree import KDTree
     pts, owner = [], []
     for o in meshes:
@@ -186,6 +195,7 @@ def loose_pieces():
     count = {}
     for c in comp:
         count[c] = count.get(c, 0) + 1
+    main = max(count, key=count.get)
     lo_, hi_ = {}, {}
     for i, c in enumerate(comp):
         p = pts[i]
@@ -194,47 +204,93 @@ def loose_pieces():
             hi_[c] = Vector(map(max, hi_[c], p))
         else:
             lo_[c], hi_[c] = p.copy(), p.copy()
-    # (small in both: few vertices and short - a long loose tail keeps its own heat weights along its bones)
-    # a small piece the legs would pull apart (its vertices led by different legs: a hair strip under the belly between
-    # the hind legs stretched 4.4 times into a spike in the walk) - one piece with the skin under it, whatever its length
-    lead_limbs = {}
-    for i, (o, vi) in enumerate(owner):
-        gs = o.data.vertices[vi].groups
-        if gs:
-            k = limb_of(o.vertex_groups[max(gs, key=lambda g: g.weight).group].name)
-            if k:
-                lead_limbs.setdefault(comp[i], set()).add(k)
-    small = {c for c, k in count.items() if k < 0.02 * n and ((hi_[c] - lo_[c]).length < 0.06 * size or len(lead_limbs.get(c, ())) > 1)}
-    if not small:
+    # (a bone inside a piece: rays from points along the bone cross the piece an odd number of times in most of the six
+    # directions - a closed tail around its bones; a fringe behind a leg has its box around the leg but not the bone)
+    samples = [[(rig.matrix_world @ b.head_local).lerp(rig.matrix_world @ b.tail_local, t) for t in (0.25, 0.5, 0.75)]
+               for b in arm_data.bones]
+    polys = {}
+    base = 0
+    for o in meshes:
+        for f in o.data.polygons:
+            polys.setdefault(comp[base + f.vertices[0]], []).append([base + vi for vi in f.vertices])
+        base += len(o.data.vertices)
+    dirs = [Vector(d) for d in ((1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1))]
+
+    def holds_bone(c):
+        pad = 1e-3 * size
+        near = [sm for sm in samples if sum(all(lo_[c][i] - pad <= p[i] <= hi_[c][i] + pad for i in range(3)) for p in sm) >= 2]
+        if not near:
+            return False
+        ids = sorted({i for f in polys.get(c, []) for i in f})
+        at = {i: k for k, i in enumerate(ids)}
+        bvh = BVHTree.FromPolygons([pts[i] for i in ids], [[at[i] for i in f] for f in polys.get(c, [])])
+
+        def crossings(p, d):
+            k = 0
+            for _ in range(256):
+                hit = bvh.ray_cast(p, d)
+                if hit[0] is None:
+                    break
+                k += 1
+                p = hit[0] + d * (1e-5 * size)
+            return k
+        inside = lambda p: sum(crossings(p, d) % 2 for d in dirs) >= 4  # noqa: E731
+        return any(sum(inside(p) for p in sm) >= 2 for sm in near)
+    pieces = {c for c in count if c != main and not holds_bone(c)}
+    if not pieces:
         return 0
     groups = {o: {g.index: g.name for g in o.vertex_groups} for o in meshes}
     tree = KDTree(n)
     for i, p in enumerate(pts):
-        if comp[i] not in small:
+        if comp[i] not in pieces:
             tree.insert(p, i)
     tree.balance()
     by = {}
     for i in range(n):
-        if comp[i] in small:
+        if comp[i] in pieces:
             by.setdefault(comp[i], []).append(i)
-    moved = 0
-    for c, ids in by.items():
+
+    def skin_at(p, k=4):   # the body skin's weights at a point: its k nearest vertices, nearer ones counting more
         acc = {}
-        for i in ids:
-            _p, j, _d = tree.find(pts[i])
+        for _p, j, d in tree.find_n(p, k):
             o, vi = owner[j]
+            w0 = 1.0 / (d + 1e-3 * size)
             for g in o.data.vertices[vi].groups:
                 nm = groups[o][g.group]
-                acc[nm] = acc.get(nm, 0.0) + g.weight
-        top = sorted(acc.items(), key=lambda x: -x[1])[:4]
-        tot = sum(w for _n, w in top) or 1.0
+                acc[nm] = acc.get(nm, 0.0) + g.weight * w0
+        tot = sum(acc.values()) or 1.0
+        return {nm: w / tot for nm, w in acc.items()}
+    moved = 0
+    for c, ids in by.items():
+        near = sorted((tree.find(pts[i])[2], i) for i in ids)
+        root_ids = [i for _d, i in near[:max(1, int(0.3 * len(near)))]]   # (the piece's root: its third nearest the body)
+        root = {}
+        for i in root_ids:
+            for nm, w in skin_at(pts[i], 1).items():
+                root[nm] = root.get(nm, 0.0) + w / len(root_ids)
+        share = {}
+        for nm, w in root.items():
+            if limb_of(nm):
+                share[limb_of(nm)] = share.get(limb_of(nm), 0.0) + w
+        grows = {k for k, w in share.items() if w >= 0.3}
+        short = (hi_[c] - lo_[c]).length < 0.12 * size   # (a strip, a tusk, a bristle: one piece with its root)
         for i in ids:
+            under = {} if short else skin_at(pts[i])
+            own = {nm: w for nm, w in under.items() if not limb_of(nm) or limb_of(nm) in grows}
+            s_ = sum(own.values())
+            mix = {nm: w for nm, w in own.items()}      # (s_ of the skin under it, the rest the root's)
+            for nm, w in root.items():
+                mix[nm] = mix.get(nm, 0.0) + (1.0 - s_) * w
+            top = sorted(mix.items(), key=lambda x: -x[1])[:4]
+            tot = sum(w for _n, w in top) or 1.0
             o, vi = owner[i]
             for g in list(o.data.vertices[vi].groups):
                 o.vertex_groups[g.group].remove([vi])
             for nm, w in top:
-                (o.vertex_groups.get(nm) or o.vertex_groups.new(name=nm)).add([vi], w / tot, "REPLACE")
+                if w / tot > 1e-3:
+                    (o.vertex_groups.get(nm) or o.vertex_groups.new(name=nm)).add([vi], w / tot, "REPLACE")
             moved += 1
+    rep["loose_pieces"] = len(by)
     return moved
 
 
