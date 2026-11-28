@@ -1,0 +1,87 @@
+{
+  "id": "2026-11-27_goblin-archers-armour-skin",
+  "title_ru": "Почему живот гоблина проходил сквозь кирасу?",
+  "title_en": "Why did the goblin's belly go through his cuirass?",
+  "hook_ru": "Кожу под бронёй решили не прятать, а вдавить внутрь тела. Это идея пользователя, и она убрала дыры совсем.",
+  "status": "solved",
+  "date": "2026-11-27",
+  "sessions": [
+    {"name": "Лучники: мускулистые и жилистые", "id": ""},
+    {"name": "Правки проекта (координатор)", "id": "local_e34b3455"},
+    {"name": "Казарма: кровати, отдых и тренировка лучников", "id": "local_1e53064e"}
+  ],
+  "commits": ["2f25168", "edfcc2d", "5fccacf", "4c914e8", "2a3cda0", "42cc904", "cfe76f8",
+              "game:49e4429b", "game:7e9cd8f3", "game:3756c93b", "game:f35d2c09", "game:c69868fe", "game:0a853890", "game:bab02f27"],
+  "tags": ["armour", "skin", "mask", "bake", "godot"],
+  "video": {
+    "potential": 4,
+    "why_ru": "Понятная беда (живот сквозь сталь), идея пользователя и цифры «тысячи точек → ноль».",
+    "wow_moment_ru": "Шторка на нижнем крае кирасы: слева живот вылезает, справа край чистый.",
+    "length_seconds": 85,
+    "thumbnail": {"image": "src/cuirass_hidden_front.png", "text_ru": "ВДАВИТЬ, А НЕ ВЫРЕЗАТЬ"}
+  },
+  "numbers": [
+    {"what_ru": "Дыры под набедренником", "before": 2071, "after": 0, "unit_ru": "точек кожи", "better": "lower",
+     "measured_on": "61 анимация стражи, каждый 4-й кадр, Blender 5.2", "run": null, "note_ru": "вырезанная кожа, видная в анимации"},
+    {"what_ru": "Дыры под стальной кирасой", "before": 1341, "after": 0, "unit_ru": "точек кожи", "better": "lower",
+     "measured_on": "61 анимация стражи, каждый 4-й кадр, Blender 5.2", "run": null, "note_ru": ""},
+    {"what_ru": "Кожа сквозь стальную кирасу, если оставить полосу кожи", "before": 1340, "after": 2500, "unit_ru": "точек кожи",
+     "better": "lower", "measured_on": "61 анимация стражи", "run": null, "note_ru": "неудачная попытка: дыр 0, но кожи наружу почти вдвое больше; 2500 — около"},
+    {"what_ru": "Рубаха сквозь латы, тяжёлый комплект", "before": 2528, "after": 499, "unit_ru": "точек рубахи", "better": "lower",
+     "measured_on": "61 анимация стражи", "run": null, "note_ru": "рубаха вдавлена вместе с кожей"},
+    {"what_ru": "Рубаха сквозь кирасу лучника", "before": 2359, "after": 389, "unit_ru": "точек рубахи", "better": "lower",
+     "measured_on": "61 анимация стражи", "run": null, "note_ru": ""},
+    {"what_ru": "Дыры под бацинетом (затылок при наклоне головы)", "before": 1621, "after": 1, "unit_ru": "точек кожи", "better": "lower",
+     "measured_on": "61 анимация стражи, только край выреза (6 колец)", "run": null, "note_ru": "кожи наружу 41 → 125 точек"},
+    {"what_ru": "Кожа сквозь гибридный сапог", "before": 111, "after": 0, "unit_ru": "точек кожи", "better": "lower",
+     "measured_on": "61 анимация стражи", "run": null, "note_ru": "спрятан островок кожи внутри сапога, голень вдавлена на 2,5 см"},
+    {"what_ru": "Тесты стражи в игре", "before": null, "after": 849, "unit_ru": "проверок, 0 ошибок", "better": "higher",
+     "measured_on": "Godot 4.7, без окна", "run": null, "note_ru": "лучники: 263 проверки, 0 ошибок"}
+  ],
+  "media": [
+    {"file": "img/01_cuirass_before_after.jpg", "clean": "src/cuirass_hidden_front.png", "kind": "render", "role": "before",
+     "pair": "cuirass-front", "caption_ru": "Было: живот вылезает из-под нижнего края кирасы"},
+    {"file": "img/01_cuirass_before_after.jpg", "clean": "src/cuirass_pressed_front.png", "kind": "render", "role": "after",
+     "pair": "cuirass-front", "caption_ru": "Стало: кожа вдавлена на 25 мм, край кирасы чистый"},
+    {"file": "img/02_eight_archers.jpg", "clean": "src/lineup_idle.png", "kind": "render", "role": "context",
+     "pair": null, "caption_ru": "Восемь лучников: четыре мускулистых, четыре жилистых, у каждого своя броня"},
+    {"file": "img/03_guards_on_walls.jpg", "clean": "src/siege_guards.png", "kind": "screenshot", "role": "context",
+     "pair": null, "caption_ru": "Стражи у бойниц в игре"},
+    {"file": "img/04_bascinet_holes.jpg", "clean": "src/bascinet_holes_back.png", "kind": "render", "role": "problem",
+     "pair": null, "caption_ru": "Красное — вырезанная кожа, которую видно в анимации: затылок под бацинетом, до исправления"}
+  ],
+  "models": [
+    {"role": "after", "path": "work/archers/squad/muscular_11.glb", "label_ru": "Страж в латах пользователя, запечён (без текстур)",
+     "height_m": 1.0, "front_yaw_deg": 0, "quirks_ru": "одна модель с атласом снаружи (work/archers/squad/muscular_atlas_*.png); анимации отдельно"},
+    {"role": "after", "path": "work/archers/squad/muscular_01.glb", "label_ru": "Страж-лучник, запечён",
+     "height_m": 1.0, "front_yaw_deg": 0, "quirks_ru": "атлас снаружи"},
+    {"role": "reference", "path": "export/character/archer_muscular_1/archer_muscular_1_landmarks_rigged.glb",
+     "label_ru": "Тело мускулистого лучника со скелетом", "height_m": 1.0, "front_yaw_deg": 0, "quirks_ru": ""}
+  ],
+  "beats": [
+    {"n": 1, "seconds": 10, "say_ru": "Мы одели гоблинов-лучников в броню и пустили их на стены. И тут они начали рассыпаться.",
+     "sub_ru": "8 лучников · 28 стражей", "show": ["img/02_eight_archers.jpg", "img/03_guards_on_walls.jpg"]},
+    {"n": 2, "seconds": 7, "say_ru": "Гоблин бежит, а живот проходит прямо сквозь стальную кирасу.",
+     "sub_ru": "", "show": ["src/cuirass_hidden_front.png"]},
+    {"n": 3, "seconds": 13, "say_ru": "Обычный приём — вырезать кожу под бронёй. Её же не видно. Но броня в движении сдвигается, и под ней открываются дыры. Сквозь них видно, что гоблин внутри пустой.",
+     "sub_ru": "дыры: 1341 точка", "show": ["img/04_bascinet_holes.jpg", "diagram:тело и броня — две модели; вырез кожи открывается в движении"]},
+    {"n": 4, "seconds": 10, "say_ru": "Мы пробовали оставлять полосу кожи, отодвигать броню, привязывать её мягче. Дыры уходили — кожа лезла сильнее.",
+     "sub_ru": "1340 → ~2500", "show": ["diagram:таблица попыток"]},
+    {"n": 5, "seconds": 13, "say_ru": "Тогда пользователь предложил: а давайте не вырезать кожу, а вдавить её внутрь тела. На два с половиной сантиметра под кирасой, на четыре под кольчугой.",
+     "sub_ru": "2,5 см · 4 см", "show": ["diagram:кожа под кирасой сдвинута внутрь, у края плавно выходит"]},
+    {"n": 6, "seconds": 9, "say_ru": "Мы написали проверку, которая прогоняет шестьдесят одну анимацию и считает каждую точку. Дыр стало ноль. Кожи наружу втрое меньше.",
+     "sub_ru": "61 анимация · дыр 0 · ×3", "show": ["src/cuirass_hidden_front.png", "src/cuirass_pressed_front.png"]},
+    {"n": 7, "seconds": 11, "say_ru": "Но под кирасой ещё и рубаха. Где раньше вылезала кожа, полезла она. Рубаху вдавили вместе с кожей, и вылезаний стало в шесть раз меньше: было две тысячи триста, осталось меньше четырёхсот.",
+     "sub_ru": "рубаха: 2359 → 389", "show": ["diagram:кожа и рубаха под кирасой сдвинуты внутрь вместе"]}
+  ],
+  "reproduce_in_app": [
+    "Персонаж → archer_muscular_1",
+    "Экипировка: процедурная генерация → кираса; ползунок «Кожа под вещью вдавлена, мм» (25)",
+    "Сгенерировать → «Примерочная в Godot»: включить анимацию бега и смотреть на нижний край кирасы"
+  ],
+  "regenerate": [
+    "D:\\conda\\envs\\sf3d\\python.exe \"docs/Solve problems/_tools/sheet.py\" \"docs/Solve problems/2026-11-27_goblin-archers-armour-skin/img/01_cuirass_before_after.jpg\" \"Было: живот вылезает из-под кирасы\" \"docs/Solve problems/2026-11-27_goblin-archers-armour-skin/src/cuirass_hidden_front.png\" \"Стало: кожа вдавлена на 25 мм\" \"docs/Solve problems/2026-11-27_goblin-archers-armour-skin/src/cuirass_pressed_front.png\" --width 1600",
+    "Кадры кирасы: work/wear_test/torso_band/look_tex.py (ti_now_front, ti_press25_front); дыры: work/wear_test/torso_band/look_holes.py",
+    "Замер: D:\\conda\\envs\\sf3d\\python.exe tool\\blender_queue.py -- -b -P work/wear_test/torso_band/measure.py -- <тело.glb> <вещь.glb> <анимации.glb> out.json step=4 mask=<маска.json>"
+  ]
+}

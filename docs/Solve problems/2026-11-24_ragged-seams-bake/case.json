@@ -1,0 +1,76 @@
+{
+  "id": "2026-11-24_ragged-seams-bake",
+  "title_ru": "Почему штаны стражника выглядели рваными?",
+  "title_en": "Why did the guard's trousers look torn?",
+  "hook_ru": "Ткань не рвалась. Её разрезали по швам выкройки, а упрощение модели растащило края в разные стороны.",
+  "status": "solved",
+  "date": "2026-11-24",
+  "sessions": [
+    {"name": "Лучники: мускулистые и жилистые", "id": ""},
+    {"name": "Казарма: кровати, отдых и тренировка лучников", "id": "local_1e53064e"}
+  ],
+  "commits": ["game:49e4429b"],
+  "tags": ["bake", "decimate", "uv", "seams", "godot"],
+  "video": {
+    "potential": 3,
+    "why_ru": "Понятная картинка (штаны в клочья) и сравнение с выкройкой, но решение короткое, без поворотов.",
+    "wow_moment_ru": "Шторка по штанам стражника: рваные полосы исчезают, ткань целая.",
+    "length_seconds": 70,
+    "thumbnail": {"image": "src/barracks_torn_trousers.png", "text_ru": "НЕ РВАНЫЕ, А РАСШИТЫЕ"}
+  },
+  "numbers": [
+    {"what_ru": "Открытые края у стража muscular_01", "before": 22086, "after": 3376, "unit_ru": "краёв", "better": "lower",
+     "measured_on": "work/seam_check/cracks.py, 24.11.2026, 26 тыс. треугольников", "run": null,
+     "note_ru": "у той же модели без упрощения законных краёв 5897"},
+    {"what_ru": "Открытые края у стража muscular_01, пересчёт", "before": 21899, "after": 4121, "unit_ru": "краёв", "better": "lower",
+     "measured_on": "work/seam_check/cracks.py, 28.11.2026, тот же страж запечён без сшивания и со сшиванием", "run": null, "note_ru": ""},
+    {"what_ru": "Новые трещины после упрощения", "before": 18857, "after": 168, "unit_ru": "краёв", "better": "lower",
+     "measured_on": "против запекания без упрощения, 24.11.2026", "run": null, "note_ru": "оставшиеся — кромки заклёпок и шнурков"},
+    {"what_ru": "Длина новых трещин", "before": 242, "after": 2, "unit_ru": "метров", "better": "lower",
+     "measured_on": "против запекания без упрощения, 24.11.2026", "run": null, "note_ru": "сумма длин всех трещин одного стража"},
+    {"what_ru": "Треугольников у стража с латами, если сшить и кольца кольчуги", "before": 36000, "after": 26000, "unit_ru": "треугольников",
+     "better": "lower", "measured_on": "muscular_11, 24.11.2026", "run": null, "note_ru": "кольца заменили пластинками; 36000 — около"}
+  ],
+  "media": [
+    {"file": "img/01_torn_in_barracks.jpg", "clean": "src/barracks_torn_trousers.png", "kind": "screenshot", "role": "problem",
+     "pair": null, "caption_ru": "Спящий стражник в казарме: рваные полосы на штанах — трещины в модели"},
+    {"file": "img/02_before_after.jpg", "clean": "src/noweld_clay_q34.png", "kind": "render", "role": "before",
+     "pair": "guard-q34", "caption_ru": "Страж без сшивания: тёмные щели на груди и бёдрах, рваный край юбки"},
+    {"file": "img/02_before_after.jpg", "clean": "src/weld_clay_q34.png", "kind": "render", "role": "after",
+     "pair": "guard-q34", "caption_ru": "Тот же страж со сшиванием"},
+    {"file": null, "clean": "src/noweld_clay_front.png", "kind": "render", "role": "before", "pair": "guard-front",
+     "caption_ru": "Без сшивания, спереди"},
+    {"file": null, "clean": "src/weld_clay_front.png", "kind": "render", "role": "after", "pair": "guard-front",
+     "caption_ru": "Со сшиванием, спереди"}
+  ],
+  "models": [
+    {"role": "before", "path": "work/seam_check/muscular_01_noweld.glb", "label_ru": "Страж muscular_01, запечён без сшивания",
+     "height_m": 1.0, "front_yaw_deg": 0, "quirks_ru": "без текстур: атлас снаружи (work/archers/squad/muscular_atlas_*.png)"},
+    {"role": "after", "path": "work/seam_check/m01_keep.glb", "label_ru": "Страж muscular_01, запечён со сшиванием (как в игре на 28.11)",
+     "height_m": 1.0, "front_yaw_deg": 0, "quirks_ru": "без текстур: атлас снаружи"}
+  ],
+  "beats": [
+    {"n": 1, "seconds": 8, "say_ru": "Заходим в казарму. Стражник спит на койке, а штаны у него будто изодраны в клочья. Но ткань тут ни при чём.",
+     "sub_ru": "", "show": ["img/01_torn_in_barracks.jpg"]},
+    {"n": 2, "seconds": 11, "say_ru": "Каждый гоблин собран из тела и десятка вещей. В нём до полумиллиона точек, а игре нужно двадцать шесть тысяч треугольников. Поэтому модель упрощают.",
+     "sub_ru": "~500 000 → 26 000", "show": ["model:after"]},
+    {"n": 3, "seconds": 15, "say_ru": "Каждая вещь раскрашена картинкой, натянутой как выкройка. Там, где выкройка разрезана, на одном месте стоят две точки. Упрощение об этом не знает и тянет их в разные стороны. Шов расходится, и сквозь щель видно, что за моделью.",
+     "sub_ru": "шов = две точки", "show": ["diagram:выкройка, на шве две точки → упрощение тянет порознь → щель"]},
+    {"n": 4, "seconds": 9, "say_ru": "Решение простое: перед упрощением сшить каждую вещь по швам. Не всего гоблина целиком, а каждую вещь отдельно, иначе всё слипнется.",
+     "sub_ru": "сшить → упростить", "show": ["src/noweld_clay_q34.png", "src/weld_clay_q34.png"]},
+    {"n": 5, "seconds": 13, "say_ru": "Но сшивание задело кольчугу. Сшитое колечко уже не сплющить, и страж в латах выходил на тридцать шесть тысяч треугольников вместо двадцати шести. Поэтому колечки заменили плоскими пластинками с картинкой колец, а дырочки в забрале закрыли.",
+     "sub_ru": "36 000 → 26 000", "show": ["model:after"]},
+    {"n": 6, "seconds": 7, "say_ru": "На одном стражнике было двести сорок два метра щелей. Осталось два — это кромки заклёпок.",
+     "sub_ru": "242 м → 2 м", "show": ["img/02_before_after.jpg"]}
+  ],
+  "reproduce_in_app": [
+    "Отдельного переключателя в приложении нет: сшивание делает запекание стражи (work/archers/squad.py bake).",
+    "Сравнить: задание запекания с ключом \"weld\": false (work/seam_check/noweld.job.json) и обычное."
+  ],
+  "regenerate": [
+    "D:\\conda\\envs\\sf3d\\python.exe tool\\blender_queue.py -- -b --factory-startup -P work/archers/game_bake.py -- work/seam_check/noweld.job.json",
+    "D:\\conda\\envs\\sf3d\\python.exe tool\\blender_queue.py -- -b -P \"docs/Solve problems/_tools/render_models.py\" -- \"D:/My projects/SF3D/docs/Solve problems/2026-11-24_ragged-seams-bake/src\" --looks clay noweld=work/seam_check/muscular_01_noweld.glb weld=work/seam_check/m01_keep.glb   (OUT_DIR absolute: through the queue a relative one lands in C:\\)",
+    "D:\\conda\\envs\\sf3d\\python.exe \"docs/Solve problems/_tools/sheet.py\" \"docs/Solve problems/2026-11-24_ragged-seams-bake/img/02_before_after.jpg\" \"Без сшивания\" \"docs/Solve problems/2026-11-24_ragged-seams-bake/src/noweld_clay_q34.png\" \"Со сшиванием\" \"docs/Solve problems/2026-11-24_ragged-seams-bake/src/weld_clay_q34.png\" --crop --width 1600",
+    "D:\\conda\\envs\\sf3d\\python.exe work/seam_check/cracks.py work/seam_check/muscular_01_noweld.glb work/archers/squad/muscular_01.glb"
+  ]
+}
