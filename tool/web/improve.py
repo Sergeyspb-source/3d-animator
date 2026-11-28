@@ -81,12 +81,14 @@ def align(cat: str, stem: str, view: str) -> dict:
     return MI.align(cat, stem, cfg, d, view)
 
 
-def pins(cat: str, stem: str, view: str, pin_list: list, marks=None) -> dict:
-    """the view's free pins and (when given) its landmarks' picture points {name: [x, y]}"""
+def pins(cat: str, stem: str, view: str, pin_list: list, marks=None, brush=None) -> dict:
+    """the view's free pins, (when given) its landmarks' picture points {name: [x, y]} and a skin's brush strokes"""
     cfg, _ = _draft(cat, stem)
     MI.set_pins(cat, stem, cfg, view, pin_list)
     if marks is not None:
         MI.set_marks(cat, stem, cfg, view, marks)
+    if brush is not None:
+        MI.set_brush(cat, stem, cfg, view, brush)
     return status(cat, stem)
 
 

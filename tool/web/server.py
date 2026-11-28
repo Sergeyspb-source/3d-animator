@@ -395,7 +395,7 @@ async def improve_align(category: str, stem: str, view: str):
 @app.post("/api/models/improve/pins")
 async def improve_pins(req: Request):
     p = await req.json()
-    return IM.pins(p["category"], p["stem"], p["view"], p.get("pins") or [], p.get("marks"))
+    return IM.pins(p["category"], p["stem"], p["view"], p.get("pins") or [], p.get("marks"), p.get("brush"))
 
 
 @app.post("/api/models/improve/mark3d")

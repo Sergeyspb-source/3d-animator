@@ -604,7 +604,7 @@ def set_normals(src_glb, out_glb):
 
 # ------------------------------------------------------------------ A: the pictures projected
 def project(glb, out, pics, mirror=False, res=None, c0=0.1, c1=0.55, sharp=4.0, prio=None, delight_k=0.0, pins=None,
-            cams=None, mr_smooth=True, detail=0.7, log=None, skin_warp=None):
+            cams=None, mr_smooth=True, detail=0.7, log=None, skin_warp=None, brush=None):
     """pics: {view: path or ("flip", path)}; cams: {view: (s, tx, ty)} already fitted (else fitted here);
     pins: {view: [(sx, sy, dx, dy), ...]}. -> info {views: {view: {iou, cam, ...}}, seconds, coverage}"""
     say = log or (lambda *_: None)
@@ -618,8 +618,8 @@ def project(glb, out, pics, mirror=False, res=None, c0=0.1, c1=0.55, sharp=4.0, 
     R = res or max(W0, 2048)
     Tx = texels(M, R, R)
     T["texels"] = round(time.time() - t0, 1)
+    pos0, nrm0 = Tx["pos"], Tx["nrm"]
     if skin_warp:   # (pins on the skins: each texel reads the pictures where its skin point was dragged from)
-        pos0, nrm0 = Tx["pos"], Tx["nrm"]
         if skin_warp.get("head"):
             moved = skin_move(pos0, nrm0, *skin_warp["head"])
             if moved is not None:
@@ -636,6 +636,7 @@ def project(glb, out, pics, mirror=False, res=None, c0=0.1, c1=0.55, sharp=4.0, 
                 on, P2, N2 = moved
                 Tx["pos"] = Tx["pos"].copy(); Tx["nrm"] = Tx["nrm"].copy()
                 Tx["pos"][on], Tx["nrm"][on] = P2, N2
+    only = brush_apply(Tx, pos0, nrm0, brush, M) if brush else None   # (the strokes painted on the skins)
     pics = dict(pics)
     if mirror and "left" in pics and "right" not in pics:
         pics["right"] = ("flip", pics["left"])
@@ -663,6 +664,8 @@ def project(glb, out, pics, mirror=False, res=None, c0=0.1, c1=0.55, sharp=4.0, 
             cam, iou, zb = fit_view(M, v, a, scale_hint=hint)
         hint = hint or cam[0]
         w, xy = view_weights(Tx, v, cam, zb, a, c0=c0, c1=c1)
+        if only is not None:   # («only this picture» painted: the other views do not paint there)
+            w = np.where((only[0] < 0) | (only[0] == VCODE[v]), w, w * (1 - only[1]))
         vp = (pins or {}).get(v)
         if flip and not vp and (pins or {}).get("left" if v == "right" else "right"):
             Wp = a.shape[1]   # the mirrored side: the other side's pins mirrored with its picture
@@ -1034,7 +1037,7 @@ def run(cat: str, stem: str, cfg: dict, draft_dir: Path, opts: dict, log=None) -
         a_info = project(base, d / "step_a.glb", {v: x["path"] for v, x in pics.items()}, mirror=bool(opts.get("mirror")),
                          sharp=float(opts.get("sharp", 4.0)), delight_k=float(opts.get("delight", 0.0)),
                          pins=view_pins(st, cams, {v: x["path"] for v, x in pics.items()}, bool(opts.get("mirror")), sizes),
-                         cams=cams, skin_warp=skin_warp_of(d, st, base))
+                         cams=cams, skin_warp=skin_warp_of(d, st, base), brush=brush_of(d, st, base, M))
         a_info["marks"] = sum(len(v) for v in (st.get("marks") or {}).values())
         secs["project"] = round(time.time() - t, 1)
         steps.append("project")
@@ -1146,7 +1149,8 @@ def codex_sides(cat: str, stem: str, cfg: dict, draft_dir: Path, views: list, lo
         _marks3d(st, base, M, info.get("category") or cat)
         sizes = {v: Image.open(x["path"]).size for v, x in pics.items()}
         project(base, d / "codex_base.glb", {v: x["path"] for v, x in pics.items()}, cams=cams,
-                pins=view_pins(st, cams, {v: x["path"] for v, x in pics.items()}, False, sizes), skin_warp=skin_warp_of(d, st, base))
+                pins=view_pins(st, cams, {v: x["path"] for v, x in pics.items()}, False, sizes), skin_warp=skin_warp_of(d, st, base),
+                brush=brush_of(d, st, base, M))
         src = d / "codex_base.glb"
     fw, fh = Image.open(front).size
     w = 864
@@ -1282,12 +1286,26 @@ def skin_guide(xyz, nrm, sp):
     return Image.fromarray(img, "RGBA")
 
 
-def skin_pictures(M, xyz, nrm, sp, pics, cams, pins, sharp=4.0, prio=None):
+def skin_pictures(M, xyz, nrm, sp, pics, cams, pins, sharp=4.0, prio=None, brush=None, wrap=False):
     """the pictures as the projection lays them, drawn on the skin (with the picture pins and landmarks): what the skin
-    pins then move"""
+    pins then move. brush: this skin's (only, clone) masks (brush_masks), shown as the projection will take them."""
     prio = {"front": 1.0, "back": 0.85, "left": 0.6, "right": 0.6, **(prio or {})}
     ok = np.isfinite(xyz[..., 0])
     P = xyz[ok].astype(np.float64); Nn = nrm[ok].astype(np.float64)
+    only_k = None
+    if brush is not None:
+        om, sm, cm = brush
+        only_k = (om[ok], sm[ok])
+        cl = np.isfinite(cm[ok][:, 0])
+        if cl.any():   # (the stamp: those pixels show the surface the stamp takes)
+            yy, xx = np.nonzero(ok)
+            q = np.stack([xx[cl] + 0.5, yy[cl] + 0.5], 1) + cm[ok][cl]
+            if wrap:
+                q[:, 0] = np.mod(q[:, 0], sp["W"])
+            Pn, Nb = _skin_at(xyz, nrm, q, (0, 0, sp["W"], sp["H"]))
+            good = np.isfinite(Pn).all(1)
+            idx = np.nonzero(cl)[0][good]
+            P[idx], Nn[idx] = Pn[good], Nb[good]
     acc = np.zeros((len(P), 3)); ws = np.zeros(len(P)); cover = np.zeros(len(P))
     for v, pic in pics.items():
         if v not in cams:
@@ -1299,6 +1317,8 @@ def skin_pictures(M, xyz, nrm, sp, pics, cams, pins, sharp=4.0, prio=None):
         zb = silhouette(M, v, cam, a.shape[1], a.shape[0])
         Tx = {"pos": P, "nrm": Nn}
         w, xy = view_weights(Tx, v, cam, zb, a)
+        if only_k is not None:
+            w = np.where((only_k[0] < 0) | (only_k[0] == VCODE[v]), w, w * (1 - only_k[1]))
         if (pins or {}).get(v):
             xy = xy + pin_field(pins[v])(xy)
         pre = sample(rgb_.astype(np.float32) * a[..., None], xy)
@@ -1954,6 +1974,148 @@ def body_state(d: Path, st: dict, base: Path, view: str, M=None, width=2048):
     return prm, faces, xyz, nrm, M
 
 
+# ------------------------------------------------------------------ the brush and the stamp on the skins
+# Strokes painted on a skin (st["brush"][view]: [{"kind": "only", "view": "front", "c": [[x, y, r], ...]},
+# {"kind": "clone", "off": [dx, dy], "c": [...]}], in the skin's pixels; a later stroke wins where they overlap):
+#   only   there the projection takes that one picture (a side's doubled brow or nostril painted over: the front paints
+#          it; where that picture does not see either, the model's own texture fills in)
+#   clone  the stamp: there each texel takes the surface point off pixels away on the skin - what the pictures show there
+#          (a patch of skin nearby over a spot no picture sees)
+VCODE = {"front": 0, "back": 1, "left": 2, "right": 3}
+
+
+def brush_masks(strokes, W, H):
+    """-> (only (H, W) int8: the view's code, -1 none; its strength (H, W) float32: 1 inside, falling to 0 over the
+    circle's outer third - no edge seen; clone (H, W, 2) float32: the stamp's offset, NaN none)"""
+    only = np.full((H, W), -1, np.int8)
+    strength = np.zeros((H, W), np.float32)
+    clone = np.full((H, W, 2), np.nan, np.float32)
+    for s in strokes or []:
+        code = VCODE.get(s.get("view")) if s.get("kind") == "only" else None
+        off = s.get("off") if s.get("kind") == "clone" else None
+        if code is None and off is None:
+            continue
+        for x, y, r in s.get("c") or []:
+            x0, x1 = max(0, int(x - r)), min(W, int(x + r) + 1)
+            y0, y1 = max(0, int(y - r)), min(H, int(y + r) + 1)
+            if x0 >= x1 or y0 >= y1:
+                continue
+            yy, xx = np.mgrid[y0:y1, x0:x1] + 0.5
+            dd = np.sqrt((xx - x) ** 2 + (yy - y) ** 2)
+            m = dd <= r
+            o, sg, c = only[y0:y1, x0:x1], strength[y0:y1, x0:x1], clone[y0:y1, x0:x1]
+            if code is not None:
+                k = np.clip((r - dd) / max(r / 3, 1e-6), 0, 1).astype(np.float32)
+                same = o == code
+                sg[m] = np.where(same[m], np.maximum(sg[m], k[m]), k[m])
+                o[m] = code
+                c[m] = np.nan
+            else:
+                c[m] = off
+                o[m] = -1
+                sg[m] = 0
+    return only, strength, clone
+
+
+def skin_coords(view, prm, faces, pos, nrm, fid, M):
+    """the texels a skin holds -> (their ids, their pixels on that skin (k, 2))"""
+    if view == "skin_head":
+        keep, _ = head_faces(M)
+        on = np.nonzero(keep[fid])[0]
+        q = skin_xy(pos[on], prm)
+        ins = (q[:, 1] >= 0) & (q[:, 1] < prm["H"])
+        return on[ins], q[ins]
+    if view == "skin_ears":
+        on, q = ears_coords(pos, nrm, fid, prm, faces)
+        return np.nonzero(on)[0], q[on]
+    ids, qs = [], []
+    for name, p in prm["parts"].items():
+        fs = faces.get(name)
+        if fs is None or not len(fs):
+            continue
+        m = np.isin(fid, fs)
+        if m.any():
+            q, _ = part_xy(pos[m], p)
+            ids.append(np.nonzero(m)[0])
+            qs.append(q)
+    if not ids:
+        return np.zeros(0, np.int64), np.zeros((0, 2))
+    return np.concatenate(ids), np.concatenate(qs)
+
+
+def brush_of(d: Path, st: dict, base: Path, M=None):
+    """the skins with strokes, ready for project(): [(view, params, faces, xyz, nrm, only, clone), ...] or None"""
+    out = []
+    for view, strokes in (st.get("brush") or {}).items():
+        if not strokes:
+            continue
+        faces = None
+        if view == "skin_head":
+            sp, xyz, nrm, _ = skin_state(d, st, base, M)
+        elif view == "skin_ears":
+            ep = ears_state(d, st, base, M)
+            if not ep:
+                continue
+            sp, faces, xyz, nrm, _ = ep
+        elif view in BODY_SKINS:
+            bp = body_state(d, st, base, view, M)
+            if not bp:
+                continue
+            sp, faces, xyz, nrm, _ = bp
+        else:
+            continue
+        only, strength, clone = brush_masks(strokes, sp["W"], sp["H"])
+        out.append((view, sp, faces, xyz, nrm, only, strength, clone))
+    return out or None
+
+
+def brush_apply(Tx, pos0, nrm0, brush, M):
+    """project()'s texels under the strokes: the stamp's ones moved to the surface it takes (Tx changed in place), the
+    «only» ones -> ((k,) int8 per texel: the one view to take, -1 any; (k,) its strength)"""
+    only = np.full(len(Tx["idx"]), -1, np.int8)
+    strength = np.zeros(len(Tx["idx"]), np.float32)
+    for view, sp, faces, xyz, xnrm, om, sm, cm in brush:
+        ids, q = skin_coords(view, sp, faces, pos0, nrm0, Tx["fid"], M)
+        if not len(ids):
+            continue
+        ix = np.clip(q[:, 0].astype(int), 0, sp["W"] - 1)
+        iy = np.clip(q[:, 1].astype(int), 0, sp["H"] - 1)
+        o = om[iy, ix]
+        sel = o >= 0
+        only[ids[sel]] = o[sel]
+        strength[ids[sel]] = sm[iy, ix][sel]
+        off = cm[iy, ix]
+        cs = np.isfinite(off[:, 0])
+        if cs.any():
+            qq = q[cs] + off[cs]
+            if view == "skin_head":   # (round the head)
+                qq[:, 0] = np.mod(qq[:, 0], sp["W"])
+            Pn, Nn = _skin_at(xyz, xnrm, qq, (0, 0, sp["W"], sp["H"]))
+            good = np.isfinite(Pn).all(1)
+            t = ids[cs][good]
+            Tx["pos"] = Tx["pos"].copy(); Tx["nrm"] = Tx["nrm"].copy()
+            Tx["pos"][t], Tx["nrm"][t] = Pn[good], Nn[good]
+    return only, strength
+
+
+def set_brush(cat: str, stem: str, cfg: dict, view: str, strokes: list) -> dict:
+    """a skin's strokes (each: kind only + view, or clone + off; circles [x, y, r] in the skin's pixels)"""
+    d = improve_dir(cfg, cat, stem)
+    st = load_state(d)
+    keep = []
+    for s in strokes or []:
+        c = [[round(float(x), 1), round(float(y), 1), round(float(r), 1)] for x, y, r in (s.get("c") or [])[:5000]]
+        if not c:
+            continue
+        if s.get("kind") == "only" and s.get("view") in VCODE:
+            keep.append({"kind": "only", "view": s["view"], "c": c})
+        elif s.get("kind") == "clone" and s.get("off") is not None:
+            keep.append({"kind": "clone", "off": [round(float(s["off"][0]), 1), round(float(s["off"][1]), 1)], "c": c})
+    st.setdefault("brush", {})[view] = keep
+    save_state(d, st)
+    return st
+
+
 # ------------------------------------------------------------------ landmarks: named pins whose model end is a 3D point
 # For characters: ear tips, ear holes, elbows, hands (the palm's middle), knees; L = the model's own left (+X). The model
 # point lives in 3D (one for every view: an ear tip marked once lands in the front AND the side picture - the ear fitted
@@ -2195,14 +2357,19 @@ def align(cat: str, stem: str, cfg: dict, draft_dir: Path, view: str) -> dict:
         st = load_state(d)
         sizes = {v: Image.open(x["path"]).size for v, x in pics.items()}
         vp = view_pins(st, cams, {v: x["path"] for v, x in pics.items()}, bool(mirror), sizes)
-        skin_pictures(M, xyz, nrm, sp, use, cams, vp).save(d / f"{view}_pics.png")
+        strokes = (st.get("brush") or {}).get(view) or []
+        masks = brush_masks(strokes, sp["W"], sp["H"]) if strokes else None
+        skin_pictures(M, xyz, nrm, sp, use, cams, vp, brush=masks, wrap=view == "skin_head").save(d / f"{view}_pics.png")
         lines = d / f"{view}_lines.png"   # (the model's relief as height lines, made again with the skin)
         if not lines.exists() or lines.stat().st_mtime < (d / f"{view}_xyz.npy").stat().st_mtime:
             h, sc, fc = skin_height(view, xyz, sp, nrm)
             relief_lines(h, sc, float(np.ptp(M["V"][:, 1])), fc).save(lines)
         return {"ok": True, "view": view, "picture": str(d / f"{view}_pics.png"), "model": str(d / f"{view}_guide.png"),
                 "lines": str(lines), "size": [sp["W"], sp["H"]], "cam": None, "iou": None, "mid_x": sp["W"] / 2,
-                "pins": (st.get("pins") or {}).get(view, []), "kind": "skin", "marks": []}
+                "pins": (st.get("pins") or {}).get(view, []), "kind": "skin", "marks": [], "brush": strokes,
+                # (the model's left on the skin: the right half, but the ears' panels have the left ear on the left)
+                "left_x": -1 if view == "skin_ears" else 1, "views": sorted(use, key=ORDER.index),
+                "ver": (d / f"{view}_pics.png").stat().st_mtime_ns // 1000000}
     if view not in pics:
         return {"ok": False, "view": view}
     pic = pics[view]["path"]

@@ -10,7 +10,7 @@ import { fileUrl, get, live, post, upload, useStore, type ModelInfo } from '../a
 import { useT } from '../i18n';
 import type { Route } from '../nav';
 import Viewer3D from '../components/Viewer3D';
-import PinEditor, { type AlignData, type Pin } from '../components/PinEditor';
+import PinEditor, { type AlignData, type Pin, type Stroke } from '../components/PinEditor';
 import { CAT_KEY, ModelList } from './ModelCheck';
 import './ModelImprove.css';
 import { ZoomImage } from '../components/Zoom';
@@ -73,10 +73,16 @@ export default function ModelImprove({ go }: { go: (r: Route) => void }) {
     } catch (e: any) { notifications.show({ color: 'red', message: String(e.message || e) }); setPinView(null); }
     finally { setAligning(false); }
   };
-  const savePins = async (pins: Pin[], marks: Record<string, [number, number]>) => {
+  const savePins = async (pins: Pin[], marks: Record<string, [number, number]>, brush?: Stroke[]) => {
     if (!m || !pinView) return;
-    setSt(await post<Status>('/api/models/improve/pins', { category: m.category, stem: m.stem, view: pinView, pins, marks }));
+    setSt(await post<Status>('/api/models/improve/pins', { category: m.category, stem: m.stem, view: pinView, pins, marks, brush }));
     notifications.show({ color: 'patina', message: t('web.imp_pins_saved') });
+    if (brush) {   // (a skin: its picture layer drawn again with the strokes, as the projection will take them)
+      try {
+        const a = await get<AlignData & { ok: boolean }>(`/api/models/improve/align?${q}&view=${pinView}`);
+        if (a.ok) setAlign(a);
+      } catch { /* the old layer stays */ }
+    }
   };
   // a landmark's model point moved: the server puts it back onto the model (3D) and draws the view's marks again
   const moveMark3d = async (name: string, x: number, y: number, mirror: boolean) => {

@@ -8,6 +8,9 @@
 //    the app guessed (blue ring); drag it to move it on the model (it moves in every view: an ear fitted in the front and
 //    the side picture alike). The picture's point (orange square, a first guess shown dashed) goes where that feature
 //    is on the picture: pick a name, then click or drag. Shown over the picture bent by the pins only.
+//  - Brush (a skin laid flat): «only the front» (the side, the back) - there that one picture paints the texture (a
+//    side's doubled brow or nostril painted over); the stamp - Alt+click where to take from, then paint where it goes
+//    (a spot no picture sees): there the texture takes the surface that far away. Shown after «Save».
 // Wheel: zoom at the cursor; drag with the right or middle button or with Space held: pan.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Snapshots, useUndoKeys } from '../undo';
@@ -20,8 +23,12 @@ import { useT } from '../i18n';
 export type Pin = [number, number, number, number];   // the picture's point (sx, sy) -> lands on the model at (dx, dy)
 interface P { id: number; s: [number, number]; d: [number, number]; mate?: number }
 export interface Mark { name: string; kind: string; model: [number, number] | null; pic: [number, number]; set: boolean }
-export interface AlignData { picture: string; model: string; lines?: string; size: [number, number]; mid_x: number | null; pins: Pin[]; marks?: Mark[] }
-interface State { pins: P[]; marks: Mark[] }
+export interface Stroke { kind: 'only' | 'clone'; view?: string; off?: [number, number]; c: [number, number, number][] }
+export interface AlignData { picture: string; model: string; lines?: string; size: [number, number]; mid_x: number | null; pins: Pin[]; marks?: Mark[];
+  kind?: string; brush?: Stroke[]; left_x?: number; views?: string[]; ver?: number }
+interface State { pins: P[]; marks: Mark[]; strokes: Stroke[] }
+type Tool = 'front' | 'side' | 'back' | 'clone' | 'erase';
+const TOOL_COLOR: Record<string, string> = { front: '#4aa8ff', left: '#5fd38a', right: '#5fd38a', back: '#b48cff', clone: '#ffa94d' };
 
 // ------------------------------------------------------------------ the warp (model_improve.pin_field)
 export function pinField(pins: Pin[]) {
@@ -65,7 +72,7 @@ const MARK_KEY: Record<string, string> = { ear_tip: 'web.imp_mk_ear_tip', ear_ho
   hand: 'web.imp_mk_hand', knee: 'web.imp_mk_knee' };
 
 export default function PinEditor({ data, onSave, onClose, onMark3d }: {
-  data: AlignData; onSave: (pins: Pin[], marks: Record<string, [number, number]>) => Promise<void> | void; onClose: () => void;
+  data: AlignData; onSave: (pins: Pin[], marks: Record<string, [number, number]>, brush?: Stroke[]) => Promise<void> | void; onClose: () => void;
   onMark3d?: (name: string, x: number, y: number, mirror: boolean) => Promise<AlignData | null>;
 }) {
   const t = useT();
@@ -86,7 +93,14 @@ export default function PinEditor({ data, onSave, onClose, onMark3d }: {
   });
   const [marks, setMarks] = useState<Mark[]>(() => data.marks || []);
   const hasMarks = marks.length > 0;
-  const [mode, setMode] = useState<'pins' | 'marks'>('pins');
+  const isSkin = data.kind === 'skin';
+  const [strokes, setStrokes] = useState<Stroke[]>(() => data.brush || []);
+  const [tool, setTool] = useState<Tool>('front');
+  const [radius, setRadius] = useState(18);
+  const [src, setSrc] = useState<[number, number] | null>(null);   // (the stamp: where it takes from)
+  const cloneOff = useRef<[number, number] | null>(null);   // (fixed by the first stamp after a source is set)
+  const hover = useRef<[number, number] | null>(null);
+  const [mode, setMode] = useState<'pins' | 'marks' | 'brush'>('pins');
   const [sel, setSel] = useState<string | null>(null);
   const [sym, setSym] = useState(data.mid_x != null);
   const [op, setOp] = useState(0.55);
@@ -104,12 +118,12 @@ export default function PinEditor({ data, onSave, onClose, onMark3d }: {
   // undo / redo (Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y, the ↶ ↷ buttons): a pin or a landmark put, dragged (one step for the
   // drag), removed, «Clear»; the editor is drawn anew for another model or view, its history with it
   const hist = useRef(new Snapshots<State>()).current;
-  const now = (): State => ({ pins, marks });
+  const now = (): State => ({ pins, marks, strokes });
   const mark = (before: State) => { hist.mark(before); redraw((x) => x + 1); };
   const histStep = (back: boolean) => {
     if (drag.current) return;
     const x = hist.step(back, now()); if (!x) return;
-    setPins(x.pins); setMarks(x.marks); setDirty(true);
+    setPins(x.pins); setMarks(x.marks); setStrokes(x.strokes); setDirty(true);
   };
   useUndoKeys((redo) => histStep(!redo));
 
@@ -123,12 +137,12 @@ export default function PinEditor({ data, onSave, onClose, onMark3d }: {
     const cam = new THREE.OrthographicCamera(0, W, 0, -H, -10, 10);
     const loader = new THREE.TextureLoader();
     const tex = (u: string) => { const x = loader.load(u, () => draw()); x.colorSpace = THREE.SRGBColorSpace; return x; };
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(W, H), new THREE.MeshBasicMaterial({ map: tex(fileUrl(data.model)), transparent: true }));
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(W, H), new THREE.MeshBasicMaterial({ map: tex(fileUrl(data.model, data.ver)), transparent: true }));
     ground.position.set(W / 2, -H / 2, 0);
     scene.add(ground);
     const nx = 96, ny = Math.max(8, Math.round(96 * H / W));
     const geo = new THREE.PlaneGeometry(W, H, nx, ny);
-    const mat = new THREE.MeshBasicMaterial({ map: tex(fileUrl(data.picture)), transparent: true, opacity: op, depthTest: false });
+    const mat = new THREE.MeshBasicMaterial({ map: tex(fileUrl(data.picture, data.ver)), transparent: true, opacity: op, depthTest: false });
     const sheet = new THREE.Mesh(geo, mat);
     sheet.position.set(W / 2, -H / 2, 1);
     scene.add(sheet);
@@ -149,7 +163,7 @@ export default function PinEditor({ data, onSave, onClose, onMark3d }: {
     const ro = new ResizeObserver(() => { fit(); draw(); redraw((x) => x + 1); });
     ro.observe(el);
     return () => { ro.disconnect(); renderer.dispose(); el.removeChild(renderer.domElement); };
-  }, [data.picture, data.model, data.lines]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [data.picture, data.model, data.lines, data.ver]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fit = () => {   // the whole picture in view
     const r = host.current!.getBoundingClientRect();
@@ -188,8 +202,8 @@ export default function PinEditor({ data, onSave, onClose, onMark3d }: {
     for (let i = 0; i < 8; i++) { const [dx, dy] = shown(q[0], q[1]); q = [p[0] - dx, p[1] - dy]; }
     return q;
   };
-  type Drag = { kind: 'pin' | 'pan' | 'mpic' | 'mmodel'; id?: number; name?: string; at?: [number, number]; v0?: { s: number; x: number; y: number };
-    before?: State; moved?: boolean; q?: [number, number] };
+  type Drag = { kind: 'pin' | 'pan' | 'mpic' | 'mmodel' | 'paint' | 'erase'; id?: number; name?: string; at?: [number, number];
+    v0?: { s: number; x: number; y: number }; before?: State; moved?: boolean; q?: [number, number]; idx?: number[]; last?: [number, number] };
   const drag = useRef<Drag | null>(null);
   const panMoved = useRef(0);   // (a right-button drag ends with a context menu event: not a «remove» then)
   const space = useRef(false);
@@ -212,6 +226,7 @@ export default function PinEditor({ data, onSave, onClose, onMark3d }: {
     if (e.button === 1 || e.button === 2 || space.current) { startPan(e); return; }
     if (e.button !== 0) return;
     const q = toPic(e);
+    if (mode === 'brush') { brushDown(e, q); return; }
     if (mode === 'marks') {   // the picked landmark's picture point: here (what the picture bent by the pins shows here)
       if (!sel) return;
       const [dx, dy] = freeField(q[0], q[1]);
@@ -244,6 +259,7 @@ export default function PinEditor({ data, onSave, onClose, onMark3d }: {
       gl.current?.draw(); redraw((x) => x + 1); return;
     }
     const q = toPic(e);
+    if (d.kind === 'paint' || d.kind === 'erase') { brushMove(d, q); return; }
     if (d.before && !d.moved) { d.moved = true; mark(d.before); }   // (an existing handle dragged: a step once it moves)
     if (d.kind === 'mpic') {
       const [dx, dy] = freeField(q[0], q[1]);
@@ -266,6 +282,52 @@ export default function PinEditor({ data, onSave, onClose, onMark3d }: {
         if (a?.marks) setMarks((ms) => ms.map((m) => { const n = a.marks!.find((x) => x.name === m.name); return n ? { ...m, model: n.model } : m; }));
       } finally { setBusy3d(false); redraw((x) => x + 1); }
     }
+  };
+
+  // ---- the brush (skins)
+  const sideOf = (x: number) => ((x - (mid ?? 0)) * (data.left_x ?? 1) > 0 ? 'left' : 'right');
+  const viewOf = (x: number): string => (tool === 'front' ? 'front' : tool === 'back' ? 'back' : sideOf(x));
+  const swapLR = (v?: string) => (v === 'left' ? 'right' : v === 'right' ? 'left' : v);
+  const eraseAt = (ss: Stroke[], q: [number, number]) => {
+    const pts = [q, ...(sym && mid != null ? [mirrorPt(q)] : [])];
+    return ss.map((s) => ({ ...s, c: s.c.filter(([x, y]) => pts.every((p) => Math.hypot(x - p[0], y - p[1]) > radius)) })).filter((s) => s.c.length);
+  };
+  const brushDown = (e: React.PointerEvent, q: [number, number]) => {
+    if (tool === 'clone' && e.altKey) { setSrc(q); cloneOff.current = null; redraw((x) => x + 1); return; }
+    if (tool === 'erase') { mark(now()); setStrokes((ss) => eraseAt(ss, q)); setDirty(true); drag.current = { kind: 'erase' }; return; }
+    let add: Stroke[];
+    const c: [number, number, number] = [q[0], q[1], radius];
+    const mc = (): [number, number, number] => { const m = mirrorPt(q); return [m[0], m[1], radius]; };
+    const twin = sym && mid != null && Math.abs(q[0] - mid) > radius;
+    if (tool === 'clone') {
+      if (!src) return;
+      if (!cloneOff.current) cloneOff.current = [src[0] - q[0], src[1] - q[1]];
+      const off = cloneOff.current;
+      add = [{ kind: 'clone', off: [off[0], off[1]], c: [c] }];
+      if (twin) add.push({ kind: 'clone', off: [-off[0], off[1]], c: [mc()] });
+    } else {
+      const v = viewOf(q[0]);
+      add = [{ kind: 'only', view: v, c: [c] }];
+      if (twin) add.push({ kind: 'only', view: swapLR(v), c: [mc()] });
+    }
+    mark(now());
+    const n0 = strokes.length;
+    setStrokes((ss) => [...ss, ...add]);
+    setDirty(true);
+    drag.current = { kind: 'paint', idx: add.map((_, i) => n0 + i), last: q };
+  };
+  const brushMove = (d: NonNullable<typeof drag.current>, q: [number, number]) => {
+    if (d.kind === 'erase') { setStrokes((ss) => eraseAt(ss, q)); return; }
+    if (Math.hypot(q[0] - d.last![0], q[1] - d.last![1]) < radius / 3) return;
+    d.last = q;
+    const m = mirrorPt(q);
+    setStrokes((ss) => ss.map((s, i) => (i === d.idx![0] ? { ...s, c: [...s.c, [q[0], q[1], radius]] }
+      : i === d.idx![1] ? { ...s, c: [...s.c, [m[0], m[1], radius]] } : s)));
+  };
+  const hoverMove = (e: React.PointerEvent) => {   // (the brush's ring under the pointer)
+    if (mode !== 'brush') return;
+    hover.current = toPic(e);
+    if (!drag.current) redraw((x) => x + 1);
   };
   const grabPin = (e: React.PointerEvent, id: number) => {
     if (e.button !== 0) return;   // (right / middle: the pan, from the canvas under it)
@@ -306,7 +368,7 @@ export default function PinEditor({ data, onSave, onClose, onMark3d }: {
     try {
       const ms: Record<string, [number, number]> = {};
       for (const m of marks) if (m.set) ms[m.name] = m.pic;
-      await onSave(toPins(pins), ms); setDirty(false);
+      await onSave(toPins(pins), ms, isSkin ? strokes : undefined); setDirty(false);
     } finally { setSaving(false); }
   };
   const markLabel = (n: string) => `${t(MARK_KEY[n.slice(0, -2)] || n)} ${n.endsWith('_L') ? t('web.imp_mk_l') : t('web.imp_mk_r')}`;
@@ -317,8 +379,10 @@ export default function PinEditor({ data, onSave, onClose, onMark3d }: {
   return (
     <div className="pin-editor">
       <div className="pin-bar">
-        {hasMarks && <SegmentedControl size="xs" value={mode} onChange={(x) => setMode(x as any)} data={[
-          { value: 'pins', label: t('web.imp_pe_pins') }, { value: 'marks', label: t('web.imp_pe_marks', nSet) }]} />}
+        {(hasMarks || isSkin) && <SegmentedControl size="xs" value={mode} onChange={(x) => setMode(x as any)} data={[
+          { value: 'pins', label: t('web.imp_pe_pins') },
+          ...(hasMarks ? [{ value: 'marks', label: t('web.imp_pe_marks', nSet) }] : []),
+          ...(isSkin ? [{ value: 'brush', label: t('web.imp_pe_brush') }] : [])]} />}
         <SegmentedControl size="xs" value={show} onChange={(x) => setShow(x as any)} data={[
           { value: 'mix', label: t('web.imp_pe_mix') }, { value: 'pic', label: t('web.imp_pe_pic') }, { value: 'model', label: t('web.imp_pe_model') }]} />
         <div style={{ width: 110 }}><Slider size="xs" min={0.1} max={0.9} step={0.05} value={op} onChange={setOp} label={null} disabled={show !== 'mix'} /></div>
@@ -326,16 +390,29 @@ export default function PinEditor({ data, onSave, onClose, onMark3d }: {
           <Checkbox size="xs" label={t('web.imp_pe_relief')} checked={relief} onChange={(e) => setRelief(e.currentTarget.checked)} /></Tooltip>}
         {mid != null && <Checkbox size="xs" label={t('web.imp_pe_sym')} checked={sym} onChange={(e) => setSym(e.currentTarget.checked)} />}
         <Button size="compact-xs" variant="default" onClick={() => { fit(); gl.current?.draw(); redraw((x) => x + 1); }}>{t('web.imp_pe_fit')}</Button>
-        {mode === 'pins'
+        {mode === 'brush'
+          ? <Button size="compact-xs" variant="default" color="red" disabled={!strokes.length} onClick={() => { mark(now()); setStrokes([]); setDirty(true); }}>{t('web.imp_pe_clear')}</Button>
+          : mode === 'pins'
           ? <Button size="compact-xs" variant="default" color="red" disabled={!pins.length} onClick={() => { mark(now()); setPins([]); setDirty(true); }}>{t('web.imp_pe_clear')}</Button>
           : <Tooltip label={t('web.imp_pe_take_guess_tip')}><Button size="compact-xs" variant="default" disabled={marks.every((m) => m.set)}
               onClick={() => { mark(now()); setMarks((ms) => ms.map((m) => ({ ...m, set: true }))); setDirty(true); }}>{t('web.imp_pe_take_guess')}</Button></Tooltip>}
         <UndoButtons can={[hist.undo.length > 0, hist.redo.length > 0]} onStep={histStep} />
         <div style={{ flex: 1 }} />
-        <Text size="xs" c="dimmed">{busy3d ? t('web.imp_pe_on_model') : t('web.imp_pe_count', pins.length)}</Text>
+        <Text size="xs" c="dimmed">{busy3d ? t('web.imp_pe_on_model') : mode === 'brush' ? t('web.imp_br_count', strokes.length) : t('web.imp_pe_count', pins.length)}</Text>
         <Button size="compact-sm" onClick={save} loading={saving} disabled={!dirty}>{t('web.imp_pe_save')}</Button>
         <Button size="compact-sm" variant="default" onClick={onClose}>{t('web.imp_pe_close')}</Button>
       </div>
+      {mode === 'brush' && (
+        <div className="mark-bar">
+          <SegmentedControl size="xs" value={tool} onChange={(x) => setTool(x as Tool)} data={[
+            { value: 'front', label: t('web.imp_br_front') }, { value: 'side', label: t('web.imp_br_side') },
+            { value: 'back', label: t('web.imp_br_back') }, { value: 'clone', label: t('web.imp_br_clone') },
+            { value: 'erase', label: t('web.imp_br_erase') }]} />
+          <Text size="xs" c="dimmed">{t('web.imp_br_size')}</Text>
+          <div style={{ width: 120 }}><Slider size="xs" min={4} max={120} step={1} value={radius} onChange={setRadius} label={(x) => x} /></div>
+          {tool === 'clone' && <Text size="xs" c={src ? 'dimmed' : 'yellow'}>{src ? t('web.imp_br_src_set') : t('web.imp_br_need_src')}</Text>}
+        </div>
+      )}
       {mode === 'marks' && (
         <div className="mark-bar">
           {marks.map((m) => (
@@ -345,10 +422,31 @@ export default function PinEditor({ data, onSave, onClose, onMark3d }: {
           ))}
         </div>
       )}
-      <div className="pin-canvas" ref={host} onPointerDown={down} onPointerMove={move} onPointerUp={up} onWheel={wheel}
+      <div className={'pin-canvas' + (mode === 'brush' ? ' brushing' : '')} ref={host} onPointerDown={down}
+        onPointerMove={(e) => { hoverMove(e); move(e); }} onPointerUp={up} onWheel={wheel}
+        onPointerLeave={() => { hover.current = null; if (mode === 'brush') redraw((x) => x + 1); }}
         onContextMenu={(e) => e.preventDefault()}>
         <svg className="pin-svg">
           {mid != null && sym && <line x1={sx(mid)} x2={sx(mid)} y1={0} y2="100%" className="pin-mid" />}
+          {isSkin && strokes.map((st, i) => (   // (the strokes: each one evenly see-through, its circles opaque inside it)
+            <g key={i} opacity={mode === 'brush' ? 0.34 : 0.16} fill={TOOL_COLOR[st.kind === 'clone' ? 'clone' : st.view || 'front']}>
+              {st.c.map(([x, y, r], k) => <circle key={k} cx={sx(x)} cy={sy(y)} r={r * v.s} />)}
+            </g>
+          ))}
+          {mode === 'brush' && tool === 'clone' && src && (
+            <g className="brush-src">
+              <circle cx={sx(src[0])} cy={sy(src[1])} r={radius * v.s} />
+              <line x1={sx(src[0]) - 8} x2={sx(src[0]) + 8} y1={sy(src[1])} y2={sy(src[1])} />
+              <line x1={sx(src[0])} x2={sx(src[0])} y1={sy(src[1]) - 8} y2={sy(src[1]) + 8} />
+            </g>)}
+          {mode === 'brush' && hover.current && (() => {
+            const h = hover.current!, off = cloneOff.current;
+            return (
+              <g className="brush-ring">
+                <circle cx={sx(h[0])} cy={sy(h[1])} r={radius * v.s} />
+                {tool === 'clone' && off && <circle cx={sx(h[0] + off[0])} cy={sy(h[1] + off[1])} r={radius * v.s} className="src" />}
+              </g>);
+          })()}
           {mode === 'pins' && pins.map((p) => (
             <g key={p.id}>
               <line x1={sx(p.s[0])} y1={sy(p.s[1])} x2={sx(p.d[0])} y2={sy(p.d[1])} className="pin-line" />
@@ -378,7 +476,7 @@ export default function PinEditor({ data, onSave, onClose, onMark3d }: {
           })}
         </svg>
       </div>
-      <div className="pin-help">{mode === 'marks' ? t('web.imp_pe_help_marks') : t('web.imp_pe_help')}</div>
+      <div className="pin-help">{mode === 'marks' ? t('web.imp_pe_help_marks') : mode === 'brush' ? t('web.imp_br_help') : t('web.imp_pe_help')}</div>
     </div>
   );
 }
