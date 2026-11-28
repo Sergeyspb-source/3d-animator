@@ -23,7 +23,8 @@
     "0b2eb32",
     "34f02dd",
     "972d3d0",
-    "47ae442"
+    "47ae442",
+    "2b67741"
   ],
   "tags": [
     "clothes",
@@ -116,12 +117,12 @@
     {
       "what_ru": "Кожа сквозь кафтан (длинный жилет), гоблин",
       "before": 0.6,
-      "after": 4.9,
+      "after": 6.8,
       "unit_ru": "% в худшем клипе",
       "better": "lower",
       "measured_on": "Blender, 12 клипов, голое тело",
       "run": null,
-      "note_ru": "после свободного падения от груди: колено в выпаде касается полы; у девушки-гоблина 0 % до и после; пользователь сам выбрал форму важнее"
+      "note_ru": "А-линия от груди: колени и ягодицы в выпаде на голом теле; у кафтана мага пустыни до 8 %; у девушки-гоблина 2,6 % и 1,3 %; в костюме под ним рубаха и штаны, в Godot кожи не видно; пользователь сам выбрал форму важнее"
     },
     {
       "what_ru": "Время на одну вещь",
@@ -132,6 +133,16 @@
       "measured_on": "Blender на процессоре, две вещи одновременно",
       "run": "repeat",
       "note_ru": "видеокарта для одежды не нужна"
+    },
+    {
+      "what_ru": "Шип на стыке корпуса и подола (бок)",
+      "before": 35,
+      "after": 0,
+      "unit_ru": "мм дальше соседних точек",
+      "better": "lower",
+      "measured_on": "редактор, гоблин, замер по точкам",
+      "run": null,
+      "note_ru": ""
     }
   ],
   "media": [
@@ -325,7 +336,7 @@
       "kind": "render",
       "role": "after",
       "pair": "kaftan-front",
-      "caption_ru": "Кафтан висит от груди прямо"
+      "caption_ru": "Кафтан одна А-линия от груди до подола"
     },
     {
       "file": "img/12_kaftan_before_after.jpg",
@@ -341,7 +352,7 @@
       "kind": "render",
       "role": "after",
       "pair": "kaftan-side",
-      "caption_ru": "Сбоку: спина прямая от лопаток"
+      "caption_ru": "Сбоку: спереди ближе к телу"
     },
     {
       "file": "img/12_kaftan_before_after.jpg",
@@ -357,7 +368,31 @@
       "kind": "render",
       "role": "after",
       "pair": "kaftan-back",
-      "caption_ru": "Сзади: свободное падение"
+      "caption_ru": "Сзади: без «рва» на шве"
+    },
+    {
+      "file": "img/12_kaftan_before_after.jpg",
+      "clean": "src/12_kaftan_mid_front.png",
+      "kind": "render",
+      "role": "attempt",
+      "pair": "kaftan-front",
+      "caption_ru": "Промежуточный вариант: свободное падение, на шве по бокам «ров»"
+    },
+    {
+      "file": "img/12_kaftan_before_after.jpg",
+      "clean": "src/12_kaftan_mid_side.png",
+      "kind": "render",
+      "role": "attempt",
+      "pair": "kaftan-side",
+      "caption_ru": "Промежуточный вариант: свободное падение, на шве по бокам «ров»"
+    },
+    {
+      "file": "img/12_kaftan_before_after.jpg",
+      "clean": "src/12_kaftan_mid_qb.png",
+      "kind": "render",
+      "role": "attempt",
+      "pair": "kaftan-back",
+      "caption_ru": "Промежуточный вариант: свободное падение, на шве по бокам «ров»"
     }
   ],
   "models": [
@@ -482,14 +517,15 @@
     },
     {
       "n": 7,
-      "seconds": 14,
-      "say_ru": "Третий круг — замечание пользователя: кафтан сидит, как под поясом, и сзади будто лежит на ягодицах. Без пояса тяжёлая ткань висит от груди и падает прямо, как штора.",
-      "sub_ru": "без пояса — свободное падение от груди",
+      "seconds": 17,
+      "say_ru": "Третий круг — замечание пользователя: кафтан сидит, как под поясом, и сзади будто лежит на ягодицах. Без пояса тяжёлая ткань висит от груди и падает прямо, как штора. А чтобы на боках не было излома, кафтан стал одной линией до подола, как буква «А».",
+      "sub_ru": "без пояса — от груди одной А-линией",
       "show": [
         "src/12_kaftan_before_side.png",
+        "src/12_kaftan_mid_side.png",
         "src/12_kaftan_after_side.png",
-        "src/12_kaftan_before_qb.png",
-        "src/12_kaftan_after_qb.png"
+        "src/12_kaftan_before_front.png",
+        "src/12_kaftan_after_front.png"
       ]
     },
     {
