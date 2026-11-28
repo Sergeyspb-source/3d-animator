@@ -69,7 +69,7 @@
   ],
   "regenerate": [
     "D:\\conda\\envs\\sf3d\\python.exe tool\\blender_queue.py -- -b --factory-startup -P work/archers/game_bake.py -- work/seam_check/noweld.job.json",
-    "D:\\conda\\envs\\sf3d\\python.exe tool\\blender_queue.py -- -b -P \"docs/Solve problems/_tools/render_models.py\" -- \"D:/My projects/SF3D/docs/Solve problems/2026-11-24_ragged-seams-bake/src\" --looks clay noweld=work/seam_check/muscular_01_noweld.glb weld=work/seam_check/m01_keep.glb   (OUT_DIR absolute: through the queue a relative one lands in C:\\)",
+    "D:\\conda\\envs\\sf3d\\python.exe tool\\blender_queue.py -- -b -P \"docs/Solve problems/_tools/render_models.py\" -- \"D:/My projects/SF3D/docs/Solve problems/2026-11-24_ragged-seams-bake/src\" --looks clay noweld=work/seam_check/muscular_01_noweld.glb weld=work/seam_check/m01_keep.glb",
     "D:\\conda\\envs\\sf3d\\python.exe \"docs/Solve problems/_tools/sheet.py\" \"docs/Solve problems/2026-11-24_ragged-seams-bake/img/02_before_after.jpg\" \"Без сшивания\" \"docs/Solve problems/2026-11-24_ragged-seams-bake/src/noweld_clay_q34.png\" \"Со сшиванием\" \"docs/Solve problems/2026-11-24_ragged-seams-bake/src/weld_clay_q34.png\" --crop --width 1600",
     "D:\\conda\\envs\\sf3d\\python.exe work/seam_check/cracks.py work/seam_check/muscular_01_noweld.glb work/archers/squad/muscular_01.glb"
   ]
