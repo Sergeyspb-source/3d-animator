@@ -13,7 +13,8 @@ Options:
     --fill 0.87         share of the frame height the models take
 
 Each model -> OUT_DIR/<label>_<look>_<view>.png. All models are framed by their common bounds, so a before/after
-pair lines up pixel for pixel and a wipe between them works in the video. Collision proxy nodes (-colonly,
+pair lines up pixel for pixel and a wipe between them works in the video. Relative OUT_DIR and model paths are taken
+from the SF3D project folder, not from the folder Blender happens to run in. Collision proxy nodes (-colonly,
 -convcolonly) are left out. Reads .glb, .gltf, .fbx, .obj.
 """
 import math
@@ -22,6 +23,14 @@ from pathlib import Path
 
 import bpy
 from mathutils import Vector
+
+ROOT = Path(__file__).resolve().parents[3]   # the SF3D project: relative paths mean the same whatever folder Blender runs in
+
+
+def from_root(p):
+    p = Path(p)
+    return p if p.is_absolute() else ROOT / p
+
 
 argv = sys.argv[sys.argv.index("--") + 1:]
 opt = {"size": "2560x1440", "views": "front,q34", "looks": "clay,tex", "fill": "0.87"}
@@ -37,12 +46,12 @@ while i < len(argv):
         opt[a[2:]] = argv[i + 1]
         i += 1
     elif out is None:
-        out = Path(a)
+        out = from_root(a)
     else:
         label, path = ("", a)
-        if "=" in a and not Path(a).exists():
+        if "=" in a and not from_root(a).exists():
             label, _, path = a.partition("=")
-        p = Path(path)
+        p = from_root(path)
         models.append((label or f"{p.parent.name}_{p.stem}", p))
     i += 1
 if out is None or not models:
