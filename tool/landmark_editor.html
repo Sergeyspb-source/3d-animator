@@ -255,7 +255,7 @@
     </div>
     <div class="sculptbox" id="texBox" hidden>
       <b>{{ed.tx}}</b>
-      <div class="seg" id="txModes"><button data-m="paint" class="on" title="{{ed.tx_paint_title}}">{{ed.tx_paint}}</button><button data-m="pick" title="{{ed.tx_pick_title}}">{{ed.tx_pick}}</button><button data-m="erase" title="{{ed.tx_erase_title}}">{{ed.tx_erase}}</button></div>
+      <div class="seg" id="txModes"><button data-m="paint" class="on" title="{{ed.tx_paint_title}}">{{ed.tx_paint}}</button><button data-m="pick" title="{{ed.tx_pick_title}}">{{ed.tx_pick}}</button><button data-m="erase" title="{{ed.tx_erase_title}}">{{ed.tx_erase}}</button><button data-m="heal" title="{{ed.tx_heal_title}}">{{ed.tx_heal}}</button></div>
       <label>{{ed.tx_colour}} <input type="color" id="txC" value="#8a7a3c"></label>
       <label>{{ed.sc_radius}} <input type="range" id="txR" min="1" max="100" value="12"><span id="txRv"></span></label>
       <label>{{ed.sc_strength}} <input type="range" id="txS" min="5" max="100" value="60"><span id="txSv"></span></label>
@@ -266,7 +266,7 @@
     </div>
     <div class="sculptbox" id="sculptBox" hidden>
       <b id="scKey"></b>
-      <div class="seg" id="scModes"><button data-m="grab" class="on" title="{{ed.sc_grab_title}}">{{ed.sc_grab}}</button><button data-m="raise" title="{{ed.sc_raise_title}}">{{ed.sc_raise}}</button><button data-m="press" title="{{ed.sc_press_title}}">{{ed.sc_press}}</button><button data-m="smooth" title="{{ed.sc_smooth_title}}">{{ed.sc_smooth}}</button><button data-m="even" title="{{ed.sc_even_title}}">{{ed.sc_even}}</button></div>
+      <div class="seg" id="scModes"><button data-m="grab" class="on" title="{{ed.sc_grab_title}}">{{ed.sc_grab}}</button><button data-m="raise" title="{{ed.sc_raise_title}}">{{ed.sc_raise}}</button><button data-m="press" title="{{ed.sc_press_title}}">{{ed.sc_press}}</button><button data-m="smooth" title="{{ed.sc_smooth_title}}">{{ed.sc_smooth}}</button><button data-m="even" title="{{ed.sc_even_title}}">{{ed.sc_even}}</button><button data-m="flat" title="{{ed.sc_flat_title}}">{{ed.sc_flat}}</button></div>
       <div class="seg"><button id="scLip" title="{{ed.sc_lip_title}}">{{ed.sc_lip}}</button><button id="scLipGo" hidden title="{{ed.sc_lip_go_title}}">{{ed.sc_lip_go}}</button></div>
       <label id="scLipMirrorL" hidden title="{{ed.sc_lip_mirror_title}}"><input type="checkbox" id="scLipMirror"> {{ed.sc_lip_mirror}}</label>
       <label>{{ed.sc_radius}} <input type="range" id="scR" min="3" max="60" value="14"><span id="scRv"></span></label>
@@ -2763,12 +2763,77 @@ function scTriN(q, a, b, c) {
   const vx = q[3 * c] - q[3 * a], vy = q[3 * c + 1] - q[3 * a + 1], vz = q[3 * c + 2] - q[3 * a + 2];
   return new V3(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx);
 }
-function scDab(P, N) {   // «Поднять» / «Вдавить» / «Сгладить» / «Выровнять» at P (and mirrored)
+function scSolveN(H, g) {   // H x = g, n x n, Gaussian elimination with partial pivoting
+  const n = g.length, A = H.map((row, i) => [...row, g[i]]);
+  for (let c = 0; c < n; c++) {
+    let p = c; for (let r = c + 1; r < n; r++) if (Math.abs(A[r][c]) > Math.abs(A[p][c])) p = r;
+    [A[c], A[p]] = [A[p], A[c]]; if (Math.abs(A[c][c]) < 1e-18) return null;
+    for (let r = c + 1; r < n; r++) { const f = A[r][c] / A[c][c]; for (let k = c; k <= n; k++) A[r][k] -= f * A[c][k]; }
+  }
+  const x = new Array(n).fill(0);
+  for (let r = n - 1; r >= 0; r--) { let s = A[r][n]; for (let k = r + 1; k < n; k++) s -= A[r][k] * x[k]; x[r] = s / A[r][r]; }
+  return x;
+}
+// «По краю»: the inside of the brush drawn onto the surface its rim lies on - a bump, a triangle standing out, the
+// lid's edge off the skin by the nose. The surface: a gentle curve fitted to the points in a ring round the brush
+// (not to the ones inside: those are what is wrong), its way out the rim's own triangles' (the one under the
+// brush's centre may be the very triangle standing out). Layers kept: a point a hair under another - the lid's patch
+// under the old skin's edge, where the eye was set in - stays that hair under it, never on it (they flickered).
+// A key: its shift inside drawn to the rim's
+function scFlatPass(Q, n, R, s) {
+  const p = SCN.pos, r = SCN.rest, key = SC.key !== REST_KEY, rim = [], inner = [];
+  for (const [id] of scNear(Q, R * 1.3)) {
+    const d = Math.hypot(p[3 * id] - Q.x, p[3 * id + 1] - Q.y, p[3 * id + 2] - Q.z);
+    if (d >= R * .8) rim.push(id);
+    if (d < R) inner.push([id, scFall(d, R)]);
+  }
+  if (rim.length < 6 || !inner.length) return 0;
+  const moves = [];
+  if (key) {
+    const sh = (j) => new V3(p[3 * j] - r[3 * j], p[3 * j + 1] - r[3 * j + 1], p[3 * j + 2] - r[3 * j + 2]);
+    for (const [id, w] of inner) {
+      const t = new V3(); let ws = 0;
+      for (const j of rim) {
+        const k = 1 / ((p[3 * j] - p[3 * id]) ** 2 + (p[3 * j + 1] - p[3 * id + 1]) ** 2 + (p[3 * j + 2] - p[3 * id + 2]) ** 2 + 1e-12);
+        t.add(sh(j).multiplyScalar(k)); ws += k;
+      }
+      moves.push([id, t.multiplyScalar(1 / ws).sub(sh(id)).multiplyScalar(w * s * .6)]);
+    }
+  } else {
+    const inRim = new Set(rim), T = SCN.tris, N = new V3();
+    for (let t = 0; t < T.length; t += 3) if (inRim.has(T[t]) && inRim.has(T[t + 1]) && inRim.has(T[t + 2])) N.add(scTriN(p, T[t], T[t + 1], T[t + 2]));
+    if (N.lengthSq() < 1e-30) N.copy(n);
+    N.normalize(); if (N.dot(n) < 0) N.negate();
+    const U = Math.abs(N.x) > .9 ? new V3(0, 1, 0) : new V3(1, 0, 0); U.sub(N.clone().multiplyScalar(U.dot(N))).normalize();
+    const W = N.clone().cross(U);
+    const loc = (id) => { const x = p[3 * id] - Q.x, y = p[3 * id + 1] - Q.y, z = p[3 * id + 2] - Q.z;
+      return [(x * U.x + y * U.y + z * U.z) / R, (x * W.x + y * W.y + z * W.z) / R, (x * N.x + y * N.y + z * N.z) / R]; };
+    // h = a + b u + c v + d u^2 + e uv + f v^2 (in brush radii), least squares; the curve held back a little
+    const A = Array.from({ length: 6 }, () => new Array(6).fill(0)), g = new Array(6).fill(0);
+    for (const id of rim) {
+      const [u, v, h] = loc(id), f = [1, u, v, u * u, u * v, v * v];
+      for (let i = 0; i < 6; i++) { g[i] += f[i] * h; for (let j = 0; j < 6; j++) A[i][j] += f[i] * f[j]; }
+    }
+    for (let i = 0; i < 6; i++) A[i][i] += (i < 3 ? 1e-9 : .05) * rim.length;
+    const c = scSolveN(A, g); if (!c) return 0;
+    const L = inner.map(([id, w]) => [id, w, loc(id)]), eps2 = .12 * .12, hair = .03;
+    for (const [id, w, [u, v, h]] of L) {
+      let top = h;
+      for (const [, , [u2, v2, h2]] of L) if (h2 > top && (u2 - u) ** 2 + (v2 - v) ** 2 < eps2) top = h2;
+      const want = c[0] + c[1] * u + c[2] * v + c[3] * u * u + c[4] * u * v + c[5] * v * v - Math.min(top - h, hair);
+      moves.push([id, N.clone().multiplyScalar((want - h) * R * w * s)]);
+    }
+  }
+  for (const [id, d] of moves) scMove(id, d);
+  return moves.length;
+}
+function scDab(P, N) {   // «Поднять» / «Вдавить» / «Сгладить» / «Выровнять» / «По краю» at P (and mirrored)
   const R = scR(), s = scS(), spots = [[P, N, false]];
   if ($('scMirror').checked) spots.push([new V3(2 * SCN.mid - P.x, P.y, P.z), new V3(-N.x, N.y, N.z), true]);
   for (const [Q, n] of spots) {
     const near = scNear(Q, R);
     if (SC.mode === 'even') { scEvenPass(near.map(([id]) => id), s * .8, new Map(near)); continue; }
+    if (SC.mode === 'flat') { scFlatPass(Q, n, R, s); continue; }
     if (SC.mode === 'smooth') {
       // a key: its shift evened with the neighbours'; the rest has no shift - there the places themselves (the skin's
       // bumps and folds; on the rest it changed nothing at all)
@@ -3406,7 +3471,95 @@ function txScale(h, e) {   // pixels of the picture per metre of the surface at 
   return aw > 1e-14 ? Math.sqrt(au / aw) : 1000;
 }
 const txR = () => +$('txR').value / 100 * .05 * H;   // the slider: 1..100 % of 5 % of the height
+// «Залечить»: inside the brush the colours drawn in from its rim, softly to its edge - a seam, the line where the eye
+// was set in, a spot go into the skin round them. Every picture of the mesh under the brush at once, each texel by its
+// own place on the surface (the old skin's edge and the lid's patch under it lie in different parts of the picture), the colour as
+// seen (the picture times its material's colour: the lid's skin is the face's picture tinted)
+const txLin = (c) => (c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4), txSrgb = (c) => (c <= .0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - .055);
+function txHeal(h) {
+  const P = h.point, R = txR(), R2 = R * 1.3, s = +$('txS').value / 100, st = TX.stroke;
+  const n = scNormal(h), U = Math.abs(n.x) > .9 ? new V3(0, 1, 0) : new V3(1, 0, 0); U.sub(n.clone().multiplyScalar(U.dot(n))).normalize();
+  const W = n.clone().cross(U), NB = 24, bk = Array.from({ length: NB }, () => ({ c: [0, 0, 0], k: 0, at: new V3() }));
+  const px = [];   // texels near: [e, x, y, place, colour factor, inside (d < R) or rim]
+  const v = new V3(), A = new V3(), B = new V3(), C = new V3(), X = new V3();
+  for (const m of [h.object]) {   // (the mesh under the brush only: the face with its lids - the eyeball's white under
+    // the same brush came into the skin as pale spots)
+    const g = m.geometry, uv = g.attributes.uv, pa = g.attributes.position; if (!uv) continue;
+    let wp = st && st.wp && st.wp.get(m);
+    if (!wp) {   // the mesh's points where they are drawn (its pose, its keys): once a stroke
+      wp = new Float32Array(3 * pa.count);
+      for (let i = 0; i < pa.count; i++) { m.getVertexPosition(i, v).applyMatrix4(m.matrixWorld); wp[3 * i] = v.x; wp[3 * i + 1] = v.y; wp[3 * i + 2] = v.z; }
+      if (st) (st.wp = st.wp || new Map()).set(m, wp);
+    }
+    const ix = g.index ? g.index.array : null, cnt = ix ? ix.length : pa.count, mats = [].concat(m.material);
+    for (const gr of g.groups.length ? g.groups : [{ start: 0, count: cnt, materialIndex: 0 }]) {
+      const mat = mats[gr.materialIndex || 0]; if (!mat || !mat.map) continue;
+      const e = txImg(mat.map); if (!e) continue;
+      const f = mat.color ? [mat.color.r, mat.color.g, mat.color.b] : [1, 1, 1];
+      for (let t = gr.start, t1 = Math.min(gr.start + gr.count, cnt); t < t1; t += 3) {
+        const ia = ix ? ix[t] : t, ib = ix ? ix[t + 1] : t + 1, ic = ix ? ix[t + 2] : t + 2;
+        A.set(wp[3 * ia], wp[3 * ia + 1], wp[3 * ia + 2]); B.set(wp[3 * ib], wp[3 * ib + 1], wp[3 * ib + 2]); C.set(wp[3 * ic], wp[3 * ic + 1], wp[3 * ic + 2]);
+        const big = Math.max(A.distanceTo(B), B.distanceTo(C), C.distanceTo(A));
+        if (Math.min(A.distanceTo(P), B.distanceTo(P), C.distanceTo(P)) > R2 + big) continue;
+        const ax = uv.getX(ia) * e.w, ay = uv.getY(ia) * e.h, bx = uv.getX(ib) * e.w, by = uv.getY(ib) * e.h, cx = uv.getX(ic) * e.w, cy = uv.getY(ic) * e.h;
+        const den = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy); if (Math.abs(den) < 1e-9) continue;
+        // a texel and a half past the triangle's edges too (the picture is read between texels; the edge kept the old colour)
+        const la = Math.hypot(bx - cx, by - cy), lb = Math.hypot(cx - ax, cy - ay), lc = Math.hypot(ax - bx, ay - by);
+        const ta = -1.5 * la / Math.abs(den), tb = -1.5 * lb / Math.abs(den), tc = -1.5 * lc / Math.abs(den);
+        const x0 = Math.max(0, Math.floor(Math.min(ax, bx, cx) - 2)), x1 = Math.min(e.w - 1, Math.ceil(Math.max(ax, bx, cx) + 2));
+        const y0 = Math.max(0, Math.floor(Math.min(ay, by, cy) - 2)), y1 = Math.min(e.h - 1, Math.ceil(Math.max(ay, by, cy) + 2));
+        if ((x1 - x0) * (y1 - y0) > 4e6) continue;
+        for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+          const qx = x + .5, qy = y + .5;
+          let wa = ((by - cy) * (qx - cx) + (cx - bx) * (qy - cy)) / den, wb = ((cy - ay) * (qx - cx) + (ax - cx) * (qy - cy)) / den, wc = 1 - wa - wb;
+          if (wa < ta || wb < tb || wc < tc) continue;
+          const inTri = wa >= 0 && wb >= 0 && wc >= 0;
+          wa = Math.max(0, wa); wb = Math.max(0, wb); wc = Math.max(0, wc); const ws = wa + wb + wc;
+          X.set(0, 0, 0).addScaledVector(A, wa / ws).addScaledVector(B, wb / ws).addScaledVector(C, wc / ws);
+          const d = X.distanceTo(P);
+          if (d < R) px.push([e, x, y, X.clone(), f, d]);
+          else if (d < R2 && inTri) px.push([e, x, y, X.clone(), f, -1]);
+        }
+      }
+    }
+  }
+  if (!px.length) return;
+  const reg = new Map();   // the pictures' parts touched: read once, written once
+  for (const [e, x, y] of px) { const r_ = reg.get(e); if (!r_) reg.set(e, [x, y, x, y]); else { r_[0] = Math.min(r_[0], x); r_[1] = Math.min(r_[1], y); r_[2] = Math.max(r_[2], x); r_[3] = Math.max(r_[3], y); } }
+  const dat = new Map();
+  for (const [e, [x0, y0, x1, y1]] of reg) {
+    const w = x1 - x0 + 1, hh = y1 - y0 + 1, d = e.ctx.getImageData(x0, y0, w, hh), l = e.lctx.getImageData(x0, y0, w, hh);
+    if (st) st.patches.push({ e, x0, y0, d: new ImageData(new Uint8ClampedArray(d.data), w, hh), l: new ImageData(new Uint8ClampedArray(l.data), w, hh) });
+    dat.set(e, { x0, y0, w, d, l });
+  }
+  for (const [e, x, y, at, f, d] of px) {   // the rim: its colours as seen, in turns round the brush's centre
+    if (d >= 0) continue;
+    const D = dat.get(e), o = 4 * ((y - D.y0) * D.w + (x - D.x0)), q = at.clone().sub(P);
+    const b = bk[Math.floor(((Math.atan2(q.dot(W), q.dot(U)) / (2 * Math.PI)) + 1) * NB) % NB];
+    for (let i = 0; i < 3; i++) b.c[i] += txLin(D.d.data[o + i] / 255) * f[i];
+    b.k++; b.at.add(at);
+  }
+  const full = bk.filter((b) => b.k > 0);
+  if (full.length < 3) return;
+  for (const b of full) { b.c = b.c.map((x) => x / b.k); b.at.multiplyScalar(1 / b.k); }
+  const e2 = (R * .05) ** 2;
+  for (const [e, x, y, at, f, d] of px) {
+    if (d < 0) continue;
+    const a = s * (d < R * .55 ? 1 : 1 - (d - R * .55) / (R * .45)); if (a <= 0) continue;
+    const c = [0, 0, 0]; let ws = 0;
+    for (const b of full) { const k = 1 / (at.distanceToSquared(b.at) + e2); ws += k; for (let i = 0; i < 3; i++) c[i] += k * b.c[i]; }
+    const D = dat.get(e), o = 4 * ((y - D.y0) * D.w + (x - D.x0));
+    for (let i = 0; i < 3; i++) {
+      const want = 255 * txSrgb(Math.min(1, c[i] / ws / Math.max(f[i], 1e-3))), now = D.d.data[o + i];
+      D.d.data[o + i] = D.l.data[o + i] = Math.round(now + (want - now) * a);
+    }
+    D.d.data[o + 3] = 255; D.l.data[o + 3] = 255;
+  }
+  for (const [e, D] of dat) { e.ctx.putImageData(D.d, D.x0, D.y0); e.lctx.putImageData(D.l, D.x0, D.y0); for (const mp of e.maps) mp.needsUpdate = true; }
+  TX.dirty = true;
+}
 function txDab(h) {
+  if (TX.mode === 'heal') { txHeal(h); return; }
   const mat = [].concat(h.object.material)[h.face.materialIndex || 0] || [].concat(h.object.material)[0];
   if (!mat || !mat.map) return;
   const e = txImg(mat.map); if (!e) return;
