@@ -604,7 +604,7 @@ def set_normals(src_glb, out_glb):
 
 # ------------------------------------------------------------------ A: the pictures projected
 def project(glb, out, pics, mirror=False, res=None, c0=0.1, c1=0.55, sharp=4.0, prio=None, delight_k=0.0, pins=None,
-            cams=None, mr_smooth=True, detail=0.7, log=None, skin_warp=None, brush=None):
+            cams=None, mr_smooth=True, detail=0.7, log=None, skin_warp=None, brush=None, face=None):
     """pics: {view: path or ("flip", path)}; cams: {view: (s, tx, ty)} already fitted (else fitted here);
     pins: {view: [(sx, sy, dx, dy), ...]}. -> info {views: {view: {iou, cam, ...}}, seconds, coverage}"""
     say = log or (lambda *_: None)
@@ -645,6 +645,7 @@ def project(glb, out, pics, mirror=False, res=None, c0=0.1, c1=0.55, sharp=4.0, 
     views = [v for v in ORDER if v in pics]
     acc_c = np.zeros((len(Tx["idx"]), 3)); acc_w = np.zeros(len(Tx["idx"]))
     per_view = []
+    feat = None   # (how much each texel is a feature the face field moved: the other views leave it to the front)
     info = {"views": {}, "sharp": sharp, "delight": delight_k}
     hint = None
     for v in views:
@@ -670,8 +671,15 @@ def project(glb, out, pics, mirror=False, res=None, c0=0.1, c1=0.55, sharp=4.0, 
         if flip and not vp and (pins or {}).get("left" if v == "right" else "right"):
             Wp = a.shape[1]   # the mirrored side: the other side's pins mirrored with its picture
             vp = [(Wp - sx, sy, Wp - dx, dy) for sx, sy, dx, dy in pins["left" if v == "right" else "right"]]
-        if vp:
+        if v == "front" and face is not None:   # (the face fitted by its points, then the pins over it)
+            # (even where the front sees it badly - a nose wing's side: the skin round fills it, not a side's nostril)
+            feat = field_at(face, xy, "R")
+            xy = reads(xy, face, vp)
+            w = w * smoothstep(0.3, 0.9, sample(a.astype(np.float32), xy))   # (moved onto the background: not painted)
+        elif vp:
             xy = xy + pin_field(vp)(xy)
+        if feat is not None and v != "front":
+            w = w * (1 - feat)
         pre = sample(rgb_.astype(np.float32) * a[..., None], xy)   # (premultiplied: the background never mixes in)
         col = lab((pre / np.maximum(sample(a.astype(np.float32), xy), 1e-3)[:, None]).clip(0, 255))
         shift = [0, 0, 0]
@@ -962,7 +970,7 @@ def pictures(st: dict, info: dict) -> dict:
 def defaults(info: dict, pics: dict, has_raw: bool) -> dict:
     cat = info.get("category") or ""
     char = cat in ("character", "creature")
-    return {"project": True, "mirror": cat == "character", "sharp": 4.0, "delight": 0.0,
+    return {"project": True, "mirror": cat == "character", "sharp": 4.0, "delight": 0.0, "face": char,
             "sym": "auto" if cat == "character" else "off", "relief": bool(has_raw),
             "codex_missing": [v for v in VIEWS if v not in pics and not (v == "right" and "left" in pics and char)
                               and not (v == "left" and "right" in pics and char)] if char else []}
@@ -988,6 +996,251 @@ def fitted(d: Path, st: dict, base: Path, view: str, pic: str, M=None, flip=Fals
     st.setdefault("cams", {})[view] = {"key": key, "cam": [float(x) for x in cam], "iou": round(iou, 4)}
     save_state(d, st)
     return tuple(cam), iou, M
+
+
+# ------------------------------------------------------------------ the face fitted by its points (characters)
+# A generator's front picture and its mesh disagree on the face by a few millimetres: the mouth painted on the upper lip,
+# the nose above the mesh's nose (seen from the side: a grey «moustache», a second mouth line). The same face model
+# (MediaPipe Face Landmarker, 478 points; tool/facemark_detect.py in its own environment) finds the face on the picture
+# and on the model drawn grey by the same camera: the two point sets say where each feature has to go. Each feature -
+# an eye with its lids, a brow, the nose, the lips - moves as one rigid piece (a shift, a turn within 3 degrees, one
+# scale within 15 %, the nose's and the lips' within 6 %; a brow moves with its eye), so its shape stays the picture's;
+# the skin between them takes the rest (a membrane:
+# Laplace, fixed on the features, on the face's outline points, and at rest 1.55 face radii round). The result is a
+# displacement field over the front picture, read before the pins. Where it moved a feature, the side pictures do not
+# paint (their own nose or brow is not where the mesh's is: it would double again).
+FACE_FEAT = {
+    "eye_R": [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246],
+    "eye_L": [263, 249, 390, 373, 374, 380, 381, 382, 362, 398, 384, 385, 386, 387, 388, 466],
+    "brow_R": [46, 53, 52, 65, 55, 70, 63, 105, 66, 107],
+    "brow_L": [276, 283, 282, 295, 285, 300, 293, 334, 296, 336],
+    "nose": [1, 2, 98, 327, 4, 5, 195, 197, 6, 168, 129, 358, 49, 279, 64, 294, 240, 460, 97, 326, 19, 94],
+    "lips": [61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 409, 270, 269, 267, 0, 37, 39, 40, 185],
+    "oval": [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149,
+             150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109],
+}
+FACE_VERSION = 6   # (the field's recipe: a change makes the cached fields old)
+
+
+def facemark_paths(cfg):
+    py = Path(cfg.get("facemark_python") or "D:/conda/envs/facemark/Scripts/python.exe")
+    task = Path(cfg.get("facemark_model") or "D:/conda/models/mediapipe/face_landmarker.task")
+    return (py, task) if py.exists() and task.exists() else None
+
+
+def face_points(cfg, images):
+    """{image: (478, 3) points or None}, by tool/facemark_detect.py in the face model's environment"""
+    paths = facemark_paths(cfg)
+    if not paths:
+        return None
+    py, task = paths
+    out = Path(images[0]).with_suffix(".points.json")
+    r = subprocess.run([str(py), str(ROOT / "facemark_detect.py"), str(task), str(out), *map(str, images)],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300,
+                       creationflags=NO_WINDOW)
+    if not out.exists():
+        raise RuntimeError("face points: " + (r.stdout + r.stderr)[-400:])
+    got = json.loads(out.read_text(encoding="utf-8"))
+    return {k: (np.asarray(v, float) if v else None) for k, v in got.items()}
+
+
+def _similarity(src, dst, smax=0.15, rmax=3.0, shift_only=False):
+    """dst ~ s R src + t (Umeyama), the scale within 1 +- smax, the turn within rmax degrees -> (s, R, t)"""
+    ms, md = src.mean(0), dst.mean(0)
+    if shift_only:
+        return 1.0, np.eye(2), md - ms
+    S, D = src - ms, dst - md
+    U, sig, Vt = np.linalg.svd(D.T @ S)
+    R = U @ Vt
+    if np.linalg.det(R) < 0:
+        U[:, -1] *= -1
+        R = U @ Vt
+    ang = np.clip(np.arctan2(R[1, 0], R[0, 0]), -np.radians(rmax), np.radians(rmax))
+    R = np.array([[np.cos(ang), -np.sin(ang)], [np.sin(ang), np.cos(ang)]])
+    s = float(np.clip(sig.sum() / max((S ** 2).sum(), 1e-9), 1 - smax, 1 + smax))
+    return s, R, md - s * (R @ ms)
+
+
+def face_field(A, B, W, H, step=2):
+    """A: the picture's face points, B: the model's (picture pixels) -> {"grid": [x0, y0, step, nx, ny], "D": (ny, nx, 2)
+    the picture point to read minus the model point, "R": (ny, nx) how much a cell is a moved feature (soft),
+    "features": {name: scale, turn, shift}}"""
+    import scipy.sparse as sps
+    from matplotlib.path import Path as MPath
+    from scipy.ndimage import gaussian_filter
+    from scipy.sparse.linalg import spsolve
+    from scipy.spatial import ConvexHull, cKDTree
+    ov = B[FACE_FEAT["oval"]]
+    c = ov.mean(0)
+    rad = float(np.linalg.norm(ov - c, axis=1).max())
+    x0, y0 = int(max(0, c[0] - 1.7 * rad)), int(max(0, c[1] - 1.7 * rad))
+    x1, y1 = int(min(W, c[0] + 1.7 * rad)), int(min(H, c[1] + 1.7 * rad))
+    GX, GY = np.meshgrid(np.arange(x0, x1, step) + 0.5, np.arange(y0, y1, step) + 0.5)
+    ny, nx = GX.shape
+    Q = np.stack([GX.ravel(), GY.ravel()], 1)
+    fixed = np.linalg.norm(Q - c, axis=1) > 1.55 * rad
+    val = np.zeros((len(Q), 2))
+    reg = np.zeros(len(Q))
+    info = {}
+    eyes = {}
+    for f in ("eye_R", "eye_L", "nose", "lips", "brow_R", "brow_L"):   # (eyes first: a brow's region leaves them be)
+        ids = FACE_FEAT[f]
+        pts = B[ids]
+        if f.startswith("brow"):   # (a brow on the grey model is the face model's guess - no relief to see: it keeps
+            # its place over its eye, moved as that eye's middle moves)
+            s, R, t = eyes[f[-1]]
+            m_ = pts.mean(0)
+            s, R, t = 1.0, np.eye(2), (s * (R @ m_) + t) - m_
+        else:
+            # (model -> picture; the nose and the lips scale little: a nostril pushed out onto the wing shows)
+            s, R, t = _similarity(pts, A[ids], smax=0.06 if f in ("nose", "lips") else 0.15)
+            if f.startswith("eye"):
+                eyes[f[-1]] = (s, R, t)
+        m0 = pts.mean(0)
+        size = float(np.ptp(pts, axis=0).max())
+        hull = m0 + (pts - m0) * 1.15
+        inside = MPath(hull[ConvexHull(hull).vertices]).contains_points(Q)
+        if f.startswith("eye"):   # (the lids, the lashes, the whole iris: an oval round the opening)
+            inside |= (((Q - m0) / np.array([0.75 * size, 0.6 * size])) ** 2).sum(1) < 1
+        else:   # (a band round the points: a brow's thickness, the nose's wings, the lips' edge)
+            inside |= cKDTree(pts).query(Q, k=1)[0] < {"brow_R": 0.16, "brow_L": 0.16, "nose": 0.12, "lips": 0.14}[f] * size
+        inside &= ~fixed
+        val[inside] = (s * (R @ Q[inside].T)).T + t - Q[inside]
+        fixed |= inside
+        reg[inside] = 1.0
+        info[f] = {"scale": round(s, 3), "turn": round(float(np.degrees(np.arctan2(R[1, 0], R[0, 0]))), 1),
+                   "shift": [round(float(x), 1) for x in (A[ids] - B[ids]).mean(0)]}
+    for i in FACE_FEAT["oval"]:   # (the face's outline: each point onto its own)
+        j = int(np.argmin(np.linalg.norm(Q - B[i], axis=1)))
+        if not fixed[j]:
+            fixed[j] = True
+            val[j] = A[i] - B[i]
+    idx = np.arange(len(Q)).reshape(ny, nx)
+    free = np.nonzero(~fixed)[0]
+    pos = -np.ones(len(Q), np.int64)
+    pos[free] = np.arange(len(free))
+    rows, cols, data = [], [], []
+    rhs = np.zeros((len(free), 2))
+    fy, fx = np.divmod(free, nx)
+    r_ = np.arange(len(free))
+    for dy, dx in ((0, 1), (0, -1), (1, 0), (-1, 0)):
+        ny_, nx_ = fy + dy, fx + dx
+        ok = (ny_ >= 0) & (ny_ < ny) & (nx_ >= 0) & (nx_ < nx)
+        nb = np.where(ok, idx[np.clip(ny_, 0, ny - 1), np.clip(nx_, 0, nx - 1)], 0)
+        rows.append(r_[ok]); cols.append(r_[ok]); data.append(np.ones(int(ok.sum())))
+        nf = ok & ~fixed[nb]
+        rows.append(r_[nf]); cols.append(pos[nb[nf]]); data.append(-np.ones(int(nf.sum())))
+        fxd = ok & fixed[nb]
+        np.add.at(rhs, r_[fxd], val[nb[fxd]])
+    L = sps.csr_matrix((np.concatenate(data), (np.concatenate(rows), np.concatenate(cols))), shape=(len(free), len(free)))
+    val[free] = np.stack([spsolve(L, rhs[:, 0]), spsolve(L, rhs[:, 1])], 1)
+    # (the features' regions grown by an eighth of the face and softened: a side picture's own nostril or brow end,
+    # off the mesh's by a few millimetres, falls inside too; the sides fade in beyond - wider, a seam by shade shows)
+    Rm = gaussian_filter(reg.reshape(ny, nx), max(2.0, 0.12 * rad / step))
+    return {"grid": [x0, y0, step, nx, ny], "D": val.reshape(ny, nx, 2).astype(np.float32),
+            "R": np.clip(Rm * 2.5, 0, 1).astype(np.float32), "features": info}
+
+
+def field_at(ff, q, what="D"):
+    """the face field's displacement ("D", (n, 2)) or feature strength ("R", (n,)) at picture points q; 0 off its grid"""
+    from scipy.ndimage import map_coordinates
+    x0, y0, st, nx, ny = ff["grid"]
+    q = np.asarray(q, float)
+    gx, gy = (q[:, 0] - x0) / st - 0.5, (q[:, 1] - y0) / st - 0.5
+    inb = (gx >= 0) & (gx <= nx - 1) & (gy >= 0) & (gy <= ny - 1)
+    if what == "D":
+        out = np.zeros((len(q), 2))
+        for k in range(2):
+            out[inb, k] = map_coordinates(ff["D"][..., k], [gy[inb], gx[inb]], order=1)
+        return out
+    out = np.zeros(len(q))
+    out[inb] = map_coordinates(ff["R"], [gy[inb], gx[inb]], order=1)
+    return out
+
+
+def reads(q, ff, pins):
+    """the front picture's points read for model points q (as its fitted camera draws them): q + F(q) + D(q); the
+    pins' picture points have the face field taken out first, so each pin still lands exactly"""
+    q = np.asarray(q, float)
+    out = q if ff is None else q + field_at(ff, q)
+    if pins:
+        P = np.asarray(pins, float).reshape(-1, 4).copy()
+        if ff is not None:
+            P[:, 0:2] -= field_at(ff, P[:, 2:4])
+        out = out + pin_field([tuple(p) for p in P])(q)
+    return out
+
+
+def face_fit(d: Path, st: dict, base: Path, pic: str, cam, cfg, M=None):
+    """the front picture's face field for base.glb (cached by the camera's key), or None: no face model installed, no
+    face found on the picture or on the model. st["face"] keeps what was found."""
+    key = f"{(st.get('cams') or {}).get('front', {}).get('key')}|v{FACE_VERSION}"
+    fc = st.get("face") or {}
+    npz = d / "face_field.npz"
+    if fc.get("key") == key:
+        if not fc.get("found") or not npz.exists():
+            return None
+        z = np.load(npz)
+        return {"grid": [int(x) for x in z["grid"]], "D": z["D"], "R": z["R"],
+                "features": fc.get("features")}
+    if not facemark_paths(cfg):
+        return None
+    M = M or load(base)
+    rgb, a = pic_alpha(pic)
+    H, W = a.shape
+    keep, _ = head_faces(M)
+    hv = M["V"][np.unique(M["F"][keep])]
+    hv = hv[np.abs(hv[:, 0]) < 0.6 * np.abs(hv[:, 0]).max()]   # (the ears left out of the box)
+    xy, _ = project_pts(hv, "front", cam)
+    (bx0, by0), (bx1, by1) = xy.min(0), xy.max(0)
+    cx, cy, s = (bx0 + bx1) / 2, (by0 + by1) / 2, max(bx1 - bx0, by1 - by0) * 0.75
+    box = (int(cx - s), int(cy - s), int(cx + s), int(cy + s))
+    k = 640 / (box[2] - box[0])
+    grey = np.full((H, W, 3), 128, np.float32)
+    pi = (rgb.astype(np.float32) * a[..., None] + grey * (1 - a[..., None])).clip(0, 255).astype(np.uint8)
+    ren = np.asarray(shade_render(M, "front", cam, W, H)).astype(np.float32)
+    ri = (ren[..., :3] * (ren[..., 3:] / 255) + grey * (1 - ren[..., 3:] / 255)).clip(0, 255).astype(np.uint8)
+    paths = [d / "face_pic.png", d / "face_model.png"]
+    for img, p in zip((pi, ri), paths):
+        Image.fromarray(img).crop(box).resize((640, 640), Image.LANCZOS).save(p)
+    got = face_points(cfg, paths)
+    pa, pb = (got or {}).get(str(paths[0])), (got or {}).get(str(paths[1]))
+    st = load_state(d)
+    if pa is None or pb is None:
+        st["face"] = {"key": key, "found": False, "on_picture": pa is not None, "on_model": pb is not None}
+        save_state(d, st)
+        return None
+    A = pa[:, :2] / k + box[:2]
+    B = pb[:, :2] / k + box[:2]
+    ff = face_field(A, B, W, H)
+    np.savez_compressed(npz, grid=np.asarray(ff["grid"]), D=ff["D"], R=ff["R"])
+    st["face"] = {"key": key, "found": True, "features": ff["features"]}
+    save_state(d, st)
+    return ff
+
+
+def _face_on(d, st, base, info, cat, cfg, pics, cams, M=None):
+    """the face field when the step's «Face by its points» is on (a character's, a front picture, the face model
+    installed), else None"""
+    c = info.get("category") or cat
+    if c not in ("character", "creature") or "front" not in pics or "front" not in cams:
+        return None
+    if not (st.get("options") or {}).get("face", True):
+        return None
+    try:
+        return face_fit(d, st, base, pics["front"]["path"], cams["front"], cfg, M)
+    except Exception:  # noqa: BLE001  (shown as not found)
+        return None
+
+
+def face_for_editor(ff, k=4):
+    """the face field for the pins editor: every k-th cell (the editor interpolates), offsets to 0.1 px"""
+    if ff is None:
+        return None
+    x0, y0, st, nx, ny = ff["grid"]
+    D = ff["D"][::k, ::k]
+    return {"x0": x0, "y0": y0, "step": st, "k": k, "nx": int(D.shape[1]), "ny": int(D.shape[0]),
+            "d": [round(float(v), 1) for v in D.ravel()]}
 
 
 def blender(cfg, args, timeout=900):
@@ -1033,11 +1286,20 @@ def run(cat: str, stem: str, cfg: dict, draft_dir: Path, opts: dict, log=None) -
             cams["left"], _, M = fitted(d, st, base, "left", pics["right"]["path"], M, flip=True)
         t = time.time()
         _marks3d(st, base, M, info.get("category") or cat)
+        face = None
+        if opts.get("face") and "front" in pics and (info.get("category") or cat) in ("character", "creature"):
+            say("face")
+            try:
+                face = face_fit(d, st, base, pics["front"]["path"], cams["front"], cfg, M)
+            except Exception as e:  # noqa: BLE001  (no face fit: the projection goes on as before)
+                say(f"face: {e}")
+            st["face"] = load_state(d).get("face")
         sizes = {v: Image.open(x["path"]).size for v, x in pics.items()}
         a_info = project(base, d / "step_a.glb", {v: x["path"] for v, x in pics.items()}, mirror=bool(opts.get("mirror")),
                          sharp=float(opts.get("sharp", 4.0)), delight_k=float(opts.get("delight", 0.0)),
                          pins=view_pins(st, cams, {v: x["path"] for v, x in pics.items()}, bool(opts.get("mirror")), sizes),
-                         cams=cams, skin_warp=skin_warp_of(d, st, base), brush=brush_of(d, st, base, M))
+                         cams=cams, skin_warp=skin_warp_of(d, st, base), brush=brush_of(d, st, base, M), face=face)
+        a_info["face"] = bool(face)
         a_info["marks"] = sum(len(v) for v in (st.get("marks") or {}).values())
         secs["project"] = round(time.time() - t, 1)
         steps.append("project")
@@ -1286,7 +1548,7 @@ def skin_guide(xyz, nrm, sp):
     return Image.fromarray(img, "RGBA")
 
 
-def skin_pictures(M, xyz, nrm, sp, pics, cams, pins, sharp=4.0, prio=None, brush=None, wrap=False):
+def skin_pictures(M, xyz, nrm, sp, pics, cams, pins, sharp=4.0, prio=None, brush=None, wrap=False, face=None):
     """the pictures as the projection lays them, drawn on the skin (with the picture pins and landmarks): what the skin
     pins then move. brush: this skin's (only, clone) masks (brush_masks), shown as the projection will take them."""
     prio = {"front": 1.0, "back": 0.85, "left": 0.6, "right": 0.6, **(prio or {})}
@@ -1307,7 +1569,9 @@ def skin_pictures(M, xyz, nrm, sp, pics, cams, pins, sharp=4.0, prio=None, brush
             idx = np.nonzero(cl)[0][good]
             P[idx], Nn[idx] = Pn[good], Nb[good]
     acc = np.zeros((len(P), 3)); ws = np.zeros(len(P)); cover = np.zeros(len(P))
-    for v, pic in pics.items():
+    feat = None
+    for v in sorted(pics, key=lambda x: ORDER.index(x) if x in ORDER else len(ORDER)):   # (the front first)
+        pic = pics[v]
         if v not in cams:
             continue
         rgb_, a = pic_alpha(pic[1] if isinstance(pic, tuple) else pic)
@@ -1319,8 +1583,14 @@ def skin_pictures(M, xyz, nrm, sp, pics, cams, pins, sharp=4.0, prio=None, brush
         w, xy = view_weights(Tx, v, cam, zb, a)
         if only_k is not None:
             w = np.where((only_k[0] < 0) | (only_k[0] == VCODE[v]), w, w * (1 - only_k[1]))
-        if (pins or {}).get(v):
+        if v == "front" and face is not None:   # (as project(): the face fitted by its points, the pins over it)
+            feat = field_at(face, xy, "R")
+            xy = reads(xy, face, (pins or {}).get(v))
+            w = w * smoothstep(0.3, 0.9, sample(a.astype(np.float32), xy))
+        elif (pins or {}).get(v):
             xy = xy + pin_field(pins[v])(xy)
+        if feat is not None and v != "front":
+            w = w * (1 - feat)
         pre = sample(rgb_.astype(np.float32) * a[..., None], xy)
         col = pre / np.maximum(sample(a.astype(np.float32), xy), 1e-3)[:, None]
         k = (prio.get(v, 1.0) * w) ** sharp
@@ -2359,7 +2629,8 @@ def align(cat: str, stem: str, cfg: dict, draft_dir: Path, view: str) -> dict:
         vp = view_pins(st, cams, {v: x["path"] for v, x in pics.items()}, bool(mirror), sizes)
         strokes = (st.get("brush") or {}).get(view) or []
         masks = brush_masks(strokes, sp["W"], sp["H"]) if strokes else None
-        skin_pictures(M, xyz, nrm, sp, use, cams, vp, brush=masks, wrap=view == "skin_head").save(d / f"{view}_pics.png")
+        face = _face_on(d, st, base, info, cat, cfg, pics, cams, M)
+        skin_pictures(M, xyz, nrm, sp, use, cams, vp, brush=masks, wrap=view == "skin_head", face=face).save(d / f"{view}_pics.png")
         lines = d / f"{view}_lines.png"   # (the model's relief as height lines, made again with the skin)
         if not lines.exists() or lines.stat().st_mtime < (d / f"{view}_xyz.npy").stat().st_mtime:
             h, sc, fc = skin_height(view, xyz, sp, nrm)
@@ -2389,7 +2660,10 @@ def align(cat: str, stem: str, cfg: dict, draft_dir: Path, view: str) -> dict:
     if st.get("marks3d") is None and cat_ in ("character", "creature"):
         _marks3d(st, base, M, cat_)
         save_state(d, st)
+    face = _face_on(d, st, base, info, cat, cfg, pics, {"front": cam}, M) if view == "front" else None
+    st = load_state(d)
     return {"ok": True, "view": view, "picture": pic, "model": str(png), "lines": str(lines), "size": [W, H], "cam": list(cam),
+            "face": face_for_editor(face),
             "iou": iou, "mid_x": mid, "pins": (st.get("pins") or {}).get(view, []), "kind": pics[view]["kind"],
             "marks": marks_for_editor(st, view, cam, pic, W, H, mid)}
 
@@ -2409,4 +2683,5 @@ def status(cat: str, stem: str, cfg: dict, draft_dir: Path) -> dict:
             "options": st.get("options") or defaults(info, pics, has_raw), "defaults": defaults(info, pics, has_raw),
             "has_raw": has_raw, "improved": info.get("improved"), "can_undo": (d / "before.glb").exists(),
             "before": str(d / "before.glb") if (d / "before.glb").exists() else None,
-            "fit": {v: x.get("iou") for v, x in (st.get("cams") or {}).items()}}
+            "fit": {v: x.get("iou") for v, x in (st.get("cams") or {}).items()},
+            "face": {"available": bool(facemark_paths(cfg)), **{k: v for k, v in (st.get("face") or {}).items() if k != "key"}}}

@@ -24,8 +24,10 @@ export type Pin = [number, number, number, number];   // the picture's point (sx
 interface P { id: number; s: [number, number]; d: [number, number]; mate?: number }
 export interface Mark { name: string; kind: string; model: [number, number] | null; pic: [number, number]; set: boolean }
 export interface Stroke { kind: 'only' | 'clone'; view?: string; off?: [number, number]; c: [number, number, number][] }
+// the front picture's face fitted by its points (model_improve.face_field, every k-th cell): read before the pins
+export interface FaceGrid { x0: number; y0: number; step: number; k: number; nx: number; ny: number; d: number[] }
 export interface AlignData { picture: string; model: string; lines?: string; size: [number, number]; mid_x: number | null; pins: Pin[]; marks?: Mark[];
-  kind?: string; brush?: Stroke[]; left_x?: number; views?: string[]; ver?: number }
+  kind?: string; brush?: Stroke[]; left_x?: number; views?: string[]; ver?: number; face?: FaceGrid | null }
 interface State { pins: P[]; marks: Mark[]; strokes: Stroke[] }
 type Tool = 'front' | 'side' | 'back' | 'clone' | 'erase';
 const TOOL_COLOR: Record<string, string> = { front: '#4aa8ff', left: '#5fd38a', right: '#5fd38a', back: '#b48cff', clone: '#ffa94d' };
@@ -67,6 +69,17 @@ export function pinField(pins: Pin[]) {
 }
 
 const toPins = (ps: P[]): Pin[] => ps.map((p) => [p.s[0], p.s[1], p.d[0], p.d[1]]);
+// the face field at a point (bilinear between its cells, nothing off them), as model_improve.field_at
+function faceAt(f: FaceGrid) {
+  return (x: number, y: number): [number, number] => {
+    const gx = ((x - f.x0) / f.step - 0.5) / f.k, gy = ((y - f.y0) / f.step - 0.5) / f.k;
+    if (gx < 0 || gy < 0 || gx > f.nx - 1 || gy > f.ny - 1) return [0, 0];
+    const i = Math.min(Math.floor(gx), f.nx - 2), j = Math.min(Math.floor(gy), f.ny - 2), u = gx - i, v = gy - j;
+    const at = (a: number, b: number, c: number) => f.d[(b * f.nx + a) * 2 + c];
+    const lerp = (c: number) => (at(i, j, c) * (1 - u) + at(i + 1, j, c) * u) * (1 - v) + (at(i, j + 1, c) * (1 - u) + at(i + 1, j + 1, c) * u) * v;
+    return [lerp(0), lerp(1)];
+  };
+}
 const markPins = (ms: Mark[]): Pin[] => ms.filter((m) => m.set && m.model).map((m) => [m.pic[0], m.pic[1], m.model![0], m.model![1]]);
 const MARK_KEY: Record<string, string> = { ear_tip: 'web.imp_mk_ear_tip', ear_hole: 'web.imp_mk_ear_hole', elbow: 'web.imp_mk_elbow',
   hand: 'web.imp_mk_hand', knee: 'web.imp_mk_knee' };
@@ -112,8 +125,16 @@ export default function PinEditor({ data, onSave, onClose, onMark3d }: {
   const view = useRef({ s: 1, x: 0, y: 0 });   // screen = (picture - (x, y)) * s
   const [, redraw] = useState(0);
   const gl = useRef<any>(null);
-  const freeField = useMemo(() => pinField(toPins(pins)), [pins]);
-  const field = useMemo(() => pinField([...toPins(pins), ...markPins(marks)]), [pins, marks]);
+  // (with the face field: the picture is read at q + F(q) + D(q), the pins solved with F taken out of their picture
+  // points, as model_improve.reads)
+  const F = useMemo(() => (data.face ? faceAt(data.face) : null), [data.face]);
+  const withFace = (ps: Pin[]) => {
+    if (!F) return pinField(ps);
+    const D = pinField(ps.map(([sx, sy, dx, dy]) => { const [fx, fy] = F(dx, dy); return [sx - fx, sy - fy, dx, dy] as Pin; }));
+    return (x: number, y: number): [number, number] => { const [a, b] = F(x, y), [c, e] = D(x, y); return [a + c, b + e]; };
+  };
+  const freeField = useMemo(() => withFace(toPins(pins)), [pins, F]); // eslint-disable-line react-hooks/exhaustive-deps
+  const field = useMemo(() => withFace([...toPins(pins), ...markPins(marks)]), [pins, marks, F]); // eslint-disable-line react-hooks/exhaustive-deps
   const shown = mode === 'marks' ? freeField : field;   // (landmarks are placed on the picture bent by the pins only)
   // undo / redo (Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y, the ↶ ↷ buttons): a pin or a landmark put, dragged (one step for the
   // drag), removed, «Clear»; the editor is drawn anew for another model or view, its history with it

@@ -3572,5 +3572,10 @@
  "web.imp_br_count": "strokes: {0}",
  "web.imp_br_need_src": "First Alt+click where to take from",
  "web.imp_br_src_set": "Alt+click: another place",
- "web.imp_br_help": "Where «Front only» (side, back) is painted, that one picture paints the texture: a side picture's doubled brow or nostril goes. Stamp: Alt+click where to take from, then paint where it goes (white spots no picture sees). Wheel: zoom; right button: pan. The skin shows the result after «Save»."
+ "web.imp_br_help": "Where «Front only» (side, back) is painted, that one picture paints the texture: a side picture's doubled brow or nostril goes. Stamp: Alt+click where to take from, then paint where it goes (white spots no picture sees). Wheel: zoom; right button: pan. The skin shows the result after «Save».",
+ "web.imp_face": "Face by its points",
+ "web.imp_face_note": "the front picture's eyes, brows, nose and lips move whole to where they are on the model, only the skin between them stretches; the side pictures do not paint there",
+ "web.imp_face_found": "face found",
+ "web.imp_face_none": "no face found on the picture or the model: the picture goes on as it is",
+ "web.imp_face_na": "needs MediaPipe in its own environment (D:/conda/envs/facemark) and the face_landmarker.task model"
 }

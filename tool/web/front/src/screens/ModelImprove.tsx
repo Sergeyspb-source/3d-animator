@@ -22,13 +22,14 @@ const KIND_KEY: Record<string, string> = { concept: 'web.imp_kind_concept', code
 // the skins laid flat (a character's): the view the pins editor opens, the texts' key (web.imp_<key>, _note, _tip)
 const SKINS = [['skin_head', 'skin'], ['skin_ears', 'ears'], ['skin_torso', 'torso'], ['skin_arms', 'arms'], ['skin_legs', 'legs']] as const;
 type SkinView = typeof SKINS[number][0];
-interface Opts { project: boolean; mirror: boolean; sharp: number; delight: number; sym: string; relief: boolean }
+interface Opts { project: boolean; mirror: boolean; sharp: number; delight: number; sym: string; relief: boolean; face?: boolean }
 interface Status {
   engine: string; category: string; pictures: Record<string, { path: string; kind: string }>;
   codex: Record<string, { path: string; render: string; accepted: boolean; seconds?: number }>; pins: Record<string, number>; marks?: Record<string, number>;
   options: Opts & { codex_missing?: string[] }; defaults: Opts & { codex_missing: string[] }; has_raw: boolean;
   improved: null | { steps: string[]; seconds: Record<string, number>; when: string; fit?: Record<string, number | null> };
   can_undo: boolean; before: string | null; fit: Record<string, number | null>;
+  face?: { available: boolean; found?: boolean; on_picture?: boolean; on_model?: boolean };
 }
 
 export default function ModelImprove({ go }: { go: (r: Route) => void }) {
@@ -197,6 +198,11 @@ export default function ModelImprove({ go }: { go: (r: Route) => void }) {
               <div className="imp-head">{t('web.imp_steps')}</div>
               <Switch label={t('web.imp_project')} description={t('web.imp_project_note')} checked={opts.project} onChange={(e) => set('project', e.currentTarget.checked)} />
               {char && <Switch label={t('web.imp_mirror')} checked={opts.mirror} disabled={!opts.project} onChange={(e) => set('mirror', e.currentTarget.checked)} />}
+              {char && st.pictures.front && (   // the front picture's face fitted by its points (MediaPipe)
+                <Switch label={t('web.imp_face')} checked={!!opts.face && !!st.face?.available} disabled={!opts.project || !st.face?.available}
+                  onChange={(e) => set('face', e.currentTarget.checked)}
+                  description={!st.face?.available ? t('web.imp_face_na') : st.face?.found === false ? t('web.imp_face_none')
+                    : st.face?.found ? `${t('web.imp_face_found')} · ${t('web.imp_face_note')}` : t('web.imp_face_note')} />)}
               <div><Text size="sm">{t('web.imp_sym')}</Text><div className="field-note">{t('web.imp_sym_note')}</div>
                 <SegmentedControl size="xs" mt={4} value={opts.sym} onChange={(x) => set('sym', x)} data={[
                   { value: 'off', label: t('web.imp_sym_off') }, { value: 'auto', label: t('web.imp_sym_auto') },
