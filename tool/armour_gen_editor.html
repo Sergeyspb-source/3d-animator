@@ -2484,6 +2484,7 @@ function skinCloth(p, parts, keep, o = {}) {
     const N = normalsOf(pos, S.tris);
     for (let i = 0; i < n; i++) { const f = o.fold(pos[i], i, S, N[i]); if (f > 0) pos[i].addScaledVector(N[i], f); }
   }
+  if (o.place) for (let i = 0; i < n; i++) { const q = o.place(pos[i], i, S); if (q) pos[i].copy(q); }   // (a point put where it hangs: clothPiece's hang from the chest, out from the body's axis)
   let rimC = rim;
   if (o.cut) {   // now cut: on the skin's cut line, the cloth's place there between its two ends' (no staircase, no curl)
     S = clipSkin(S, o.cut, o.partOf, null, pos); pos = S.disp;
@@ -2903,6 +2904,8 @@ const TUNICS = {
   layered: { slit: .07, points: { n: 4, depth: .28, phase: .38 }, ramp: .45, legRide: { shin: .8, back: .55 }, slits: [[90, .55, 6], [-90, .55, 6], [0, .42, 4], [180, .5, 5]], layers: [{ up: .45, mat: 'cloth2', points: { n: 3, depth: .34, phase: .12 }, ragged: .5, slits: [[90, .55, 6], [-90, .55, 6], [0, .3, 3], [180, .3, 3]] }] },   // (the layer over it whole in front at the top, as on the sheet; slit a little from its hem: the knees)
   // (a slit right at the front: a panel across the front's middle lay over both legs, went with neither - a shin came
   // through it as a leg swung)
+  // (no hang from the chest with sleeves: the chest's width under the arm, carried down, pulled the side out into a web
+  // from the sleeve to the waist)
   dagged: { slit: .07, points: { n: 12, depth: .1, phase: 0 }, ramp: .45, legRide: { shin: .8, back: .55 },
     slits: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((k) => [k * 30, .42, 1.6]),
     layers: [{ up: .38, mat: 'cloth2', points: { n: 8, depth: .14, phase: 0 }, slits: [0, 1, 2, 3, 4, 5, 6, 7].map((k) => [k * 45, .55, 1.8]) }] },
@@ -2912,8 +2915,10 @@ const VESTS = {
   buttons: { open: false, vNeck: 9, buttons: 6, slits: [[90, .6, 7], [-90, .6, 7]] },
   // a mage's (an apprentice's) long coat without sleeves: open down the front from a V at the neck, to the knee and a
   // little flared, slit high at the sides and up the back (the legs stride through it), its edges and hem bordered with
-  // a band of a second cloth (trim 'band', no embroidery: the user's concept sheets - the clothes only, no symbols)
-  long: { open: true, vNeck: 10, border: true, flare: .03, ramp: .55, slits: [[90, .85, 6], [-90, .85, 6], [180, .6, 5]] },
+  // a band of a second cloth (trim 'band', no embroidery: the user's concept sheets - the clothes only, no symbols); it
+  // falls free from the chest and the shoulder blades (hangFrom: the user, 2026-11-28 - «too wide, follows the hips too much,
+  // lies on his backside»)
+  long: { open: true, vNeck: 10, border: true, flare: .015, ramp: .55, hangFrom: 'chest', slits: [[90, .85, 6], [-90, .85, 6], [180, .6, 5]] },
 };
 // the skirt going on from a garment's bottom edge (cols: [{o, n, w}] - its outer and inner vertices and their weights,
 // in order round; closed: round the body, else an open run - a vest's, from one front edge round to the other): down
@@ -3104,7 +3109,22 @@ function clothPiece(p, o) {
   const ray = (t, a) => { const d = tl.out(a), h = castOn(bodyGeo, tl.axis(t).addScaledVector(d, .6 * H), d.clone().negate(), .6 * H); return h ? .6 * H - h.distance : 0; };
   let waistT = tcut + .15, wm = Infinity;
   for (let t = tcut + .04; t <= tcut + .4; t += .02) { let m = 0; for (let j = 0; j < 16; j++) m += ray(t, j / 16 * TAU); if (m < wm) { wm = m; waistT = t; } }
-  const NH = 20, NTH = 72, tLow = tcut - .03, hang = lin(waistT, tLow, NH).map((t) => Array.from({ length: NTH }, (_, j) => ray(t, j / NTH * TAU)));
+  // (o.hangFrom 'chest' - a kaftan, a robe without a belt: it falls free from the chest and the shoulder blades, not in to
+  // the waist and out over the hips and the seat - the user: «as if lying on his backside»; from the fullest row of the
+  // chest, under the arms' roots: rays there met no arm)
+  const waistT0 = waistT;
+  if (o.hangFrom === 'chest') {
+    const tArm = Math.min(...['L', 'R'].map((sd) => joint('arm_' + sd)).filter(Boolean).map(torsoT)), tTop2 = Math.min(tArm - .1, tFront - .12);
+    let best = -1;
+    for (let t = waistT; t <= tTop2; t += .02) { let m = 0; for (let j = 0; j < 16; j++) m += ray(t, j / 16 * TAU); if (m > best) { best = m; waistT = t; } }
+  }
+  // (from the chest: each row measured from inside out, the arms and the sleeves skipped - from outside, by the arms' roots
+  // the rays met an arm in the T-pose: wings; and no row wider than 1.5 x its own median: nothing far off taken)
+  // (below the waist the whole outline from outside again: what is worn there - a shirt's skirt gathered under a belt -
+  // stands farther off the skin than the inside-out walk reaches; missed, the skirt stepped out over it at the seam)
+  const rayH = o.hangFrom === 'chest' ? (t, a) => { const h = layerHit(tl.axis(t), tl.out(a), .6 * H, ['Arm', 'Hand', 'Head']); return Math.max(h ? h.r : 0, t < waistT0 ? ray(t, a) : 0); } : ray;
+  const NH = 20, NTH = 72, tLow = tcut - .03, hang = lin(waistT, tLow, NH).map((t) => { const row = Array.from({ length: NTH }, (_, j) => rayH(t, j / NTH * TAU)); if (o.hangFrom !== 'chest') return row;
+    const md = [...row].sort((x, y) => x - y)[NTH >> 1]; return row.map((x) => Math.min(x, 1.5 * md)); });
   for (let i = 1; i < NH; i++) for (let j = 0; j < NTH; j++) hang[i][j] = Math.max(hang[i][j], hang[i - 1][j]);
   const hangAt = (t, a) => { const x = Math.max(0, Math.min(NH - 1.001, (waistT - t) / (waistT - tLow) * (NH - 1))), i = Math.floor(x), f = x - i, y = ((a / TAU) % 1 + 1) % 1 * NTH, j = Math.floor(y) % NTH, g = y - Math.floor(y), j1 = (j + 1) % NTH;
     return (hang[i][j] * (1 - g) + hang[i][j1] * g) * (1 - f) + (hang[i + 1][j] * (1 - g) + hang[i + 1][j1] * g) * f; };
@@ -3127,7 +3147,7 @@ function clothPiece(p, o) {
     if (part === 'torso') {
       const t = torsoT(P), r = relF(P), g = smooth(tFront - .34, tFront - .04, t) * (1 - smooth(D(70), D(100), Math.abs(r)) * .6);
       let f = A * .7 * g * ((.5 + .5 * Math.sin(r * 18)) ** 1.6) + MM(13) * folds * .5 * ((1 - Math.cos(14 * r)) / 2) ** 1.5 * smooth(tFront - .3, tcut, t);
-      if (t < waistT && Nn) {   // the hang
+      if (t < waistT && Nn && o.hangFrom !== 'chest') {   // the hang (from the chest: place(), out from the axis)
         const d = P.clone().sub(tl.a); d.addScaledVector(tl.u, -d.dot(tl.u)); const rNow = d.length(), dir = d.normalize();
         const need = (hangAt(t, tl.angOf(dir)) - rNow) * smooth(waistT, waistT - .05, t);
         if (need > 0) f += need / Math.max(.35, Nn.dot(dir));
@@ -3153,7 +3173,21 @@ function clothPiece(p, o) {
     if (part === 'upper_arm' && sl > 0 && sl <= .55) return snapAlong('arm', 'forearm', sl / .5);
     return null;
   };
-  const out = skinCloth(q, ['torso', 'upper_arm', 'forearm', 'neck'], keep, { mat: PLATE, role: 'plate', uv, over: true, rim: true, fold, edge: CLOTH_EDGE, sinkEdge: CLOTH_SINK, sinkIn: CLOTH_SINK_IN, ball: CLOTH_BALL,
+  // a coat falling from the chest (o.hangFrom): the torso's points below it put out from the body's axis onto what hangs
+  // there, each at its own height and way round (pushed along the skin's normals by as much - 3 to 5 cm over a goblin's
+  // small of the back - the cloth crumpled into a band at the seam)
+  const armRoots = ['L', 'R'].map((sd) => joint('arm_' + sd)).filter(Boolean);
+  const place = o.hangFrom === 'chest' ? (P, i, S2) => {
+    if (partOf(i, S2) !== 'torso') return null;
+    const t = torsoT(P); if (t >= waistT) return null;
+    const d = P.clone().sub(tl.a); d.addScaledVector(tl.u, -d.dot(tl.u)); const r = d.length(); if (r < 1e-6) return null;
+    // (not by the arms' roots: a sleeve's points stay on the arm, the torso's moved out from under them stretched the cloth
+    // between into a web under the arm)
+    const armD = Math.min(...armRoots.map((J) => P.distanceTo(J)));
+    const dir = d.normalize(), want = hangAt(t, tl.angOf(dir)), s = smooth(waistT, waistT - .05, t) * (sl > 0 ? smooth(.07 * H, .16 * H, armD) : 1);
+    return want > r ? P.clone().addScaledVector(dir, (want - r) * s) : null;
+  } : null;
+  const out = skinCloth(q, ['torso', 'upper_arm', 'forearm', 'neck'], keep, { mat: PLATE, role: 'plate', uv, over: true, rim: true, fold, place, edge: CLOTH_EDGE, sinkEdge: CLOTH_SINK, sinkIn: CLOTH_SINK_IN, ball: CLOTH_BALL,
     mainOnly: true, ownAll: true, snapRim, cut: cutF, partOf, open: CLOTH_OPEN, projW: true });
   const sh0 = out[0], rim = sh0 && sh0.rim;
   if (!rim || !rim.loops || !rim.loops.length) return out;
