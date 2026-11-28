@@ -574,12 +574,67 @@ def _one_eye(bm, Mo, sd, sv, balls, job, field, src, deform, shape, uvl, mats, b
                 nb = sorted(rho[(i + j) % N] for j in (-2, -1, 1, 2))
                 med = .5 * (nb[1] + nb[2])
                 if abs(rho[i] - med) > .3 * r:
-                    p = c + (p - c).normalized() * med
+                    # (put back on the skin half way between its neighbours along the ring - drawn in toward the ball's
+                    # centre it hung in the air: by goblin_hero_2's nose the band to it stood on edge, a dark notch)
+                    pa, pb = rings[k][i - 1], rings[k][(i + 1) % N]
+                    mx, mz = (pa.x + pb.x) * .5, (pa.z + pb.z) * .5
+                    mode_ = job.get("lid_outlier", "mid")
+                    h_ = front(mx, mz) if mode_ == "skin" else None
+                    if h_ is not None and abs((h_ - c).length - med) < .3 * r:
+                        p = h_
+                    elif mode_ in ("skin", "mid"):
+                        p = (pa + pb) * .5
+                    else:
+                        p = c + (p - c).normalized() * med
                 new_row.append(p)
             rings[k] = new_row
         if k > 0:   # (and not inside the ring before it)
             rings[k] = [c + (p - c).normalized() * max((p - c).length, (rings[k - 1][i] - c).length - .15 * r) if share(k, i) > 0. else p
                         for i, p in enumerate(rings[k])]
+
+    # (a ring on the skin far in front of or behind the one inside it - by the inner corner the outer loop climbed the
+    # nose's steep side, goblin_hero_2 -: the band between them stood on edge, turned its underside to the front and
+    # showed as a dark notch. Only where a band out on the skin by the inner corner does face away from the front
+    # (elsewhere the same drew the loops back for nothing - over a pit by women_young's outer corner it tore the old
+    # skin's edge into a flap, on man-young it left slivers): that point drawn back toward the ring inside until it
+    # stays on about that depth, and the cut there runs between the two outer loops as they lie)
+    def qn(k, i):
+        a_, b_, c_, d_ = rings[k][i], rings[k][(i + 1) % N], rings[k + 1][(i + 1) % N], rings[k + 1][i]
+        return (c_ - a_).cross(d_ - b_)
+    FRONT_ = Vector((0, -1, 0))
+    body_ = [qn(k, i) for k in range(IW + 1, IW + 4) for i in range(N)]
+    sgn_f = 1. if sum(1 for n_ in body_ if n_.dot(FRONT_) > 0) * 2 >= len(body_) else -1.   # (the lid's own winding)
+    near_inner = float(job.get("lid_depth_cols", .35))
+    away_cols = set()
+    for k in range(len(RINGS) - 1):
+        for i in range(N):
+            if (share(k + 1, i) <= 0. and share(k + 1, (i + 1) % N) <= 0.) or min(upar[i], upar[(i + 1) % N]) > near_inner:
+                continue
+            n_ = qn(k, i)
+            if n_.length > 1e-14 and sgn_f * n_.normalized().dot(FRONT_) < -.05:
+                away_cols.update({i, (i + 1) % N})
+    depth_steps = 0
+    step_ = float(job.get("lid_depth_step", .45))
+    guarded = set()
+    for k in range(1, len(RINGS)):
+        for i in range(N):
+            if share(k, i) < 1. or i not in away_cols:
+                continue
+            pk, pp = rings[k][i], rings[k - 1][i]
+            if abs(pk.y - pp.y) < step_ * r:
+                continue
+            lo_t, hi_t, best = 0., 1., None
+            for _ in range(10):
+                t_ = (lo_t + hi_t) / 2
+                h_ = front(pp.x + (pk.x - pp.x) * t_, pp.z + (pk.z - pp.z) * t_)
+                if h_ is not None and abs(h_.y - pp.y) < step_ * r:
+                    lo_t, best = t_, h_
+                else:
+                    hi_t = t_
+            if best is not None and (best - pp).length > .05 * r:
+                rings[k][i] = best
+                depth_steps += 1
+                guarded.add(i)
 
     # ---------------------------------------------------------------- the old skin's edge over the patch
     # The patch's loops out on the skin lie a little under it and the old skin is cut back only inside the first of
@@ -594,6 +649,37 @@ def _one_eye(bm, Mo, sd, sv, balls, job, field, src, deform, shape, uvl, mats, b
         if skin_bvh.ray_cast(loc + n * (.01 * r), n, .3 * r)[0] is not None:
             n = -n
         return n
+    # (a quad of the rings out on the skin turned over: on the nose's steep side the front rays' points of two rings
+    # folded back on each other, and from the front one saw the lid's underside - a dark notch by the nose,
+    # goblin_hero_2). Found as seen from the front - its corners going round the other way than the rest's -, its
+    # corners on the skin put back where the loops were grown for them, then eased along their ring, on the skin again
+    def area2(k, i):
+        q_ = [rings[k][i], rings[k][(i + 1) % N], rings[k + 1][(i + 1) % N], rings[k + 1][i]]
+        return sum(q_[j].x * q_[(j + 1) % 4].z - q_[(j + 1) % 4].x * q_[j].z for j in range(4))
+    sk_q = [(k, i) for k in range(len(RINGS) - 1) for i in range(N) if share(k + 1, i) > 0. or share(k + 1, (i + 1) % N) > 0.]
+    untangled = 0
+    for it_ in range(int(job.get("lid_untangle", 8))):
+        ar = {q: area2(*q) for q in sk_q}
+        sgn = 1. if sum(1 for v_ in ar.values() if v_ > 0) * 2 >= len(ar) else -1.   # (the rings' own way round)
+        bad = [q for q, v_ in ar.items() if v_ * sgn < 0]
+        if not bad:
+            break
+        fix = set()
+        for k, i in bad:
+            for ii in (i, (i + 1) % N):
+                if share(k + 1, ii) > 0.:
+                    fix.add((k + 1, ii))
+        for kk, ii in fix:
+            if it_ == 0 and RINGS[kk][0] in GROW:   # (first where its loop was grown for it, on the skin)
+                q_ = front(*grown(GROW[RINGS[kk][0]], ii))
+                if q_ is not None:
+                    rings[kk][ii] = rings[kk][ii].lerp(q_, share(kk, ii))
+                continue
+            p = rings[kk][ii]
+            q_ = p.lerp((rings[kk][ii - 1] + rings[kk][(ii + 1) % N]) * .5, .6)
+            h_ = front(q_.x, q_.z)
+            rings[kk][ii] = h_ if h_ is not None and (h_ - q_).length < .5 * r else q_
+        untangled += len(fix)
     for k in range(len(RINGS)):
         for i in range(N):
             s_ = share(k, i)
@@ -601,7 +687,17 @@ def _one_eye(bm, Mo, sd, sv, balls, job, field, src, deform, shape, uvl, mats, b
                 # the ball's centre runs along the skin, and the lid's edge stood off it in a dark slit)
                 p = rings[k][i]
                 rings[k][i] = p - outward(p) * ((.02 if k == len(RINGS) - 1 else .012) * r * s_)
-    cut2 = [grown(CUT, i, True) for i in range(N)]
+    k1_, k2_ = len(RINGS) - 2, len(RINGS) - 1
+    near_g = {j % N for i in guarded for j in (i - 1, i, i + 1)}   # (where the loops were drawn back: the cut follows)
+    cut2 = []
+    for i in range(N):
+        if i in near_g:
+            x_, z_ = rings[k1_][i].x * .45 + rings[k2_][i].x * .55, rings[k1_][i].z * .45 + rings[k2_][i].z * .55
+            if mid_x is not None and (x_ - c.x) * (mid_x - c.x) > 0:   # (short of the face's middle by the nose)
+                x_ = c.x + math.copysign(min(abs(x_ - c.x), .7 * abs(mid_x - c.x)), x_ - c.x)
+            cut2.append((x_, z_))
+        else:
+            cut2.append(grown(CUT, i, True))
     for _ in range(2):
         cut2 = [(cut2[i][0] * .5 + (cut2[i - 1][0] + cut2[(i + 1) % N][0]) * .25,
                  cut2[i][1] * .5 + (cut2[i - 1][1] + cut2[(i + 1) % N][1]) * .25) for i in range(N)]
@@ -645,6 +741,13 @@ def _one_eye(bm, Mo, sd, sv, balls, job, field, src, deform, shape, uvl, mats, b
     # centre where the face turns back at the temple -, not the source's inner shells deep behind the ball)
     band = lambda p: (math.hypot(p.x - c.x, p.z - c.z) < 5. * r and p.y < c.y + 2.5 * r   # noqa: E731
                       and (p.y < ref_y(p.x, p.z) + .9 * r or (p - c).length < ref_r(p) + .9 * r))
+    # (the faces the loop crosses split into triangles first: a triangle it crosses is crossed on two edges and is
+    # cut cleanly along it; a quad or a longer face crossed at a corner or twice stayed whole, a tooth standing out
+    # of the old skin's edge over the lid - thin dark dashes along it)
+    tri_ = [f for f in bm.faces if len(f.verts) > 3 and not any(v in patch for v in f.verts)
+            and len({ins(P(v)) for v in f.verts}) == 2 and any(band(P(v)) for v in f.verts)]
+    if tri_ and job.get("lid_cut_tris", True):
+        bmesh.ops.triangulate(bm, faces=tri_)
     cuts = set()
     for e in list(bm.edges):
         a, b = P(e.verts[0]), P(e.verts[1])
@@ -750,6 +853,10 @@ def _one_eye(bm, Mo, sd, sv, balls, job, field, src, deform, shape, uvl, mats, b
             for lay in shapes_:
                 w[lay] += d2
 
+    if job.get("lid_debug"):
+        import json as _j
+        _j.dump({"c": list(c), "r": r, "rings": [[list(p) for p in row] for row in rings], "cut": cut2,
+                 "share": [[share(k, i) for i in range(N)] for k in range(len(RINGS))]}, open(job["lid_debug"] + f"_{sd}_rings.json", "w"))
     # ---------------------------------------------------------------- the vertices: weights, keys, places
     keys_here = {"eyeBlink", "eyeSquint", "eyeWide"}
     nameS = SIDE.get(sd, sd)
@@ -893,7 +1000,7 @@ def _one_eye(bm, Mo, sd, sv, balls, job, field, src, deform, shape, uvl, mats, b
     grid = [[new[k][i][1] for i in range(N)] for k in range(len(RINGS))]
     shares = [[share(k, i) for i in range(N)] for k in range(len(RINGS))]
     outline2 = [(p.x, p.z) for p in curve]
-    report = {"columns": N, "rings": len(RINGS), "cut_faces": len(kill), "edge_snapped": snapped, "flipped": bool(flip),
+    report = {"columns": N, "rings": len(RINGS), "cut_faces": len(kill), "edge_snapped": snapped, "untangled": untangled, "depth_steps": depth_steps, "flipped": bool(flip),
               "clamped_corners": clamped, "bulge": round(bulge / r, 3)}
     return {"report": report, "grid": grid, "shares": shares, "block": (y0, TH1, TW), "N": N, "outline": outline2, "fine": fine, "c": c,
             "r": r, "crease": [k for k, x in enumerate(RINGS) if x[0] == "crease"][0], "is_up": is_up}
