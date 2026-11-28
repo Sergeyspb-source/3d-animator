@@ -347,7 +347,9 @@ export default function PinEditor({ data, onSave, onClose, onMark3d, pending }: 
     return ss.map((s) => ({ ...s, c: s.c.filter(([x, y]) => pts.every((p) => Math.hypot(x - p[0], y - p[1]) > radius)) })).filter((s) => s.c.length);
   };
   const brushDown = (e: React.PointerEvent, q: [number, number]) => {
-    if (tool === 'clone' && e.altKey) { setSrc(q); cloneOff.current = null; redraw((x) => x + 1); return; }
+    // Alt+click is always the stamp's «take from here», whatever tool is on (it used to paint that tool's stroke: with
+    // «Only the front» over an ear the front picture does not see, a white spot)
+    if (e.altKey) { if (tool !== 'clone') setTool('clone'); setSrc(q); cloneOff.current = null; redraw((x) => x + 1); return; }
     if (tool === 'erase') { mark(now()); setStrokes((ss) => eraseAt(ss, q)); setDirty(true); drag.current = { kind: 'erase' }; return; }
     let add: Stroke[];
     const c: [number, number, number] = [q[0], q[1], radius];
