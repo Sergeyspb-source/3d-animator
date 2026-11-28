@@ -787,6 +787,35 @@ def _one_eye(bm, Mo, sd, sv, balls, job, field, src, deform, shape, uvl, mats, b
     kill = [f for f in bm.faces if not any(v in patch for v in f.verts) and goes(f)]
     bmesh.ops.delete(bm, geom=kill, context="FACES")
     bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces and math.hypot(P(v).x - c.x, P(v).z - c.z) < 6 * r], context="VERTS")
+    # (the outer loop over what is left of the old skin: where it stands above it, put back under it, the loop inside
+    # it half way. In the hollow between the nose and the cheek its front rays met the source's lid fold - cut away
+    # now -, the patch's edge stood off the skin and shaded it: a dark triangle by goblin_hero_2's nose)
+    pressed = 0
+    up_lim = float(job.get("lid_press_outer", .35))
+    if up_lim > 0.:
+        left_ = [f for f in bm.faces if not any(v in patch for v in f.verts)
+                 and math.hypot(P(f.verts[0]).x - c.x, P(f.verts[0]).z - c.z) < 4.5 * r]
+        lv_ = {v: i_ for i_, v in enumerate({v for f in left_ for v in f.verts})}
+        lbvh = BVHTree.FromPolygons([P(v) for v in lv_], [tuple(lv_[v] for v in f.verts) for f in left_]) if left_ else None
+        for i in range(N) if lbvh is not None else ():
+            s_ = share(k2_, i)
+            if s_ <= 0.:
+                continue
+            p = rings[k2_][i]
+            n = outward(p)
+            h = lbvh.ray_cast(p + n * (up_lim * r), -n, 2. * up_lim * r)
+            if h[0] is None:
+                continue
+            up = (p - h[0]).dot(n)   # (its height over the skin left: under it it is -.02 r)
+            want = -.02 * r * s_
+            if want + .01 * r < up < up_lim * r:
+                rings[k2_][i] = p + n * (want - up)
+                rings[k1_][i] = rings[k1_][i] + n * ((want - up) * .5 * share(k1_, i))
+                pressed += 1
+        if pressed:   # (the old skin's edge is pressed onto the patch as it lies now)
+            pq = [(rings[k][i], rings[k][(i + 1) % N], rings[k + 1][(i + 1) % N], rings[k + 1][i]) for k in range(IW, len(RINGS) - 1) for i in range(N)]
+            pv = [p for q in pq for p in q]
+            pbvh = BVHTree.FromPolygons(pv, [(4 * j, 4 * j + 1, 4 * j + 2, 4 * j + 3) for j in range(len(pq))])
     # the old skin's new edge pressed onto the patch (from outside, along the line from the ball's centre): its outer
     # layer only - the inner ones' edges stay under the patch, unseen
     dl = lambda p: seg_dist2(p.x, p.z, fine)   # noqa: E731
@@ -996,11 +1025,47 @@ def _one_eye(bm, Mo, sd, sv, balls, job, field, src, deform, shape, uvl, mats, b
     if flip:
         for f in faces:
             f.normal_flip()
+    # (the outer loop's edge between two of its points: across the hollow between the nose and the cheek it ran straight
+    # over it - its points under the skin, its middle off it - and shaded the skin there: a dark sliver by
+    # goblin_hero_2's nose. Split where its middle stands off the skin left, the new point put under it)
+    split_ = 0
+    if up_lim > 0.:
+        left_ = [f for f in bm.faces if not any(v in patch for v in f.verts)
+                 and math.hypot(P(f.verts[0]).x - c.x, P(f.verts[0]).z - c.z) < 4.5 * r]
+        lv_ = {v: i_ for i_, v in enumerate({v for f in left_ for v in f.verts})}
+        lbvh = BVHTree.FromPolygons([P(v) for v in lv_], [tuple(lv_[v] for v in f.verts) for f in left_]) if left_ else None
+        edge_ring = {new[k2_][i][0] for i in range(N)}
+        touched = set()
+        for _ in range(2 if lbvh is not None else 0):
+            todo = []
+            for e in bm.edges:
+                if not (e.is_boundary and e.verts[0] in edge_ring and e.verts[1] in edge_ring):
+                    continue
+                m = (P(e.verts[0]) + P(e.verts[1])) * .5
+                n = outward(m)
+                h = lbvh.ray_cast(m + n * (up_lim * r), -n, 2. * up_lim * r)
+                if h[0] is not None and .01 * r < (m - h[0]).dot(n) < up_lim * r:
+                    todo.append((e, h[0] - n * (.02 * r)))
+            if not todo:
+                break
+            for e, to in todo:
+                _e, nv = bmesh.utils.edge_split(e, e.verts[0], .5)
+                dlt = Moi.to_3x3() @ (to - P(nv))
+                nv.co += dlt
+                for lay in bm.verts.layers.shape.values():
+                    nv[lay] += dlt
+                edge_ring.add(nv)
+                patch.add(nv)
+                touched.update(nv.link_faces)
+                split_ += 1
+        big_ = [f for f in touched if f.is_valid and len(f.verts) > 4]
+        if big_:
+            bmesh.ops.triangulate(bm, faces=big_)
     # ---------------------------------------------------------------- what the texture is baked from
     grid = [[new[k][i][1] for i in range(N)] for k in range(len(RINGS))]
     shares = [[share(k, i) for i in range(N)] for k in range(len(RINGS))]
     outline2 = [(p.x, p.z) for p in curve]
-    report = {"columns": N, "rings": len(RINGS), "cut_faces": len(kill), "edge_snapped": snapped, "untangled": untangled, "depth_steps": depth_steps, "flipped": bool(flip),
+    report = {"columns": N, "rings": len(RINGS), "cut_faces": len(kill), "edge_snapped": snapped, "untangled": untangled, "depth_steps": depth_steps, "pressed_outer": pressed, "edge_split": split_, "flipped": bool(flip),
               "clamped_corners": clamped, "bulge": round(bulge / r, 3)}
     return {"report": report, "grid": grid, "shares": shares, "block": (y0, TH1, TW), "N": N, "outline": outline2, "fine": fine, "c": c,
             "r": r, "crease": [k for k, x in enumerate(RINGS) if x[0] == "crease"][0], "is_up": is_up}
