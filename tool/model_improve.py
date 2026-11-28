@@ -1345,6 +1345,7 @@ def run(cat: str, stem: str, cfg: dict, draft_dir: Path, opts: dict, log=None) -
         summary["fit"] = {v: (st.get("cams") or {}).get(v, {}).get("iou") for v in a_info["views"]}
     info["improved"] = summary
     info_p.write_text(json.dumps(info, indent=2, ensure_ascii=False), encoding="utf-8")
+    st = load_state(d)   # (afresh: pins or strokes saved while the step ran are not written over)
     st["options"] = opts
     save_state(d, st)
     return summary
