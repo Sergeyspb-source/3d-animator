@@ -2,8 +2,8 @@
 # D:\conda\hf\trellis2-gguf\<quant> and checks every file's SHA-256. Resumable: just run again.
 #   -Quant q8 (default): 7.2 GB, the tested quality
 #   -Quant q4: 5.1 GB, lighter; ss_dec and birefnet are the same files as q8's and are copied from there when present
-# The res-1024 cascade files (*_1024.gguf) are not taken: the cascade needs a 16 GB card.
-param([ValidateSet('q8', 'q4')] [string] $Quant = 'q8')
+#   -Cascade: also the res-1024 cascade's two flows (shape_flow_1024, tex_flow_1024: 2.75 GB at q8) for «Detail: 1024»
+param([ValidateSet('q8', 'q4')] [string] $Quant = 'q8', [switch] $Cascade)
 $ErrorActionPreference = 'Continue'   # curl's exit code is not trusted: every file is judged by its hash
 $ProgressPreference = 'SilentlyContinue'
 $env:TMP = 'D:\conda\tmp'; $env:TEMP = 'D:\conda\tmp'
@@ -32,7 +32,19 @@ $sets = @{
         'birefnet.gguf'       = @('10c5dd4dcac904cf81c9a16180eb66f167dd52ab55867f54a44567b0b2babbc1', 882749024)
     }
 }
-$files = $sets[$Quant]
+$cascadeSets = @{
+    'q8' = [ordered]@{
+        'shape_flow_1024.gguf' = @('997e9fc10ab95fda11c4cd1cbaf425101980ac36a2ef80e9c83e0b9c4bfc9680', 1376125952)
+        'tex_flow_1024.gguf'   = @('cb2cb3aee74ba09c018f918ed8c146bc7e4f96335b61fa0d1fc1ff1a7811e6da', 1376178176)
+    }
+    'q4' = [ordered]@{
+        'shape_flow_1024.gguf' = @('54e49e3408b9f77bdc85c3f5a400a58a1d9fc091e111986eda7caeaea621b305', 730520576)
+        'tex_flow_1024.gguf'   = @('028d3be82075f8a4d8b4bd08985e1215ac3783ed332dbf7e8fd6535fcdd3d5a8', 730548224)
+    }
+}
+$files = [ordered]@{}
+foreach ($k in $sets[$Quant].Keys) { $files[$k] = $sets[$Quant][$k] }
+if ($Cascade) { foreach ($k in $cascadeSets[$Quant].Keys) { $files[$k] = $cascadeSets[$Quant][$k] } }
 New-Item -ItemType Directory -Force $dst | Out-Null
 $bad = @()
 foreach ($name in $files.Keys) {
@@ -42,7 +54,7 @@ foreach ($name in $files.Keys) {
     if (& $ok) { Write-Output "ok        $name"; continue }
     foreach ($q in $sets.Keys) {   # the same file in the other set: copy instead of downloading
         $other = Join-Path "$root\$q" $name
-        if ($q -ne $Quant -and $sets[$q][$name][0] -eq $sha -and (Test-Path $other)) { Copy-Item $other $path -Force }
+        if ($q -ne $Quant -and $sets[$q].Contains($name) -and $sets[$q][$name][0] -eq $sha -and (Test-Path $other)) { Copy-Item $other $path -Force }
     }
     if (& $ok) { Write-Output "copied    $name"; continue }
     Write-Output "download  $name ($([math]::Round($size / 1GB, 2)) GB)"

@@ -41,6 +41,7 @@ TRELLIS_EXE = r"D:\conda\trellis\trellis-cli.exe"
 TRELLIS_MODELS = r"D:\conda\hf\trellis2-gguf\q8"
 TRELLIS_CUDA_BIN = r"D:\conda\envs\hunyuan\bin"  # the CUDA 12.1 runtime + cuBLAS it was built against
 TRELLIS_WEIGHTS = ("ss_flow", "ss_dec", "shape_flow_512", "shape_dec", "tex_flow_512", "tex_dec", "dinov3", "birefnet")
+TRELLIS_CASCADE_WEIGHTS = ("shape_flow_1024", "tex_flow_1024")   # trellis2-weights.ps1 -Cascade
 TRELLIS_VRAM_MB = 5500
 # its albedo comes out 1.4-2.2x darker (Lab L) than the picture and its hue drifts (a green-olive goblin came out
 # orange, 65 deg against 85): the palette match (sf3d_tool.color_match_fn: LCh of the texels the picture shows against
@@ -639,10 +640,12 @@ def _tr_run(cmd, env, cwd, log, live, emit, t0):
 def generate_trellis(files, category_label, name, height, width, depth, pivot_label, collision_label, override,
                      metallic, roughness, overwrite, make_preview=False, color_match=TRELLIS_COLOR_MATCH,
                      saturation=1.0, brightness=1.0, auto_materials=False, auto_rig=False, rig_naming_label=None,
-                     rig_tries=3, tr_faces=50000, tr_seed=42):
+                     rig_tries=3, tr_faces=50000, tr_seed=42, tr_res=None):
     """TRELLIS.2 (trellis.cpp): one picture -> a textured GLB with its own metal/roughness map. A separate process
-    per picture (VRAM is freed on exit); res 512 path, the 1024 cascade needs a 16 GB card. A picture with alpha is
-    kept as cut out, others go through its BiRefNet; that cutout is the palette reference."""
+    per picture (VRAM is freed on exit). A picture with alpha is kept as cut out, others go through its BiRefNet; that
+    cutout is the palette reference. tr_res: 512 or the 1024 cascade (512 shape refined on a 1024 grid: sharper face,
+    fingers, torn edges; 2.7-4x the time; peak 3.3-5.3 GB on the RTX 4060 8 GB, 2026-11-28); None = 1024 when its two
+    weights are there."""
     cfg = T.load_config()
     category = LABEL_TO_KEY[category_label]
     preset = cfg["categories"][category]
@@ -669,6 +672,11 @@ def generate_trellis(files, category_label, name, height, width, depth, pivot_la
         log.append(_t("ui.trellis_no_weights", models, ", ".join(missing)))
         yield emit()
         return
+    cascade_ok = all((models / f"{w}.gguf").exists() for w in TRELLIS_CASCADE_WEIGHTS)
+    res = int(tr_res) if tr_res else (1024 if cascade_ok else 512)
+    if res == 1024 and not cascade_ok:
+        log.append(_t("ui.trellis_no_cascade", models))
+        res = 512
     paths = T.collect_images([f if isinstance(f, str) else f.name for f in files])
     log.append(_t("ui.trellis_pictures", len(paths), category_label))
     if category == "building":
@@ -699,10 +707,10 @@ def generate_trellis(files, category_label, name, height, width, depth, pivot_la
                     old.unlink()
             if not (yield from vram_gate(TRELLIS_VRAM_MB, log, emit, stem)):
                 raise RuntimeError(_t("ui.not_enough_free_video_memory"))
-            cmd = [str(exe), str(src_copy), str(raw), "--models", str(models), "--res", "512",
+            cmd = [str(exe), str(src_copy), str(raw), "--models", str(models), "--res", str(res),
                    "--faces", str(int(tr_faces)), "--seed", str(int(tr_seed)), "--webp", "off",
                    "--require-gpu", "--dump-bg"]
-            log.append(_t("ui.trellis_generating", stem))
+            log.append(_t("ui.trellis_generating", stem, res))
             yield emit()
             code, tail = yield from _tr_run(cmd, env, work, log, live, emit, t0)
             live[0] = ""
@@ -726,7 +734,7 @@ def generate_trellis(files, category_label, name, height, width, depth, pivot_la
             stats = pp_call(raw, final, preset, pp)
             save_pp(work, stem, category, raw, final, pp)
             stats.update(engine="trellis2", source=str(src_copy), category=category,
-                         seconds=round(time.time() - t0, 1), faces_target=int(tr_faces), seed=int(tr_seed))
+                         seconds=round(time.time() - t0, 1), faces_target=int(tr_faces), seed=int(tr_seed), res=res)
             (final.parent / f"{stem}.json").write_text(json.dumps(stats, indent=2), encoding="utf-8")
             last_glb = str(final)
             results.append([stem, category_label, stats["faces"], " x ".join(map(str, stats["size_m"])),

@@ -129,7 +129,8 @@ def generate_task(p: dict):
         files = [f for f in (p.get("files") or []) if f]
         with config_override(export_dir=str(drafts_root(cfg))):
             if engine == "trellis":
-                gen = UI.generate_trellis(files, **args, tr_faces=int(_num(p, "tr_faces", 50000)), tr_seed=int(_num(p, "tr_seed", 42)))
+                gen = UI.generate_trellis(files, **args, tr_faces=int(_num(p, "tr_faces", 50000)), tr_seed=int(_num(p, "tr_seed", 42)),
+                                           tr_res=int(_num(p, "tr_res", 0)) or None)
             elif engine == "hunyuan":
                 v = p.get("views") or {}
                 gen = UI.generate_hy(v.get("front"), v.get("back"), v.get("left"), v.get("right"), **args,

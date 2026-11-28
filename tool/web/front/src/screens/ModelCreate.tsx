@@ -29,7 +29,7 @@ const FORM0 = {
   override: false, metallic: 0, roughness: 0.8, color_match: 0, saturation: 1, brightness: 1, auto_materials: false,
   tex_res: '1024', fg_ratio: 0.85, remove_bg: true, remesh: 'none',
   paint: true, hy_tex: '2048', hy_faces: 50000, hy_steps: 50, hy_fast: false, hy_fast_set: false,   // (set: flipped by hand)
-  tr_faces: 50000, tr_seed: 42,
+  tr_faces: 50000, tr_seed: 42, tr_res: '1024',
   preview: true, overwrite: false, auto_rig: false, naming: 'mixamo', rig_tries: 3,
 };
 type Form = typeof FORM0;
@@ -230,6 +230,9 @@ export default function ModelCreate({ go, vegetation }: { go: (r: Route) => void
                   <Slider min={20} max={50} step={5} value={f.hy_steps} disabled={f.hy_fast} onChange={(v) => set({ hy_steps: v })} />
                 </>}
                 {f.engine === 'trellis' && <>
+                  <Text size="xs">{t('ui.trellis_res')}</Text>
+                  <SegmentedControl data={[{ value: '512', label: '512' }, { value: '1024', label: '1024' }]} value={f.tr_res ?? '1024'} onChange={(v) => set({ tr_res: v })} />
+                  <Text size="xs" c="dimmed">{t('ui.trellis_res_info')}</Text>
                   <Text size="xs">{t('ui.target_face_count_after_simplifying')}: {f.tr_faces.toLocaleString()}</Text>
                   <Slider min={10000} max={150000} step={5000} value={f.tr_faces} onChange={(v) => set({ tr_faces: v })} />
                   <NumberInput label={t('ui.trellis_seed')} description={t('ui.trellis_seed_info')} value={f.tr_seed} min={0} step={1} onChange={(v) => set({ tr_seed: Number(v) || 0 })} />
