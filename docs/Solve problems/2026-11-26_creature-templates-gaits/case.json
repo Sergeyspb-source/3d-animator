@@ -6,100 +6,454 @@
   "status": "solved",
   "date": "2026-11-26",
   "sessions": [
-    {"name": "Скелеты и походки существ (запущена из «Правки проекта»)", "id": "local_e34b3455-30a6-47ca-b378-81932d2b8d06"},
-    {"name": "Новый интерфейс SF3D (согласование экрана «Существа»)", "id": "local_7e21e9b7-a36d-4362-91a4-a369ec2ba4b4"}
+    {
+      "name": "Скелеты и походки существ (запущена из «Правки проекта»)",
+      "id": "local_e34b3455-30a6-47ca-b378-81932d2b8d06"
+    },
+    {
+      "name": "Новый интерфейс SF3D (согласование экрана «Существа»)",
+      "id": "local_7e21e9b7-a36d-4362-91a4-a369ec2ba4b4"
+    }
   ],
-  "commits": ["6748a81", "3d06ff4", "375f846", "b38e60a", "1f027eb", "71c0dd2", "8b875b9", "2bd7634", "108c1ef", "game:a674337d"],
-  "tags": ["creatures", "rig", "animation", "ik", "godot"],
+  "commits": [
+    "6748a81",
+    "3d06ff4",
+    "375f846",
+    "b38e60a",
+    "1f027eb",
+    "49ad1a2",
+    "88e8ac3",
+    "71c0dd2",
+    "8b875b9",
+    "2bd7634",
+    "108c1ef",
+    "game:a674337d"
+  ],
+  "tags": [
+    "creatures",
+    "rig",
+    "weights",
+    "animation",
+    "ik",
+    "godot"
+  ],
   "video": {
     "potential": 5,
     "why_ru": "Смешная ошибка нейросети (три задние ноги, хвост из шеи), наглядные цветные скелеты, живые походки, понятная пара «без IK / с IK» на склоне и финал в настоящей игре.",
     "wow_moment_ru": "Кабан с тремя задними ногами — и тот же кабан с аккуратным скелетом идёт, переходит в галоп и прыгает.",
-    "length_seconds": 120,
-    "thumbnail": {"image": "src/boar_template_bones_q34.png", "text_ru": "ТРИ НОГИ → ГАЛОП"}
+    "length_seconds": 135,
+    "thumbnail": {
+      "image": "src/boar_template_bones_q34.png",
+      "text_ru": "ТРИ НОГИ → ГАЛОП"
+    }
   },
   "numbers": [
-    {"what_ru": "Кабан: кожа под полом в шаге, рыси, галопе", "before": 18, "after": 0, "unit_ru": "мм",
-     "better": "lower", "measured_on": "Blender 5.2, проверка клипов tool/blender_clip_check.py", "note_ru": "до: первая версия клипов"},
-    {"what_ru": "Кабан: скольжение стоящей лапы", "before": 128, "after": 0, "unit_ru": "мм",
-     "better": "lower", "measured_on": "Blender 5.2, проверка клипов", "note_ru": "до: первая версия; повороты 0–1 мм, прыжок 10 мм"},
-    {"what_ru": "Нургл: кожа под полом в шаге и беге", "before": 74, "after": 10, "unit_ru": "мм",
-     "better": "lower", "measured_on": "Blender 5.2, проверка клипов", "note_ru": "до: первая версия на нургле; его клипы лисы и лошади 10–14 мм"},
-    {"what_ru": "Нургл: бег, высота лап над землёй (медиана)", "before": 27, "after": 10, "unit_ru": "мм",
-     "better": "lower", "measured_on": "Blender 5.2, проверка клипов", "note_ru": "до: бег лисы; в опорных кадрах галопа лапы касаются земли"},
-    {"what_ru": "Кабан: длина цикла шага", "before": 9, "after": 18, "unit_ru": "кадров",
-     "better": "higher", "measured_on": "30 кадров в секунду", "note_ru": "до: ранняя версия, нога не дотягивалась, кабан семенил"},
-    {"what_ru": "Сборка скелета по шаблону", "before": null, "after": 21, "unit_ru": "секунд",
-     "better": "lower", "measured_on": "ноутбук с RTX 4060 8 ГБ, Blender 5.2, без видеокарты", "note_ru": "кабан, 31 кость"},
-    {"what_ru": "Пять своих клипов кабана", "before": null, "after": 8, "unit_ru": "секунд",
-     "better": "lower", "measured_on": "ноутбук с RTX 4060 8 ГБ, Blender 5.2", "note_ru": ""}
+    {
+      "what_ru": "Кабан: кожа под полом в шаге, рыси, галопе",
+      "before": 18,
+      "after": 0,
+      "unit_ru": "мм",
+      "better": "lower",
+      "measured_on": "Blender 5.2, проверка клипов tool/blender_clip_check.py",
+      "note_ru": "до: первая версия клипов"
+    },
+    {
+      "what_ru": "Кабан: скольжение стоящей лапы",
+      "before": 128,
+      "after": 0,
+      "unit_ru": "мм",
+      "better": "lower",
+      "measured_on": "Blender 5.2, проверка клипов",
+      "note_ru": "до: первая версия; повороты 0–1 мм, прыжок 10 мм"
+    },
+    {
+      "what_ru": "Нургл: кожа под полом в шаге и беге",
+      "before": 74,
+      "after": 10,
+      "unit_ru": "мм",
+      "better": "lower",
+      "measured_on": "Blender 5.2, проверка клипов",
+      "note_ru": "до: первая версия на нургле; его клипы лисы и лошади 10–14 мм"
+    },
+    {
+      "what_ru": "Нургл: бег, высота лап над землёй (медиана)",
+      "before": 27,
+      "after": 10,
+      "unit_ru": "мм",
+      "better": "lower",
+      "measured_on": "Blender 5.2, проверка клипов",
+      "note_ru": "до: бег лисы; в опорных кадрах галопа лапы касаются земли"
+    },
+    {
+      "what_ru": "Кабан: длина цикла шага",
+      "before": 9,
+      "after": 18,
+      "unit_ru": "кадров",
+      "better": "higher",
+      "measured_on": "30 кадров в секунду",
+      "note_ru": "до: ранняя версия, нога не дотягивалась, кабан семенил"
+    },
+    {
+      "what_ru": "Сборка скелета по шаблону",
+      "before": null,
+      "after": 21,
+      "unit_ru": "секунд",
+      "better": "lower",
+      "measured_on": "ноутбук с RTX 4060 8 ГБ, Blender 5.2, без видеокарты",
+      "note_ru": "кабан, 31 кость"
+    },
+    {
+      "what_ru": "Пять своих клипов кабана",
+      "before": null,
+      "after": 8,
+      "unit_ru": "секунд",
+      "better": "lower",
+      "measured_on": "ноутбук с RTX 4060 8 ГБ, Blender 5.2",
+      "note_ru": ""
+    },
+    {
+      "what_ru": "Кабан: самый растянутый треугольник кожи за все кадры всех клипов",
+      "before": 6.32,
+      "after": 4.84,
+      "unit_ru": "раза",
+      "better": "lower",
+      "measured_on": "Blender 5.2, work/creature_tpl/spikes/stretch_check.py (сторона треугольника против покоя)",
+      "run": "repeat",
+      "note_ru": "до: шип под брюхом в рыси; после: пах между задними ногами в рыси, галопы около 4,0"
+    },
+    {
+      "what_ru": "Кабан: полоски шерсти отходят от кожи",
+      "before": 9.6,
+      "after": 1.2,
+      "unit_ru": "см",
+      "better": "lower",
+      "measured_on": "Blender 5.2, work/creature_tpl/spikes/island_drift.py",
+      "run": "repeat",
+      "note_ru": "худший кадр рыси"
+    },
+    {
+      "what_ru": "Чайка: самый растянутый треугольник в планировании",
+      "before": 3.56,
+      "after": 2.58,
+      "unit_ru": "раза",
+      "better": "lower",
+      "measured_on": "Blender 5.2, stretch_check.py",
+      "run": "repeat",
+      "note_ru": "взмах 3,43 → 3,16; шаг и бег без изменений (3,5)"
+    }
   ],
   "media": [
-    {"file": "img/01_skeleton_before_after.jpg", "clean": "src/boar_unirig_bones_side.png", "kind": "render", "role": "before",
-     "pair": "boar-skeleton-side", "caption_ru": "Слева скелет от нейросети: лишняя задняя нога, хвост из шеи. Справа скелет по шаблону."},
-    {"file": "img/01_skeleton_before_after.jpg", "clean": "src/boar_template_bones_side.png", "kind": "render", "role": "after",
-     "pair": "boar-skeleton-side", "caption_ru": "Скелет по шаблону «четвероногое»: позвоночник, шея, голова, хвост, четыре ноги по пять костей."},
-    {"file": "img/02_markup_page.png", "clean": "src/ui_markup_page.png", "kind": "screenshot", "role": "context",
-     "caption_ru": "Страница разметки: кабан насквозь, суставы цветными точками, выбор шаблона и список суставов."},
-    {"file": "img/03_walk_gallop.jpg", "clean": "src/boar_walk_loop.png", "kind": "render", "role": "result",
-     "caption_ru": "Шаг и галоп: в опоре лапа стоит на месте, в махе поднимается и подгибается."},
-    {"file": "img/04_jump_attack_turn.jpg", "clean": "src/boar_jump.png", "kind": "render", "role": "result",
-     "caption_ru": "Прыжок и атака кабана."},
-    {"file": "img/05_turn_top.jpg", "clean": "src/boar_walk_left_top.png", "kind": "render", "role": "result",
-     "caption_ru": "Поворот на ходу, вид сверху: тело изогнуто, голова смотрит в поворот."},
-    {"file": "img/06_nurgle_shin.jpg", "clean": "src/nurgle_shin_on_floor.png", "kind": "render", "role": "attempt",
-     "caption_ru": "Неудачная попытка: голень задней лапы нургла ложится на пол в конце шага."},
-    {"file": "img/07_boar_feet_ik.jpg", "clean": "src/boar_feet_idle_slope_0.png", "kind": "screenshot", "role": "before",
-     "pair": "boar-slope", "caption_ru": "Склон без помощника: передние копыта в земле."},
-    {"file": "img/07_boar_feet_ik.jpg", "clean": "src/boar_feet_idle_slope_1.png", "kind": "screenshot", "role": "after",
-     "pair": "boar-slope", "caption_ru": "Склон с помощником «лапы по земле»: копыта на поверхности."},
-    {"file": "img/07_boar_feet_ik.jpg", "clean": "src/boar_feet_idle_steps_0.png", "kind": "screenshot", "role": "before",
-     "pair": "boar-step", "caption_ru": "Ступенька без помощника."},
-    {"file": "img/07_boar_feet_ik.jpg", "clean": "src/boar_feet_idle_steps_1.png", "kind": "screenshot", "role": "after",
-     "pair": "boar-step", "caption_ru": "Ступенька с помощником."},
-    {"file": "img/08_leader_feet_ik.jpg", "clean": "src/leader_feet_step_0.png", "kind": "screenshot", "role": "before",
-     "pair": "leader-step", "caption_ru": "Предводитель нурглов в игре на ступеньке без помощника: ступня внутри."},
-    {"file": "img/08_leader_feet_ik.jpg", "clean": "src/leader_feet_step_1.png", "kind": "screenshot", "role": "after",
-     "pair": "leader-step", "caption_ru": "С помощником: обе ступни стоят на поверхности."},
-    {"file": "img/09_bird_snake.jpg", "clean": "src/bird_flap_0_28.png", "kind": "screenshot", "role": "result",
-     "caption_ru": "Чайка машет и планирует, змея ползёт волной и делает бросок."},
-    {"file": "img/10_nurgle_godot.jpg", "clean": "src/nurgle_run_flat_1.png", "kind": "screenshot", "role": "result",
-     "caption_ru": "Нургл в Godot: шаг, галоп, прыжок, поворот, склон и ступенька с помощником и без."},
-    {"file": "img/11_game_vat_run.jpg", "clean": "src/game_vat_run_poses.png", "kind": "render", "role": "result",
-     "caption_ru": "Позы галопа нургла из анимации, запечённой для орды в игре."},
-    {"file": "img/12_templates_overview.jpg", "clean": "img/12_templates_overview.jpg", "kind": "render", "role": "context",
-     "caption_ru": "Обзор: скелеты кабана и чайки, волна и бросок змеи, кабан в Godot, взмах чайки."},
-    {"file": "src/gaits_montage.mp4", "clean": "src/gaits_montage.mp4", "kind": "clip", "role": "result",
-     "caption_ru": "Монтаж 29,9 с: шаг, галоп, прыжок, поворот кабана, ступенька без и с помощником, нургл, чайка, змея."}
+    {
+      "file": "img/01_skeleton_before_after.jpg",
+      "clean": "src/boar_unirig_bones_side.png",
+      "kind": "render",
+      "role": "before",
+      "pair": "boar-skeleton-side",
+      "caption_ru": "Слева скелет от нейросети: лишняя задняя нога, хвост из шеи. Справа скелет по шаблону."
+    },
+    {
+      "file": "img/01_skeleton_before_after.jpg",
+      "clean": "src/boar_template_bones_side.png",
+      "kind": "render",
+      "role": "after",
+      "pair": "boar-skeleton-side",
+      "caption_ru": "Скелет по шаблону «четвероногое»: позвоночник, шея, голова, хвост, четыре ноги по пять костей."
+    },
+    {
+      "file": "img/02_markup_page.png",
+      "clean": "src/ui_markup_page.png",
+      "kind": "screenshot",
+      "role": "context",
+      "caption_ru": "Страница разметки: кабан насквозь, суставы цветными точками, выбор шаблона и список суставов."
+    },
+    {
+      "file": "img/03_walk_gallop.jpg",
+      "clean": "src/boar_walk_loop.png",
+      "kind": "render",
+      "role": "result",
+      "caption_ru": "Шаг и галоп: в опоре лапа стоит на месте, в махе поднимается и подгибается."
+    },
+    {
+      "file": "img/04_jump_attack_turn.jpg",
+      "clean": "src/boar_jump.png",
+      "kind": "render",
+      "role": "result",
+      "caption_ru": "Прыжок и атака кабана."
+    },
+    {
+      "file": "img/05_turn_top.jpg",
+      "clean": "src/boar_walk_left_top.png",
+      "kind": "render",
+      "role": "result",
+      "caption_ru": "Поворот на ходу, вид сверху: тело изогнуто, голова смотрит в поворот."
+    },
+    {
+      "file": "img/06_nurgle_shin.jpg",
+      "clean": "src/nurgle_shin_on_floor.png",
+      "kind": "render",
+      "role": "attempt",
+      "caption_ru": "Неудачная попытка: голень задней лапы нургла ложится на пол в конце шага."
+    },
+    {
+      "file": "img/07_boar_feet_ik.jpg",
+      "clean": "src/boar_feet_idle_slope_0.png",
+      "kind": "screenshot",
+      "role": "before",
+      "pair": "boar-slope",
+      "caption_ru": "Склон без помощника: передние копыта в земле."
+    },
+    {
+      "file": "img/07_boar_feet_ik.jpg",
+      "clean": "src/boar_feet_idle_slope_1.png",
+      "kind": "screenshot",
+      "role": "after",
+      "pair": "boar-slope",
+      "caption_ru": "Склон с помощником «лапы по земле»: копыта на поверхности."
+    },
+    {
+      "file": "img/07_boar_feet_ik.jpg",
+      "clean": "src/boar_feet_idle_steps_0.png",
+      "kind": "screenshot",
+      "role": "before",
+      "pair": "boar-step",
+      "caption_ru": "Ступенька без помощника."
+    },
+    {
+      "file": "img/07_boar_feet_ik.jpg",
+      "clean": "src/boar_feet_idle_steps_1.png",
+      "kind": "screenshot",
+      "role": "after",
+      "pair": "boar-step",
+      "caption_ru": "Ступенька с помощником."
+    },
+    {
+      "file": "img/08_leader_feet_ik.jpg",
+      "clean": "src/leader_feet_step_0.png",
+      "kind": "screenshot",
+      "role": "before",
+      "pair": "leader-step",
+      "caption_ru": "Предводитель нурглов в игре на ступеньке без помощника: ступня внутри."
+    },
+    {
+      "file": "img/08_leader_feet_ik.jpg",
+      "clean": "src/leader_feet_step_1.png",
+      "kind": "screenshot",
+      "role": "after",
+      "pair": "leader-step",
+      "caption_ru": "С помощником: обе ступни стоят на поверхности."
+    },
+    {
+      "file": "img/09_bird_snake.jpg",
+      "clean": "src/bird_flap_0_28.png",
+      "kind": "screenshot",
+      "role": "result",
+      "caption_ru": "Чайка машет и планирует, змея ползёт волной и делает бросок."
+    },
+    {
+      "file": "img/10_nurgle_godot.jpg",
+      "clean": "src/nurgle_run_flat_1.png",
+      "kind": "screenshot",
+      "role": "result",
+      "caption_ru": "Нургл в Godot: шаг, галоп, прыжок, поворот, склон и ступенька с помощником и без."
+    },
+    {
+      "file": "img/11_game_vat_run.jpg",
+      "clean": "src/game_vat_run_poses.png",
+      "kind": "render",
+      "role": "result",
+      "caption_ru": "Позы галопа нургла из анимации, запечённой для орды в игре."
+    },
+    {
+      "file": "img/12_templates_overview.jpg",
+      "clean": "img/12_templates_overview.jpg",
+      "kind": "render",
+      "role": "context",
+      "caption_ru": "Обзор: скелеты кабана и чайки, волна и бросок змеи, кабан в Godot, взмах чайки."
+    },
+    {
+      "file": "img/13_spikes_before_after.jpg",
+      "clean": "src/boar_spikes_walk_before.png",
+      "kind": "render",
+      "role": "before",
+      "pair": "boar-spikes-walk",
+      "caption_ru": "Кадр шага: шип под брюхом и светлая пластина бахромы у согнутой передней ноги."
+    },
+    {
+      "file": "img/13_spikes_before_after.jpg",
+      "clean": "src/boar_spikes_walk_after.png",
+      "kind": "render",
+      "role": "after",
+      "pair": "boar-spikes-walk",
+      "caption_ru": "Тот же кадр той же камерой: шипа нет, бахрома лежит вдоль ноги, полоски висят вдоль брюха."
+    },
+    {
+      "file": "src/gaits_montage.mp4",
+      "clean": "src/gaits_montage.mp4",
+      "kind": "clip",
+      "role": "result",
+      "caption_ru": "Монтаж 29,9 с: шаг, галоп, прыжок, поворот кабана, ступенька без и с помощником, нургл, чайка, змея."
+    }
   ],
   "models": [
-    {"role": "before", "path": "export/character/boar_leader_no_segment_no_rig/boar_leader_no_segment_no_rig_rigged.glb", "label_ru": "Кабан со скелетом от UniRig (только читать)"},
-    {"role": "after", "path": "work/creature_tpl/models/boar_fresh_rigged.glb", "label_ru": "Кабан со скелетом по шаблону"},
-    {"role": "after", "path": "work/creature_tpl/models/boar_fresh_clips.glb", "label_ru": "Кабан с десятью своими клипами"},
-    {"role": "after", "path": "work/creature_tpl/models/bird_tpl_clips.glb", "label_ru": "Чайка с клипами"},
-    {"role": "after", "path": "work/creature_tpl/models/snake_tpl_clips.glb", "label_ru": "Змея с клипами"},
-    {"role": "after", "path": "work/creature_tpl/models/nurgle_horde_clips.glb", "label_ru": "Нургл с клипами (копия)"},
-    {"role": "reference", "path": "work/creature_tpl/models/bird.glb", "label_ru": "Чайка Mesh2Motion (CC0) без скелета"},
-    {"role": "reference", "path": "work/creature_tpl/models/snake.glb", "label_ru": "Змея Mesh2Motion (CC0) без скелета"},
-    {"role": "after", "path": "game:assets/models/nurgle/nurgle_lod0.glb", "label_ru": "Нургл орды в игре (анимация в nurgle_vat_lod0.res)"}
+    {
+      "role": "before",
+      "path": "export/character/boar_leader_no_segment_no_rig/boar_leader_no_segment_no_rig_rigged.glb",
+      "label_ru": "Кабан со скелетом от UniRig (только читать)"
+    },
+    {
+      "role": "after",
+      "path": "work/creature_tpl/models/boar_fresh_rigged.glb",
+      "label_ru": "Кабан со скелетом по шаблону (до правки весов 2026-11-27)"
+    },
+    {
+      "role": "after",
+      "path": "work/creature_tpl/models/boar_fresh_clips.glb",
+      "label_ru": "Кабан с десятью своими клипами (до правки весов 2026-11-27)"
+    },
+    {
+      "role": "after",
+      "path": "work/creature_tpl/models/bird_tpl_clips.glb",
+      "label_ru": "Чайка с клипами"
+    },
+    {
+      "role": "after",
+      "path": "work/creature_tpl/models/snake_tpl_clips.glb",
+      "label_ru": "Змея с клипами"
+    },
+    {
+      "role": "after",
+      "path": "work/creature_tpl/models/nurgle_horde_clips.glb",
+      "label_ru": "Нургл с клипами (копия)"
+    },
+    {
+      "role": "reference",
+      "path": "work/creature_tpl/models/bird.glb",
+      "label_ru": "Чайка Mesh2Motion (CC0) без скелета"
+    },
+    {
+      "role": "reference",
+      "path": "work/creature_tpl/models/snake.glb",
+      "label_ru": "Змея Mesh2Motion (CC0) без скелета"
+    },
+    {
+      "role": "after",
+      "path": "game:assets/models/nurgle/nurgle_lod0.glb",
+      "label_ru": "Нургл орды в игре (анимация в nurgle_vat_lod0.res)"
+    },
+    {
+      "role": "before",
+      "path": "work/creature_tpl/models/boar_fresh_clips.glb",
+      "label_ru": "Кабан с клипами до правки весов (шип, пластина)",
+      "height_m": 0.68,
+      "front_yaw_deg": 0,
+      "quirks_ru": "смотрит вдоль +Z glTF; шип виден в клипе walk_loop, кадр 2"
+    },
+    {
+      "role": "after",
+      "path": "work/creature_tpl/models/boar_fix_clips.glb",
+      "label_ru": "Кабан с клипами после правки весов",
+      "height_m": 0.68,
+      "front_yaw_deg": 0,
+      "quirks_ru": "смотрит вдоль +Z glTF"
+    }
   ],
   "beats": [
-    {"n": 1, "seconds": 12, "say_ru": "Наша программа делает монстров для игры. Чтобы монстр двигался, нужен скелет. Нейросеть дала кабану три задние ноги, а хвост вырастила из шеи.",
-     "show": ["src/boar_unirig_bones_q34.png", "src/boar_unirig_bones_side.png"]},
-    {"n": 2, "seconds": 15, "say_ru": "Мы сделали три шаблона: четвероногое, птица, змея. Программа сама расставляет суставы по форме модели, человек может поправить их мышью.",
-     "show": ["img/02_markup_page.png", "app:Существа → Скелет → По шаблону"]},
-    {"n": 3, "seconds": 8, "say_ru": "Скелет собирается за двадцать секунд.",
-     "show": ["img/01_skeleton_before_after.jpg", "src/boar_template_bones_q34.png"]},
-    {"n": 4, "seconds": 20, "say_ru": "Движения считаются по тому, как ходят звери: шаг, рысь, галоп. Длину шага подсказывает формула из биологии, по ней шагает и слон, и мышь.",
-     "show": ["src/clip_boar_walk.mp4", "src/clip_boar_run.mp4", "src/clip_boar_jump.mp4", "src/clip_boar_turn.mp4"]},
-    {"n": 5, "seconds": 15, "say_ru": "Первые попытки были смешными: кабан семенил, кивал носом, копыта уходили в пол, у нургла голень ложилась на землю. Проверка ловила каждую ошибку. Теперь под полом ноль миллиметров.",
-     "show": ["img/06_nurgle_shin.jpg", "diagram:кожа под полом: 18 мм → 0 мм"]},
-    {"n": 6, "seconds": 12, "say_ru": "Чтобы монстр не тонул на склоне, помощник находит землю под каждой лапой и доводит лапу до неё.",
-     "show": ["src/clip_boar_step_noik.mp4", "src/clip_boar_step_ik.mp4", "img/07_boar_feet_ik.jpg"]},
-    {"n": 7, "seconds": 10, "say_ru": "Птица машет и планирует, змея ползёт волной.",
-     "show": ["src/clip_bird_flap.mp4", "src/clip_snake_walk.mp4"]},
-    {"n": 8, "seconds": 12, "say_ru": "И это уже в игре: орда нурглов бежит новым галопом, а их предводитель стоит на склонах обеими ногами.",
-     "show": ["src/clip_nurgle_run.mp4", "src/clip_nurgle_steps_ik.mp4", "img/08_leader_feet_ik.jpg", "img/11_game_vat_run.jpg"]}
+    {
+      "n": 1,
+      "seconds": 12,
+      "say_ru": "Наша программа делает монстров для игры. Чтобы монстр двигался, нужен скелет. Нейросеть дала кабану три задние ноги, а хвост вырастила из шеи.",
+      "show": [
+        "src/boar_unirig_bones_q34.png",
+        "src/boar_unirig_bones_side.png"
+      ],
+      "sub_ru": "UniRig: 3 задние ноги, хвост из шеи"
+    },
+    {
+      "n": 2,
+      "seconds": 15,
+      "say_ru": "Мы сделали три шаблона: четвероногое, птица, змея. Программа сама расставляет суставы по форме модели, человек может поправить их мышью.",
+      "show": [
+        "img/02_markup_page.png",
+        "app:Существа → Скелет → По шаблону"
+      ],
+      "sub_ru": "3 шаблона: четвероногое, птица, змея"
+    },
+    {
+      "n": 3,
+      "seconds": 8,
+      "say_ru": "Скелет собирается за двадцать секунд.",
+      "show": [
+        "img/01_skeleton_before_after.jpg",
+        "src/boar_template_bones_q34.png"
+      ],
+      "sub_ru": "Скелет за 20 с"
+    },
+    {
+      "n": 4,
+      "seconds": 20,
+      "say_ru": "Движения считаются по тому, как ходят звери: шаг, рысь, галоп. Длину шага подсказывает формула из биологии, по ней шагает и слон, и мышь.",
+      "show": [
+        "src/clip_boar_walk.mp4",
+        "src/clip_boar_run.mp4",
+        "src/clip_boar_jump.mp4",
+        "src/clip_boar_turn.mp4"
+      ],
+      "sub_ru": "Шаг, рысь, галоп: число Фруда"
+    },
+    {
+      "n": 5,
+      "seconds": 15,
+      "say_ru": "Первые попытки были смешными: кабан семенил, кивал носом, копыта уходили в пол, у нургла голень ложилась на землю. Проверка ловила каждую ошибку. Теперь под полом ноль миллиметров.",
+      "show": [
+        "img/06_nurgle_shin.jpg",
+        "diagram:кожа под полом: 18 мм → 0 мм"
+      ],
+      "sub_ru": "Кожа под полом: 18 мм → 0 мм"
+    },
+    {
+      "n": 6,
+      "seconds": 14,
+      "say_ru": "Потом пользователь заметил шипы на сгибах ног. Полоску шерсти под брюхом тянули сразу две ноги, а пластину бахромы вела не та кость. Теперь кусочки держатся за то место, откуда растут.",
+      "sub_ru": "Шип и пластина: самое сильное растяжение 6,3 → 4,8 раза",
+      "show": [
+        "img/13_spikes_before_after.jpg",
+        "src/boar_spikes_walk_before.png",
+        "src/boar_spikes_walk_after.png"
+      ]
+    },
+    {
+      "n": 7,
+      "seconds": 12,
+      "say_ru": "Чтобы монстр не тонул на склоне, помощник находит землю под каждой лапой и доводит лапу до неё.",
+      "show": [
+        "src/clip_boar_step_noik.mp4",
+        "src/clip_boar_step_ik.mp4",
+        "img/07_boar_feet_ik.jpg"
+      ],
+      "sub_ru": "Лапы по земле (IK)"
+    },
+    {
+      "n": 8,
+      "seconds": 10,
+      "say_ru": "Птица машет и планирует, змея ползёт волной.",
+      "show": [
+        "src/clip_bird_flap.mp4",
+        "src/clip_snake_walk.mp4"
+      ],
+      "sub_ru": "Птица и змея"
+    },
+    {
+      "n": 9,
+      "seconds": 12,
+      "say_ru": "И это уже в игре: орда нурглов бежит новым галопом, а их предводитель стоит на склонах обеими ногами.",
+      "show": [
+        "src/clip_nurgle_run.mp4",
+        "src/clip_nurgle_steps_ik.mp4",
+        "img/08_leader_feet_ik.jpg",
+        "img/11_game_vat_run.jpg"
+      ],
+      "sub_ru": "В игре: орда и предводитель"
+    }
   ],
   "reproduce_in_app": [
     "Существа → выбрать модель зверя без скелета (или «Добавить модель»)",
@@ -114,6 +468,10 @@
     "\"D:\\Blender 5.2\\blender.exe\" -b --factory-startup -P work/creature_tpl/clip_frames.py -- work/creature_tpl/models/boar_fresh_clips.glb work/creature_tpl/shots/case_boar_walk_loop.png walk_loop frames=6 w=640 h=520 zoom=0.85 view=side",
     "Godot 4.7.2 в проекте окна существа (creatures.godot_view, окно 2480×1080): godot --rendering-method gl_compatibility --path <проект> --write-movie out.avi --fixed-fps 30 --quit-after 120 -- --anim=walk --yaw=90 --pitch=-0.12 --zoom=1.5 [--ground=steps --feet=1]",
     "ffmpeg -i out.avi -vf crop=1920:1080:330:0,format=yuv420p -c:v libx264 -crf 20 src/clip_<имя>.mp4",
-    "D:\\conda\\envs\\sf3d\\python.exe \"docs/Solve problems/_tools/sheet.py\" img/01_skeleton_before_after.jpg \"Было: скелет от UniRig\" src/boar_unirig_bones_side.png \"Стало: скелет по шаблону «четвероногое»\" src/boar_template_bones_side.png --cols 2 --crop"
+    "D:\\conda\\envs\\sf3d\\python.exe \"docs/Solve problems/_tools/sheet.py\" img/01_skeleton_before_after.jpg \"Было: скелет от UniRig\" src/boar_unirig_bones_side.png \"Стало: скелет по шаблону «четвероногое»\" src/boar_template_bones_side.png --cols 2 --crop",
+    "D:\\conda\\envs\\sf3d\\python.exe tool/blender_queue.py -- -b --factory-startup -P work/creature_tpl/spikes/closeup.py -- work/creature_tpl/models/boar_fresh_clips.glb \"docs/Solve problems/2026-11-26_creature-templates-gaits/src/boar_spikes_walk_before.png\" walk_loop frames=2 center=0.1,0.0,0.2 scale=0.7 w=2560 h=1440",
+    "(то же с work/creature_tpl/models/boar_fix_clips.glb -> src/boar_spikes_walk_after.png)",
+    "D:\\conda\\envs\\sf3d\\python.exe tool/blender_queue.py -- -b --factory-startup -P work/creature_tpl/spikes/stretch_check.py -- <clips.glb> <out.json>  (и island_drift.py так же)",
+    "D:\\conda\\envs\\sf3d\\python.exe \"docs/Solve problems/_tools/sheet.py\" img/13_spikes_before_after.jpg \"Было: шип под брюхом, пластина у согнутой ноги\" src/boar_spikes_walk_before.png \"Стало: кожа и бахрома идут за ногой\" src/boar_spikes_walk_after.png --cols 2"
   ]
 }
