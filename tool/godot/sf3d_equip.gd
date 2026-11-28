@@ -1658,6 +1658,8 @@ const CINCH_FOLDS := 9   # round the body
 const CINCH_NA := 72
 const CINCH_LAYER := 0.5   # mm over a soft piece's own thickness under a belt pulled tight (each pressed onto the one under it)
 const CINCH_GAP := 1.2   # mm a belt pulled tight stands off what is under it (the editor's waistRing)
+const CINCH_MAX := 20.0   # mm a soft piece pressed in under a belt at most (loose clothes of another set: 4 cm in, the layers swapped)
+const HARD_NEAR := 15.0   # mm: armour under a belt only where it lies on what is under it (a back plate's edge standing off: over the belt)
 const BAND_SPAN := 150.0   # mm along the body at most for a band (a quiver's strap from a shoulder to the hip goes round half of it)
 
 
@@ -1696,10 +1698,12 @@ static func _cinch(skel: Skeleton3D) -> void:
 	var low := 99.0
 	for bt in shown:
 		low = minf(low, lay.call(bt))
+	var under := soft.filter(func(mi): return not ctx.is_empty() and mi.visible and lay.call(mi) < low)
+	var presses := _cinch_press(skel, under, ctx) if not under.is_empty() else []
 	for mi in soft:
 		var base: Mesh = mi.get_meta("sf3d_cinch_base")
-		var pressed: Mesh = base if ctx.is_empty() or lay.call(mi) >= low else _cinch_mesh(skel, mi, base, ctx)
-		_set_mesh(mi, pressed)
+		var q := under.find(mi)
+		_set_mesh(mi, base if q < 0 else _cinch_mesh(skel, mi, base, ctx, presses[q]))
 	# the belts and sheaths out over what is under them (made over one layer, worn over three): a band way round by way
 	# round, what hangs from it whole
 	for bt in belts:
@@ -1794,8 +1798,9 @@ static func _items_over(skel: Skeleton3D, items: Array, ax: Dictionary, ctx := {
 	var S0 := s_lo - 60.0 * mm
 	var NR := int((s_hi + 60.0 * mm - S0) / ds) + 1
 	var flo := _cells(NR, NA, -INF)
+	var flos := _cells(NR, NA, -INF)   # (the soft clothes and the body: what a band lies on)
 	var flay := _cells(NR, NA, -1.0)   # (the layer of the piece outermost there; the body: -1)
-	var add := func(m: Mesh, tr: Transform3D, ly: float) -> void:
+	var add := func(m: Mesh, tr: Transform3D, ly: float, sft: bool) -> void:
 		for sfc in m.get_surface_count():
 			for v in m.surface_get_arrays(sfc)[Mesh.ARRAY_VERTEX]:
 				var c := _cyl(ax, tr * v)
@@ -1805,14 +1810,18 @@ static func _items_over(skel: Skeleton3D, items: Array, ax: Dictionary, ctx := {
 					if c.z > flo[i][j]:
 						flo[i][j] = c.z
 						flay[i][j] = ly
+					if sft:
+						flos[i][j] = maxf(flos[i][j], c.z)
 	for node in skel.get_children():
 		if node is MeshInstance3D and node.has_meta("sf3d_piece") and node.visible and not node in items and not node.has_meta("sf3d_hold"):
-			if String(node.get_meta("sf3d_kind", "")) in OVER_SKIP:
+			var kd := String(node.get_meta("sf3d_kind", ""))
+			if kd in OVER_SKIP:
 				continue
-			add.call(node.get_meta("sf3d_full_mesh") if node.has_meta("sf3d_full_mesh") else node.mesh, node.transform, float(node.get_meta("sf3d_layer", 0.0)))
+			var sft: bool = kd in CINCH_SOFT or (kd == "tassets" and "mail" in String(node.name).to_lower())
+			add.call(node.get_meta("sf3d_full_mesh") if node.has_meta("sf3d_full_mesh") else node.mesh, node.transform, float(node.get_meta("sf3d_layer", 0.0)), sft)
 	for node in skel.find_children("*", "MeshInstance3D", true, false):
 		if not node.has_meta("sf3d_piece") and node.mesh != null:
-			add.call(node.get_meta("sf3d_body_mesh") if node.has_meta("sf3d_body_mesh") else node.mesh, _relative(skel, node), -1.0)
+			add.call(node.get_meta("sf3d_body_mesh") if node.has_meta("sf3d_body_mesh") else node.mesh, _relative(skel, node), -1.0, true)
 	var fl2 := _cells(NR, NA, -INF)   # (the cells between a piece's vertices: their neighbours')
 	var fly2 := _cells(NR, NA, -1.0)
 	for i in NR:
@@ -1905,7 +1914,7 @@ static func _items_over(skel: Skeleton3D, items: Array, ax: Dictionary, ctx := {
 			var bin_: Array = ctx["band_in"]
 			var cS0: float = ctx["S0"]
 			var cNR: int = ctx["NR"]
-			var tight := _band_over(ctx, flo, S0, NR, gap)
+			var tight := _band_over(ctx, flos, S0, NR, gap)
 			for root in band:
 				if not by.has(root):
 					continue
@@ -2023,13 +2032,15 @@ static func _items_over(skel: Skeleton3D, items: Array, ax: Dictionary, ctx := {
 			if moved:
 				_set_mesh(it, am)
 			off += sizes[g]
-			# its layer: over the highest it lies on (the layers' push drew a mail shirt 4 cm nearer than it is - over a belt
-			# out over it by 2.5 mm); its own (its kind's, set by hand) when higher
+			# its layer: the highest it lies on (the layers' push drew a mail shirt 4 cm nearer than it is - over a belt out
+			# over it by 2.5 mm, outside of it it is now: drawn with the same push, the nearer one shows); not one higher (each
+			# step more pushes it up to 4.5 % of the height nearer: a quiver on the hip showed through the thigh's edge seen
+			# from the front); its own (its kind's, set by hand) when higher
 			if layered and not it.has_meta("sf3d_hold"):
 				if not it.has_meta("sf3d_layer0"):
 					it.set_meta("sf3d_layer0", float(it.get_meta("sf3d_layer", LAYER.get(String(it.get_meta("sf3d_kind")), -1.0))))
 				var l0: float = it.get_meta("sf3d_layer0")
-				var ly := maxf(l0, over + 0.05) if over >= 0.0 else l0
+				var ly := maxf(l0, over) if over >= 0.0 else l0
 				if ly >= 0.0:
 					it.set_meta("sf3d_layer", ly)
 					var has := false
@@ -2320,8 +2331,8 @@ static func _col(ang: float) -> int:
 	return posmod(int(floor((ang / TAU + 1.0) * CINCH_NA)), CINCH_NA)
 
 
-# the belts' band (their rows that go all round, from their points binned), the wall it makes in cells round the axis
-# (its inside, out of it at a slant up to CINCH_TAPER), and the stack of what is pressed under it so far: {} if none
+# the belts' band in cells round the axis (their islands going round, _band_roots, from their whole faces): its inside
+# and each way round its rows from, to (the tight rows and the wall: _tight): {} if none
 static func _cinch_ctx(ax: Dictionary, belts: Array) -> Dictionary:
 	var mm: float = ax["mm"]
 	var NA := CINCH_NA
@@ -2382,8 +2393,7 @@ static func _cinch_ctx(ax: Dictionary, belts: Array) -> Dictionary:
 				r1[j] = i
 		b0[j] = S0 + r0[j] * ds if r0[j] >= 0 else INF
 		b1[j] = S0 + (r1[j] + 1) * ds if r0[j] >= 0 else INF
-	return {"ax": ax, "mm": mm, "ds": ds, "S0": S0, "NR": NR, "b0": b0, "b1": b1, "r0": r0, "r1": r1, "band_in": band_in,
-		"stack": _cells(NR, NA, -INF)}
+	return {"ax": ax, "mm": mm, "ds": ds, "S0": S0, "NR": NR, "b0": b0, "b1": b1, "r0": r0, "r1": r1, "band_in": band_in}
 
 
 # a belt's islands going round the body as a band: round most of it (CINCH_NA * .6 ways), not far along it (BAND_SPAN)
@@ -2474,7 +2484,9 @@ static func _tight(skel: Skeleton3D, ctx: Dictionary, soft: Array) -> void:
 		var row: Array = T[i]
 		var vals := []
 		for j in NA:
-			var x := maxf(own[i][j] + th[i][j] if own[i][j] > -INF else -INF, hard[i][j])
+			var st: float = own[i][j] + th[i][j] if own[i][j] > -INF else -INF
+			var hd: float = hard[i][j] if st == -INF or hard[i][j] <= st + HARD_NEAR * mm else -INF   # (a plate's edge standing off: the belt under it)
+			var x := maxf(st, hd)
 			row[j] = x
 			if x > -INF:
 				vals.append(x)
@@ -2562,7 +2574,11 @@ static func _grow(c: Array, lo := false, times := 3) -> Array:
 	return out
 
 
-static func _cinch_mesh(skel: Skeleton3D, mi: MeshInstance3D, base: Mesh, ctx: Dictionary) -> Mesh:
+# the soft pieces worn under a belt pressed in under it as one stack in each cell round the axis: in the order they lie
+# there (not by their layers' numbers - a shirt worn over the breeches, pressed first under them, came out through them),
+# each its own thickness and 0.5 mm apart, the outermost no farther out than the wall, none deeper than CINCH_MAX, none
+# into the body (nothing under them there - between the legs: not drawn in); each piece's press in the cells
+static func _cinch_press(skel: Skeleton3D, pieces: Array, ctx: Dictionary) -> Array:
 	var ax: Dictionary = ctx["ax"]
 	var mm: float = ctx["mm"]
 	var ds: float = ctx["ds"]
@@ -2570,26 +2586,31 @@ static func _cinch_mesh(skel: Skeleton3D, mi: MeshInstance3D, base: Mesh, ctx: D
 	var NR: int = ctx["NR"]
 	var NA := CINCH_NA
 	var wall: Array = ctx["wall"]
-	var stack: Array = ctx["stack"]
-	var tr: Transform3D = mi.transform
-	var arrs := []
-	var outer := _cells(NR, NA, -INF)
-	var inner := _cells(NR, NA, INF)
-	for sfc in base.get_surface_count():
-		var arrays := base.surface_get_arrays(sfc)
-		arrs.append(arrays)
-		for v in arrays[Mesh.ARRAY_VERTEX]:
-			var c := _cyl(ax, tr * v)
-			var i := int((c.x - S0) / ds)
-			if i < 0 or i >= NR:
-				continue
-			var j := _col(c.y)
-			outer[i][j] = maxf(outer[i][j], c.z)
-			inner[i][j] = minf(inner[i][j], c.z)
-	outer = _grow(outer)   # (the cells between its points: their neighbours' - else a checkerboard pressed, the cloth in teeth)
-	inner = _grow(inner, true)
-	# what is under it: the body's outermost there (not an arm past it) and the pieces pressed under the belt before it
-	var floor_ := _cells(NR, NA, -INF)
+	var OUT := []
+	var INN := []
+	var innermost := _cells(NR, NA, INF)
+	for mi in pieces:
+		var base: Mesh = mi.get_meta("sf3d_cinch_base")
+		var outer := _cells(NR, NA, -INF)
+		var inner := _cells(NR, NA, INF)
+		for sfc in base.get_surface_count():
+			for v in base.surface_get_arrays(sfc)[Mesh.ARRAY_VERTEX]:
+				var c := _cyl(ax, mi.transform * v)
+				var i := int((c.x - S0) / ds)
+				if i < 0 or i >= NR:
+					continue
+				var j := _col(c.y)
+				outer[i][j] = maxf(outer[i][j], c.z)
+				inner[i][j] = minf(inner[i][j], c.z)
+		outer = _grow(outer)   # (the cells between its points: their neighbours' - else a checkerboard pressed, the cloth in teeth)
+		inner = _grow(inner, true)
+		OUT.append(outer)
+		INN.append(inner)
+		for i in NR:
+			for j in NA:
+				if outer[i][j] > -INF:
+					innermost[i][j] = minf(innermost[i][j], inner[i][j])
+	var floor_ := _cells(NR, NA, -INF)   # (the body's outermost under them, not an arm past them)
 	for node in skel.find_children("*", "MeshInstance3D", true, false):
 		var bm := node as MeshInstance3D
 		if bm.has_meta("sf3d_piece") or bm.mesh == null:
@@ -2603,22 +2624,94 @@ static func _cinch_mesh(skel: Skeleton3D, mi: MeshInstance3D, base: Mesh, ctx: D
 				if i < 0 or i >= NR:
 					continue
 				var j := _col(c.y)
-				if inner[i][j] < INF and c.z <= inner[i][j] + 5.0 * mm:
+				if innermost[i][j] < INF and c.z <= innermost[i][j] + 5.0 * mm:
 					floor_[i][j] = maxf(floor_[i][j], c.z)
 	floor_ = _grow(floor_)
-	var stk := _grow(stack)
-	var press := _cells(NR, NA, 0.0)
+	var n := pieces.size()
+	var HI := []
+	for q in n:
+		HI.append(_cells(NR, NA, -INF))
+	var gp := 0.5 * mm
+	# (their order one for all the band: how they lie in most of its cells - each cell's own flipped at a skirt's top
+	# edge, the mail out through the breeches in shards)
+	var rs := []
+	var rc := []
+	for q in n:
+		rs.append(0.0)
+		rc.append(0)
+	for i in NR:
+		for j in NA:
+			if wall[i][j] == INF:
+				continue
+			var here := []
+			for q in n:
+				if OUT[q][i][j] > -INF and INN[q][i][j] < INF:
+					here.append(q)
+			if here.size() < 2:
+				continue
+			here.sort_custom(func(x, y): return OUT[x][i][j] + INN[x][i][j] < OUT[y][i][j] + INN[y][i][j])
+			for e in here.size():
+				rs[here[e]] += e
+				rc[here[e]] += 1
+	var key := []
+	for q in n:
+		key.append(rs[q] / rc[q] if rc[q] > 0 else float(pieces[q].get_meta("sf3d_layer", 0.0)))
+	var order := range(n)
+	order.sort_custom(func(x, y): return key[x] < key[y])
+	for i in NR:
+		for j in NA:
+			var ks := []
+			for q in order:
+				if OUT[q][i][j] > -INF and INN[q][i][j] < INF:
+					ks.append(q)
+					HI[q][i][j] = OUT[q][i][j]
+			if ks.is_empty() or wall[i][j] == INF or floor_[i][j] == -INF:
+				continue
+			var need: float = OUT[ks[-1]][i][j] - wall[i][j]
+			if need <= 0.0 or need > OVER_PEN * mm:   # (loose enough; or deeper - not under the band: a skirt off the legs)
+				continue
+			var th := {}
+			var himin := {}
+			var lo: float = floor_[i][j] + gp
+			for q in ks:   # (the least each can be: on what is under it)
+				th[q] = clampf(OUT[q][i][j] - INN[q][i][j], 0.5 * mm, 25.0 * mm)
+				himin[q] = lo + th[q]
+				lo = himin[q] + gp
+			var top: float = wall[i][j]
+			for e in range(ks.size() - 1, -1, -1):   # (from the outside in: under the wall, under the one over it)
+				var q: int = ks[e]
+				HI[q][i][j] = maxf(maxf(minf(OUT[q][i][j], top), himin[q]), OUT[q][i][j] - CINCH_MAX * mm)
+				top = HI[q][i][j] - th[q] - gp
+			var below := -INF
+			for q in ks:   # (and in their order: one that could not go deeper keeps those over it out)
+				HI[q][i][j] = maxf(HI[q][i][j], below + th[q] + gp)
+				below = HI[q][i][j]
+	var out := []
+	for q in n:
+		var press := _cells(NR, NA, 0.0)
+		for i in NR:
+			for j in NA:
+				if OUT[q][i][j] > -INF and HI[q][i][j] > -INF:
+					press[i][j] = maxf(0.0, OUT[q][i][j] - HI[q][i][j])
+		out.append(press)
+	return out
+
+
+static func _cinch_mesh(skel: Skeleton3D, mi: MeshInstance3D, base: Mesh, ctx: Dictionary, press: Array) -> Mesh:
+	var ax: Dictionary = ctx["ax"]
+	var mm: float = ctx["mm"]
+	var ds: float = ctx["ds"]
+	var S0: float = ctx["S0"]
+	var NR: int = ctx["NR"]
+	var NA := CINCH_NA
+	var tr: Transform3D = mi.transform
+	var arrs := []
+	for sfc in base.get_surface_count():
+		arrs.append(base.surface_get_arrays(sfc))
 	var most := 0.0
 	for i in NR:
 		for j in NA:
-			var fl: float = maxf(floor_[i][j], stk[i][j])
-			if wall[i][j] < INF and outer[i][j] > -INF and fl > -INF:   # (nothing under it there - between the legs: not drawn in)
-				var m: float = outer[i][j] - wall[i][j]
-				if m > 0.0:
-					press[i][j] = clampf(minf(m, inner[i][j] - fl - 0.5 * mm), 0.0, m)
-					if press[i][j] > OVER_PEN * mm:   # (deeper: not under the band - a skirt hanging off the legs at its row)
-						press[i][j] = 0.0
-					most = maxf(most, press[i][j])
+			most = maxf(most, press[i][j])
 	var pressed := most >= 1.5 * mm   # (else made under it, or loose enough: as it is, no folds added again)
 	var at := func(s: float, ang: float) -> float:
 		var x := (s - S0) / ds - 0.5
@@ -2653,8 +2746,12 @@ static func _cinch_mesh(skel: Skeleton3D, mi: MeshInstance3D, base: Mesh, ctx: D
 			var rn: float = r
 			var jh := _col(c.y)
 			var oh: float = absf(c.x - 0.5 * (b0[jh] + b1[jh])) - 0.5 * (b1[jh] - b0[jh]) if b0[jh] < INF else INF
-			if oh < CINCH_TAPER * mm:
-				held.append([sfc, k, 1.0 - smoothstep(0.0, CINCH_TAPER * mm, oh), p])
+			# (held wholly up to CINCH_TAPER over the band, then let go as far again - a mail skirt's top over the belt,
+			# held for a few mm only, still came out through the breeches with the thighs; below the band let go at once)
+			var up: bool = b0[jh] < INF and c.x > 0.5 * (b0[jh] + b1[jh])
+			var hf: float = 1.0 - (smoothstep(CINCH_TAPER * mm, 2.0 * CINCH_TAPER * mm, oh) if up else smoothstep(0.0, CINCH_TAPER * mm, oh))
+			if hf > 0.0:
+				held.append([sfc, k, hf, p])
 			if pressed and r > 1e-6:
 				rn = r - float(at.call(c.x, c.y))
 				var jc := _col(c.y)
@@ -2666,10 +2763,6 @@ static func _cinch_mesh(skel: Skeleton3D, mi: MeshInstance3D, base: Mesh, ctx: D
 					var fi := int(round(c.y * CINCH_FOLDS / TAU * 2.0))
 					var hv := float(posmod(fi * 374761393 + 5 * 668265263 + 31, 1000)) / 1000.0
 					rn += CINCH_GATHER * mm * smoothstep(0.0, 12.0 * mm, off) * pow(1.0 - off / reach, 1.4) * fo * fo * (0.6 + 0.4 * hv)
-			var i2 := int((c.x - S0) / ds)   # (the stack: its outside as it is now)
-			if i2 >= 0 and i2 < NR:
-				var j2 := _col(c.y)
-				stack[i2][j2] = maxf(stack[i2][j2], rn + 0.5 * mm)
 			if absf(rn - r) < 1e-6:
 				continue
 			var d: Vector3 = p - ax["a"]
