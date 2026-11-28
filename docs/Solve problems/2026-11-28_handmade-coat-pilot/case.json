@@ -1,0 +1,63 @@
+{
+  "id": "2026-11-28_handmade-coat-pilot",
+  "title_ru": "Сшить сюртук «руками» в Blender — лучше генератора одежды или нет?",
+  "title_en": "Is a coat made by hand in Blender better than the clothes generator?",
+  "hook_ru": "Руками вышло ближе к картинке, но главную ошибку нашли не глаза, а замер: рубаха прорывала полы в каждом шаге.",
+  "status": "solved",
+  "date": "2026-11-28",
+  "sessions": [{"name": "Пилот: вещь руками по концепту 28", "id": "local_e34b3455-30a6-47ca-b378-81932d2b8d06 (координатор)"}],
+  "commits": [],
+  "tags": ["clothes", "concept", "blender", "weights", "rwt", "comparison"],
+  "video": {
+    "potential": 4,
+    "why_ru": "Понятный спор «художник против программы», одна вещь, честные замеры и поворот с рубахой, которую не видит проверка кожи.",
+    "wow_moment_ru": "Кадр бега: рубаха прорывает обе полы, а после смены весов полы целые.",
+    "length_seconds": 90,
+    "thumbnail": {"image": "img/02_hem_corner.jpg", "text_ru": "ВРУЧНУЮ ИЛИ ПО ПРАВИЛАМ?"}
+  },
+  "numbers": [
+    {"what_ru": "Рубаха сквозь сюртук, худший клип (гоблин)", "before": 2.1, "after": 0.6, "unit_ru": "%", "better": "lower", "measured_on": "Blender 5.2, 12 клипов, каждый 3-й кадр", "run": "repeat", "note_ru": "before = генератор, after = ручной с весами со слоя под ним"},
+    {"what_ru": "Рубаха сквозь сюртук, худший клип (девушка-гоблин)", "before": 7.4, "after": 1.3, "unit_ru": "%", "better": "lower", "measured_on": "Blender 5.2, 12 клипов", "run": "repeat", "note_ru": "before = генератор"},
+    {"what_ru": "Рубаха сквозь ручной сюртук: веса с кожи → веса с рубахи (гоблин, бег)", "before": 12.7, "after": 0.6, "unit_ru": "%", "better": "lower", "measured_on": "Blender 5.2", "run": "repeat", "note_ru": "шаг 7 → шаг 8"},
+    {"what_ru": "Кожа сквозь середину ткани, худший клип (гоблин)", "before": 0.6, "after": 0.0, "unit_ru": "%", "better": "lower", "measured_on": "blender_wear_qa.py", "run": "repeat", "note_ru": "before = генератор"},
+    {"what_ru": "Кожа у края ткани, худший клип (гоблин)", "before": 2.3, "after": 0.2, "unit_ru": "%", "better": "lower", "measured_on": "blender_wear_qa.py", "run": "repeat", "note_ru": "на девушке наоборот: 0,7 → 1,1"},
+    {"what_ru": "«Дыры» маски, худший клип (гоблин)", "before": 5.2, "after": 3.8, "unit_ru": "%", "better": "lower", "measured_on": "blender_wear_qa.py", "run": "repeat", "note_ru": "на девушке наоборот: 2,1 → 5,0"},
+    {"what_ru": "Треугольников (гоблин)", "before": 38020, "after": 25286, "unit_ru": "треугольников", "better": "lower", "measured_on": "GLB", "run": "first", "note_ru": "на девушке 17 814 → 26 432"},
+    {"what_ru": "Время на вещь", "before": 5, "after": 105, "unit_ru": "минут", "better": "lower", "measured_on": "ноутбук, CPU, общая очередь Blender", "run": "first", "note_ru": "генератор: 40 с – 5 мин счёта на тело (стиль уже был); вручную: ≈1 ч 45 мин, из них ≈20 мин ожидания очереди; на второе тело тот же скрипт без правок ≈7 мин"}
+  ],
+  "media": [
+    {"file": "img/01_concept_proc_hand.jpg", "clean": "src/00_concept28.png", "kind": "render", "role": "compare", "pair": "set-front", "caption_ru": "Концепт 28, генератор, вручную — одной камерой в кадре концепта"},
+    {"file": null, "clean": "src/01_proc_set_front.png", "kind": "render", "role": "before", "pair": "set-front", "caption_ru": "Генератор, весь комплект, спереди (также _q34, _back)"},
+    {"file": null, "clean": "src/01_hand_set_front.png", "kind": "render", "role": "after", "pair": "set-front", "caption_ru": "Вручную, весь комплект, спереди (также _q34, _back)"},
+    {"file": "img/02_hem_corner.jpg", "clean": null, "kind": "render", "role": "detail", "pair": null, "caption_ru": "Угол левой полы крупно: кайма, линии, ромб, бахрома"},
+    {"file": "img/03_iterations.jpg", "clean": "src/03_s1_front.png", "kind": "render", "role": "process", "pair": null, "caption_ru": "Шаги 1, 2, 3, 4, 6 (src/03_*.png)"},
+    {"file": "img/04_shirt_through.jpg", "clean": "src/04_skin_weights_run.png", "kind": "render", "role": "before", "pair": "shirt-run", "caption_ru": "Бег: веса с кожи — рубаха прорывает полы"},
+    {"file": null, "clean": "src/04_layer_weights_run.png", "kind": "render", "role": "after", "pair": "shirt-run", "caption_ru": "Бег: веса с рубахи — полы целые"},
+    {"file": "img/05_motion.jpg", "clean": null, "kind": "render", "role": "result", "pair": null, "caption_ru": "Пять поз из клипов, генератор и вручную"},
+    {"file": "img/06_checks_chart.png", "clean": null, "kind": "chart", "role": "result", "pair": null, "caption_ru": "Худший из 12 клипов по четырём проверкам, два тела"},
+    {"file": "img/07_second_body.jpg", "clean": "src/03_w7_set_front.png", "kind": "render", "role": "limit", "pair": null, "caption_ru": "Тот же скрипт на девушке-гоблине: сел, но под проймой «коготки»"},
+    {"file": null, "clean": "src/proc_set_tex_front.png", "kind": "render", "role": "compare", "pair": "models", "caption_ru": "render_models.py: proc/hand × set/coat × tex/clay × front/q34/back, 2560×1440"}
+  ],
+  "models": [
+    {"role": "before", "path": "work/handmade_pilot/variants/proc_set.glb", "label_ru": "Генератор, весь комплект на гоблине", "height_m": 1.0, "front_yaw_deg": 0, "quirks_ru": "статичный, без скелета; пояс выдвинут поверх одежды, как в игре"},
+    {"role": "after", "path": "work/handmade_pilot/variants/hand_set.glb", "label_ru": "Вручную, весь комплект на гоблине", "height_m": 1.0, "front_yaw_deg": 0, "quirks_ru": "статичный; кайма и бахрома — ленты на 1,2 мм над тканью, бахрома с отсечкой прозрачности"},
+    {"role": "after", "path": "work/handmade_pilot/export/character/man_muscul_no_segment_no_rig/clothes/vest_coat_hm28.glb", "label_ru": "Сама вещь (со скелетом)", "height_m": 1.0, "front_yaw_deg": 0, "quirks_ru": "только сюртук и скелет; кожа под ним — по маске .mask.json"}
+  ],
+  "beats": [
+    {"n": 1, "seconds": 12, "say_ru": "Пользователь спросил: а что, если одежду для героя не генерировать, а сшить вручную, как художник, глядя на картинку? Проверили на одной вещи.", "sub_ru": "Генератор или руками? Пилот на одной вещи", "show": ["img/01_concept_proc_hand.jpg"]},
+    {"n": 2, "seconds": 18, "say_ru": "Сюртук строился за восемь шагов. После каждого — снимок с того же ракурса, что концепт. Первая сетка была дырявой, вторая разлетелась юбкой-солнцем.", "sub_ru": "8 шагов, сверка с концептом после каждого", "show": ["img/03_iterations.jpg"]},
+    {"n": 3, "seconds": 14, "say_ru": "К шестому шагу появились острые углы полы, кайма с рунами, ромб в углу и бахрома. Всё как на картинке. У генератора — гладкая полоса.", "sub_ru": "Кайма, руны, ромб, бахрома", "show": ["img/02_hem_corner.jpg"]},
+    {"n": 4, "seconds": 18, "say_ru": "Сюртук пустили бегать. Кожа не выходила наружу ни разу. Но на кадрах бега рубаха прорывала полы. Веса взяли с кожи, а сюртук лежит на рубахе. Взяли с рубахи — пятна ушли.", "sub_ru": "Рубаха сквозь полы: 12,7 % → 0,6 %", "show": ["img/04_shirt_through.jpg"]},
+    {"n": 5, "seconds": 14, "say_ru": "Сравнили на двух телах. Рубаха сквозь сюртук у генератора — от двух до семи процентов, у ручного — меньше полутора.", "sub_ru": "Рубаха сквозь сюртук: 2,1–7,4 % против 0,6–1,3 %", "show": ["img/06_checks_chart.png", "img/05_motion.jpg"]},
+    {"n": 6, "seconds": 14, "say_ru": "Итог: ручная вещь ближе к картинке, но стоит около двух часов, а генератор — минуты. Поэтому руками — только геройские вещи, а находки переедут в генератор.", "sub_ru": "≈1 ч 45 мин против минут → находки в генератор", "show": ["img/07_second_body.jpg"]}
+  ],
+  "reproduce_in_app": [
+    "Не в приложении: пилот собран скриптами в work/handmade_pilot (копия персонажа). В приложении видна только итоговая вещь, если положить её 4 файла в clothes/ персонажа (Экипировка → Проверка)."
+  ],
+  "regenerate": [
+    "bash work/handmade_pilot/scripts/chain.sh s8 man_muscul_no_segment_no_rig vest_coat_hm28   (HM_LAYERS=1, NOBUILD=1 для пересчёта весов готовой формы)",
+    "D:\\conda\\envs\\sf3d\\python.exe tool\\blender_queue.py -- -b -P work/handmade_pilot/scripts/cloth_check.py -- <anim.glb> <tunic_shirt_m28.glb> <coat.glb> <out.json> 3",
+    "bash work/handmade_pilot/scripts/final_renders.sh",
+    "D:\\conda\\envs\\sf3d\\python.exe work/handmade_pilot/scripts/chart.py"
+  ]
+}
