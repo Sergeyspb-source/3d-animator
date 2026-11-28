@@ -1,0 +1,521 @@
+{
+  "id": "2026-11-26_mage-clothes-from-concepts",
+  "title_ru": "Можно ли одеть гоблина-мага по картинке, не моделируя одежду руками?",
+  "title_en": "Can you dress a goblin mage from a concept picture without modelling the clothes by hand?",
+  "hook_ru": "Мантии и шали оказались не самым трудным: дольше всего возились со ступенькой в пять миллиметров на краю подола, с коленом, которое в шаге проходило сквозь длинную юбку, и с кафтаном, который «лежал на заднице».",
+  "status": "partial",
+  "date": "2026-11-26",
+  "sessions": [
+    {
+      "name": "Одежда воинов-магов (эта ветка)",
+      "id": null
+    },
+    {
+      "name": "Правки проекта (координатор)",
+      "id": "local_e34b3455"
+    },
+    {
+      "name": "Повседневная одежда простых жителей (договаривались о правках в общих функциях)",
+      "id": "local_9142bdcf"
+    }
+  ],
+  "commits": [
+    "0b2eb32",
+    "34f02dd",
+    "972d3d0",
+    "47ae442"
+  ],
+  "tags": [
+    "clothes",
+    "procedural",
+    "concept",
+    "godot",
+    "goblin"
+  ],
+  "video": {
+    "potential": 4,
+    "why_ru": "Концепт и 3D-костюм рядом понятны без слов; ошибки зрелищные и бытовые: шланг вокруг шеи, ступенька на подоле, колено сквозь юбку.",
+    "wow_moment_ru": "Картинка мага бури, рядом его 3D-костюм, и затем этот гоблин бежит в игровом движке; шторка «кафтан на ягодицах» → «кафтан как штора».",
+    "length_seconds": 105,
+    "thumbnail": {
+      "image": "src/m19_gob_rest_q34.png",
+      "text_ru": "С КАРТИНКИ — В ИГРУ"
+    }
+  },
+  "numbers": [
+    {
+      "what_ru": "Костюмов из концептов",
+      "before": 0,
+      "after": 4,
+      "unit_ru": "из 10",
+      "better": "higher",
+      "measured_on": "",
+      "run": null,
+      "note_ru": "сделаны 28, 23, 26, 19"
+    },
+    {
+      "what_ru": "Новых видов вещей в генераторе",
+      "before": 0,
+      "after": 8,
+      "unit_ru": "стилей",
+      "better": "higher",
+      "measured_on": "",
+      "run": null,
+      "note_ru": "плюс кайма из второй ткани"
+    },
+    {
+      "what_ru": "Ступенька на краю жилета",
+      "before": 3.5,
+      "after": 0,
+      "unit_ru": "градуса (≈5 мм наружу)",
+      "better": "lower",
+      "measured_on": "редактор, гоблин",
+      "run": null,
+      "note_ru": "после — на глаз, край одной линией"
+    },
+    {
+      "what_ru": "Кожа сквозь мантию из полотнищ, гоблин",
+      "before": 6.5,
+      "after": 2.3,
+      "unit_ru": "% в худшем клипе",
+      "better": "lower",
+      "measured_on": "Blender, 12 клипов, голое тело",
+      "run": null,
+      "note_ru": ""
+    },
+    {
+      "what_ru": "Кожа сквозь мантию из полотнищ, девушка-гоблин",
+      "before": 7.9,
+      "after": 5.7,
+      "unit_ru": "% в худшем клипе",
+      "better": "lower",
+      "measured_on": "Blender, 12 клипов, голое тело",
+      "run": null,
+      "note_ru": ""
+    },
+    {
+      "what_ru": "Кожа сквозь многослойную тунику, гоблин",
+      "before": 5.7,
+      "after": 4.9,
+      "unit_ru": "% в худшем клипе",
+      "better": "lower",
+      "measured_on": "Blender, 12 клипов, голое тело",
+      "run": null,
+      "note_ru": "с разрезом спереди было 2,4 %, выбрали цельный верхний слой, как на концепте"
+    },
+    {
+      "what_ru": "Кожа сквозь многослойную тунику, девушка-гоблин",
+      "before": 8.4,
+      "after": 7.1,
+      "unit_ru": "% в худшем клипе",
+      "better": "lower",
+      "measured_on": "Blender, 12 клипов, голое тело",
+      "run": null,
+      "note_ru": ""
+    },
+    {
+      "what_ru": "Кожа сквозь кафтан (длинный жилет), гоблин",
+      "before": 0.6,
+      "after": 4.9,
+      "unit_ru": "% в худшем клипе",
+      "better": "lower",
+      "measured_on": "Blender, 12 клипов, голое тело",
+      "run": null,
+      "note_ru": "после свободного падения от груди: колено в выпаде касается полы; у девушки-гоблина 0 % до и после; пользователь сам выбрал форму важнее"
+    },
+    {
+      "what_ru": "Время на одну вещь",
+      "before": null,
+      "after": 316,
+      "unit_ru": "секунд, максимум (минимум 39)",
+      "better": "lower",
+      "measured_on": "Blender на процессоре, две вещи одновременно",
+      "run": "repeat",
+      "note_ru": "видеокарта для одежды не нужна"
+    }
+  ],
+  "media": [
+    {
+      "file": "img/01_concept_vs_result.jpg",
+      "clean": "src/m28_gob_rest_front.png",
+      "kind": "render",
+      "role": "result",
+      "pair": "concept-28",
+      "caption_ru": "Ученик (28): костюм на гоблине"
+    },
+    {
+      "file": "img/01_concept_vs_result.jpg",
+      "clean": "src/concept_28.png",
+      "kind": "photo",
+      "role": "context",
+      "pair": "concept-28",
+      "caption_ru": "Ученик (28): концепт"
+    },
+    {
+      "file": "img/01_concept_vs_result.jpg",
+      "clean": "src/m23_gob_rest_front.png",
+      "kind": "render",
+      "role": "result",
+      "pair": "concept-23",
+      "caption_ru": "Маг пустыни (23): костюм на гоблине"
+    },
+    {
+      "file": "img/01_concept_vs_result.jpg",
+      "clean": "src/concept_23.png",
+      "kind": "photo",
+      "role": "context",
+      "pair": "concept-23",
+      "caption_ru": "Маг пустыни (23): концепт"
+    },
+    {
+      "file": "img/01_concept_vs_result.jpg",
+      "clean": "src/m26_gob_rest_front.png",
+      "kind": "render",
+      "role": "result",
+      "pair": "concept-26",
+      "caption_ru": "Тёмный маг (26): костюм на гоблине"
+    },
+    {
+      "file": "img/01_concept_vs_result.jpg",
+      "clean": "src/concept_26.png",
+      "kind": "photo",
+      "role": "context",
+      "pair": "concept-26",
+      "caption_ru": "Тёмный маг (26): концепт"
+    },
+    {
+      "file": "img/01_concept_vs_result.jpg",
+      "clean": "src/m19_gob_rest_front.png",
+      "kind": "render",
+      "role": "result",
+      "pair": "concept-19",
+      "caption_ru": "Маг бури (19): костюм на гоблине"
+    },
+    {
+      "file": "img/01_concept_vs_result.jpg",
+      "clean": "src/concept_19.png",
+      "kind": "photo",
+      "role": "context",
+      "pair": "concept-19",
+      "caption_ru": "Маг бури (19): концепт"
+    },
+    {
+      "file": "img/02_ten_concepts.jpg",
+      "clean": null,
+      "kind": "photo",
+      "role": "context",
+      "pair": null,
+      "caption_ru": "Десять концептов пользователя"
+    },
+    {
+      "file": "img/03_dropped.jpg",
+      "clean": "src/concept_19.png",
+      "kind": "photo",
+      "role": "cause",
+      "pair": null,
+      "caption_ru": "Что отбросили: подвески, свитки, сумки, фонарь, вышивку и символы (размеченный кадр — src/03_dropped_marked.png)"
+    },
+    {
+      "file": "img/04_front_edges_before_after.jpg",
+      "clean": "src/04_front_edges_before.png",
+      "kind": "screenshot",
+      "role": "before",
+      "pair": "front-edges",
+      "caption_ru": "Ступенька под краем полочки у талии"
+    },
+    {
+      "file": "img/04_front_edges_before_after.jpg",
+      "clean": "src/04_front_edges_after.png",
+      "kind": "screenshot",
+      "role": "after",
+      "pair": "front-edges",
+      "caption_ru": "Край полочки и подола одной линией"
+    },
+    {
+      "file": "img/05_boots_before_after.jpg",
+      "clean": "src/05_boots_before.png",
+      "kind": "render",
+      "role": "before",
+      "pair": "boots",
+      "caption_ru": "Штаны проступают сквозь сапог у щиколотки"
+    },
+    {
+      "file": "img/05_boots_before_after.jpg",
+      "clean": "src/05_boots_after.png",
+      "kind": "render",
+      "role": "after",
+      "pair": "boots",
+      "caption_ru": "Голенище выдавлено поверх штанов"
+    },
+    {
+      "file": "img/06_wraps_before_after.jpg",
+      "clean": "src/06_wraps_before.png",
+      "kind": "render",
+      "role": "before",
+      "pair": "wraps",
+      "caption_ru": "Обмотка ушла под рукав"
+    },
+    {
+      "file": "img/06_wraps_before_after.jpg",
+      "clean": "src/06_wraps_after.png",
+      "kind": "render",
+      "role": "after",
+      "pair": "wraps",
+      "caption_ru": "Обмотка поверх рукава"
+    },
+    {
+      "file": "img/07_shawl_first_final.jpg",
+      "clean": "src/07_shawl_first.png",
+      "kind": "screenshot",
+      "role": "attempt",
+      "pair": "shawl",
+      "caption_ru": "Первая шаль: валики торчат шлангом"
+    },
+    {
+      "file": "img/07_shawl_first_final.jpg",
+      "clean": "src/07_shawl_final.png",
+      "kind": "screenshot",
+      "role": "after",
+      "pair": "shawl",
+      "caption_ru": "Шаль лежит на плечах, конец с бахромой"
+    },
+    {
+      "file": "img/08_robe_knee_through.jpg",
+      "clean": "src/08_robe_knee_through.png",
+      "kind": "render",
+      "role": "problem",
+      "pair": null,
+      "caption_ru": "Красные точки — кожа ноги сквозь длинный подол в шаге"
+    },
+    {
+      "file": "img/09_robes_chart.png",
+      "clean": null,
+      "kind": "chart",
+      "role": "result",
+      "pair": null,
+      "caption_ru": "Длинные подолы до и после: подол ниже колена идёт с голенью"
+    },
+    {
+      "file": "img/10_godot_motion.jpg",
+      "clean": "src/10_godot_g19_GuardRun_60_30_1.25.png",
+      "kind": "screenshot",
+      "role": "result",
+      "pair": null,
+      "caption_ru": "Четыре костюма в примерочной Godot на двух телах"
+    },
+    {
+      "file": "img/11_two_bodies.jpg",
+      "clean": "src/m19_girl_rest_q34.png",
+      "kind": "render",
+      "role": "result",
+      "pair": null,
+      "caption_ru": "Четыре костюма на двух телах, вид в три четверти"
+    },
+    {
+      "file": "img/12_kaftan_before_after.jpg",
+      "clean": "src/12_kaftan_before_front.png",
+      "kind": "render",
+      "role": "before",
+      "pair": "kaftan-front",
+      "caption_ru": "Кафтан повторяет талию и бёдра"
+    },
+    {
+      "file": "img/12_kaftan_before_after.jpg",
+      "clean": "src/12_kaftan_after_front.png",
+      "kind": "render",
+      "role": "after",
+      "pair": "kaftan-front",
+      "caption_ru": "Кафтан висит от груди прямо"
+    },
+    {
+      "file": "img/12_kaftan_before_after.jpg",
+      "clean": "src/12_kaftan_before_side.png",
+      "kind": "render",
+      "role": "before",
+      "pair": "kaftan-side",
+      "caption_ru": "Сбоку: подол на ягодицах"
+    },
+    {
+      "file": "img/12_kaftan_before_after.jpg",
+      "clean": "src/12_kaftan_after_side.png",
+      "kind": "render",
+      "role": "after",
+      "pair": "kaftan-side",
+      "caption_ru": "Сбоку: спина прямая от лопаток"
+    },
+    {
+      "file": "img/12_kaftan_before_after.jpg",
+      "clean": "src/12_kaftan_before_qb.png",
+      "kind": "render",
+      "role": "before",
+      "pair": "kaftan-back",
+      "caption_ru": "Сзади: подол повторяет ягодицы"
+    },
+    {
+      "file": "img/12_kaftan_before_after.jpg",
+      "clean": "src/12_kaftan_after_qb.png",
+      "kind": "render",
+      "role": "after",
+      "pair": "kaftan-back",
+      "caption_ru": "Сзади: свободное падение"
+    }
+  ],
+  "models": [
+    {
+      "role": "after",
+      "path": "work/mage_clothes/export/character/man_muscul_no_segment_no_rig/clothes/vest_long_m28.glb",
+      "label_ru": "Длинный жилет ученика (гоблин)",
+      "height_m": 1.0,
+      "front_yaw_deg": 0,
+      "quirks_ru": "одна вещь со скелетом гоблина; тело — man_muscul_no_segment_no_rig_landmarks_rigged.glb в той же папке, маска кожи — .mask.json рядом"
+    },
+    {
+      "role": "after",
+      "path": "work/mage_clothes/export/character/man_muscul_no_segment_no_rig/armor/footwear_tall_boot_m28.glb",
+      "label_ru": "Высокие сапоги на пряжках",
+      "height_m": 1.0,
+      "front_yaw_deg": 0,
+      "quirks_ru": "только сапоги, без тела"
+    },
+    {
+      "role": "after",
+      "path": "work/mage_clothes/export/character/man_muscul_no_segment_no_rig/clothes/hood_scarf_m23.glb",
+      "label_ru": "Шаль мага пустыни",
+      "height_m": 1.0,
+      "front_yaw_deg": 0,
+      "quirks_ru": ""
+    },
+    {
+      "role": "after",
+      "path": "work/mage_clothes/export/character/man_muscul_no_segment_no_rig/clothes/hood_cowl_m26.glb",
+      "label_ru": "Драпированный ворот тёмного мага",
+      "height_m": 1.0,
+      "front_yaw_deg": 0,
+      "quirks_ru": ""
+    },
+    {
+      "role": "after",
+      "path": "work/mage_clothes/export/character/man_muscul_no_segment_no_rig/clothes/tunic_layered_m26.glb",
+      "label_ru": "Многослойная туника тёмного мага",
+      "height_m": 1.0,
+      "front_yaw_deg": 0,
+      "quirks_ru": ""
+    },
+    {
+      "role": "after",
+      "path": "work/mage_clothes/export/character/man_muscul_no_segment_no_rig/clothes/tunic_dagged_m19.glb",
+      "label_ru": "Мантия мага бури",
+      "height_m": 1.0,
+      "front_yaw_deg": 0,
+      "quirks_ru": ""
+    },
+    {
+      "role": "reference",
+      "path": "work/mage_clothes/refs/19.webp",
+      "label_ru": "Концепт мага бури (все десять — refs/19…28.webp)",
+      "height_m": null,
+      "front_yaw_deg": 0,
+      "quirks_ru": "картинка, не модель"
+    }
+  ],
+  "beats": [
+    {
+      "n": 1,
+      "seconds": 13,
+      "say_ru": "Пользователь прислал десять картинок: гоблин-маг в разных нарядах. Задача — одеть в них героев игры, не моделируя одежду руками.",
+      "sub_ru": "10 концептов → 3D-одежда",
+      "show": [
+        "img/02_ten_concepts.jpg"
+      ]
+    },
+    {
+      "n": 2,
+      "seconds": 12,
+      "say_ru": "У нас есть генератор: он шьёт ткань прямо по телу персонажа. Но знал он только рубахи и фартуки горожан.",
+      "sub_ru": "генератор шьёт по телу",
+      "show": [
+        "src/concept_28.png",
+        "model:after"
+      ]
+    },
+    {
+      "n": 3,
+      "seconds": 13,
+      "say_ru": "Сначала картинку разбираем на вещи. А бутылочки, свитки, подвески и вышитые молнии сознательно выкидываем. Нам нужна ткань и крой.",
+      "sub_ru": "только ткань и крой",
+      "show": [
+        "src/03_dropped_marked.png",
+        "src/m19_gob_rest_front.png"
+      ]
+    },
+    {
+      "n": 4,
+      "seconds": 16,
+      "say_ru": "Первый костюм — ученик мага. Жилет сел сразу, но на бёдрах линия ломалась: ступенька в пять миллиметров там, где край полочки встречает подол. Угол развернули — линия стала цельной.",
+      "sub_ru": "ступенька 5 мм → одна линия",
+      "show": [
+        "src/04_front_edges_before.png",
+        "src/04_front_edges_after.png"
+      ]
+    },
+    {
+      "n": 5,
+      "seconds": 12,
+      "say_ru": "Высокие сапоги пропускали штаны у щиколотки. Теперь голенище строится поверх штанов, а в игре сапог прячет их внутри, как шлем.",
+      "sub_ru": "сапог поверх штанов",
+      "show": [
+        "src/05_boots_before.png",
+        "src/05_boots_after.png"
+      ]
+    },
+    {
+      "n": 6,
+      "seconds": 16,
+      "say_ru": "Второй круг — сразу три мага. Шаль сначала торчала вокруг шеи, как садовый шланг. Длинная мантия в шаге пропускала колено насквозь. Теперь ниже колена подол идёт вместе с голенью.",
+      "sub_ru": "шланг → складки; колено сквозь юбку: 6,5 % → 2,3 %",
+      "show": [
+        "src/07_shawl_first.png",
+        "src/07_shawl_final.png",
+        "src/08_robe_knee_through.png",
+        "img/09_robes_chart.png"
+      ]
+    },
+    {
+      "n": 7,
+      "seconds": 14,
+      "say_ru": "Третий круг — замечание пользователя: кафтан сидит, как под поясом, и сзади будто лежит на ягодицах. Без пояса тяжёлая ткань висит от груди и падает прямо, как штора.",
+      "sub_ru": "без пояса — свободное падение от груди",
+      "show": [
+        "src/12_kaftan_before_side.png",
+        "src/12_kaftan_after_side.png",
+        "src/12_kaftan_before_qb.png",
+        "src/12_kaftan_after_qb.png"
+      ]
+    },
+    {
+      "n": 8,
+      "seconds": 12,
+      "say_ru": "Итог: четыре костюма из десяти, восемь новых видов вещей, два разных тела, ходьба и бег в игровом движке.",
+      "sub_ru": "4 из 10 · 8 новых вещей · 2 тела",
+      "show": [
+        "img/01_concept_vs_result.jpg",
+        "img/10_godot_motion.jpg"
+      ]
+    }
+  ],
+  "reproduce_in_app": [
+    "Персонаж → выбрать персонажа с скелетом по ориентирам",
+    "Экипировка → Мастерская: процедурный редактор, блок «Повседневная одежда»",
+    "Жилет → стиль «Длинный распашной, до колена (маг)»; Накидка → «Шаль вокруг шеи (маг)» или «Драпированный ворот с капюшоном (маг)»",
+    "Рубаха/туника → «Многослойная без рукавов, острый подол (маг)» или «Мантия из зубчатых полотнищ (маг)»; Штаны → «Шаровары, собраны на голени»",
+    "Обувь → «Высокие сапоги на пряжках»; Обмотки → «Обмотки на предплечьях»",
+    "Сгенерировать каждую вещь по очереди: штаны, рубаха, жилет, пояс, накидка, обувь, обмотки",
+    "Экипировка → Проверка: «Проверить в движении» и «Примерочная в Godot»"
+  ],
+  "regenerate": [
+    "D:\\conda\\envs\\sf3d\\python.exe work/mage_clothes/clean_one.py <m28|m23|m26|m19> <gob|girl>   # чистые кадры 2560×1440 через tool/blender_queue.py (render_clean.py; UNDER_JSON — скрытие слоёв, как в примерочной)",
+    "bash work/mage_clothes/build_writeup_imgs.sh   # листы 01, 03, 11 из src/",
+    "D:\\conda\\envs\\sf3d\\python.exe \"docs/Solve problems/_tools/sheet.py\" ...   # остальные листы img/ из src/",
+    "node work/wear_test/ui/mage/ag_gen.mjs 7874 work/mage_clothes/specs/m23_26_19.json <shots>   # сами вещи (тестовый сервер редактора: D:\\conda\tmp\u0007g_mage.bat <персонаж> 7874)"
+  ]
+}
