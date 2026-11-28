@@ -2236,7 +2236,10 @@ static func _under_weights(skel: Skeleton3D, items: Array, pts: PackedVector3Arr
 						var kw := pow(1.0 - sqrt(d / R2), 2)
 						var bn0: PackedStringArray = src[i][0]
 						var wn0: PackedFloat32Array = src[i][1]
-						for e in bn0.size():
+						for e in bn0.size():   # (the body's: not a leg's - between the buttocks both thighs pulled the belt apart)
+							var lw := bn0[e].to_lower()
+							if body and ("leg" in lw or "foot" in lw or "toe" in lw):
+								continue
 							acc[bn0[e]] = acc.get(bn0[e], 0.0) + wn0[e] * kw
 		if acc.is_empty():
 			var bn1: PackedStringArray = src[best][0]

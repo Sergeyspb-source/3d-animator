@@ -161,8 +161,9 @@ def _hold(o, idx, at, f, bodyW, mm, keep=4):
         body = {}
         for _, i, d in found:
             kw = (1 - d / R) ** 2 if d < R else 1.0
-            for nm, w in ws[i].items():
-                body[nm] = body.get(nm, 0.0) + w * kw
+            for nm, w in ws[i].items():   # (not a leg's: between the buttocks both thighs pulled the belt apart in a clip)
+                if not any(x in nm.lower() for x in ("leg", "foot", "toe")):
+                    body[nm] = body.get(nm, 0.0) + w * kw
         tb = sum(body.values())
         if tb <= 1e-9:
             continue
