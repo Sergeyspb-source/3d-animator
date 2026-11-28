@@ -770,6 +770,13 @@ def project(glb, out, pics, mirror=False, res=None, c0=0.1, c1=0.55, sharp=4.0, 
             on = mm > 0
             final[on] = final[on] * (1 - mm[on, None]) + (lowF[on] + hi[on]) * mm[on, None]
             info.setdefault("ai", []).append(view_)
+    if only is not None and (only[3] > 0).any():   # («tone from here»: that colour, the texture's own detail kept)
+        ts = only[3]
+        on = ts > 0
+        low_all = smooth_weighted(M, Tx, final, np.ones(len(final)), 0.015)
+        tl = lab(only[2][on].clip(0, 255))
+        final[on] = final[on] * (1 - ts[on, None]) + (tl + final[on] - low_all[on]) * ts[on, None]
+        info["tone"] = int(on.sum())
     img = np.zeros((R * R, 3), np.uint8)
     img[Tx["idx"]] = rgb(final)
     mask = np.zeros(R * R, bool); mask[Tx["idx"]] = True
@@ -2390,6 +2397,31 @@ def skin_coords(view, prm, faces, pos, nrm, fid, M):
     return np.concatenate(ids), np.concatenate(qs)
 
 
+def tone_masks(strokes, W, H):
+    """«tone from here» strokes -> (rgb (H, W, 3) float32: the tone, NaN none; its strength (H, W): 1 inside, falling to
+    0 over the circle's outer third; a later stroke wins where they overlap)"""
+    rgb_ = np.full((H, W, 3), np.nan, np.float32)
+    strength = np.zeros((H, W), np.float32)
+    for s in strokes or []:
+        if s.get("kind") != "tone" or not s.get("rgb"):
+            continue
+        col = np.asarray(s["rgb"], np.float32)
+        for x, y, r in s.get("c") or []:
+            x0, x1 = max(0, int(x - r)), min(W, int(x + r) + 1)
+            y0, y1 = max(0, int(y - r)), min(H, int(y + r) + 1)
+            if x0 >= x1 or y0 >= y1:
+                continue
+            yy, xx = np.mgrid[y0:y1, x0:x1] + 0.5
+            dd = np.sqrt((xx - x) ** 2 + (yy - y) ** 2)
+            k = np.clip((r - dd) / max(r / 3, 1e-6), 0, 1).astype(np.float32)
+            m = k > 0
+            t, sg = rgb_[y0:y1, x0:x1], strength[y0:y1, x0:x1]
+            same = np.isfinite(t[..., 0]) & (np.abs(t - col).sum(-1) < 1e-3)
+            sg[m] = np.where(same[m], np.maximum(sg[m], k[m]), k[m])
+            t[m] = col
+    return rgb_, strength
+
+
 def brush_of(d: Path, st: dict, base: Path, M=None):
     """the skins with strokes, ready for project(): [(view, params, faces, xyz, nrm, only, clone), ...] or None"""
     out = []
@@ -2412,16 +2444,20 @@ def brush_of(d: Path, st: dict, base: Path, M=None):
         else:
             continue
         only, strength, clone = brush_masks(strokes, sp["W"], sp["H"])
-        out.append((view, sp, faces, xyz, nrm, only, strength, clone))
+        trgb, tstr = tone_masks(strokes, sp["W"], sp["H"])
+        out.append((view, sp, faces, xyz, nrm, only, strength, clone, trgb, tstr))
     return out or None
 
 
 def brush_apply(Tx, pos0, nrm0, brush, M):
     """project()'s texels under the strokes: the stamp's ones moved to the surface it takes (Tx changed in place), the
-    «only» ones -> ((k,) int8 per texel: the one view to take, -1 any; (k,) its strength)"""
+    «only» ones -> ((k,) int8 per texel: the one view to take, -1 any; (k,) its strength; (k, 3) the «tone from here»
+    colour (RGB, NaN none); (k,) its strength)"""
     only = np.full(len(Tx["idx"]), -1, np.int8)
     strength = np.zeros(len(Tx["idx"]), np.float32)
-    for view, sp, faces, xyz, xnrm, om, sm, cm in brush:
+    tone = np.full((len(Tx["idx"]), 3), np.nan, np.float32)
+    tone_s = np.zeros(len(Tx["idx"]), np.float32)
+    for view, sp, faces, xyz, xnrm, om, sm, cm, trgb, tstr in brush:
         ids, q = skin_coords(view, sp, faces, pos0, nrm0, Tx["fid"], M)
         if not len(ids):
             continue
@@ -2431,6 +2467,10 @@ def brush_apply(Tx, pos0, nrm0, brush, M):
         sel = o >= 0
         only[ids[sel]] = o[sel]
         strength[ids[sel]] = sm[iy, ix][sel]
+        ts = tstr[iy, ix]
+        tsel = ts > 0
+        tone[ids[tsel]] = trgb[iy, ix][tsel]
+        tone_s[ids[tsel]] = ts[tsel]
         off = cm[iy, ix]
         cs = np.isfinite(off[:, 0])
         if cs.any():
@@ -2442,7 +2482,7 @@ def brush_apply(Tx, pos0, nrm0, brush, M):
             t = ids[cs][good]
             Tx["pos"] = Tx["pos"].copy(); Tx["nrm"] = Tx["nrm"].copy()
             Tx["pos"][t], Tx["nrm"][t] = Pn[good], Nn[good]
-    return only, strength
+    return only, strength, tone, tone_s
 
 
 def set_brush(cat: str, stem: str, cfg: dict, view: str, strokes: list) -> dict:
@@ -2458,6 +2498,8 @@ def set_brush(cat: str, stem: str, cfg: dict, view: str, strokes: list) -> dict:
             keep.append({"kind": "only", "view": s["view"], "c": c})
         elif s.get("kind") == "clone" and s.get("off") is not None:
             keep.append({"kind": "clone", "off": [round(float(s["off"][0]), 1), round(float(s["off"][1]), 1)], "c": c})
+        elif s.get("kind") == "tone" and s.get("rgb") is not None:
+            keep.append({"kind": "tone", "rgb": [int(np.clip(round(float(v)), 0, 255)) for v in s["rgb"][:3]], "c": c})
     st.setdefault("brush", {})[view] = keep
     save_state(d, st)
     return st
@@ -2465,21 +2507,20 @@ def set_brush(cat: str, stem: str, cfg: dict, view: str, strokes: list) -> dict:
 
 # ------------------------------------------------------------------ a skin painted by an AI where no picture sees
 # A skin laid flat is a picture an image AI can paint: its holes (where no picture paints - behind an ear, under the
-# chin) marked magenta, the rest the pictures as the projection lays them. The AI's answer is taken only in the holes
+# chin) pre-filled with our tone (the skin round them spread in, «tone from here» strokes over it) and outlined in
+# magenta for the AI to add skin texture to, the rest the pictures as the projection lays them. The AI's answer is taken only in the holes
 # (a soft edge where the pictures see a little): the rest stays ours whatever the AI changed. Kept as <view>_ai.png
 # (RGBA: its colour, how much it counts). The projection takes its fine detail (pores, colour flecks) on the tone the
 # texture has round it, so a hole never shows as a patch of another shade; the editor shows it tone-matched.
 SKIN_AI_PROMPT = (
-    "The FIRST attached picture is the skin of a 3D game character laid out flat (an unwrapped map: {what}). The bright "
-    "magenta (#FF00FF) areas are holes nobody painted. ALL magenta is skin - also the magenta strips along the picture's "
-    "top and bottom edges (the top of the head, under the chin, where the map squeezes the surface). Paint ONLY the "
-    "magenta so it continues the skin around it seamlessly: the same skin colour and brightness as right next to it, "
-    "the same fine texture (pores, soft colour variation), no lighting and no shadows (a flat albedo map). No outlines, "
-    "no rims, no darker or lighter bands along the edges of the painted areas, no seams: where a painted area meets "
-    "the old skin there must be no visible border at all. Match the character in the SECOND attached picture. Leave "
-    "every pixel outside the magenta exactly as it is: do not move, redraw, recolour, sharpen or blur anything there; "
-    "the dark background around the skin stays dark. Keep the exact picture size and layout. The result: the same "
-    "picture with the holes filled.")
+    "The FIRST attached picture is the skin of a 3D game character laid out flat (an unwrapped map: {what}). Some areas "
+    "are drawn with a thin bright magenta (#FF00FF) outline: inside them the skin is only a flat even colour with no "
+    "detail. Inside the outlines, add the fine skin texture of the skin around them - pores, soft colour variation, "
+    "small flecks - keeping their colour and brightness as they are; paint the magenta outlines themselves as skin too, "
+    "so no line is left. No lighting, no shadows (a flat albedo map), no rims or bands along the edges: where an "
+    "outlined area meets the old skin there must be no visible border. Match the character in the SECOND attached "
+    "picture. Leave every pixel outside the outlines exactly as it is: do not move, redraw, recolour, sharpen or blur "
+    "anything there; the dark background around the skin stays dark. Keep the exact picture size and layout.")
 SKIN_WHAT = {"skin_head": "the face in the middle, the sides of the head and the ears to the left and right, the back of "
              "the head at both edges", "skin_ears": "four panels, each ear's back and front",
              "skin_torso": "the chest and the belly in the middle, the back at both edges",
@@ -2536,12 +2577,29 @@ def skin_export(cat: str, stem: str, cfg: dict, draft_dir: Path, view: str) -> d
     holes = ok & (al < 0.5)
     Image.fromarray(pics.clip(0, 255).astype(np.uint8), "RGBA").save(d / f"{view}_ours.png")
     # (how much the AI's paint counts: 1 in the holes, fading out where the pictures see well - a soft edge)
-    take = np.clip((0.7 - al) / 0.25, 0, 1) * ok
+    take = np.clip((0.85 - al) / 0.25, 0, 1) * ok   # (the pictures' weak, darkened edge too: the tone is ours anyway)
     Image.fromarray((take * 255).astype(np.uint8)).save(d / f"{view}_take.png")
+    # (the holes pre-filled with our tone: the skin round them spread in smoothly, «tone from here» strokes over it;
+    # the AI only adds texture - the projection takes nothing else from it)
+    from scipy.ndimage import binary_dilation, gaussian_filter
+    wgt = (al * ok).astype(np.float32)
+    fill = np.zeros((sp["H"], sp["W"], 3), np.float32)
+    acc_w = np.zeros((sp["H"], sp["W"]), np.float32)
+    for sig in (0.01 * sp["W"], 0.03 * sp["W"], 0.08 * sp["W"]):   # (near first, far where the near is empty)
+        wb = gaussian_filter(wgt, sig)
+        cb = np.stack([gaussian_filter(pics[..., c] * wgt, sig) for c in range(3)], -1) / np.maximum(wb, 1e-6)[..., None]
+        take_ = np.clip(wb / 0.05, 0, 1) * (1 - np.clip(acc_w, 0, 1))
+        fill += cb * take_[..., None]
+        acc_w += take_
+    fill /= np.maximum(acc_w, 1e-6)[..., None]
+    trgb, tstr = tone_masks(strokes, sp["W"], sp["H"])
+    tm = np.isfinite(trgb[..., 0])
+    fill[tm] = fill[tm] * (1 - tstr[tm, None]) + trgb[tm] * tstr[tm, None]
     img = np.zeros((sp["H"], sp["W"], 3), np.float32)
     img[:] = (24, 24, 28)
-    img[ok] = pics[ok, :3] * al[ok, None] + np.array([255.0, 0, 255]) * (1 - al[ok, None])
-    img[holes] = (255, 0, 255)
+    img[ok] = pics[ok, :3] * al[ok, None] + fill[ok] * (1 - al[ok, None])
+    line = binary_dilation(holes, iterations=2) & ~holes & ok
+    img[line] = (255, 0, 255)
     Image.fromarray(img.clip(0, 255).astype(np.uint8)).save(d / f"{view}_for_ai.png")
     Image.fromarray((holes * 255).astype(np.uint8)).save(d / f"{view}_holes.png")
     return {"ok": True, "image": str(d / f"{view}_for_ai.png"), "holes": str(d / f"{view}_holes.png"),

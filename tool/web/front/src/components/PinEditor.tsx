@@ -16,7 +16,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Snapshots, useUndoKeys } from '../undo';
 import UndoButtons from './UndoButtons';
 import * as THREE from 'three';
-import { Button, Checkbox, SegmentedControl, Slider, Text, Tooltip } from '@mantine/core';
+import { Button, Checkbox, Group, SegmentedControl, Slider, Text, Tooltip } from '@mantine/core';
 import { IconArrowLeft } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { fileUrl } from '../api';
@@ -26,7 +26,8 @@ import { useT } from '../i18n';
 export type Pin = [number, number, number, number];   // the picture's point (sx, sy) -> lands on the model at (dx, dy)
 interface P { id: number; s: [number, number]; d: [number, number]; mate?: number }
 export interface Mark { name: string; kind: string; model: [number, number] | null; pic: [number, number]; set: boolean }
-export interface Stroke { kind: 'only' | 'clone'; view?: string; off?: [number, number]; c: [number, number, number][] }
+export interface Stroke { kind: 'only' | 'clone' | 'tone'; view?: string; off?: [number, number]; rgb?: [number, number, number];
+  c: [number, number, number][] }
 // the front picture's face fitted by its points (model_improve.face_field, every k-th cell): read before the pins
 export interface FaceGrid { x0: number; y0: number; step: number; k: number; nx: number; ny: number; d: number[] }
 export interface AlignData { picture: string; model: string; lines?: string; size: [number, number]; mid_x: number | null; pins: Pin[]; marks?: Mark[];
@@ -34,7 +35,7 @@ export interface AlignData { picture: string; model: string; lines?: string; siz
   layers?: Record<string, string>; prio?: Record<string, number>; sharp?: number; wrap?: boolean;
   ai?: { when?: string; source?: string } | null }
 interface State { pins: P[]; marks: Mark[]; strokes: Stroke[] }
-type Tool = 'front' | 'side' | 'back' | 'clone' | 'erase';
+type Tool = 'front' | 'side' | 'back' | 'clone' | 'tone' | 'erase';
 const TOOL_COLOR: Record<string, string> = { front: '#4aa8ff', left: '#5fd38a', right: '#5fd38a', back: '#b48cff', clone: '#ffa94d' };
 
 // ------------------------------------------------------------------ the warp (model_improve.pin_field)
@@ -120,6 +121,7 @@ export default function PinEditor({ data, onSave, onClose, onMark3d, pending, to
   const [tool, setTool] = useState<Tool>('front');
   const [radius, setRadius] = useState(18);
   const [src, setSrc] = useState<[number, number] | null>(null);   // (the stamp: where it takes from)
+  const [tone, setTone] = useState<[number, number, number] | null>(null);   // («tone from here»: the colour picked)
   const cloneOff = useRef<[number, number] | null>(null);   // (fixed by the first stamp after a source is set)
   const hover = useRef<[number, number] | null>(null);
   const [mode, setMode] = useState<'pins' | 'marks' | 'brush'>('pins');
@@ -351,13 +353,22 @@ export default function PinEditor({ data, onSave, onClose, onMark3d, pending, to
   const brushDown = (e: React.PointerEvent, q: [number, number]) => {
     // Alt+click is always the stamp's «take from here», whatever tool is on (it used to paint that tool's stroke: with
     // «Only the front» over an ear the front picture does not see, a white spot)
+    if (e.altKey && tool === 'tone') {   // («tone from here»: the colour shown round the point, as painted now)
+      const c_ = live.current?.pick(q[0], q[1], Math.max(6, radius / 2));
+      if (c_) setTone(c_);
+      return;
+    }
     if (e.altKey) { if (tool !== 'clone') setTool('clone'); setSrc(q); cloneOff.current = null; redraw((x) => x + 1); return; }
     if (tool === 'erase') { mark(now()); setStrokes((ss) => eraseAt(ss, q)); setDirty(true); drag.current = { kind: 'erase' }; return; }
     let add: Stroke[];
     const c: [number, number, number] = [q[0], q[1], radius];
     const mc = (): [number, number, number] => { const m = mirrorPt(q); return [m[0], m[1], radius]; };
     const twin = sym && mid != null && Math.abs(q[0] - mid) > radius;
-    if (tool === 'clone') {
+    if (tool === 'tone') {
+      if (!tone) return;
+      add = [{ kind: 'tone', rgb: tone, c: [c] }];
+      if (twin) add.push({ kind: 'tone', rgb: tone, c: [mc()] });
+    } else if (tool === 'clone') {
       if (!src) return;
       if (!cloneOff.current) cloneOff.current = [src[0] - q[0], src[1] - q[1]];
       const off = cloneOff.current;
@@ -483,10 +494,15 @@ export default function PinEditor({ data, onSave, onClose, onMark3d, pending, to
           <SegmentedControl size="xs" value={tool} onChange={(x) => setTool(x as Tool)} data={[
             { value: 'front', label: t('web.imp_br_front') }, { value: 'side', label: t('web.imp_br_side') },
             { value: 'back', label: t('web.imp_br_back') }, { value: 'clone', label: t('web.imp_br_clone') },
+            ...(liveOn ? [{ value: 'tone', label: t('web.imp_br_tone') }] : []),
             { value: 'erase', label: t('web.imp_br_erase') }]} />
           <Text size="xs" c="dimmed">{t('web.imp_br_size')}</Text>
           <div style={{ width: 120 }}><Slider size="xs" min={4} max={120} step={1} value={radius} onChange={setRadius} label={(x) => x} /></div>
           {tool === 'clone' && <Text size="xs" c={src ? 'dimmed' : 'yellow'}>{src ? t('web.imp_br_src_set') : t('web.imp_br_need_src')}</Text>}
+          {tool === 'tone' && (tone
+            ? <Group gap={6} wrap="nowrap"><span className="tone-swatch" style={{ background: `rgb(${tone.join(',')})` }} />
+                <Text size="xs" c="dimmed">{t('web.imp_br_tone_set')}</Text></Group>
+            : <Text size="xs" c="yellow">{t('web.imp_br_tone_need')}</Text>)}
           {tools}
         </div>
       )}
@@ -506,7 +522,7 @@ export default function PinEditor({ data, onSave, onClose, onMark3d, pending, to
         <svg className="pin-svg">
           {mid != null && sym && <line x1={sx(mid)} x2={sx(mid)} y1={0} y2="100%" className="pin-mid" />}
           {isSkin && !liveOn && strokes.map((st, i) => (   // (no layers: the strokes as tints, each evenly see-through)
-            <g key={i} opacity={mode === 'brush' ? 0.34 : 0.16} fill={TOOL_COLOR[st.kind === 'clone' ? 'clone' : st.view || 'front']}>
+            <g key={i} opacity={mode === 'brush' ? 0.34 : 0.16} fill={st.kind === 'tone' && st.rgb ? `rgb(${st.rgb.join(',')})` : TOOL_COLOR[st.kind === 'clone' ? 'clone' : st.view || 'front']}>
               {st.c.map(([x, y, r], k) => <circle key={k} cx={sx(x)} cy={sy(y)} r={r * v.s} />)}
             </g>
           ))}

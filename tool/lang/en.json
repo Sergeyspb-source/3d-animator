@@ -3576,7 +3576,7 @@
  "web.imp_br_count": "strokes: {0}",
  "web.imp_br_need_src": "First Alt+click where to take from",
  "web.imp_br_src_set": "Alt+click: another place",
- "web.imp_br_help": "Where «Front only» (side, back) is painted, that one picture paints the texture: a side picture's doubled brow or nostril goes. Stamp: Alt+click where to take from, then paint where it goes (white spots no picture sees). What is painted shows its result at once. Wheel: zoom; right button: pan.",
+ "web.imp_br_help": "Where «Front only» (side, back) is painted, that one picture paints the texture: a side picture's doubled brow or nostril goes. Stamp: Alt+click where to take from, then paint where it goes. «Tone from here»: Alt+click a place with the colour wanted, then paint: there it is that tone with the skin's texture (the back of the head, behind an ear). What is painted shows its result at once. Wheel: zoom; right button: pan.",
  "web.imp_face": "Face by its points",
  "web.imp_face_note": "the front picture's eyes, brows, nose and lips move whole to where they are on the model, only the skin between them stretches; the side pictures do not paint there",
  "web.imp_face_found": "face found",
@@ -3613,5 +3613,8 @@
  "web.imp_ai_downloaded": "Downloaded: the skin and the holes' mask (holes: {0} % of the skin)",
  "web.imp_ai_taken": "The painted holes are taken: press «Improve»",
  "web.imp_ai_aspect": "Taken, but the picture's proportions differ from the skin's: check the holes landed in place",
- "web.imp_ai_dropped": "The painted one dropped"
+ "web.imp_ai_dropped": "The painted one dropped",
+ "web.imp_br_tone": "Tone from here",
+ "web.imp_br_tone_need": "Alt+click where to take the colour",
+ "web.imp_br_tone_set": "this tone; Alt+click: another"
 }
