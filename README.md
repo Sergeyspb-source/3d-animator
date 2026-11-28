@@ -6,11 +6,11 @@ A local Windows toolkit that turns pictures into game-ready 3D assets for Godot 
 
 Everything runs on your own GPU. The only cloud piece is the optional reference-image generator (your ChatGPT subscription through Codex CLI, or an OpenRouter key).
 
-It glues several open-source models together (Stable Fast 3D, Hunyuan3D-2, UniRig) with Blender and Godot scripts. It has its own interface (a page in an app window) in English and Russian and two command-line tools.
+It glues several open-source models together (Stable Fast 3D, Hunyuan3D-2, TRELLIS.2, UniRig) with Blender and Godot scripts. It has its own interface (a page in an app window) in English and Russian and two command-line tools.
 
 > **Status: personal tool, shared as is.** It was built and tested on a single machine (Windows 11, RTX 4060 Laptop 8 GB VRAM, 31 GB RAM). Many paths are hardcoded, so read [Hardcoded paths](#hardcoded-paths) before installing.
 
-![The main window](docs/images/en/ui_create.jpg)
+![The main window: the skeleton knight's clips on the right, the model in the middle, the chains of work on the left](docs/images/en/ui_main.jpg)
 
 ---
 
@@ -28,27 +28,35 @@ It glues several open-source models together (Stable Fast 3D, Hunyuan3D-2, UniRi
 
 | Interface section | What you get | Engine |
 |---|---|---|
-| Create → Reference | Style card + reference pictures (single view or front/back/left/right) for a model, built from a text prompt | Codex CLI (ChatGPT) or OpenRouter |
-| Create → Make a model | GLB from 1 picture (~20 s), from 1–4 views (7–10 min, ~5 min with the fast shape) or from 1 picture with its own metal/roughness map (1–4 min), with pivot, real-world scale, collision proxy, PBR factors, previews and an icon. Categories: item, prop, building, character, vegetation | SF3D / Hunyuan3D-2mv + Hunyuan3D-Paint / TRELLIS.2 (trellis.cpp) |
-| Character → Skeleton (automatic UniRig or by hand with landmarks) | Skeleton + skin for humanoids, Mixamo or Godot bone names, seam welding, body split into regions; «Bones and weights» shows any skeleton | UniRig + Blender |
-| Creatures → Colouring | A creature's colour variants: colour zones, ready tones, patterns (spots, stripes, back, belly, blood) live; a variant is a model of its own with every clip | three.js |
-| Creatures → Skeleton | A creature's skeleton by a template — a quadruped, a bird, a snake: joints placed on the model and moved by hand, heat weights, own procedural gaits — or UniRig's with readable bone names, turned muzzle forward, a jaw along the mouth line; the skeleton markup viewer (chains, names, skin by bones, weights, a pose check) | UniRig + Blender + three.js |
-| Character → Animations: procedural | 12 procedural clips for any rigged humanoid (idle, walk, run, jump, attacks, cast, block, hit, death…), in a manner of the character's own (heavy, armoured, robed, light, swagger, limping, undead or one chosen by a seed) and with a death of choice (on the back, face down, to a side, to the knees) | Blender The clips stand on the ground (2026-11-19): a standing foot keeps an even way and a flat sole by two-bone IK of the thigh and shin, no foot goes into the floor, a body lying or kneeling is raised onto it; in a walk one foot is always down. Measured on all 16 clips: into the floor from up to 182 mm (a death) to 4 mm at most, a standing foot's sliding from up to 34 % of the height to 6 % at most (`ground=0` turns it off). |
+| Models → Reference | Style card + reference pictures (single view or front/back/left/right) for a model, built from a text prompt | Codex CLI (ChatGPT) or OpenRouter |
+| Models → Make a model | GLB from 1 picture (~20 s), from 1–4 views (7–10 min, ~5 min with the fast shape, which is on by default for characters, items and props) or from 1 picture with its own metal/roughness map (TRELLIS.2: 1–4 min at detail 512, 2–6 min at 1024 — the 1024 cascade gives a sharper face, fingers and torn edges, fits an 8 GB card and is the default; the colours are matched to the source picture), with pivot, real-world scale, collision proxy, PBR factors, previews and an icon. Categories: item, prop, building, character, vegetation | SF3D / Hunyuan3D-2mv + Hunyuan3D-Paint / TRELLIS.2 (trellis.cpp) |
+| Models → Check | The drafts beside a 1.75 m person: size, faces, time, previews and the source picture (all of Hunyuan's views); «Release into export», the old model put aside, never erased | three.js |
+| Models → Improve | A draft made closer to its pictures before release: their colours and details onto the model's unwrap (each part from the picture that faces it best, soft seams), the face's features by their points, the missing sides through ChatGPT, symmetry, relief; pins to fit by hand on the head's, ears', torso's, arms' and legs' skins laid flat, a brush and a stamp | Blender + MediaPipe + Codex CLI |
+| Models → Model materials | Recognises metal/wood/stone/cloth on an existing GLB and writes a metallic-roughness map | CLIP |
+| Models → Release, Batch processing | What is in export already; a whole folder of pictures in one run (overnight) into the drafts, then «Release all» | all of the above |
+| Character → Skeleton (by landmarks or automatic UniRig) | Skeleton + skin for humanoids, Mixamo or Godot bone names, seam welding, body split into regions; «Pose and fist»; «Bones and weights» shows any skeleton | UniRig + Blender |
+| Character → Face | The mouth and eyelids on the skeleton, the shared eyes/teeth/tongue kit with a live preview, a lip-sync clip from a voice and its text; expressions, the face's texture and mesh mended with a brush | Blender + three.js |
+| Character → Looks | Hairstyles, beards, brows and lashes; hair strands and hems can swing on spring bones in Godot | Blender + Godot |
+| Character → Animations: own clips | 12 procedural clips for any rigged humanoid (idle, walk, run, jump, attacks, cast, block, hit, death…), in a manner of the character's own (heavy, armoured, robed, light, swagger, limping, undead or one chosen by a seed) and with a death of choice (on the back, face down, to a side, to the knees). The clips stand on the ground: no foot goes into the floor or slides (measured on 16 clips: into the floor from 182 mm to 4 mm, sliding from 34 % of the height to 6 %) | Blender |
 | Character → Animations: Mixamo (FBX) | Retarget Mixamo FBX clips (without skin) onto your rig, in-place option, three.js viewer | Blender |
-| Character → Equipment: whole set | Move an outfit from a dressed character onto the base body | Blender + Robust Weight Transfer |
-| Character → Equipment: fitting a piece | Put a finished piece (GLB) on the current character: placed by the skin, both sides at once, moved, reshaped, layered, with weights and a mask (the «Armour» mode below) | Blender |
-| Skeleton by landmarks → Armour | Fit a piece (bracer, greave, cuisse, boot, pauldron, breastplate, helmet) onto the built character in the editor, skin it in Blender, save the fitting, try it on in a Godot fitting room with the character's clips | three.js + Blender + Godot |
-| Character → Equipment: procedural | A bracer, rerebrace, greave, cuisse, breastplate (plate up to the neck, a muscle one, with spaulders and mail), pauldron, tassets skirt or trousers built from the character's own skin, helmets, elbow pieces and footwear (six constructions each from the helmet, elbow and footwear generators, fitted to the head, the arms and the feet), gloves made of the hand's own skin, and cloth to wear under the armour by parameters in a live 3D editor (the piece on the character changes with the sliders): plates, scales, lamellar, mail, quilting or plain; rims, rivets, straps and buckles, iron/steel/bronze/leather/cloth with wear, baked PBR textures; put on like a fitted piece | Blender |
+| Character → Weights, To the game | The armpits' weight repair; the Godot fitting room with every piece and clip of the character | Robust Weight Transfer + Godot |
+| Equipment → Catalog | Every piece as a tile by blocks (armour, clothes, everyday clothes, weapons, sheaths), a figure lights where it goes, the pieces made on top | – |
+| Equipment → Workshop: a piece on the skin | A bracer, rerebrace, greave, cuisse, breastplate (plate up to the neck, a muscle one, with spaulders and mail), pauldron, tassets skirt or trousers built from the character's own skin, helmets, elbow pieces and footwear (six constructions each from the helmet, elbow and footwear generators, fitted to the head, the arms and the feet), gloves made of the hand's own skin, cloth to wear under the armour, everyday and mage clothes (shirts, vests, a long coat, cowls, a shawl, harem trousers, buckled boots, wraps) — by parameters in a live 3D editor (the piece on the character changes with the sliders): plates, scales, lamellar, mail, quilting or plain; rims, rivets, straps and buckles, iron/steel/bronze/leather/cloth with wear, baked PBR textures. Armour presses the skin under it in instead of hiding it; a belt cinches the clothes, and belts, sheaths and quivers lie over them | Blender |
+| Equipment → Workshop: a finished piece (GLB) | A bracer, greave, cuisse, boot, pauldron, breastplate or helmet on the current character: placed by the skin, both sides at once, moved, reshaped, layered, with weights and a mask; the fitting is saved (the «Armour» mode below) | three.js + Blender |
+| Equipment → Workshop: a set off a dressed model | Move an outfit from a dressed character onto the base body in parts | Blender + Robust Weight Transfer |
+| Equipment → Check, Release | The check in motion over the character's clips: the skin through the piece, holes, the three worst frames with pictures; the Godot fitting room; every piece of the character with its last check and the rebuild by layers | Blender + Godot |
+| Creatures → Skeleton | A creature's skeleton by a template — a quadruped, a bird, a snake: joints placed on the model and moved by hand, heat weights — or UniRig's with readable bone names, turned muzzle forward, a jaw along the mouth line; the skeleton markup viewer (chains, names, skin by bones, weights, a pose check) | UniRig + Blender + three.js |
+| Creatures → Animations | Own procedural gaits by the template: turns on the move, a quadruped's jump, paws on uneven ground in Godot | Blender + Godot |
+| Creatures → Colouring and repair | A creature's colour variants: colour zones, ready tones, patterns (spots, stripes, back, belly, blood) live; a variant is a model of its own with every clip; «Mend holes», «Recompute normals» | three.js |
 | Environment → Surfaces | Seamless ground/floor/wall materials (albedo, normal, height, roughness, AO) | numpy |
 | Environment → Effects | Particle flipbooks (explosion, fire, smoke, magic) + ready Godot scenes | numpy + Godot |
-| Environment → Modular kits | Procedural dungeon kit (walls, arches, stairs, doors) + ASCII plan → Godot scene | Blender + Godot |
-| Environment → Destructible objects | Voronoi-fractured props + Godot scene that breaks on hit | Blender + Godot |
-| Create → Materials | Recognises metal/wood/stone/cloth on an existing GLB and writes a metallic-roughness map | CLIP |
-| Create → Batch processing (also the File menu) | Whole folder of pictures in one run (overnight) | all of the above |
-| Options menu + GPU strip | Paths, OpenRouter key, who holds GPU memory, unload models; live VRAM strip at the top | – |
-| Character → Weight fixing, Face parts, Lipsync | Weight repair, shared eyes/teeth/tongue kit with a live preview, lip-sync clip for the speech mouth watched right in the tab | Blender |
+| Environment → Dungeons | Procedural dungeon kit (walls, arches, stairs, doors) + ASCII plan → Godot scene | Blender + Godot |
+| Environment → Destructibles | Voronoi-fractured props + Godot scene that breaks on hit | Blender + Godot |
+| Environment → Vegetation | Trees, bushes and grass from a picture, with a wind map for Godot | SF3D / Hunyuan3D / TRELLIS.2 + Godot |
+| Tasks and log, Video memory, Settings | One GPU task queue with a log and cancel; who holds GPU memory, closing programs; paths, OpenRouter key; live VRAM strip at the top | – |
+| Everywhere | Undo and redo in every editor (Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y, the ↶ ↷ buttons); pictures open large on a click; deleting a model with every trace of it into the Windows Recycle Bin (its paths and size listed first) | – |
 
-Every «Character» tool works on the **current character**, chosen once under the row of tabs and shown there in 3D with what it already has (the model, the skeleton, the body in parts for sets, lip-sync clips, pieces put on). A character is a folder `export\character\<name>\`; «Add a model…» makes one from a GLB, «Delete» erases its whole folder after asking «Delete for good?»; the file it was loaded from stays where it was. The choice is kept between runs. A tab's own «load a file» stays for a one-off job on a model that is not a character.
+Every «Character» tool works on the **current character**, chosen once on top of the page and shown there in 3D with what it already has (the model, the skeleton, the body in parts for sets, lip-sync clips, pieces put on). A character is a folder `export\character\<name>\`; «Add a model…» makes one from a GLB, «Delete» moves its folder and every trace of it to the Windows Recycle Bin after listing the paths and their size; the file it was loaded from stays where it was. The choice is kept between runs. A tab's own «load a file» stays for a one-off job on a model that is not a character.
 
 A character's pieces lie in its folder by kind: `armor/` (plates, mail, helmets, gloves, shoes and the pieces fitted in «Armour»), `clothes/` (clothes under the armour, trousers, skirt, tabard, cloak, everyday clothes, hair), `weapons/` (weapons, shields, scabbards, quivers). Each piece is four files: `<item>.glb` and `<item>.mask.json` (what of the body it hides) for the game, `<item>.src.glb` and `<item>.fit.json` (the piece as made and its settings) for the editors. The name is given by the rule `<part>_<style>`, `_2`, `_3` for another of the same: `cuirass_steel`, `bracer_leather_2`, `helmet_barbute`, `shield_round`, `undercloth_fitted`, a weapon just `sword`. No model prefix: the folder says whose it is. The editor opens with the character as it is: no piece chosen or being built, only the worn pieces with their ticks. Work starts when a kind is chosen or a made piece opened (its name clicked in «Worn», or chosen in «Saved»); undo goes back to nothing. There is no name field any more: the rule names the piece. The name is given once, at the first «Generate», and kept even when the style changes (the game and the fitting room know the piece by it); the «Piece name» field can be typed over. The editors' answers lie in `work\status\`, not in the model's folder. A character in the old layout (`<model>_wear_<item>.*` next to the model) is moved over the first time its pieces are opened: the files renamed by the rule, the references between pieces (what each was made over) too, the old answers deleted.
 
@@ -152,9 +160,9 @@ Every piece put on (fitted or procedural) also saves which part of the body it h
 
 ### Saving and the Godot fitting room
 
-Every «Put on» also saves the fitting (`<item>.fit.json`); «Open» brings it back with all the sliders and points. «Fitting room in Godot» builds a small Godot project with the character, its clips and every piece put on, and opens it. Here is a whole set in Godot during the walk clip: breastplate, helmet and short cuisses from Hunyuan3D, boots, and bracers taken off a Tripo character.
+Every «Put on» also saves the fitting (`<item>.fit.json`); «Open» brings it back with all the sliders and points. «Fitting room in Godot» builds a small Godot project with the character, its clips and every piece put on, and opens it. Here is the goblin girl in the Godot fitting room, in the mage set made in the procedural editor: the long open coat, the hooded capelet, the belt, the tall boots and the forearm wraps.
 
-![The fitting room in Godot](docs/images/en/godot_walk.jpg)
+![The fitting room in Godot: the goblin girl in the mage set](docs/images/en/godot_walk.jpg)
 
 ### Equipment: procedural
 
@@ -189,6 +197,8 @@ Character → «Equipment: procedural» makes a piece from parameters instead of
 - «Fitting room in Godot» shows the piece on screen: one changed since «Generate» is made first.
 - «Worn»: the pieces already put on the character show on it, and the new piece is fitted over the ticked ones (a mail skirt or a brayette over the trousers, two layers as worn for real). A cuirass always goes over a skirt, whichever is made first: a skirt made under a worn cuirass stays inside it, belt and all. The rule is general now, the layers being: clothes under the armour → trousers → shoes → brayette → the limbs' plates and the skirt (a gauntlet over the vambrace, elbow cops over them) → cuirass → pauldrons and helmet → cloth over it all (tabard, cloth skirt, cloak). A piece made while pieces of higher layers are worn is kept under their inner wall: trousers made after the greaves and the cuirass no longer come out of them. Cloth worn over does not limit it: it is made again afterwards. When higher pieces were made before a lower one, the editor names them after «Generate». «Rebuild by layers (N)» makes again only the pieces out of date: those under which a piece of a lower layer on the same part of the body appeared or was remade since (a coif is no reason to remake the trousers), and everything over those; N on the button says how many, and with nothing to do it is greyed. It goes from the inside out, each with its own settings and over every piece under it, so the order they were first made in no longer matters. The shapes are all worked out at once in the editor (each over the lower ones just worked out — what is on the screen is what is made), and Blender makes them one after another in the background: the editor stays free, each piece is put on when done, the progress shows by the button («2 of 3 done, now …») with «Stop» — the current piece is finished, the rest are not. A piece waiting in the queue cannot be «Generated» meanwhile; helmets, elbows and shoes from the generators and weapons stay as they are. On the warrior: 9 pieces in 4 minutes; after it the trousers lie 1.6 cm off the skin at the belt and the cuirass 2.5 cm (before, the trousers at 1.9 cm were over the cuirass at 1.1 cm). The ✕ by a piece in «Worn» and «Remove» by the saved ones delete the piece for good (asked first): its files are erased, it leaves the lists and the character, and the Godot fitting room takes it off when next opened. The file of a piece a character already wears (its result or `.src.glb`) is not put on again in the fitting tab, and «Add a model…» does not make a character of it: both used to leave a copy over the piece and a stray «character».
 - «Style of a reference» sets a bracer, greave or breastplate to one of the reference sets (hardened leather, steel plate, mail, exposed splints, covered splints or brigandine, plate over mail, lamellar); the sliders change it from there.
+
+![The check in motion: the skin through the piece and holes clip by clip, the three worst frames; the places show red on the man](docs/images/en/ui_check.jpg)
 
 «Generate» sends this very geometry and these weights to Blender (`tool/blender_armour_gen.py`), which bakes the materials; the baked piece then shows in the editor («Result») and follows the poses on the character's skeleton. How the piece is built:
 
@@ -285,7 +295,9 @@ The first style, «Shirt under armour (thin cloth on the body)», is what goes u
 
 ![The reference styles: bracers, greaves, breastplates — hardened leather, plate, mail, splints, covered splints or lamellar, brigandine, plate over mail](docs/images/procedural_styles.jpg)
 
-![The procedural editor: the plate breastplate made over a whole set (an arming doublet, a mail skirt, steel arms and legs), arms up](docs/images/procedural_editor.jpg)
+![Equipment → Catalog: every piece by block, the pieces already made on top](docs/images/en/ui_catalog.jpg)
+
+![The procedural editor: a steel cuirass on the man, the parameters that make it; what is on screen is what «Generate» bakes](docs/images/en/procedural_editor.jpg)
 
 The piece is put on next to the character like one fitted in «Armour», so the Godot fitting room and the editor's other pieces have it. It fits by construction, needs no fitting, and a whole set comes out in one style, each piece made over the ones under it (the steel arms over the doublet's sleeves). It works on other bodies too: on the right, a sallet on a fairy. It can still be corrected by hand: in «Armour» any of them (helmets, elbows, footwear, gloves and clothes too) opens as made, part «The piece as made»: moved, turned and sized with the gizmo, reshaped with points, openings and the wall thickness; «Put on» keeps its own weights and what its mask hides (the ears under a helmet). Generating it again replaces the corrections.
 
@@ -326,7 +338,7 @@ The same viewer is in «Character → Skeleton → Bones and weights (any skelet
 
 `tool/anim_gallery.py` puts the Mesh2Motion clips (CC0) and the Mixamo packs' clips from `Animations/Mixamo` (without them, procedural two-handed and shield clips) on a rigged character and writes one HTML page that opens with a double click. The clips are grouped: locomotion, jumps, dodges, sword, sword and shield, two-handed sword, defence, magic, unarmed, bow and throwing, hits and deaths, emotes.
 
-![Animation gallery](docs/images/en/gallery.jpg)
+![The animation gallery in the app: the current character's clips on the right, the pose in the middle](docs/images/en/gallery.jpg)
 
 ---
 
@@ -459,7 +471,7 @@ powershell -ExecutionPolicy Bypass -File trellis2-install.ps1   # clone + build 
 powershell -ExecutionPolicy Bypass -File trellis2-weights.ps1   # ilintar/trellis2-gguf, Q8, the res-512 set: 8 files, 7.2 GB, SHA-256 checked (-Quant q4: the lighter set; -Cascade: + the 1024 cascade, 2.75 GB)
 ```
 
-The build is for `CMAKE_CUDA_ARCHITECTURES=89` (RTX 40xx); **change it in `trellis2-install.ps1` to match your GPU** (86 for RTX 30xx, 120 for RTX 50xx). Only the res-512 path is used: the 1024 cascade needs a 16 GB card. At run time the app puts the `hunyuan` env's `bin` on PATH for the CUDA runtime and cuBLAS DLLs.
+The build is for `CMAKE_CUDA_ARCHITECTURES=89` (RTX 40xx); **change it in `trellis2-install.ps1` to match your GPU** (86 for RTX 30xx, 120 for RTX 50xx). Detail 512 runs on the main weights; the 1024 cascade needs two more files (`trellis2-weights.ps1 -Cascade`, 2.75 GB), fits an 8 GB card and is then the default (see «TRELLIS.2 detail» below). At run time the app puts the `hunyuan` env's `bin` on PATH for the CUDA runtime and cuBLAS DLLs.
 
 ### 6. UniRig environment (`unirig`): auto-rigging
 
@@ -491,7 +503,15 @@ On first start, `tool\config.example.json` is used. To change the paths or the l
 
 Since 25.11.2026 the interface is a page of its own; the former Gradio tabs (7861) are gone. Their functions stayed (`tool\sf3d_ui.py` and the modules beside it), and the page calls them.
 
+| Models → Check | Character → Skeleton |
+|---|---|
+| ![Models → Check: the skeleton knight draft, its numbers and the source picture](docs/images/en/ui_models.jpg) | ![Character → Skeleton: the landmark markup on the goblin girl](docs/images/en/03_markup.jpg) |
+| Equipment → Check | Creatures → Colouring |
+| ![Equipment → Check: the cuirass's check in motion over the clips](docs/images/en/ui_check.jpg) | ![Creatures → Colouring and repair: the werewolf's colour variants](docs/images/en/ui_creature.jpg) |
+
 ![Before: a Gradio tab in a narrow column. After: the new interface on the whole screen, the chains menu on the left, 3D in the middle, properties on the right, the log and tasks at the bottom](docs/images/en/web_ui_before_after.jpg)
+
+![Models → Improve: the goblin made by TRELLIS.2 before and after — the concept's skin colour, eyes and lips back](docs/images/en/improve_before_after.jpg)
 
 - **The left menu follows the chains of work:** Models (reference → make → check → improve → materials → release, batch), Character (overview, skeleton, face, looks, animations, weights, to the game), Equipment (catalog → workshop → check → release), Creatures, Environment. Alt+1…7 switch the section's steps.
 - **On top:** the current character or creature (one for the whole interface), video memory in use, the task count, a search over every step (Ctrl+K), the language, light and dark themes.
@@ -529,6 +549,8 @@ Its shape from one picture beats Hunyuan's from four on characters (thin bones, 
 **Q4 weights and the normal map** (checked 2026-11-26 on the same four models): the Q4 set (`trellis2-weights.ps1 -Quant q4`, 4.1 GB more; `ss_dec` and `birefnet` are copied from Q8) is no faster on the RTX 4060 (knight 85 s against 62 s, tavern 182 against 216), saves only 0.1–0.5 GB of video memory (the computation takes it, not the weights) and its shape strays from Q8's twice as far as two Q8 runs do from each other (0.5–0.75 % of the size against 0.25–0.4 %). So Q8 stays; to try Q4 point `trellis_models` in `tool\config.json` at `D:\conda\hf\trellis2-gguf\q4`. trellis-cli's own normal map (`--normal-map on`) costs 25–95 % more time and 1.2–2.4 MB per file and showed the low-poly facets on round parts up close: not used.
 
 **TRELLIS.2 detail: 512 / 1024** (2026-11-28, «TRELLIS.2 options» → «Detail»): 1024 is the cascade — the 512 shape refined on a 1024 grid, with its own texture at 1024. It fits the 8 GB card (peak 3.3–5.3 GB with the desktop) and is the default when its two weights are there (`trellis2-weights.ps1 -Cascade`, 2.75 GB; without them it falls back to 512 with a note in the log). The goblin gets its muscles, knees, ribs and a sharper face, the knight the holes of his helmet and his finger bones, the shield a rusty rim and finer cracks. The price is time: knight 218 s against 62, shield 346 against 85, goblin 132 against 48 (`trellis-cli` alone, RTX 4060).
+
+![TRELLIS.2 detail 512 against the 1024 cascade on the goblin: the face, the muscles and the knees come out](docs/images/en/trellis_512_1024.jpg)
 
 ![Hunyuan3D-2mv + Paint against TRELLIS.2 on the skeleton knight: grey shape on top, textured below](docs/images/en/trellis_vs_hunyuan.jpg)
 
@@ -589,6 +611,8 @@ sf3d-env.bat                  environment for the sf3d env
 *-install.ps1, *-weights.ps1, *-build.bat   installers for Hunyuan3D, TRELLIS.2 and UniRig
 patches/                      changes applied on top of the third-party repos
 docs/images/                  README screenshots (en/, ru/)
+docs/ROADMAP.md               what is done and what is next, by stage
+docs/Solve problems/          write-ups of solved problems in plain words (Russian): before and after, pictures, numbers, a video script
 tool/
   sf3d_ui.py                  the app's functions the interface calls (models, characters, creatures, environment)
   web/                        the interface: server.py (FastAPI), tasks.py (the GPU task queue),
@@ -601,6 +625,9 @@ tool/
   fx_flipbook.py, modkit.py, destruct.py, refgen.py, anim_gallery.py, rwt_*.py   feature modules
   landmarks*.py, landmark_editor.html   skeleton from hand-placed landmarks and armour fitting (three.js editor)
   face_edits.py                 the expressions corrected by hand, laid on the model (and again after a rebuild)
+  model_improve.py, blender_improve.py   «Models → Improve»: the pictures onto the model's unwrap, pins, skins
+  wear_over.py                clothes in layers: what is pressed in under a belt or armour, what lies over it
+  blender_queue.py, cpu_guard.ps1   the machine-wide queue for heavy jobs (one Blender at a time, below-normal priority)
   blender_*.py                headless Blender scripts (blender -b -P tool\blender_x.py -- args)
   godot/                      Godot scripts and shaders used by generated scenes (incl. FaceCurvesPlayer for lip sync,
                               SF3DEquip to put fitted armour on, the armour fitting room)
