@@ -54,6 +54,9 @@ export default function Viewer3D({ url, empty, onMeasured, person: personDefault
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    // (at 1.0 the room light with the sun washes a texture out: an olive skin read ~8 L lighter than its picture,
+    // so it looked yellow; 0.7 brings the lit face back to the picture's own lightness - measured in Lab)
+    renderer.toneMappingExposure = 0.7;
     el.appendChild(renderer.domElement);
     const scene = new THREE.Scene();
     const pmrem = new THREE.PMREMGenerator(renderer);
