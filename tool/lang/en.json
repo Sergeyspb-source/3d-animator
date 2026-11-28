@@ -3572,7 +3572,7 @@
  "web.imp_br_count": "strokes: {0}",
  "web.imp_br_need_src": "First Alt+click where to take from",
  "web.imp_br_src_set": "Alt+click: another place",
- "web.imp_br_help": "Where «Front only» (side, back) is painted, that one picture paints the texture: a side picture's doubled brow or nostril goes. Stamp: Alt+click where to take from, then paint where it goes (white spots no picture sees). Wheel: zoom; right button: pan. The skin shows the result after «Save».",
+ "web.imp_br_help": "Where «Front only» (side, back) is painted, that one picture paints the texture: a side picture's doubled brow or nostril goes. Stamp: Alt+click where to take from, then paint where it goes (white spots no picture sees). What is painted shows its result at once. Wheel: zoom; right button: pan.",
  "web.imp_face": "Face by its points",
  "web.imp_face_note": "the front picture's eyes, brows, nose and lips move whole to where they are on the model, only the skin between them stretches; the side pictures do not paint there",
  "web.imp_face_found": "face found",
@@ -3581,5 +3581,7 @@
  "web.imp_pe_back": "Back to the model",
  "web.imp_pe_back_save": "Save, back to the model",
  "web.imp_pe_back_tip": "Back to the model in 3D; everything is saved",
- "web.imp_pe_back_save_tip": "The pins are saved and «Improve» takes them. They are saved too when you pick another model or press «Improve»"
+ "web.imp_pe_back_save_tip": "The pins are saved and «Improve» takes them. They are saved too when you pick another model or press «Improve»",
+ "web.imp_seam": "Soft seams",
+ "web.imp_seam_note": "How wide a band one picture's colour fades into the other's, in shares of the model's height. Fine detail (pores, brows, lids) still comes from one picture and does not double; 0: the seam as before."
 }

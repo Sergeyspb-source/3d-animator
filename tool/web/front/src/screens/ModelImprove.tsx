@@ -22,7 +22,7 @@ const KIND_KEY: Record<string, string> = { concept: 'web.imp_kind_concept', code
 // the skins laid flat (a character's): the view the pins editor opens, the texts' key (web.imp_<key>, _note, _tip)
 const SKINS = [['skin_head', 'skin'], ['skin_ears', 'ears'], ['skin_torso', 'torso'], ['skin_arms', 'arms'], ['skin_legs', 'legs']] as const;
 type SkinView = typeof SKINS[number][0];
-interface Opts { project: boolean; mirror: boolean; sharp: number; delight: number; sym: string; relief: boolean; face?: boolean }
+interface Opts { project: boolean; mirror: boolean; sharp: number; delight: number; sym: string; relief: boolean; face?: boolean; seam?: number }
 interface Status {
   engine: string; category: string; pictures: Record<string, { path: string; kind: string }>;
   codex: Record<string, { path: string; render: string; accepted: boolean; seconds?: number }>; pins: Record<string, number>; marks?: Record<string, number>;
@@ -214,6 +214,9 @@ export default function ModelImprove({ go }: { go: (r: Route) => void }) {
                 disabled={!st.has_raw} onChange={(e) => set('relief', e.currentTarget.checked)} />
               <div><Text size="sm">{t('web.imp_sharp')}</Text><div className="field-note">{t('web.imp_sharp_note')}</div>
                 <Slider size="sm" min={1} max={8} step={0.5} value={opts.sharp} onChange={(x) => set('sharp', x)} disabled={!opts.project} /></div>
+              <div><Text size="sm">{t('web.imp_seam')}</Text><div className="field-note">{t('web.imp_seam_note')}</div>
+                <Slider size="sm" min={0} max={0.1} step={0.01} value={opts.seam ?? 0.06} onChange={(x) => set('seam', x)} disabled={!opts.project}
+                  label={(x) => `${Math.round(x * 100)} %`} /></div>
               <div><Text size="sm">{t('web.imp_delight')}</Text><div className="field-note">{t('web.imp_delight_note')}</div>
                 <Slider size="sm" min={0} max={1} step={0.05} value={opts.delight} onChange={(x) => set('delight', x)} disabled={!opts.project} /></div>
             </div>

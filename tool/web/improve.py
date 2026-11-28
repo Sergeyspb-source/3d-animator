@@ -49,7 +49,7 @@ def _logger(task, lines):
 
 def run_task(p: dict) -> Task:
     cat, stem = p.get("category") or "", p.get("stem") or ""
-    opts = {k: p.get(k) for k in ("project", "mirror", "sharp", "delight", "sym", "relief", "face") if k in p}
+    opts = {k: p.get(k) for k in ("project", "mirror", "sharp", "delight", "sym", "relief", "face", "seam") if k in p}
 
     def run(task):
         cfg, d = _draft(cat, stem)

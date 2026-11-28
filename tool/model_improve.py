@@ -564,6 +564,41 @@ def smooth_on_mesh(M, Tx, val, iters=40):
     return (vv[tri] * Tx["bary"][..., None]).sum(1)
 
 
+def smooth_weighted(M, Tx, val, w, radius):
+    """per-texel values blurred over the mesh where w says they are known (numerator and weight blurred alike), over
+    about radius x the model's height: a view's colour's slow part. Texels with no known value near: their own."""
+    import scipy.sparse as sp
+    rep, k = weld(M["V"], 1e-5)
+    tri = rep[M["F"]][Tx["fid"]]
+    C = val.shape[1]
+    acc = np.zeros((k, C)); ws = np.zeros(k)
+    for c in range(3):
+        wt = Tx["bary"][:, c] * w
+        np.add.at(acc, tri[:, c], val * wt[:, None])
+        np.add.at(ws, tri[:, c], wt)
+    key = ("_smooth_P", k)
+    if M.get(key) is None:
+        Fw = rep[M["F"]]
+        e = np.concatenate([Fw[:, [0, 1]], Fw[:, [1, 2]], Fw[:, [2, 0]]])
+        V = M["V"]
+        Vw = np.zeros((k, 3)); np.add.at(Vw, rep, V); Vw /= np.maximum(np.bincount(rep, minlength=k), 1)[:, None]
+        edge = float(np.median(np.linalg.norm(Vw[e[:, 0]] - Vw[e[:, 1]], axis=1)))
+        e = np.concatenate([e, e[:, ::-1]])
+        A = sp.coo_matrix((np.ones(len(e)), (e[:, 0], e[:, 1])), shape=(k, k)).tocsr()
+        A.data[:] = 1
+        M[key] = (sp.diags(1 / np.maximum(np.asarray(A.sum(1)).ravel(), 1)) @ A, max(edge, 1e-9))
+    P, edge = M[key]
+    r = radius * float(np.ptp(M["V"][:, 1]))
+    iters = int(np.clip(4 * (r / edge) ** 2, 4, 400))   # (a lazy neighbour mean spreads about edge x sqrt(iters / 4))
+    for _ in range(iters):
+        acc = 0.5 * acc + 0.5 * (P @ acc)
+        ws = 0.5 * ws + 0.5 * (P @ ws)
+    vv = acc / np.maximum(ws, 1e-9)[:, None]
+    low = (vv[tri] * Tx["bary"][..., None]).sum(1)
+    known = (ws[tri] * Tx["bary"]).sum(1) > 1e-6
+    return np.where(known[:, None], low, val)
+
+
 # ------------------------------------------------------------------ G: vertex normals after a Blender export
 def set_normals(src_glb, out_glb):
     """the GLB with its NORMAL data replaced in place by normals averaged over welded positions (sf3d_tool.welded_normals;
@@ -604,7 +639,8 @@ def set_normals(src_glb, out_glb):
 
 # ------------------------------------------------------------------ A: the pictures projected
 def project(glb, out, pics, mirror=False, res=None, c0=0.1, c1=0.55, sharp=4.0, prio=None, delight_k=0.0, pins=None,
-            cams=None, mr_smooth=True, detail=0.7, log=None, skin_warp=None, brush=None, face=None):
+            cams=None, mr_smooth=True, detail=0.7, log=None, skin_warp=None, brush=None, face=None, seam=0.06,
+            seam_pow=2.0):
     """pics: {view: path or ("flip", path)}; cams: {view: (s, tx, ty)} already fitted (else fitted here);
     pins: {view: [(sx, sy, dx, dy), ...]}. -> info {views: {view: {iou, cam, ...}}, seconds, coverage}"""
     say = log or (lambda *_: None)
@@ -697,7 +733,19 @@ def project(glb, out, pics, mirror=False, res=None, c0=0.1, c1=0.55, sharp=4.0, 
     t = time.time()
     # each texel mostly from its best view: an even mix of two pictures whose features sit a little apart doubles them
     ws = np.stack([(prio.get(v, 1.0) * w) ** sharp for v, w, _ in per_view])
-    proj = np.einsum("vn,vnc->nc", ws, np.stack([c for _, _, c in per_view])) / np.maximum(ws.sum(0), 1e-12)[:, None]
+    cols = np.stack([c for _, _, c in per_view])
+    if seam > 0 and len(per_view) > 1:
+        # two bands: the colour's slow part (tone, shade) mixed softly over a band about seam x the model's height
+        # wide, so the pictures' shades meet without a line; its detail (pores, brows, lids) from the best view
+        # sharply, so nothing doubles
+        lows = np.stack([smooth_weighted(M, Tx, c, w, seam) for _, w, c in per_view])
+        wl = np.stack([(prio.get(v, 1.0) * w) ** seam_pow for v, w, _ in per_view])   # (a grazing view adds little)
+        low = np.einsum("vn,vnc->nc", wl, lows) / np.maximum(wl.sum(0), 1e-12)[:, None]
+        high = np.einsum("vn,vnc->nc", ws, cols - lows) / np.maximum(ws.sum(0), 1e-12)[:, None]
+        proj = low + high
+        info["seam"] = seam
+    else:
+        proj = np.einsum("vn,vnc->nc", ws, cols) / np.maximum(ws.sum(0), 1e-12)[:, None]
     a_ = np.clip(acc_w, 0, 1)
     uvpix = np.stack([(Tx["idx"] % R + 0.5) * W0 / R, (Tx["idx"] // R + 0.5) * H0 / R], 1)
     own = lab(sample(M["tex"].astype(np.float32), uvpix).clip(0, 255))
@@ -971,7 +1019,7 @@ def defaults(info: dict, pics: dict, has_raw: bool) -> dict:
     cat = info.get("category") or ""
     char = cat in ("character", "creature")
     return {"project": True, "mirror": cat == "character", "sharp": 4.0, "delight": 0.0, "face": char,
-            "sym": "auto" if cat == "character" else "off", "relief": bool(has_raw),
+            "sym": "auto" if cat == "character" else "off", "relief": bool(has_raw), "seam": 0.06,
             "codex_missing": [v for v in VIEWS if v not in pics and not (v == "right" and "left" in pics and char)
                               and not (v == "left" and "right" in pics and char)] if char else []}
 
@@ -1297,6 +1345,7 @@ def run(cat: str, stem: str, cfg: dict, draft_dir: Path, opts: dict, log=None) -
         sizes = {v: Image.open(x["path"]).size for v, x in pics.items()}
         a_info = project(base, d / "step_a.glb", {v: x["path"] for v, x in pics.items()}, mirror=bool(opts.get("mirror")),
                          sharp=float(opts.get("sharp", 4.0)), delight_k=float(opts.get("delight", 0.0)),
+                         seam=float(opts.get("seam", 0.06)),
                          pins=view_pins(st, cams, {v: x["path"] for v, x in pics.items()}, bool(opts.get("mirror")), sizes),
                          cams=cams, skin_warp=skin_warp_of(d, st, base), brush=brush_of(d, st, base, M), face=face)
         a_info["face"] = bool(face)
@@ -1549,9 +1598,12 @@ def skin_guide(xyz, nrm, sp):
     return Image.fromarray(img, "RGBA")
 
 
-def skin_pictures(M, xyz, nrm, sp, pics, cams, pins, sharp=4.0, prio=None, brush=None, wrap=False, face=None):
+def skin_pictures(M, xyz, nrm, sp, pics, cams, pins, sharp=4.0, prio=None, brush=None, wrap=False, face=None,
+                  layers=None):
     """the pictures as the projection lays them, drawn on the skin (with the picture pins and landmarks): what the skin
-    pins then move. brush: this skin's (only, clone) masks (brush_masks), shown as the projection will take them."""
+    pins then move. brush: this skin's (only, clone) masks (brush_masks), shown as the projection will take them.
+    layers: a dict filled with each view's own layer {view: (H, W, 4) uint8: its colour, its weight as alpha} - the
+    pins editor mixes them with the strokes as they are painted."""
     prio = {"front": 1.0, "back": 0.85, "left": 0.6, "right": 0.6, **(prio or {})}
     ok = np.isfinite(xyz[..., 0])
     P = xyz[ok].astype(np.float64); Nn = nrm[ok].astype(np.float64)
@@ -1596,6 +1648,10 @@ def skin_pictures(M, xyz, nrm, sp, pics, cams, pins, sharp=4.0, prio=None, brush
         col = pre / np.maximum(sample(a.astype(np.float32), xy), 1e-3)[:, None]
         k = (prio.get(v, 1.0) * w) ** sharp
         acc += col * k[:, None]; ws += k; cover = np.maximum(cover, w)
+        if layers is not None:
+            L = np.zeros((sp["H"], sp["W"], 4), np.uint8)
+            L[ok] = np.concatenate([col.clip(0, 255), (np.clip(w, 0, 1) * 255)[:, None]], 1).astype(np.uint8)
+            layers[v] = L
     img = np.zeros((sp["H"], sp["W"], 4), np.uint8)
     col = acc / np.maximum(ws, 1e-12)[:, None]
     rgba = np.concatenate([col.clip(0, 255), (np.clip(cover * 1.5, 0, 1) * 255)[:, None]], 1).astype(np.uint8)
@@ -2629,9 +2685,12 @@ def align(cat: str, stem: str, cfg: dict, draft_dir: Path, view: str) -> dict:
         sizes = {v: Image.open(x["path"]).size for v, x in pics.items()}
         vp = view_pins(st, cams, {v: x["path"] for v, x in pics.items()}, bool(mirror), sizes)
         strokes = (st.get("brush") or {}).get(view) or []
-        masks = brush_masks(strokes, sp["W"], sp["H"]) if strokes else None
         face = _face_on(d, st, base, info, cat, cfg, pics, cams, M)
-        skin_pictures(M, xyz, nrm, sp, use, cams, vp, brush=masks, wrap=view == "skin_head", face=face).save(d / f"{view}_pics.png")
+        # (the pictures without the strokes, and each one's own layer: the editor lays the strokes over them live)
+        layers = {}
+        skin_pictures(M, xyz, nrm, sp, use, cams, vp, wrap=view == "skin_head", face=face, layers=layers).save(d / f"{view}_pics.png")
+        for v_, L_ in layers.items():
+            Image.fromarray(L_, "RGBA").save(d / f"{view}_layer_{v_}.png")
         lines = d / f"{view}_lines.png"   # (the model's relief as height lines, made again with the skin)
         if not lines.exists() or lines.stat().st_mtime < (d / f"{view}_xyz.npy").stat().st_mtime:
             h, sc, fc = skin_height(view, xyz, sp, nrm)
@@ -2641,6 +2700,8 @@ def align(cat: str, stem: str, cfg: dict, draft_dir: Path, view: str) -> dict:
                 "pins": (st.get("pins") or {}).get(view, []), "kind": "skin", "marks": [], "brush": strokes,
                 # (the model's left on the skin: the right half, but the ears' panels have the left ear on the left)
                 "left_x": -1 if view == "skin_ears" else 1, "views": sorted(use, key=ORDER.index),
+                "layers": {v_: str(d / f"{view}_layer_{v_}.png") for v_ in layers}, "sharp": 4.0,
+                "prio": {"front": 1.0, "back": 0.85, "left": 0.6, "right": 0.6}, "wrap": view == "skin_head",
                 "ver": (d / f"{view}_pics.png").stat().st_mtime_ns // 1000000}
     if view not in pics:
         return {"ok": False, "view": view}

@@ -20,6 +20,7 @@ import { Button, Checkbox, SegmentedControl, Slider, Text, Tooltip } from '@mant
 import { IconArrowLeft } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { fileUrl } from '../api';
+import { BrushPreview } from './brushPreview';
 import { useT } from '../i18n';
 
 export type Pin = [number, number, number, number];   // the picture's point (sx, sy) -> lands on the model at (dx, dy)
@@ -29,7 +30,8 @@ export interface Stroke { kind: 'only' | 'clone'; view?: string; off?: [number, 
 // the front picture's face fitted by its points (model_improve.face_field, every k-th cell): read before the pins
 export interface FaceGrid { x0: number; y0: number; step: number; k: number; nx: number; ny: number; d: number[] }
 export interface AlignData { picture: string; model: string; lines?: string; size: [number, number]; mid_x: number | null; pins: Pin[]; marks?: Mark[];
-  kind?: string; brush?: Stroke[]; left_x?: number; views?: string[]; ver?: number; face?: FaceGrid | null }
+  kind?: string; brush?: Stroke[]; left_x?: number; views?: string[]; ver?: number; face?: FaceGrid | null;
+  layers?: Record<string, string>; prio?: Record<string, number>; sharp?: number; wrap?: boolean }
 interface State { pins: P[]; marks: Mark[]; strokes: Stroke[] }
 type Tool = 'front' | 'side' | 'back' | 'clone' | 'erase';
 const TOOL_COLOR: Record<string, string> = { front: '#4aa8ff', left: '#5fd38a', right: '#5fd38a', back: '#b48cff', clone: '#ffa94d' };
@@ -132,6 +134,8 @@ export default function PinEditor({ data, onSave, onClose, onMark3d, pending }: 
   const view = useRef({ s: 1, x: 0, y: 0 });   // screen = (picture - (x, y)) * s
   const [, redraw] = useState(0);
   const gl = useRef<any>(null);
+  const live = useRef<BrushPreview | null>(null);   // (a skin's strokes shown as their result, as painted)
+  const [liveOn, setLiveOn] = useState(false);
   // (with the face field: the picture is read at q + F(q) + D(q), the pins solved with F taken out of their picture
   // points, as model_improve.reads)
   const F = useMemo(() => (data.face ? faceAt(data.face) : null), [data.face]);
@@ -192,6 +196,28 @@ export default function PinEditor({ data, onSave, onClose, onMark3d, pending }: 
     ro.observe(el);
     return () => { ro.disconnect(); renderer.dispose(); el.removeChild(renderer.domElement); };
   }, [data.picture, data.model, data.lines, data.ver]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // a skin with its pictures' layers: the picture becomes a canvas the strokes are mixed into as they are painted
+  useEffect(() => {
+    live.current = null; setLiveOn(false);
+    if (!isSkin || !data.layers || !Object.keys(data.layers).length) return;
+    let gone = false;
+    const urls = Object.fromEntries(Object.entries(data.layers).map(([v, p]) => [v, fileUrl(p, data.ver)]));
+    BrushPreview.load(fileUrl(data.picture, data.ver), urls, W, H, data.prio || {}, data.sharp ?? 4, !!data.wrap).then((b) => {
+      const g = gl.current;
+      if (gone || !g) return;
+      live.current = b;
+      g.mat.map = b.tex; g.mat.needsUpdate = true;
+      b.update(strokes, field);
+      setLiveOn(true);
+      g.draw();
+    }).catch(() => { /* the strokes stay drawn as tints */ });
+    return () => { gone = true; };
+  }, [data.picture, data.ver, data.layers]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const b = live.current, g = gl.current;
+    if (b && g && b.update(strokes, field)) g.draw();
+  }, [strokes, field, liveOn]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fit = () => {   // the whole picture in view
     const r = host.current!.getBoundingClientRect();
@@ -474,7 +500,7 @@ export default function PinEditor({ data, onSave, onClose, onMark3d, pending }: 
         onContextMenu={(e) => e.preventDefault()}>
         <svg className="pin-svg">
           {mid != null && sym && <line x1={sx(mid)} x2={sx(mid)} y1={0} y2="100%" className="pin-mid" />}
-          {isSkin && strokes.map((st, i) => (   // (the strokes: each one evenly see-through, its circles opaque inside it)
+          {isSkin && !liveOn && strokes.map((st, i) => (   // (no layers: the strokes as tints, each evenly see-through)
             <g key={i} opacity={mode === 'brush' ? 0.34 : 0.16} fill={TOOL_COLOR[st.kind === 'clone' ? 'clone' : st.view || 'front']}>
               {st.c.map(([x, y, r], k) => <circle key={k} cx={sx(x)} cy={sy(y)} r={r * v.s} />)}
             </g>
