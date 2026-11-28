@@ -2,7 +2,7 @@
 // (as in Check); the stage: the draft in 3D (after / before), or the pins editor of one view; the panel: the pictures by
 // side (the draft's own, uploaded, drawn by ChatGPT), the missing sides to draw, the steps (texture from the pictures,
 // mirrored side, symmetry, relief), «Improve» (a queued task) and «Undo».
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, Checkbox, FileButton, Group, ScrollArea, SegmentedControl, Slider, Stack, Switch, Text, Tooltip } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconPin, IconPhotoUp, IconX, IconCheck, IconArrowBackUp, IconSparkles } from '@tabler/icons-react';
@@ -44,6 +44,8 @@ export default function ModelImprove({ go }: { go: (r: Route) => void }) {
   const [align, setAlign] = useState<AlignData | null>(null);
   const [aligning, setAligning] = useState(false);
   const [draw, setDraw] = useState<string[]>([]);
+  const pinsUnsaved = useRef<(() => Promise<void>) | null>(null);   // (the pins editor's unsaved work: saved before leaving it)
+  const savePending = async () => { const f = pinsUnsaved.current; if (f) { pinsUnsaved.current = null; await f(); } };
   const m = items.find((x) => `${x.category}/${x.stem}` === sel);
   const q = m ? `category=${encodeURIComponent(m.category)}&stem=${encodeURIComponent(m.stem)}` : '';
 
@@ -59,7 +61,7 @@ export default function ModelImprove({ go }: { go: (r: Route) => void }) {
   useEffect(() => { loadList(); }, [finished]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setOpts(null); setDraw([]); setPinView(null); setLook('after'); }, [sel]);
   useEffect(() => { loadStatus(); }, [sel, finished, m?.time]); // eslint-disable-line react-hooks/exhaustive-deps
-  const pick = (x: ModelInfo) => { const id = `${x.category}/${x.stem}`; setSel(id); localStorage.setItem('sf3d.improve_sel', id); };
+  const pick = async (x: ModelInfo) => { await savePending(); setPinView(null); setAlign(null); const id = `${x.category}/${x.stem}`; setSel(id); localStorage.setItem('sf3d.improve_sel', id); };
 
   const openPins = async (v: ViewName | SkinView) => {
     if (!m) return;
@@ -104,6 +106,7 @@ export default function ModelImprove({ go }: { go: (r: Route) => void }) {
   };
   const runImprove = async () => {
     if (!m || !opts) return;
+    await savePending();   // (the pins being placed count)
     const r = await post<{ ok: boolean; log?: string }>('/api/models/improve/run', { category: m.category, stem: m.stem, ...opts });
     notifications.show({ color: r.ok ? 'patina' : 'red', message: r.ok ? t('web.imp_queued') : r.log || '' });
   };
@@ -129,7 +132,7 @@ export default function ModelImprove({ go }: { go: (r: Route) => void }) {
         <ModelList items={items} sel={sel} onPick={pick} empty={t('web.no_drafts')} />
       </div>
       <div className="stage">
-        {pinView ? (align ? <PinEditor key={`${sel}/${pinView}`} data={align} onSave={savePins} onMark3d={moveMark3d} onClose={() => { setPinView(null); setAlign(null); }} />
+        {pinView ? (align ? <PinEditor key={`${sel}/${pinView}`} data={align} onSave={savePins} onMark3d={moveMark3d} pending={pinsUnsaved} onClose={() => { setPinView(null); setAlign(null); }} />
           : <div className="stage-wait"><Text c="dimmed" size="sm">{aligning ? t('web.imp_fitting') : ''}</Text></div>) : (
           <>
             <Viewer3D url={m ? fileUrl(look === 'before' && st?.before ? st.before : m.glb, m.time) : null} empty={t('web.check_empty')} />

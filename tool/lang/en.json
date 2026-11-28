@@ -3577,5 +3577,9 @@
  "web.imp_face_note": "the front picture's eyes, brows, nose and lips move whole to where they are on the model, only the skin between them stretches; the side pictures do not paint there",
  "web.imp_face_found": "face found",
  "web.imp_face_none": "no face found on the picture or the model: the picture goes on as it is",
- "web.imp_face_na": "needs MediaPipe in its own environment (D:/conda/envs/facemark) and the face_landmarker.task model"
+ "web.imp_face_na": "needs MediaPipe in its own environment (D:/conda/envs/facemark) and the face_landmarker.task model",
+ "web.imp_pe_back": "Back to the model",
+ "web.imp_pe_back_save": "Save, back to the model",
+ "web.imp_pe_back_tip": "Back to the model in 3D; everything is saved",
+ "web.imp_pe_back_save_tip": "The pins are saved and «Improve» takes them. They are saved too when you pick another model or press «Improve»"
 }

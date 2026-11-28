@@ -17,6 +17,8 @@ import { Snapshots, useUndoKeys } from '../undo';
 import UndoButtons from './UndoButtons';
 import * as THREE from 'three';
 import { Button, Checkbox, SegmentedControl, Slider, Text, Tooltip } from '@mantine/core';
+import { IconArrowLeft } from '@tabler/icons-react';
+import { notifications } from '@mantine/notifications';
 import { fileUrl } from '../api';
 import { useT } from '../i18n';
 
@@ -84,9 +86,12 @@ const markPins = (ms: Mark[]): Pin[] => ms.filter((m) => m.set && m.model).map((
 const MARK_KEY: Record<string, string> = { ear_tip: 'web.imp_mk_ear_tip', ear_hole: 'web.imp_mk_ear_hole', elbow: 'web.imp_mk_elbow',
   hand: 'web.imp_mk_hand', knee: 'web.imp_mk_knee' };
 
-export default function PinEditor({ data, onSave, onClose, onMark3d }: {
+// pending: the page's handle on unsaved work - set to «save it» while something is unsaved, null when all is saved
+// (the page saves it before another model is picked or «Improve» runs; leaving the page saves it too)
+export default function PinEditor({ data, onSave, onClose, onMark3d, pending }: {
   data: AlignData; onSave: (pins: Pin[], marks: Record<string, [number, number]>, brush?: Stroke[]) => Promise<void> | void; onClose: () => void;
   onMark3d?: (name: string, x: number, y: number, mirror: boolean) => Promise<AlignData | null>;
+  pending?: React.MutableRefObject<(() => Promise<void>) | null>;
 }) {
   const t = useT();
   const host = useRef<HTMLDivElement>(null);
@@ -120,6 +125,8 @@ export default function PinEditor({ data, onSave, onClose, onMark3d }: {
   const [show, setShow] = useState<'mix' | 'pic' | 'model'>('mix');
   const [relief, setRelief] = useState(true);   // the model's relief as height lines over everything (not bent by the pins)
   const [dirty, setDirty] = useState(false);
+  const dirtyNow = useRef(false);   // (as dirty, read on the way out; cleared by a save at once, before any render)
+  dirtyNow.current = dirty;
   const [saving, setSaving] = useState(false);
   const [busy3d, setBusy3d] = useState(false);
   const view = useRef({ s: 1, x: 0, y: 0 });   // screen = (picture - (x, y)) * s
@@ -389,9 +396,25 @@ export default function PinEditor({ data, onSave, onClose, onMark3d }: {
     try {
       const ms: Record<string, [number, number]> = {};
       for (const m of marks) if (m.set) ms[m.name] = m.pic;
-      await onSave(toPins(pins), ms, isSkin ? strokes : undefined); setDirty(false);
+      await onSave(toPins(pins), ms, isSkin ? strokes : undefined); setDirty(false); dirtyNow.current = false;
     } finally { setSaving(false); }
   };
+  // back to the model: what is unsaved is saved first (never lost by leaving)
+  const back = async () => {
+    if (dirty) {
+      try { await save(); } catch (x: any) { notifications.show({ color: 'red', message: String(x.message || x) }); return; }
+    }
+    onClose();
+  };
+  const saveNow = useRef(save);
+  saveNow.current = save;
+  useEffect(() => {
+    if (pending) pending.current = dirty ? () => saveNow.current() : null;
+  }, [dirty, pending]);
+  useEffect(() => () => {   // (the page left with work unsaved: saved on the way out)
+    if (pending) pending.current = null;
+    if (dirtyNow.current) Promise.resolve(saveNow.current()).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const markLabel = (n: string) => `${t(MARK_KEY[n.slice(0, -2)] || n)} ${n.endsWith('_L') ? t('web.imp_mk_l') : t('web.imp_mk_r')}`;
 
   const v = view.current;
@@ -400,6 +423,9 @@ export default function PinEditor({ data, onSave, onClose, onMark3d }: {
   return (
     <div className="pin-editor">
       <div className="pin-bar">
+        <Tooltip label={t(dirty ? 'web.imp_pe_back_save_tip' : 'web.imp_pe_back_tip')}>
+          <Button size="compact-sm" variant="light" leftSection={<IconArrowLeft size={14} />} onClick={back} loading={saving}>
+            {t(dirty ? 'web.imp_pe_back_save' : 'web.imp_pe_back')}</Button></Tooltip>
         {(hasMarks || isSkin) && <SegmentedControl size="xs" value={mode} onChange={(x) => setMode(x as any)} data={[
           { value: 'pins', label: t('web.imp_pe_pins') },
           ...(hasMarks ? [{ value: 'marks', label: t('web.imp_pe_marks', nSet) }] : []),
@@ -421,7 +447,6 @@ export default function PinEditor({ data, onSave, onClose, onMark3d }: {
         <div style={{ flex: 1 }} />
         <Text size="xs" c="dimmed">{busy3d ? t('web.imp_pe_on_model') : mode === 'brush' ? t('web.imp_br_count', strokes.length) : t('web.imp_pe_count', pins.length)}</Text>
         <Button size="compact-sm" onClick={save} loading={saving} disabled={!dirty}>{t('web.imp_pe_save')}</Button>
-        <Button size="compact-sm" variant="default" onClick={onClose}>{t('web.imp_pe_close')}</Button>
       </div>
       {mode === 'brush' && (
         <div className="mark-bar">
