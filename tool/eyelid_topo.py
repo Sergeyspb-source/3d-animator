@@ -653,6 +653,31 @@ def _one_eye(bm, Mo, sd, sv, balls, job, field, src, deform, shape, uvl, mats, b
     # folded back on each other, and from the front one saw the lid's underside - a dark notch by the nose,
     # goblin_hero_2). Found as seen from the front - its corners going round the other way than the rest's -, its
     # corners on the skin put back where the loops were grown for them, then eased along their ring, on the skin again
+    # (a point of the skin loops far off its neighbours on the grid - along its loop and across it: at women_young's
+    # outer corner the fold loop's front ray met the source's own painted lid and stood .6 r in front of the skin
+    # round it; as far from the ball's centre as its neighbours, the ring's own check let it be - a spike, dark under
+    # the corner. Put at its neighbours' mean, on the skin nearest. The outer loop is left: under the old skin)
+    spikes = 0
+    sp_lim = float(job.get("lid_spike", .3))
+    for _ in range(2 if sp_lim > 0. else 0):
+        moved = []
+        for k in range(IW + 2, len(RINGS) - 1):
+            for i in range(N):
+                if share(k, i) <= 0.:
+                    continue
+                p = rings[k][i]
+                nb = [rings[k][i - 1], rings[k][(i + 1) % N], rings[k - 1][i], rings[k + 1][i]]
+                m = sum(nb, Vector()) / len(nb)
+                el = sum((q - p).length for q in nb) / len(nb)
+                if (m - p).length > sp_lim * r and (m - p).length > .7 * el:
+                    h_ = skin_bvh.find_nearest(m)
+                    moved.append((k, i, h_[0] if h_[0] is not None and h_[3] < .15 * r else m))
+        for k, i, m in moved:
+            rings[k][i] = m
+        spikes += len(moved)
+        if not moved:
+            break
+
     def area2(k, i):
         q_ = [rings[k][i], rings[k][(i + 1) % N], rings[k + 1][(i + 1) % N], rings[k + 1][i]]
         return sum(q_[j].x * q_[(j + 1) % 4].z - q_[(j + 1) % 4].x * q_[j].z for j in range(4))
@@ -680,13 +705,20 @@ def _one_eye(bm, Mo, sd, sv, balls, job, field, src, deform, shape, uvl, mats, b
             h_ = front(q_.x, q_.z)
             rings[kk][ii] = h_ if h_ is not None and (h_ - q_).length < .5 * r else q_
         untangled += len(fix)
+    # (how far under the skin each loop lies, and how far over the patch the old skin's edge is pressed: the outer two
+    # loops and the gap are the job's to change. Deeper loops and a wider gap did not hide women_young's ragged line
+    # under the brow - it is the old skin's own sawtooth edge where the loop cut its triangles)
+    deep_ = [.012] * len(RINGS)
+    deep_[-2] = float(job.get("lid_depth_orb1", .012))
+    deep_[-1] = float(job.get("lid_depth_orb2", .02))
+    snap_gap = float(job.get("lid_snap_gap", .002))
     for k in range(len(RINGS)):
         for i in range(N):
             s_ = share(k, i)
             if s_ > 0.:   # (under the skin along its own normal: on a steep wall - the nose's side - the line from
                 # the ball's centre runs along the skin, and the lid's edge stood off it in a dark slit)
                 p = rings[k][i]
-                rings[k][i] = p - outward(p) * ((.02 if k == len(RINGS) - 1 else .012) * r * s_)
+                rings[k][i] = p - outward(p) * (deep_[k] * r * s_)
     k1_, k2_ = len(RINGS) - 2, len(RINGS) - 1
     near_g = {j % N for i in guarded for j in (i - 1, i, i + 1)}   # (where the loops were drawn back: the cut follows)
     cut2 = []
@@ -806,8 +838,8 @@ def _one_eye(bm, Mo, sd, sv, balls, job, field, src, deform, shape, uvl, mats, b
             h = lbvh.ray_cast(p + n * (up_lim * r), -n, 2. * up_lim * r)
             if h[0] is None:
                 continue
-            up = (p - h[0]).dot(n)   # (its height over the skin left: under it it is -.02 r)
-            want = -.02 * r * s_
+            up = (p - h[0]).dot(n)   # (its height over the skin left: under it it is -deep_[-1] r)
+            want = -deep_[-1] * r * s_
             if want + .01 * r < up < up_lim * r:
                 rings[k2_][i] = p + n * (want - up)
                 rings[k1_][i] = rings[k1_][i] + n * ((want - up) * .5 * share(k1_, i))
@@ -863,7 +895,7 @@ def _one_eye(bm, Mo, sd, sv, balls, job, field, src, deform, shape, uvl, mats, b
         h = pbvh.ray_cast(p + d * (1.5 * r), -d, 3. * r)
         if h[0] is None or (h[0] - c).length > (p - c).length + .02 * r or (h[0] - p).length > .4 * r:
             continue
-        dlt = Moi.to_3x3() @ (h[0] + d * (.002 * r) - p)
+        dlt = Moi.to_3x3() @ (h[0] + d * (snap_gap * r) - p)
         v.co += dlt
         for lay in shapes_:
             v[lay] += dlt
@@ -877,7 +909,7 @@ def _one_eye(bm, Mo, sd, sv, balls, job, field, src, deform, shape, uvl, mats, b
             h2 = pbvh.ray_cast(q_ + dq * (1.5 * r), -dq, 3. * r)
             if h2[0] is None or (h2[0] - q_).length > .3 * r or (h2[0] - c).length > (q_ - c).length:
                 continue
-            d2 = Moi.to_3x3() @ ((h2[0] + dq * (.006 * r) - q_) * .5)
+            d2 = Moi.to_3x3() @ ((h2[0] + dq * ((snap_gap + .004) * r) - q_) * .5)
             w.co += d2
             for lay in shapes_:
                 w[lay] += d2
@@ -1045,7 +1077,7 @@ def _one_eye(bm, Mo, sd, sv, balls, job, field, src, deform, shape, uvl, mats, b
                 n = outward(m)
                 h = lbvh.ray_cast(m + n * (up_lim * r), -n, 2. * up_lim * r)
                 if h[0] is not None and .01 * r < (m - h[0]).dot(n) < up_lim * r:
-                    todo.append((e, h[0] - n * (.02 * r)))
+                    todo.append((e, h[0] - n * (deep_[-1] * r)))
             if not todo:
                 break
             for e, to in todo:
@@ -1065,7 +1097,7 @@ def _one_eye(bm, Mo, sd, sv, balls, job, field, src, deform, shape, uvl, mats, b
     grid = [[new[k][i][1] for i in range(N)] for k in range(len(RINGS))]
     shares = [[share(k, i) for i in range(N)] for k in range(len(RINGS))]
     outline2 = [(p.x, p.z) for p in curve]
-    report = {"columns": N, "rings": len(RINGS), "cut_faces": len(kill), "edge_snapped": snapped, "untangled": untangled, "depth_steps": depth_steps, "pressed_outer": pressed, "edge_split": split_, "flipped": bool(flip),
+    report = {"columns": N, "rings": len(RINGS), "cut_faces": len(kill), "edge_snapped": snapped, "untangled": untangled, "depth_steps": depth_steps, "pressed_outer": pressed, "edge_split": split_, "spikes": spikes, "flipped": bool(flip),
               "clamped_corners": clamped, "bulge": round(bulge / r, 3)}
     return {"report": report, "grid": grid, "shares": shares, "block": (y0, TH1, TW), "N": N, "outline": outline2, "fine": fine, "c": c,
             "r": r, "crease": [k for k, x in enumerate(RINGS) if x[0] == "crease"][0], "is_up": is_up}
