@@ -1303,6 +1303,49 @@ function muscles(limb, P, mid, k) {
 }
 
 // a ring of radii (evenly spaced angles) -> the radii of its convex hull: a breastplate has no hollows
+// cloth hanging, not following each bump (2026-11-28, the user: «smooth the ledge at the hips»; a haubergeon's mail
+// showed the seat's two cheeks - «as if his backside came out from under the mail skirt»): over a band of the torso
+// (tTop, the waist, down to tBot) the piece's outside sampled round the torso's axis (rays from outside, NA ways round,
+// rows DRAPE_DT apart); down each way round its least concave majorant (no dip between its rows: the step where a hip's
+// bulge starts filled in, the cloth from the waist on over it straight); opts.rows: each row convex round first (the
+// cleft between the cheeks bridged), opts.down: never in again going down (it hangs from the seat). Each outer point
+// (pairs: outer id -> inner id) moved out by as much, its inner one with it; only out
+const DRAPE_DT = .01;
+function drapeOut(acc, pairs, tTop, tBot, opts = {}) {
+  const { limb: tl } = limbOf('cuirass', 'C'), NA = 72, far = .6 * HEIGHT;
+  const NR = Math.max(3, Math.round((tTop - tBot) / DRAPE_DT) + 1), ts = lin(tTop, tBot, NR), g = accGeo([acc]);
+  let R = ts.map((t) => Array.from({ length: NA }, (_, j) => { const d = tl.out(j / NA * TAU), h = castOn(g, tl.axis(t).addScaledVector(d, far), d.clone().negate(), far); return h ? far - h.distance : NaN; }));
+  // (a slit, an opening: a ray through it met the far side or nothing - the row's neighbours stand for it)
+  R = R.map((row) => {
+    const ok = row.map((x, j) => { if (!(x === x)) return false; const nb = [-2, -1, 1, 2].map((k) => row[(j + k + NA) % NA]).filter((y) => y === y); return !nb.length || x >= .85 * nb.reduce((a, b) => a + b) / nb.length; });
+    if (!ok.some(Boolean)) return null;
+    return row.map((x, j) => { if (ok[j]) return x; for (let k = 1; k < NA / 2; k++) { const a = ok[(j + k) % NA] ? row[(j + k) % NA] : null, b = ok[(j - k + NA) % NA] ? row[(j - k + NA) % NA] : null; if (a !== null || b !== null) return Math.max(a ?? 0, b ?? 0); } return 0; });
+  });
+  if (R.some((row) => !row)) return 0;
+  const Rc = opts.rows ? R.map(convexRow) : R, T = Rc.map((row) => row.slice());
+  for (let j = 0; j < NA; j++) {   // the least concave majorant down the column (its upper hull, x: the row)
+    const hullI = [];
+    for (let i = 0; i < NR; i++) {
+      while (hullI.length >= 2) { const a = hullI.at(-2), b = hullI.at(-1); if ((b - a) * (Rc[i][j] - Rc[a][j]) - (Rc[b][j] - Rc[a][j]) * (i - a) >= 0) hullI.pop(); else break; }
+      hullI.push(i);
+    }
+    for (let h = 0; h + 1 < hullI.length; h++) { const a = hullI[h], b = hullI[h + 1]; for (let i = a; i <= b; i++) T[i][j] = Rc[a][j] + (Rc[b][j] - Rc[a][j]) * (i - a) / (b - a); }
+    if (opts.down) for (let i = 1; i < NR; i++) T[i][j] = Math.max(T[i][j], T[i - 1][j]);
+  }
+  const D = T.map((row, i) => row.map((x, j) => Math.max(0, x - R[i][j])));
+  const at = (t, a) => { const x = Math.max(0, Math.min(NR - 1.001, (tTop - t) / (tTop - tBot) * (NR - 1))), i = Math.floor(x), f = x - i, y = ((a / TAU) % 1 + 1) % 1 * NA, j = Math.floor(y) % NA, k = y - Math.floor(y), j1 = (j + 1) % NA;
+    return (D[i][j] * (1 - k) + D[i][j1] * k) * (1 - f) + (D[i + 1][j] * (1 - k) + D[i + 1][j1] * k) * f; };
+  let most = 0;
+  const vx = (id) => new V3(acc.v[3 * id], acc.v[3 * id + 1], acc.v[3 * id + 2]);
+  for (const [o, n] of pairs) {
+    const P = vx(o), dd = P.clone().sub(tl.a), tt = dd.dot(tl.u), t = tt / tl.len; if (t > tTop || t < tBot) continue;
+    dd.addScaledVector(tl.u, -tt); const r = dd.length(); if (r < 1e-6) continue; dd.multiplyScalar(1 / r);
+    const m = at(t, tl.angOf(dd)) * (opts.down ? smooth(tBot, tBot + .03, t) : 1); if (m <= 1e-6) continue;   // (down: it would not end at tBot - faded there)
+    for (const id of [o, n]) if (id !== undefined) { acc.v[3 * id] += dd.x * m; acc.v[3 * id + 1] += dd.y * m; acc.v[3 * id + 2] += dd.z * m; }
+    most = Math.max(most, m);
+  }
+  return most;
+}
 function convexRow(row) {
   const NA = row.length, pts = row.map((r, j) => [r * Math.cos(j / NA * TAU), r * Math.sin(j / NA * TAU)]);
   const srt = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1]), cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
@@ -1888,6 +1931,15 @@ function hauberk(p) {
       const j1 = (j + 1) % N, o = [grid[k][j][0], grid[k + 1][j][0], grid[k + 1][j1][0], grid[k][j1][0]], n = [grid[k][j][1], grid[k][j1][1], grid[k + 1][j1][1], grid[k + 1][j][1]];
       acc.face(flip ? [...o].reverse() : o, MAIL, 'mail'); acc.face(flip ? [...n].reverse() : n, MAIL, 'mail');
     }
+    // the mail over the seat as it hangs (drapeOut: from the waist, each row convex round - not into the cleft - and
+    // never in again going down; it lay on each cheek: «his backside came out from under the mail skirt»)
+    const ray = (t, a) => { const d = tl.out(a), h = castOn(bodyGeo, tl.axis(t).addScaledVector(d, .6 * HEIGHT), d.clone().negate(), .6 * HEIGHT); return h ? .6 * HEIGHT - h.distance : 0; };
+    let waistT = tcut + .15, wm = Infinity;
+    for (let t = tcut + .04; t <= tcut + .4; t += .02) { let m = 0; for (let j = 0; j < 16; j++) m += ray(t, j / 16 * TAU); if (m < wm) { wm = m; waistT = t; } }
+    const pairs = new Map();
+    for (const [, k] of rim.sh.ids) pairs.set(rim.sh.out[k], rim.sh.inn[k]);
+    for (const row of grid) for (const [o2, n2] of row) pairs.set(o2, n2);
+    drapeOut(acc, pairs, waistT, tcut - .1, { rows: true, down: true });
   }
   return out;
 }
@@ -2986,6 +3038,7 @@ const NECK_CUT = 1.45;   // a shirt's or vest's neckline: so many times the neck
 const CUFF_FREE = 50;   // mm of the arm inside a sleeve's end left unhidden (the user: the arm going on into it, not a doll's)
 const HOOD_SPREAD = 10;   // degrees each way a hooded capelet's front edges open more at its hem than at the throat
 const HOOD_UP_GAP = 12;   // mm a hood up stands off the head and the neck (the hair under it)
+const DRAPE_SKIRT = .14;   // how far into a shirt's skirt (of the torso's length) the drape from the waist goes
 const EDGE_FREE = 30;   // mm of the skin in from a shirt's or vest's open edges left unhidden (the rest under it all hidden)
 const CLOTH_SINK_IN = -2;   // mm: away from its edges no deeper either (sunk 40 into a goblin's shoulders, they came through as the arms rose; the field is smooth: over the muscles, not into each)
 const CLOTH_BALL = 55;   // mm: its smoothing's reach (SKIN_BALL's: each of a goblin's muscles showed through)
@@ -3203,6 +3256,12 @@ function clothPiece(p, o) {
   const thigh = (thighs.length ? thighs.reduce((x, y) => x + y) / thighs.length : .25 * H) / tl.len, t0 = crotchT(tl) - (o.hem ?? .4) * thigh;
   let grid = null;
   if (cols.length > 3 && t0 < tMin - .02) grid = clothSkirt(acc, cols, closed, t0, { gap: MM(1) + q.gap * .02 * H, folds, slits: o.slits, ragged: o.ragged, flare: o.flare, ramp: o.ramp, points: o.points, legRide: o.legRide, uv: torsoUV, mat: PLATE, role: 'plate' });
+  if (grid) {   // from the waist down over the hips with no step (drapeOut): the body and its skirt's top rows
+    const pairs = new Map();
+    for (const [, k] of rim.sh.ids) pairs.set(rim.sh.out[k], rim.sh.inn[k]);
+    for (const row of grid) for (const g2 of row) pairs.set(g2.o, g2.n);
+    drapeOut(acc, pairs, waistT, tcut - DRAPE_SKIRT);
+  }
   const fixUV = (f0) => fixSeams(acc, f0, mapOf, (P, m) => (m === 'T' ? torsoUV(P) : armUV(P, m)), (m) => (m === 'T' ? PT : PA));
   fixUV(0);
   if (grid) sh0.hem = { cols, closed, t0, gap: MM(1) + q.gap * .02 * H, folds, slits: o.slits, flare: o.flare, ramp: o.ramp, legRide: o.legRide, uv: torsoUV, fix: fixUV };   // (skirtLayers: more skirts over it)
